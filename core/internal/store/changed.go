@@ -9,7 +9,7 @@ import (
 )
 
 // ChangedFile is the marker in the home folder that each committed write
-// rewrites. The app watches it with the database files. macOS reports a
+// rewrites. The app watches only this file. macOS reports a
 // modified file when the writer closes it, and loam mcp keeps the database
 // open for the whole session, so a write to the database alone can raise no
 // event until the server exits.

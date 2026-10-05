@@ -18,8 +18,9 @@ public enum DirectoryWatcher {
     }
 
     /// The files whose writes mean the store changed. The core rewrites `loam.changed` after each
-    /// commit, because `loam mcp` keeps the database open and its writes raise no event until it exits.
-    public static let storeFiles: Set<String> = ["loam.db", "loam.db-wal", "loam.changed"]
+    /// commit. The SQLite files do not count: each CLI read makes and deletes `loam.db-wal`, so
+    /// each poll would start the next one.
+    public static let storeFiles: Set<String> = ["loam.changed"]
 
     /// Events for the store database in the home folder. Writes under `plots/` and `worktrees/` are ignored.
     public static func storeEvents(environment: [String: String] = [:], latency: TimeInterval = 0.05) -> AsyncStream<Void> {

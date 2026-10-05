@@ -169,7 +169,9 @@ private func nextChanges(_ it: inout AsyncStream<FeedUpdate>.Iterator) async -> 
         #expect(await next(&it) == nil)  // no failure was published
     }
 
-    @Test func feedFollowsLoamHomeAndIgnoresPlotsAndWorktrees() async throws {
+    /// SQLite makes and deletes `loam.db-wal` each time a CLI read opens and closes the store, so
+    /// only the marker counts. Without that, each poll starts the next one.
+    @Test func feedFollowsLoamHomeAndIgnoresEverythingButTheMarker() async throws {
         let fm = FileManager.default
         let home = fm.temporaryDirectory.appendingPathComponent("loam-home-\(UUID().uuidString)")
         try fm.createDirectory(at: home.appendingPathComponent("plots"), withIntermediateDirectories: true)
@@ -188,10 +190,13 @@ private func nextChanges(_ it: inout AsyncStream<FeedUpdate>.Iterator) async -> 
         let before = await log.calls().count
         try Data("x".utf8).write(to: home.appendingPathComponent("plots/a.json"))
         try Data("x".utf8).write(to: home.appendingPathComponent("worktrees/b"))
+        try Data("x".utf8).write(to: home.appendingPathComponent("loam.db"))
+        try Data("x".utf8).write(to: home.appendingPathComponent("loam.db-wal"))
+        try fm.removeItem(at: home.appendingPathComponent("loam.db-wal"))
         try await Task.sleep(for: .milliseconds(700))
         #expect(await log.calls().count == before)  // no poll for those writes
         await log.add(2)
-        try Data("x".utf8).write(to: home.appendingPathComponent("loam.db-wal"))
+        try Data("x".utf8).write(to: home.appendingPathComponent("loam.changed"))
         #expect(await nextChanges(&it) == .changes([change(2)]))
     }
 

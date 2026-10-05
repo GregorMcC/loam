@@ -38,7 +38,7 @@ public struct ChangeFeed: Sendable {
 
     /// Watches the store files and polls through `client`. The home is `LOAM_HOME` from
     /// `client.environment`, else from the app's environment, else `~/.loam`.
-    /// Only `loam.db`, `loam.db-wal`, and `loam.changed` count, so writes under `plots/` and `worktrees/` start no poll.
+    /// Only `loam.changed` counts, so writes under `plots/` and `worktrees/` start no poll.
     public init(
         client: LoamClient, debounce: Duration = .milliseconds(250), after: Int? = nil
     ) {
