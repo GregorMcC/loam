@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="470" viewBox="0 0 1200 470" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title>How a plot becomes a seeded Claude Code session</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#c99a62"/>
+    </marker>
+    <style>
+      text { white-space: pre; }
+      .mono { font-family: 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; }
+      .t { fill: #e6e3dc; }
+      .dim { fill: #a39d92; }
+      .faint { fill: #7a746b; }
+      .loam { fill: #d8a86c; }
+      .green { fill: #9ccc86; }
+      .h { font-weight: 600; }
+      .card { fill: #24211d; stroke: #3d372f; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="470" rx="24" fill="#191714"/>
+
+  <!-- step labels -->
+  <g font-size="12" class="faint h" letter-spacing="1.4">
+    <text x="60" y="52">1 · THE PLOT</text>
+    <text x="452" y="52">2 · THE SEED</text>
+    <text x="842" y="52">3 · THE SESSION</text>
+  </g>
+
+  <!-- plot card -->
+  <rect x="40" y="68" width="330" height="300" rx="14" class="card"/>
+  <circle cx="66" cy="98" r="6" fill="#c99a62"/>
+  <text x="82" y="103" font-size="17" class="t h">Loam v1 build</text>
+  <g font-size="12.5">
+    <text x="62" y="138" class="loam h">Brief</text>
+    <text x="62" y="158" class="dim">What · Why · Where it stands</text>
+    <text x="62" y="192" class="loam h">Repos</text>
+    <text x="62" y="212" class="t">★ ~/Development/loam</text>
+    <text x="62" y="230" class="dim">   ~/Development/loam-spike</text>
+    <text x="62" y="264" class="loam h">Links</text>
+    <text x="62" y="284" class="t">Notion · Linear · GitHub</text>
+    <text x="62" y="302" class="t">Vault notes · local folders</text>
+    <text x="62" y="336" class="loam h">Worktrees</text>
+    <text x="146" y="336" class="dim">app-fix-feed</text>
+  </g>
+
+  <!-- arrow 1 -->
+  <line x1="378" y1="218" x2="426" y2="218" stroke="#c99a62" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <text x="402" y="194" text-anchor="middle" font-size="11" class="loam mono">loam</text>
+  <text x="402" y="207" text-anchor="middle" font-size="11" class="loam mono">start</text>
+
+  <!-- seed card -->
+  <rect x="432" y="68" width="330" height="300" rx="14" class="card"/>
+  <text x="452" y="96" font-size="12" class="faint mono">~/.loam/plots/&lt;id&gt;/CLAUDE.md</text>
+  <line x1="452" y1="108" x2="742" y2="108" stroke="#3d372f"/>
+  <g class="mono" font-size="11.5">
+    <text x="452" y="132" class="t h"># Plot: Loam v1 build</text>
+    <text x="452" y="156" class="loam">## How to use this plot</text>
+    <text x="452" y="174" class="dim">- call get_plot before you rely</text>
+    <text x="452" y="190" class="dim">  on a plot detail</text>
+    <text x="452" y="206" class="dim">- change it with mcp__loam__*</text>
+    <text x="452" y="230" class="loam">## Brief</text>
+    <text x="452" y="248" class="dim">What · Why · Where it stands</text>
+    <text x="452" y="272" class="loam">## Repos</text>
+    <text x="452" y="296" class="loam">## Links</text>
+    <text x="452" y="314" class="dim">- [Spec](obsidian vault)</text>
+  </g>
+  <text x="452" y="350" font-size="11.5" class="green">Links, not content. Claude fetches on demand.</text>
+
+  <!-- arrow 2 -->
+  <line x1="770" y1="218" x2="818" y2="218" stroke="#c99a62" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <text x="794" y="206" text-anchor="middle" font-size="11" class="loam mono">exec</text>
+
+  <!-- session card -->
+  <rect x="824" y="68" width="336" height="300" rx="14" class="card"/>
+  <rect x="824" y="68" width="336" height="34" rx="14" fill="#2c2823"/>
+  <rect x="824" y="88" width="336" height="14" fill="#2c2823"/>
+  <text x="844" y="90" font-size="12.5" class="t h mono">✻ claude</text>
+  <g font-size="12.5">
+    <text x="844" y="132" class="green">✓</text><text x="864" y="132" class="t">Starts in the main repo</text>
+    <text x="844" y="160" class="green">✓</text><text x="864" y="160" class="t">Other repos and local links</text>
+    <text x="864" y="177" class="dim">via --add-dir</text>
+    <text x="844" y="205" class="green">✓</text><text x="864" y="205" class="t">Seed loads at start,</text>
+    <text x="864" y="222" class="dim">and again after /compact</text>
+    <text x="844" y="250" class="green">✓</text><text x="864" y="250" class="t">Loam MCP tools: get_plot,</text>
+    <text x="864" y="267" class="dim">add_link, set_where_it_stands …</text>
+    <text x="844" y="295" class="green">✓</text><text x="864" y="295" class="t">Reads ask nothing. Writes that</text>
+    <text x="864" y="312" class="dim">matter ask you first.</text>
+  </g>
+  <text x="844" y="350" font-size="11.5" class="faint mono">loam resume &lt;session-id&gt;</text>
+
+  <!-- feedback loop -->
+  <path d="M992 376 C 992 440, 205 440, 205 384" fill="none" stroke="#c99a62" stroke-width="2" stroke-dasharray="6 6" marker-end="url(#arrow)"/>
+  <rect x="438" y="420" width="324" height="28" rx="14" fill="#2c2823"/>
+  <text x="600" y="439" text-anchor="middle" font-size="12" class="t">Each edit is a change in the log. Undo any one.</text>
+</svg>

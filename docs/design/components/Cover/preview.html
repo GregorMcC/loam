@@ -1,0 +1,62 @@
+<!-- @dsCard height=300 -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Martian+Mono:wght@500&family=Hanken+Grotesk:wght@400&display=swap">
+<style>
+  html, body { margin: 0; background: var(--horizon-a); }
+  .cover { position: relative; width: 960px; height: 300px; overflow: hidden; background: var(--horizon-a); }
+  svg { position: absolute; inset: 0; }
+  .moss { fill: var(--moss); }
+  .seam { fill: var(--needs-you); }
+  .clay { fill: var(--ink); }
+  .pebble { fill: var(--horizon-a); }
+  .name { position: absolute; left: 40px; bottom: 64px; margin: 0; font: 500 120px/.92 var(--font-display); letter-spacing: -0.04em; color: var(--ink); }
+  .tag { position: absolute; left: 44px; bottom: 32px; max-width: 420px; margin: 0; font: 400 14px/20px var(--font-ui); color: var(--ink-muted); }
+</style>
+<div class="cover">
+  <svg width="960" height="300" viewBox="0 0 960 300" aria-hidden="true">
+    <!--
+      blocks: moss 480x72 (A horizon), needs-you 480x12 (iron seam), ink 480x200 bleeding off the bottom (clay over bedrock)
+      arrangement: a soil profile, strata stacked flush from x=480 with space-1 (4px) gaps, square corners (radius-xs scale floor)
+      pattern: discs (pebbles) cut out of the clay in the ground colour; the literal motif row, because Loam is soil and its surfaces are horizons
+      scales: gaps space-1; disc radii radius-xs 3, radius-sm 6, radius-md 10, radius-lg 14; 34 units, 8px clear between them
+    -->
+    <rect class="moss" x="480" y="20" width="480" height="72"/>
+    <rect class="seam" x="480" y="96" width="480" height="12"/>
+    <rect class="clay" x="480" y="112" width="480" height="200"/>
+    <circle class="pebble" cx="587" cy="239" r="10"/>
+    <circle class="pebble" cx="540" cy="268" r="3"/>
+    <circle class="pebble" cx="690" cy="280" r="3"/>
+    <circle class="pebble" cx="762" cy="185" r="3"/>
+    <circle class="pebble" cx="547" cy="242" r="3"/>
+    <circle class="pebble" cx="545" cy="199" r="10"/>
+    <circle class="pebble" cx="785" cy="239" r="3"/>
+    <circle class="pebble" cx="926" cy="275" r="3"/>
+    <circle class="pebble" cx="617" cy="280" r="3"/>
+    <circle class="pebble" cx="798" cy="280" r="3"/>
+    <circle class="pebble" cx="788" cy="165" r="3"/>
+    <circle class="pebble" cx="720" cy="170" r="6"/>
+    <circle class="pebble" cx="795" cy="209" r="3"/>
+    <circle class="pebble" cx="558" cy="282" r="6"/>
+    <circle class="pebble" cx="696" cy="158" r="6"/>
+    <circle class="pebble" cx="791" cy="146" r="3"/>
+    <circle class="pebble" cx="760" cy="270" r="6"/>
+    <circle class="pebble" cx="907" cy="218" r="10"/>
+    <circle class="pebble" cx="813" cy="258" r="14"/>
+    <circle class="pebble" cx="663" cy="201" r="10"/>
+    <circle class="pebble" cx="863" cy="196" r="6"/>
+    <circle class="pebble" cx="817" cy="152" r="6"/>
+    <circle class="pebble" cx="765" cy="238" r="3"/>
+    <circle class="pebble" cx="845" cy="150" r="3"/>
+    <circle class="pebble" cx="684" cy="227" r="10"/>
+    <circle class="pebble" cx="933" cy="154" r="3"/>
+    <circle class="pebble" cx="748" cy="150" r="6"/>
+    <circle class="pebble" cx="877" cy="210" r="3"/>
+    <circle class="pebble" cx="521" cy="256" r="10"/>
+    <circle class="pebble" cx="596" cy="167" r="10"/>
+    <circle class="pebble" cx="572" cy="197" r="6"/>
+    <circle class="pebble" cx="710" cy="265" r="10"/>
+    <circle class="pebble" cx="925" cy="244" r="6"/>
+    <circle class="pebble" cx="867" cy="240" r="6"/>
+  </svg>
+  <p class="name">Loam</p>
+  <p class="tag">Every Claude Code session knows where it is.</p>
+</div>

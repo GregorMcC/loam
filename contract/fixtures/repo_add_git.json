@@ -1,0 +1,15 @@
+{
+  "change_id": 24,
+  "plot": "plotaaaaab",
+  "repo": {
+    "copy": [
+      ".env"
+    ],
+    "id": "repoaaaaae",
+    "main": false,
+    "note": "",
+    "path": "/tmp/loam-contract/repos/web",
+    "setup": "make setup",
+    "version": 24
+  }
+}

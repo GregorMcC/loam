@@ -1,0 +1,18 @@
+{
+  "archived": false,
+  "created_at": "2026-01-01T00:00:00Z",
+  "id": "plotaaaaab",
+  "links": [],
+  "name": "Loam",
+  "repos": [],
+  "revision": 4,
+  "versions": {
+    "name": 1,
+    "what": 4,
+    "where": 4,
+    "why": 4
+  },
+  "what": "A personal tool.",
+  "where_it_stands": "Building.",
+  "why": "To keep work in one place."
+}

@@ -1,0 +1,195 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loam.invalid/schema/defs.json",
+  "title": "Shared definitions of the loam contract",
+  "$defs": {
+    "id": {
+      "description": "The ID of a plot, link, or repo: 10 characters from a to z and 2 to 7.",
+      "type": "string",
+      "pattern": "^[a-z2-7]{10}$"
+    },
+    "time": {
+      "description": "A UTC time in RFC 3339 format.",
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+    },
+    "changeId": {
+      "description": "The ID of a change. It is also the version of an item.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "link": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "target", "note", "position", "version"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "label": { "type": "string" },
+        "target": { "type": "string" },
+        "note": { "type": "string" },
+        "position": { "type": "integer", "minimum": 0 },
+        "version": { "$ref": "#/$defs/changeId" }
+      }
+    },
+    "plotLink": {
+      "description": "A link in a plot object. It has the fields of link, and kind. A path or vault link also has exists.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "target", "note", "position", "version", "kind"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "label": { "type": "string" },
+        "target": { "type": "string" },
+        "note": { "type": "string" },
+        "position": { "type": "integer", "minimum": 0 },
+        "version": { "$ref": "#/$defs/changeId" },
+        "kind": { "$ref": "#/$defs/linkKind" },
+        "exists": { "description": "Whether the local path exists. Present for a path or vault link only.", "type": "boolean" }
+      },
+      "if": { "properties": { "kind": { "enum": ["path", "vault"] } } },
+      "then": { "required": ["exists"] },
+      "else": { "not": { "required": ["exists"] } }
+    },
+    "linkKind": {
+      "description": "What a link target is. A path is a local path that no Obsidian vault holds. A vault link is a local path inside a vault.",
+      "enum": ["notion", "linear", "github", "url", "path", "vault"]
+    },
+    "repo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "path", "note", "main", "version"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "path": { "type": "string" },
+        "note": { "type": "string" },
+        "main": { "type": "boolean" },
+        "version": { "$ref": "#/$defs/changeId" },
+        "setup": { "description": "The setup command for worktrees of the repo path. It is left out when empty.", "type": "string", "minLength": 1 },
+        "copy": {
+          "description": "Files or globs to copy into each new worktree. It is left out when empty.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "plot": {
+      "description": "The plot object of show, new, set, and edit, and each plot of export.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "what", "why", "where_it_stands", "created_at", "archived", "links", "repos", "versions", "revision"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "name": { "type": "string" },
+        "what": { "type": "string" },
+        "why": { "type": "string" },
+        "where_it_stands": { "type": "string" },
+        "created_at": { "$ref": "#/$defs/time" },
+        "archived": { "type": "boolean" },
+        "links": { "type": "array", "items": { "$ref": "#/$defs/plotLink" } },
+        "repos": { "type": "array", "items": { "$ref": "#/$defs/repo" } },
+        "versions": {
+          "description": "Item to version. Items are name, what, why, where, link:<id>, and repo:<id>.",
+          "type": "object",
+          "propertyNames": { "pattern": "^(name|what|why|where|link:[a-z2-7]{10}|repo:[a-z2-7]{10})$" },
+          "additionalProperties": { "$ref": "#/$defs/changeId" },
+          "required": ["name", "what", "why", "where"]
+        },
+        "revision": { "$ref": "#/$defs/changeId" }
+      }
+    },
+    "plotSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "what", "created_at", "archived"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "name": { "type": "string" },
+        "what": { "type": "string" },
+        "created_at": { "$ref": "#/$defs/time" },
+        "archived": { "type": "boolean" }
+      }
+    },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["cli", "app", "session"] },
+        "session_id": { "type": "string", "minLength": 1 },
+        "loam_started": { "type": "boolean" }
+      }
+    },
+    "nullableString": { "type": ["string", "null"] },
+    "entry": {
+      "description": "A null old means the item is new. A null new means the change removed the item.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["item", "field", "old", "new"],
+      "properties": {
+        "item": { "type": "string", "pattern": "^(name|what|why|where|link:[a-z2-7]{10}|repo:[a-z2-7]{10})$" },
+        "field": { "type": "string", "minLength": 1 },
+        "old": { "$ref": "#/$defs/nullableString" },
+        "new": { "$ref": "#/$defs/nullableString" }
+      }
+    },
+    "change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "plot_id", "at", "actor", "entries", "undo_of"],
+      "properties": {
+        "id": { "$ref": "#/$defs/changeId" },
+        "plot_id": { "$ref": "#/$defs/id" },
+        "at": { "$ref": "#/$defs/time" },
+        "actor": { "$ref": "#/$defs/actor" },
+        "entries": { "type": "array", "items": { "$ref": "#/$defs/entry" } },
+        "undo_of": {
+          "description": "The ID of the change that this change reverted, or null.",
+          "type": ["integer", "null"],
+          "minimum": 1
+        }
+      }
+    },
+    "session": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session_id", "plot_id", "start_folder", "created_at"],
+      "properties": {
+        "session_id": { "type": "string", "minLength": 1 },
+        "plot_id": { "$ref": "#/$defs/id" },
+        "start_folder": { "type": "string" },
+        "created_at": { "$ref": "#/$defs/time" }
+      }
+    },
+    "worktree": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "plot_id", "repo", "name", "branch", "base", "path", "setup_done", "created_at"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "plot_id": { "$ref": "#/$defs/id" },
+        "repo": { "description": "The path of the repo.", "type": "string" },
+        "name": { "type": "string", "minLength": 1 },
+        "branch": { "type": "string", "minLength": 1 },
+        "base": { "description": "The branch that a new branch started from. It is empty for a branch that existed.", "type": "string" },
+        "path": { "type": "string" },
+        "setup_done": { "type": "boolean" },
+        "created_at": { "$ref": "#/$defs/time" }
+      }
+    },
+    "worktreeStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["worktree", "missing", "changed", "unpushed", "merged"],
+      "properties": {
+        "worktree": { "$ref": "#/$defs/worktree" },
+        "missing": { "description": "True when the worktree folder is gone.", "type": "boolean" },
+        "changed": { "description": "Files with uncommitted changes, untracked files included.", "type": "integer", "minimum": 0 },
+        "unpushed": { "description": "Commits of the branch that no remote branch holds.", "type": "integer", "minimum": 0 },
+        "merged": { "description": "True when the branch holds nothing that merged_into lacks.", "type": "boolean" },
+        "merged_into": { "description": "The branch that merged is checked against. It is left out when none is known.", "type": "string" },
+        "error": { "description": "Why a check failed. It is left out when no check failed.", "type": "string" }
+      }
+    }
+  }
+}

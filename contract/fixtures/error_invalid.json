@@ -1,0 +1,7 @@
+{
+  "error": {
+    "exit_code": 2,
+    "kind": "invalid",
+    "message": "position 99: choose a number from 1 to 2: invalid input"
+  }
+}

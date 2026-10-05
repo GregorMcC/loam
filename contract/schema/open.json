@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam open --json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["plot", "link_id", "kind", "opened_with"],
+  "properties": {
+    "plot": { "$ref": "defs.json#/$defs/id" },
+    "link_id": { "$ref": "defs.json#/$defs/id" },
+    "kind": { "$ref": "defs.json#/$defs/linkKind" },
+    "opened_with": { "enum": ["browser", "obsidian", "finder", "default_app"] }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam worktree rm --json",
+  "description": "branch_note says why the local branch is still there. It is left out when the branch was deleted.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "worktree",
+    "branch_deleted"
+  ],
+  "properties": {
+    "worktree": {
+      "$ref": "defs.json#/$defs/worktree"
+    },
+    "branch_deleted": {
+      "type": "boolean"
+    },
+    "branch_note": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

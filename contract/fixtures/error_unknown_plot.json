@@ -1,0 +1,7 @@
+{
+  "error": {
+    "exit_code": 14,
+    "kind": "unknown_plot",
+    "message": "no plot matches \"nosuchplot\""
+  }
+}

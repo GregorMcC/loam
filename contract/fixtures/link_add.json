@@ -1,0 +1,12 @@
+{
+  "change_id": 5,
+  "link": {
+    "id": "linkaaaaab",
+    "label": "Spec",
+    "note": "The v1 spec",
+    "position": 1,
+    "target": "https://example.com/spec",
+    "version": 5
+  },
+  "plot": "plotaaaaab"
+}

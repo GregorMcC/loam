@@ -1,0 +1,7 @@
+{
+  "at": "2026-01-01T00:00:00Z",
+  "cwd": "/tmp/loam-contract/repos/core",
+  "event": "Notification",
+  "notification_type": "permission_prompt",
+  "session_id": "11111111-2222-4333-8444-555555555555"
+}

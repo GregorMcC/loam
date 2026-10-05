@@ -1,0 +1,20 @@
+[
+  {
+    "changed": 0,
+    "merged": true,
+    "merged_into": "origin/main",
+    "missing": false,
+    "unpushed": 0,
+    "worktree": {
+      "base": "origin/main",
+      "branch": "fix-login",
+      "created_at": "2026-01-01T00:00:00Z",
+      "id": "wtreaaaaab",
+      "name": "fix-login",
+      "path": "/tmp/loam-contract/loamhome/worktrees/plotaaaaab/web-fix-login",
+      "plot_id": "plotaaaaab",
+      "repo": "/tmp/loam-contract/repos/web",
+      "setup_done": false
+    }
+  }
+]

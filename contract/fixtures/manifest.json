@@ -1,0 +1,659 @@
+[
+  {
+    "name": "version",
+    "args": [
+      "version",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "version"
+  },
+  {
+    "name": "list_empty",
+    "args": [
+      "list",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "list"
+  },
+  {
+    "name": "sessions_empty",
+    "args": [
+      "sessions",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "sessions"
+  },
+  {
+    "name": "changes_empty",
+    "args": [
+      "changes",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "changes"
+  },
+  {
+    "name": "new",
+    "args": [
+      "new",
+      "Loam",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "new"
+  },
+  {
+    "name": "new_app",
+    "args": [
+      "new",
+      "Loam Docs",
+      "--actor",
+      "app",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "new"
+  },
+  {
+    "name": "list",
+    "args": [
+      "list",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "list"
+  },
+  {
+    "name": "show",
+    "args": [
+      "show",
+      "plotaaaaab",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "show"
+  },
+  {
+    "name": "set",
+    "args": [
+      "set",
+      "plotaaaaab",
+      "what",
+      "A personal tool for plots.",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "set"
+  },
+  {
+    "name": "edit",
+    "args": [
+      "edit",
+      "plotaaaaab",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "edit"
+  },
+  {
+    "name": "link_add",
+    "args": [
+      "link",
+      "add",
+      "plotaaaaab",
+      "Spec",
+      "https://example.com/spec",
+      "--note",
+      "The v1 spec",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "link-add"
+  },
+  {
+    "name": "link_add_app",
+    "args": [
+      "link",
+      "add",
+      "plotaaaaab",
+      "Board",
+      "https://example.com/board",
+      "--actor",
+      "app",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "link-add"
+  },
+  {
+    "name": "link_edit",
+    "args": [
+      "link",
+      "edit",
+      "plotaaaaab",
+      "linkaaaaab",
+      "--label",
+      "Spec v1",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "link-edit"
+  },
+  {
+    "name": "link_rm",
+    "args": [
+      "link",
+      "rm",
+      "plotaaaaab",
+      "linkaaaaac",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "link-rm"
+  },
+  {
+    "name": "repo_add",
+    "args": [
+      "repo",
+      "add",
+      "plotaaaaab",
+      "/tmp/loam-contract/repos/core",
+      "--note",
+      "Go core",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "repo-add"
+  },
+  {
+    "name": "repo_add_second",
+    "args": [
+      "repo",
+      "add",
+      "plotaaaaab",
+      "/tmp/loam-contract/repos/app",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "repo-add"
+  },
+  {
+    "name": "repo_edit",
+    "args": [
+      "repo",
+      "edit",
+      "plotaaaaab",
+      "repoaaaaac",
+      "--note",
+      "Swift app",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "repo-edit"
+  },
+  {
+    "name": "repo_main",
+    "args": [
+      "repo",
+      "main",
+      "plotaaaaab",
+      "repoaaaaac",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "repo-main"
+  },
+  {
+    "name": "repo_rm",
+    "args": [
+      "repo",
+      "rm",
+      "plotaaaaab",
+      "repoaaaaab",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "repo-rm"
+  },
+  {
+    "name": "repo_add_third",
+    "args": [
+      "repo",
+      "add",
+      "plotaaaaab",
+      "/tmp/loam-contract/repos/docs",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "repo-add"
+  },
+  {
+    "name": "repo_rm_main",
+    "args": [
+      "repo",
+      "rm",
+      "plotaaaaab",
+      "repoaaaaac",
+      "--main",
+      "/tmp/loam-contract/repos/docs",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "repo-rm"
+  },
+  {
+    "name": "show_full",
+    "args": [
+      "show",
+      "plotaaaaab",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "show"
+  },
+  {
+    "name": "sessions",
+    "args": [
+      "sessions",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "sessions"
+  },
+  {
+    "name": "sessions_plot",
+    "args": [
+      "sessions",
+      "plotaaaaab",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "sessions"
+  },
+  {
+    "name": "pane_session_start",
+    "args": [
+      "hook"
+    ],
+    "exit_code": 0,
+    "schema": "pane-event"
+  },
+  {
+    "name": "pane_stop",
+    "args": [
+      "hook"
+    ],
+    "exit_code": 0,
+    "schema": "pane-event"
+  },
+  {
+    "name": "pane_notification",
+    "args": [
+      "hook"
+    ],
+    "exit_code": 0,
+    "schema": "pane-event"
+  },
+  {
+    "name": "pane_notification_permission",
+    "args": [
+      "hook"
+    ],
+    "exit_code": 0,
+    "schema": "pane-event"
+  },
+  {
+    "name": "move",
+    "args": [
+      "move",
+      "Loam Docs",
+      "1",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "move"
+  },
+  {
+    "name": "setup_check",
+    "args": [
+      "setup",
+      "--check",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "setup-check"
+  },
+  {
+    "name": "undo",
+    "args": [
+      "undo",
+      "8",
+      "--actor",
+      "app",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "undo"
+  },
+  {
+    "name": "error_undo_clash",
+    "args": [
+      "undo",
+      "3",
+      "--json"
+    ],
+    "exit_code": 11,
+    "schema": "error"
+  },
+  {
+    "name": "undo_overwrite",
+    "args": [
+      "undo",
+      "3",
+      "--overwrite",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "undo"
+  },
+  {
+    "name": "changes",
+    "args": [
+      "changes",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "changes"
+  },
+  {
+    "name": "changes_plot",
+    "args": [
+      "changes",
+      "plotaaaaab",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "changes"
+  },
+  {
+    "name": "changes_since",
+    "args": [
+      "changes",
+      "--since",
+      "9",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "changes"
+  },
+  {
+    "name": "export",
+    "args": [
+      "export",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "export"
+  },
+  {
+    "name": "export_changes",
+    "args": [
+      "export",
+      "--changes",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "export"
+  },
+  {
+    "name": "show_links",
+    "args": [
+      "show",
+      "plotaaaaab",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "show"
+  },
+  {
+    "name": "open_url",
+    "args": [
+      "open",
+      "plotaaaaab",
+      "GitHub repo",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "open"
+  },
+  {
+    "name": "open_vault",
+    "args": [
+      "open",
+      "plotaaaaab",
+      "Vault note",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "open"
+  },
+  {
+    "name": "open_folder",
+    "args": [
+      "open",
+      "plotaaaaab",
+      "Core folder",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "open"
+  },
+  {
+    "name": "error_link_path_missing",
+    "args": [
+      "open",
+      "plotaaaaab",
+      "Missing note",
+      "--json"
+    ],
+    "exit_code": 12,
+    "schema": "error"
+  },
+  {
+    "name": "error_generic",
+    "args": [
+      "undo",
+      "9999",
+      "--json"
+    ],
+    "exit_code": 1,
+    "schema": "error"
+  },
+  {
+    "name": "error_invalid",
+    "args": [
+      "move",
+      "plotaaaaab",
+      "99",
+      "--json"
+    ],
+    "exit_code": 2,
+    "schema": "error"
+  },
+  {
+    "name": "error_stale",
+    "args": [
+      "set",
+      "plotaaaaab",
+      "what",
+      "x",
+      "--expect",
+      "what=1",
+      "--json"
+    ],
+    "exit_code": 10,
+    "schema": "error"
+  },
+  {
+    "name": "error_unknown_plot",
+    "args": [
+      "show",
+      "nosuchplot",
+      "--json"
+    ],
+    "exit_code": 14,
+    "schema": "error"
+  },
+  {
+    "name": "error_ambiguous",
+    "args": [
+      "show",
+      "lo",
+      "--json"
+    ],
+    "exit_code": 15,
+    "schema": "error"
+  },
+  {
+    "name": "repo_add_git",
+    "args": [
+      "repo",
+      "add",
+      "plotaaaaab",
+      "/tmp/loam-contract/repos/web",
+      "--setup",
+      "make setup",
+      "--copy",
+      ".env",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "repo-add"
+  },
+  {
+    "name": "repo_edit_setup",
+    "args": [
+      "repo",
+      "edit",
+      "plotaaaaab",
+      "repoaaaaae",
+      "--setup",
+      "npm ci",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "repo-edit"
+  },
+  {
+    "name": "worktree_new",
+    "args": [
+      "worktree",
+      "new",
+      "plotaaaaab",
+      "/tmp/loam-contract/repos/web",
+      "fix-login",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "worktree-new"
+  },
+  {
+    "name": "worktree_list",
+    "args": [
+      "worktree",
+      "list",
+      "plotaaaaab",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "worktree-list"
+  },
+  {
+    "name": "worktree_rm",
+    "args": [
+      "worktree",
+      "rm",
+      "plotaaaaab",
+      "fix-login",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "worktree-rm"
+  },
+  {
+    "name": "worktree_list_empty",
+    "args": [
+      "worktree",
+      "list",
+      "plotaaaaab",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "worktree-list"
+  },
+  {
+    "name": "archive",
+    "args": [
+      "archive",
+      "Loam Docs",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "show"
+  },
+  {
+    "name": "list_archived",
+    "args": [
+      "list",
+      "--archived",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "list"
+  },
+  {
+    "name": "unarchive",
+    "args": [
+      "unarchive",
+      "Loam Docs",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "show"
+  },
+  {
+    "name": "error_delete_not_archived",
+    "args": [
+      "delete",
+      "plotaaaaad",
+      "--json"
+    ],
+    "exit_code": 1,
+    "schema": "error"
+  },
+  {
+    "name": "delete",
+    "args": [
+      "delete",
+      "plotaaaaad",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "delete"
+  },
+  {
+    "name": "repo_add_dirty",
+    "args": [
+      "repo",
+      "add",
+      "plotaaaaab",
+      "/tmp/loam-contract/repos/dirty",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "repo-add"
+  }
+]

@@ -1,0 +1,14 @@
+{
+  "ok": false,
+  "steps": [
+    {
+      "detail": "the loam MCP server points at a different binary",
+      "done": false,
+      "id": "mcp"
+    },
+    {
+      "done": true,
+      "id": "trust"
+    }
+  ]
+}

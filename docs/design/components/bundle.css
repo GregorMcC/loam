@@ -1,0 +1,93 @@
+/* Loam components. Every value comes from tokens.css. Class prefix: loam- */
+.loam-surface { background: var(--horizon-a); color: var(--ink); font-family: var(--font-ui); font-size: 13px; line-height: 19px; -webkit-font-smoothing: antialiased; }
+.loam-surface *, .loam-surface *::before, .loam-surface *::after { box-sizing: border-box; }
+.loam-surface :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* Attention dot: filled = Needs you, ring = Done, unread */
+.loam-dot { position: relative; display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.loam-dot--active { background: var(--moss); }
+.loam-dot--idle { background: var(--rule); }
+.loam-dot--needs { background: var(--needs-you); }
+.loam-dot--unread { border: 1.5px solid var(--done-unread); }
+.loam-dot--needs.is-arriving::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 1.5px solid var(--needs-you); animation: loam-halo var(--duration-halo) var(--ease-settle) 3; }
+@keyframes loam-halo { from { transform: scale(1); opacity: .9; } to { transform: scale(3.2); opacity: 0; } }
+
+/* Count badge */
+.loam-badge { display: inline-flex; align-items: center; gap: var(--space-1); height: 18px; padding-inline: 7px; border-radius: var(--radius-pill); background: var(--needs-you-wash); color: var(--needs-you); font-size: 11px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.loam-badge .loam-dot { width: 6px; height: 6px; }
+
+/* Plot row (sidebar) */
+.loam-plot-row { display: flex; align-items: center; gap: var(--space-2); height: 30px; padding-inline: var(--space-3); border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; color: var(--ink); cursor: default; user-select: none; transition: background var(--duration-fast) linear; }
+.loam-plot-row:hover { background: var(--horizon-b); }
+.loam-plot-row.is-selected { background: var(--moss-wash); }
+.loam-plot-row.is-archived { color: var(--ink-muted); }
+.loam-plot-row__name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.loam-section-label { font-size: 10.5px; line-height: 14px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-faint); padding: var(--space-2) var(--space-3); }
+
+/* Pane tab */
+.loam-tabs { display: flex; height: 36px; background: var(--horizon-o); border-bottom: 1px solid var(--rule); }
+.loam-tab { position: relative; display: flex; align-items: center; gap: var(--space-2); padding-inline: var(--space-4); font-size: 12.5px; font-weight: 500; color: var(--ink-muted); border-right: 1px solid var(--rule); transition: color var(--duration-fast) linear, background var(--duration-fast) linear; }
+.loam-tab:hover { color: var(--ink); }
+.loam-tab.is-selected { color: var(--ink); background: var(--bedrock); }
+.loam-tab.is-selected::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--moss); }
+.loam-tab__kind { font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint); }
+
+/* Link row */
+.loam-link { display: flex; align-items: baseline; gap: var(--space-2); padding: 5px var(--space-2); margin-inline: calc(var(--space-2) * -1); border-radius: var(--radius-sm); }
+.loam-link:hover { background: var(--horizon-b); }
+.loam-chip { flex: none; display: inline-block; min-width: 52px; text-align: center; padding: 1px 6px; border-radius: var(--radius-xs); background: var(--horizon-b); border: 1px solid var(--rule); color: var(--ink-muted); font-size: 10.5px; font-weight: 600; line-height: 16px; }
+.loam-link__label { color: var(--moss); font-weight: 500; min-width: 0; }
+.loam-link__note { color: var(--ink-muted); font-size: 11px; min-width: 0; }
+.loam-link.is-missing .loam-link__label { color: var(--rust); text-decoration: line-through; text-decoration-thickness: 1px; }
+.loam-link.is-missing .loam-chip { border-color: var(--rust); color: var(--rust); }
+
+/* Change row */
+.loam-change { display: grid; grid-template-columns: 1fr auto; column-gap: var(--space-3); padding-block: var(--space-2); border-top: 1px solid var(--rule); }
+.loam-change__what { color: var(--ink); }
+.loam-change__meta { grid-column: 1; color: var(--ink-muted); font-size: 11px; line-height: 14px; }
+.loam-change__action { grid-row: 1 / span 2; grid-column: 2; align-self: center; }
+.loam-change.is-undone .loam-change__what { color: var(--ink-muted); }
+.loam-change__undone { color: var(--ink-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.loam-change.is-new { animation: loam-grow var(--duration-slow) var(--ease-settle); }
+@keyframes loam-grow { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+
+/* Buttons */
+.loam-btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-1); height: 26px; padding-inline: var(--space-3); border-radius: var(--radius-sm); border: 1px solid var(--edge); background: var(--horizon-b); color: var(--ink); font: 500 12.5px/1 var(--font-ui); cursor: default; transition: transform var(--duration-fast) var(--ease-settle), background var(--duration-fast) linear; }
+.loam-btn:active { transform: scale(.97); }
+.loam-btn--primary { background: var(--moss); border-color: var(--moss); color: var(--on-moss); font-weight: 600; }
+.loam-btn--quiet { background: transparent; border-color: transparent; color: var(--moss); padding-inline: var(--space-2); }
+.loam-btn--quiet:hover { background: var(--moss-wash); }
+.loam-btn--danger { background: transparent; border-color: var(--rust); color: var(--rust); }
+.loam-btn--danger.is-armed { background: var(--rust); color: var(--horizon-b); }
+.loam-btn[disabled] { color: var(--ink-faint); border-color: var(--rule); background: transparent; }
+.loam-kbd { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-muted); border: 1px solid var(--rule); border-radius: var(--radius-xs); padding: 0 4px; line-height: 16px; }
+
+/* Pane banner */
+.loam-banner { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); font-size: 12.5px; }
+.loam-banner--needs { background: var(--needs-you-wash); color: var(--needs-you); box-shadow: inset 3px 0 0 var(--needs-you); }
+.loam-banner--ended { background: var(--horizon-a); color: var(--ink-muted); border: 1px solid var(--rule); }
+.loam-banner--error { background: var(--rust-wash); color: var(--rust); }
+.loam-banner__text { flex: 1; min-width: 0; }
+
+/* Quick switcher */
+.loam-switcher { width: 560px; max-width: 100%; border-radius: var(--radius-lg); background: var(--horizon-b); box-shadow: var(--shadow-switcher); border: 1px solid var(--rule); overflow: hidden; animation: loam-drop var(--duration-slow) var(--ease-settle); }
+@keyframes loam-drop { from { opacity: 0; transform: translateY(-8px) scale(.985); } to { opacity: 1; transform: none; } }
+.loam-switcher__input { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--rule); font-size: 15px; }
+.loam-switcher__input input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; }
+.loam-switcher__input input::placeholder { color: var(--ink-faint); }
+.loam-switcher__list { padding: var(--space-2); display: grid; gap: 2px; }
+.loam-result { display: grid; grid-template-columns: 20px 1fr auto; align-items: center; gap: var(--space-2); height: 34px; padding-inline: var(--space-2); border-radius: var(--radius-sm); }
+.loam-result.is-selected { background: var(--moss-wash); }
+.loam-result__kind { color: var(--ink-faint); font-size: 10.5px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
+.loam-result mark { background: none; color: var(--moss); font-weight: 650; }
+.loam-result__plot { color: var(--ink-muted); font-size: 11px; }
+
+/* Terminal */
+.loam-term { background: var(--bedrock); color: var(--ink); font: 13px/17px var(--font-mono); padding: var(--space-3) var(--space-4); }
+.loam-cursor { display: inline-block; width: .6em; height: 1.1em; vertical-align: -.2em; background: var(--cursor); animation: loam-blink 1.1s steps(1) infinite; }
+@keyframes loam-blink { 50% { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .loam-dot--needs.is-arriving::after, .loam-change.is-new, .loam-switcher, .loam-cursor { animation: none; }
+  .loam-btn:active { transform: none; }
+}

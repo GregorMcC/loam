@@ -1,0 +1,111 @@
+{
+  "archived": false,
+  "created_at": "2026-01-01T00:00:00Z",
+  "id": "plotaaaaab",
+  "links": [
+    {
+      "id": "linkaaaaab",
+      "kind": "url",
+      "label": "Spec v1",
+      "note": "The v1 spec",
+      "position": 1,
+      "target": "https://example.com/spec",
+      "version": 7
+    },
+    {
+      "id": "linkaaaaac",
+      "kind": "url",
+      "label": "Board",
+      "note": "",
+      "position": 2,
+      "target": "https://example.com/board",
+      "version": 16
+    },
+    {
+      "id": "linkaaaaad",
+      "kind": "notion",
+      "label": "Notion page",
+      "note": "",
+      "position": 3,
+      "target": "https://www.notion.so/Loam-0123456789abcdef",
+      "version": 18
+    },
+    {
+      "id": "linkaaaaae",
+      "kind": "linear",
+      "label": "Linear issue",
+      "note": "",
+      "position": 4,
+      "target": "https://linear.app/acme/issue/ENG-1/fix",
+      "version": 19
+    },
+    {
+      "id": "linkaaaaaf",
+      "kind": "github",
+      "label": "GitHub repo",
+      "note": "",
+      "position": 5,
+      "target": "https://github.com/GregorMcC/loam",
+      "version": 20
+    },
+    {
+      "exists": true,
+      "id": "linkaaaaag",
+      "kind": "path",
+      "label": "Core folder",
+      "note": "",
+      "position": 6,
+      "target": "/tmp/loam-contract/repos/core",
+      "version": 21
+    },
+    {
+      "exists": true,
+      "id": "linkaaaaah",
+      "kind": "vault",
+      "label": "Vault note",
+      "note": "",
+      "position": 7,
+      "target": "/tmp/loam-contract/vault/note.md",
+      "version": 22
+    },
+    {
+      "exists": false,
+      "id": "linkaaaaai",
+      "kind": "vault",
+      "label": "Missing note",
+      "note": "",
+      "position": 8,
+      "target": "/tmp/loam-contract/vault/missing.md",
+      "version": 23
+    }
+  ],
+  "name": "Loam",
+  "repos": [
+    {
+      "id": "repoaaaaad",
+      "main": true,
+      "note": "",
+      "path": "/tmp/loam-contract/repos/docs",
+      "version": 15
+    }
+  ],
+  "revision": 23,
+  "versions": {
+    "link:linkaaaaab": 7,
+    "link:linkaaaaac": 16,
+    "link:linkaaaaad": 18,
+    "link:linkaaaaae": 19,
+    "link:linkaaaaaf": 20,
+    "link:linkaaaaag": 21,
+    "link:linkaaaaah": 22,
+    "link:linkaaaaai": 23,
+    "name": 1,
+    "repo:repoaaaaad": 15,
+    "what": 17,
+    "where": 4,
+    "why": 4
+  },
+  "what": "",
+  "where_it_stands": "Building.",
+  "why": "To keep work in one place."
+}

@@ -1,0 +1,38 @@
+{
+  "archived": false,
+  "created_at": "2026-01-01T00:00:00Z",
+  "id": "plotaaaaab",
+  "links": [
+    {
+      "id": "linkaaaaab",
+      "kind": "url",
+      "label": "Spec v1",
+      "note": "The v1 spec",
+      "position": 1,
+      "target": "https://example.com/spec",
+      "version": 7
+    }
+  ],
+  "name": "Loam",
+  "repos": [
+    {
+      "id": "repoaaaaad",
+      "main": true,
+      "note": "",
+      "path": "/tmp/loam-contract/repos/docs",
+      "version": 15
+    }
+  ],
+  "revision": 15,
+  "versions": {
+    "link:linkaaaaab": 7,
+    "name": 1,
+    "repo:repoaaaaad": 15,
+    "what": 4,
+    "where": 4,
+    "why": 4
+  },
+  "what": "A personal tool.",
+  "where_it_stands": "Building.",
+  "why": "To keep work in one place."
+}

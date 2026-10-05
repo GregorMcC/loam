@@ -1,0 +1,12 @@
+{
+  "error": {
+    "details": {
+      "link_id": "linkaaaaai",
+      "path": "/tmp/loam-contract/vault/missing.md",
+      "plot_id": "plotaaaaab"
+    },
+    "exit_code": 12,
+    "kind": "link_path_missing",
+    "message": "the path does not exist: /tmp/loam-contract/vault/missing.md"
+  }
+}

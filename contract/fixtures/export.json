@@ -1,0 +1,70 @@
+{
+  "plots": [
+    {
+      "archived": false,
+      "created_at": "2026-01-01T00:00:00Z",
+      "id": "plotaaaaac",
+      "links": [],
+      "name": "Loam Docs",
+      "repos": [],
+      "revision": 2,
+      "versions": {
+        "name": 2,
+        "what": 2,
+        "where": 2,
+        "why": 2
+      },
+      "what": "",
+      "where_it_stands": "",
+      "why": ""
+    },
+    {
+      "archived": false,
+      "created_at": "2026-01-01T00:00:00Z",
+      "id": "plotaaaaab",
+      "links": [
+        {
+          "id": "linkaaaaab",
+          "kind": "url",
+          "label": "Spec v1",
+          "note": "The v1 spec",
+          "position": 1,
+          "target": "https://example.com/spec",
+          "version": 7
+        },
+        {
+          "id": "linkaaaaac",
+          "kind": "url",
+          "label": "Board",
+          "note": "",
+          "position": 2,
+          "target": "https://example.com/board",
+          "version": 16
+        }
+      ],
+      "name": "Loam",
+      "repos": [
+        {
+          "id": "repoaaaaad",
+          "main": true,
+          "note": "",
+          "path": "/tmp/loam-contract/repos/docs",
+          "version": 15
+        }
+      ],
+      "revision": 17,
+      "versions": {
+        "link:linkaaaaab": 7,
+        "link:linkaaaaac": 16,
+        "name": 1,
+        "repo:repoaaaaad": 15,
+        "what": 17,
+        "where": 4,
+        "why": 4
+      },
+      "what": "",
+      "where_it_stands": "Building.",
+      "why": "To keep work in one place."
+    }
+  ]
+}

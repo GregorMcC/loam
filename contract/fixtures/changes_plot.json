@@ -1,0 +1,450 @@
+{
+  "changes": [
+    {
+      "actor": {
+        "kind": "cli"
+      },
+      "at": "2026-01-01T00:00:00Z",
+      "entries": [
+        {
+          "field": "value",
+          "item": "name",
+          "new": "Loam",
+          "old": null
+        },
+        {
+          "field": "value",
+          "item": "what",
+          "new": "",
+          "old": null
+        },
+        {
+          "field": "value",
+          "item": "why",
+          "new": "",
+          "old": null
+        },
+        {
+          "field": "value",
+          "item": "where",
+          "new": "",
+          "old": null
+        }
+      ],
+      "id": 1,
+      "plot_id": "plotaaaaab",
+      "undo_of": null
+    },
+    {
+      "actor": {
+        "kind": "cli"
+      },
+      "at": "2026-01-01T00:00:00Z",
+      "entries": [
+        {
+          "field": "value",
+          "item": "what",
+          "new": "A personal tool for plots.",
+          "old": ""
+        }
+      ],
+      "id": 3,
+      "plot_id": "plotaaaaab",
+      "undo_of": null
+    },
+    {
+      "actor": {
+        "kind": "cli"
+      },
+      "at": "2026-01-01T00:00:00Z",
+      "entries": [
+        {
+          "field": "value",
+          "item": "what",
+          "new": "A personal tool.",
+          "old": "A personal tool for plots."
+        },
+        {
+          "field": "value",
+          "item": "why",
+          "new": "To keep work in one place.",
+          "old": ""
+        },
+        {
+          "field": "value",
+          "item": "where",
+          "new": "Building.",
+          "old": ""
+        }
+      ],
+      "id": 4,
+      "plot_id": "plotaaaaab",
+      "undo_of": null
+    },
+    {
+      "actor": {
+        "kind": "cli"
+      },
+      "at": "2026-01-01T00:00:00Z",
+      "entries": [
+        {
+          "field": "label",
+          "item": "link:linkaaaaab",
+          "new": "Spec",
+          "old": null
+        },
+        {
+          "field": "target",
+          "item": "link:linkaaaaab",
+          "new": "https://example.com/spec",
+          "old": null
+        },
+        {
+          "field": "note",
+          "item": "link:linkaaaaab",
+          "new": "The v1 spec",
+          "old": null
+        },
+        {
+          "field": "position",
+          "item": "link:linkaaaaab",
+          "new": "1",
+          "old": null
+        }
+      ],
+      "id": 5,
+      "plot_id": "plotaaaaab",
+      "undo_of": null
+    },
+    {
+      "actor": {
+        "kind": "app"
+      },
+      "at": "2026-01-01T00:00:00Z",
+      "entries": [
+        {
+          "field": "label",
+          "item": "link:linkaaaaac",
+          "new": "Board",
+          "old": null
+        },
+        {
+          "field": "target",
+          "item": "link:linkaaaaac",
+          "new": "https://example.com/board",
+          "old": null
+        },
+        {
+          "field": "note",
+          "item": "link:linkaaaaac",
+          "new": "",
+          "old": null
+        },
+        {
+          "field": "position",
+          "item": "link:linkaaaaac",
+          "new": "2",
+          "old": null
+        }
+      ],
+      "id": 6,
+      "plot_id": "plotaaaaab",
+      "undo_of": null
+    },
+    {
+      "actor": {
+        "kind": "cli"
+      },
+      "at": "2026-01-01T00:00:00Z",
+      "entries": [
+        {
+          "field": "label",
+          "item": "link:linkaaaaab",
+          "new": "Spec v1",
+          "old": "Spec"
+        }
+      ],
+      "id": 7,
+      "plot_id": "plotaaaaab",
+      "undo_of": null
+    },
+    {
+      "actor": {
+        "kind": "cli"
+      },
+      "at": "2026-01-01T00:00:00Z",
+      "entries": [
+        {
+          "field": "label",
+          "item": "link:linkaaaaac",
+          "new": null,
+          "old": "Board"
+        },
+        {
+          "field": "target",
+          "item": "link:linkaaaaac",
+          "new": null,
+          "old": "https://example.com/board"
+        },
+        {
+          "field": "note",
+          "item": "link:linkaaaaac",
+          "new": null,
+          "old": ""
+        },
+        {
+          "field": "position",
+          "item": "link:linkaaaaac",
+          "new": null,
+          "old": "2"
+        }
+      ],
+      "id": 8,
+      "plot_id": "plotaaaaab",
+      "undo_of": null
+    },
+    {
+      "actor": {
+        "kind": "cli"
+      },
+      "at": "2026-01-01T00:00:00Z",
+      "entries": [
+        {
+          "field": "path",
+          "item": "repo:repoaaaaab",
+          "new": "/tmp/loam-contract/repos/core",
+          "old": null
+        },
+        {
+          "field": "note",
+          "item": "repo:repoaaaaab",
+          "new": "Go core",
+          "old": null
+        },
+        {
+          "field": "main",
+          "item": "repo:repoaaaaab",
+          "new": "1",
+          "old": null
+        }
+      ],
+      "id": 9,
+      "plot_id": "plotaaaaab",
+      "undo_of": null
+    },
+    {
+      "actor": {
+        "kind": "cli"
+      },
+      "at": "2026-01-01T00:00:00Z",
+      "entries": [
+        {
+          "field": "path",
+          "item": "repo:repoaaaaac",
+          "new": "/tmp/loam-contract/repos/app",
+          "old": null
+        },
+        {
+          "field": "note",
+          "item": "repo:repoaaaaac",
+          "new": "",
+          "old": null
+        },
+        {
+          "field": "main",
+          "item": "repo:repoaaaaac",
+          "new": "0",
+          "old": null
+        }
+      ],
+      "id": 10,
+      "plot_id": "plotaaaaab",
+      "undo_of": null
+    },
+    {
+      "actor": {
+        "kind": "cli"
+      },
+      "at": "2026-01-01T00:00:00Z",
+      "entries": [
+        {
+          "field": "note",
+          "item": "repo:repoaaaaac",
+          "new": "Swift app",
+          "old": ""
+        }
+      ],
+      "id": 11,
+      "plot_id": "plotaaaaab",
+      "undo_of": null
+    },
+    {
+      "actor": {
+        "kind": "cli"
+      },
+      "at": "2026-01-01T00:00:00Z",
+      "entries": [
+        {
+          "field": "main",
+          "item": "repo:repoaaaaab",
+          "new": "0",
+          "old": "1"
+        },
+        {
+          "field": "main",
+          "item": "repo:repoaaaaac",
+          "new": "1",
+          "old": "0"
+        }
+      ],
+      "id": 12,
+      "plot_id": "plotaaaaab",
+      "undo_of": null
+    },
+    {
+      "actor": {
+        "kind": "cli"
+      },
+      "at": "2026-01-01T00:00:00Z",
+      "entries": [
+        {
+          "field": "path",
+          "item": "repo:repoaaaaab",
+          "new": null,
+          "old": "/tmp/loam-contract/repos/core"
+        },
+        {
+          "field": "note",
+          "item": "repo:repoaaaaab",
+          "new": null,
+          "old": "Go core"
+        },
+        {
+          "field": "main",
+          "item": "repo:repoaaaaab",
+          "new": null,
+          "old": "0"
+        }
+      ],
+      "id": 13,
+      "plot_id": "plotaaaaab",
+      "undo_of": null
+    },
+    {
+      "actor": {
+        "kind": "cli"
+      },
+      "at": "2026-01-01T00:00:00Z",
+      "entries": [
+        {
+          "field": "path",
+          "item": "repo:repoaaaaad",
+          "new": "/tmp/loam-contract/repos/docs",
+          "old": null
+        },
+        {
+          "field": "note",
+          "item": "repo:repoaaaaad",
+          "new": "",
+          "old": null
+        },
+        {
+          "field": "main",
+          "item": "repo:repoaaaaad",
+          "new": "0",
+          "old": null
+        }
+      ],
+      "id": 14,
+      "plot_id": "plotaaaaab",
+      "undo_of": null
+    },
+    {
+      "actor": {
+        "kind": "cli"
+      },
+      "at": "2026-01-01T00:00:00Z",
+      "entries": [
+        {
+          "field": "path",
+          "item": "repo:repoaaaaac",
+          "new": null,
+          "old": "/tmp/loam-contract/repos/app"
+        },
+        {
+          "field": "note",
+          "item": "repo:repoaaaaac",
+          "new": null,
+          "old": "Swift app"
+        },
+        {
+          "field": "main",
+          "item": "repo:repoaaaaac",
+          "new": null,
+          "old": "1"
+        },
+        {
+          "field": "main",
+          "item": "repo:repoaaaaad",
+          "new": "1",
+          "old": "0"
+        }
+      ],
+      "id": 15,
+      "plot_id": "plotaaaaab",
+      "undo_of": null
+    },
+    {
+      "actor": {
+        "kind": "app"
+      },
+      "at": "2026-01-01T00:00:00Z",
+      "entries": [
+        {
+          "field": "label",
+          "item": "link:linkaaaaac",
+          "new": "Board",
+          "old": null
+        },
+        {
+          "field": "target",
+          "item": "link:linkaaaaac",
+          "new": "https://example.com/board",
+          "old": null
+        },
+        {
+          "field": "note",
+          "item": "link:linkaaaaac",
+          "new": "",
+          "old": null
+        },
+        {
+          "field": "position",
+          "item": "link:linkaaaaac",
+          "new": "2",
+          "old": null
+        }
+      ],
+      "id": 16,
+      "plot_id": "plotaaaaab",
+      "undo_of": 8
+    },
+    {
+      "actor": {
+        "kind": "cli"
+      },
+      "at": "2026-01-01T00:00:00Z",
+      "entries": [
+        {
+          "field": "value",
+          "item": "what",
+          "new": "",
+          "old": "A personal tool."
+        }
+      ],
+      "id": 17,
+      "plot_id": "plotaaaaab",
+      "undo_of": 3
+    }
+  ]
+}

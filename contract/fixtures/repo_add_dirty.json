@@ -1,0 +1,14 @@
+{
+  "change_id": 26,
+  "plot": "plotaaaaab",
+  "repo": {
+    "id": "repoaaaaaf",
+    "main": false,
+    "note": "",
+    "path": "/tmp/loam-contract/repos/dirty",
+    "version": 26
+  },
+  "warnings": [
+    "dirty has uncommitted changes, so Loam left it on main."
+  ]
+}

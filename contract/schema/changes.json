@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam changes --json",
+  "description": "The change log, newest last. changes is [] when nothing matches.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["changes"],
+  "properties": {
+    "changes": { "type": "array", "items": { "$ref": "defs.json#/$defs/change" } }
+  }
+}

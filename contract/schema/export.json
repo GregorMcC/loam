@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam export [--changes]",
+  "description": "plots holds the plot objects in the plot order. changes is present only with --changes, oldest first.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["plots"],
+  "properties": {
+    "plots": { "type": "array", "items": { "$ref": "defs.json#/$defs/plot" } },
+    "changes": { "type": "array", "items": { "$ref": "defs.json#/$defs/change" } }
+  }
+}

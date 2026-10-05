@@ -1,0 +1,11 @@
+{
+  "change_id": 11,
+  "plot": "plotaaaaab",
+  "repo": {
+    "id": "repoaaaaac",
+    "main": false,
+    "note": "Swift app",
+    "path": "/tmp/loam-contract/repos/app",
+    "version": 11
+  }
+}

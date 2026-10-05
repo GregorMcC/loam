@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam list --json",
+  "description": "The plots in the stored plot order. It is [] when no plot exists.",
+  "type": "array",
+  "items": { "$ref": "defs.json#/$defs/plotSummary" }
+}

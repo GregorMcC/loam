@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <g transform="matrix(1.24272 0 0 1.24272 -124.272 -124.272)">
+    <path d="M512 522 C 512 470, 508 430, 512 372" fill="none" stroke="#94c26e" stroke-linecap="round" stroke-width="34"/>
+    <path d="M512 410 C 560 330, 650 318, 700 340 C 660 410, 580 430, 512 410Z" fill="#94c26e"/>
+    <path d="M510 452 C 470 392, 400 384, 352 404 C 388 462, 452 474, 510 452Z" fill="#7fae5b"/>
+  </g>
+</svg>

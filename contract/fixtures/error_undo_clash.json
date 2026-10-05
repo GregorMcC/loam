@@ -1,0 +1,50 @@
+{
+  "error": {
+    "details": {
+      "change_id": 3,
+      "later_changes": [
+        {
+          "actor": {
+            "kind": "cli"
+          },
+          "at": "2026-01-01T00:00:00Z",
+          "entries": [
+            {
+              "field": "value",
+              "item": "what",
+              "new": "A personal tool.",
+              "old": "A personal tool for plots."
+            },
+            {
+              "field": "value",
+              "item": "why",
+              "new": "To keep work in one place.",
+              "old": ""
+            },
+            {
+              "field": "value",
+              "item": "where",
+              "new": "Building.",
+              "old": ""
+            }
+          ],
+          "id": 4,
+          "plot_id": "plotaaaaab",
+          "undo_of": null
+        }
+      ],
+      "plot_id": "plotaaaaab",
+      "undo_would_write": [
+        {
+          "field": "value",
+          "item": "what",
+          "new": "",
+          "old": "A personal tool."
+        }
+      ]
+    },
+    "exit_code": 11,
+    "kind": "undo_clash",
+    "message": "undo of change 3 clashes with later change 4 to the same items"
+  }
+}

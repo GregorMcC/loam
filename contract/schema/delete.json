@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam delete --json",
+  "description": "trash is the new path of the plot folder. It is an empty string when the plot had no folder. claude_files lists the folders of Claude Code's own files that Loam did not remove. It is [] when there are none.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["plot", "name", "trash", "claude_files"],
+  "properties": {
+    "plot": { "$ref": "defs.json#/$defs/id" },
+    "name": { "type": "string" },
+    "trash": { "type": "string" },
+    "claude_files": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    }
+  }
+}

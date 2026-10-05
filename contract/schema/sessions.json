@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam sessions --json",
+  "description": "Session records, newest first. It is [] when no record exists.",
+  "type": "array",
+  "items": { "$ref": "defs.json#/$defs/session" }
+}

@@ -1,0 +1,4 @@
+/bin/
+/loam
+*.test
+*.out

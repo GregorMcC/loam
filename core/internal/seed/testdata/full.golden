@@ -1,0 +1,36 @@
+<!-- loam-revision: 1 -->
+# Plot: Design spec
+
+Loam wrote this file from plot PLOTID. Do not edit it. Loam replaces it when the plot changes.
+
+## How to use this plot
+
+- This session belongs to the plot "Design spec". The plot has a brief, repos, and links.
+- The plot can change while you work. Before you rely on a plot detail, call `get_plot`.
+- To change the plot, use the Loam MCP tools (`mcp__loam__*`), not the `loam` CLI. Loam records each change in the change log.
+- When the work moves on, call `set_where_it_stands` with your proposed text.
+- A link is a pointer, not content. Fetch a link only when the task needs it, through your own connectors. If you have no connector for a link, tell me.
+- You can read repos and local links directly.
+
+## Brief
+
+### What
+
+An approved v1 spec.
+
+### Why
+
+A plot gives each session the purpose.
+
+### Where it stands
+
+7 tickets are resolved.
+
+## Repos
+
+- `/Users/me/Development/loam`: the Loam repo
+
+## Links
+
+- Spec notes: `/Users/me/Notes/Spec` (local): research notes
+- [ghostty-org/ghostty](https://github.com/ghostty-org/ghostty): the libghostty source

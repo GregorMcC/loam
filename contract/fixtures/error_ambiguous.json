@@ -1,0 +1,7 @@
+{
+  "error": {
+    "exit_code": 15,
+    "kind": "ambiguous",
+    "message": "\"lo\" matches Loam (plotaaaaab), Loam Docs (plotaaaaac): ambiguous plot"
+  }
+}

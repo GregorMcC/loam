@@ -1,0 +1,12 @@
+{
+  "change_id": 6,
+  "link": {
+    "id": "linkaaaaac",
+    "label": "Board",
+    "note": "",
+    "position": 2,
+    "target": "https://example.com/board",
+    "version": 6
+  },
+  "plot": "plotaaaaab"
+}

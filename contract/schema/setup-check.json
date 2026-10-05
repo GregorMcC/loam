@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam setup --check --json",
+  "description": "ok is true when every step is done. A later version can add steps: the app must ignore step IDs that it does not know.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ok", "steps"],
+  "properties": {
+    "ok": { "type": "boolean" },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "done"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "done": { "type": "boolean" },
+          "detail": { "description": "For a person to read. Present only for a step that is not done.", "type": "string", "minLength": 1 }
+        },
+        "if": { "properties": { "done": { "const": true } } },
+        "then": { "not": { "required": ["detail"] } }
+      }
+    }
+  }
+}

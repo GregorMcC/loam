@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam move --json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["plot", "position"],
+  "properties": {
+    "plot": { "$ref": "defs.json#/$defs/id" },
+    "position": { "type": "integer", "minimum": 1 }
+  }
+}

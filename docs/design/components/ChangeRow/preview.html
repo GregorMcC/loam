@@ -1,0 +1,10 @@
+<!-- @dsCard group="Plot panel" height=210 subtitle="A change, an undone change, a new change" -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Martian+Mono:wght@400;500&display=swap">
+<div class="loam-surface" style="padding:8px 16px;width:360px;max-width:100%">
+  <div class="loam-change is-new"><span class="loam-change__what">Claude set Where it stands</span><span class="loam-change__meta">14:02 · seeded session</span><span class="loam-change__action"><button class="loam-btn loam-btn--quiet">Undo</button></span></div>
+  <div class="loam-change"><span class="loam-change__what">You added the link Loam roadmap</span><span class="loam-change__meta">13:47 · CLI</span><span class="loam-change__action"><button class="loam-btn loam-btn--quiet">Undo</button></span></div>
+  <div class="loam-change is-undone"><span class="loam-change__what">Claude renamed the plot</span><span class="loam-change__meta">13:20 · seeded session</span><span class="loam-change__action loam-change__undone">undone 13:31</span></div>
+</div>
+<script>
+const r=document.querySelector('.is-new');setInterval(()=>{r.classList.remove('is-new');void r.offsetWidth;r.classList.add('is-new')},5000);
+</script>

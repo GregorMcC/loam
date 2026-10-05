@@ -1,0 +1,11 @@
+{
+  "change_id": 9,
+  "plot": "plotaaaaab",
+  "repo": {
+    "id": "repoaaaaab",
+    "main": true,
+    "note": "Go core",
+    "path": "/tmp/loam-contract/repos/core",
+    "version": 9
+  }
+}

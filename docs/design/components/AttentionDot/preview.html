@@ -1,0 +1,13 @@
+<!-- @dsCard group="Attention" height=120 subtitle="Needs you, Done, unread, active, idle" -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Martian+Mono:wght@400;500&display=swap">
+<div class="loam-surface" style="padding:20px;display:flex;gap:28px;align-items:center;flex-wrap:wrap">
+  <span style="display:flex;gap:8px;align-items:center"><span class="loam-dot loam-dot--needs is-arriving"></span>Needs you</span>
+  <span style="display:flex;gap:8px;align-items:center"><span class="loam-dot loam-dot--unread"></span>Done, unread</span>
+  <span style="display:flex;gap:8px;align-items:center"><span class="loam-dot loam-dot--active"></span>Active plot</span>
+  <span style="display:flex;gap:8px;align-items:center"><span class="loam-dot loam-dot--idle"></span>Other plot</span>
+  <span class="loam-badge"><span class="loam-dot loam-dot--needs"></span>2</span>
+</div>
+<script>
+// Replay the arrival halo every few seconds so the preview shows it.
+const d=document.querySelector('.is-arriving');setInterval(()=>{d.classList.remove('is-arriving');void d.offsetWidth;d.classList.add('is-arriving')},6000);
+</script>

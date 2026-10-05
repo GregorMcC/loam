@@ -1,0 +1,18 @@
+{
+  "error": {
+    "details": {
+      "items": [
+        {
+          "current": 17,
+          "exists": true,
+          "expected": 1,
+          "item": "what"
+        }
+      ],
+      "plot_id": "plotaaaaab"
+    },
+    "exit_code": 10,
+    "kind": "stale",
+    "message": "stale write: what changed since you read it; what is now at version 17: \"\""
+  }
+}

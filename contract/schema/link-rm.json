@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam link rm --json",
+  "description": "A removal has no link.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["change_id", "plot"],
+  "properties": {
+    "change_id": { "type": "integer", "minimum": 0 },
+    "plot": { "$ref": "defs.json#/$defs/id" }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam worktree list --json",
+  "description": "The worktrees with their checks, oldest first. It is [] when none exists.",
+  "type": "array",
+  "items": {
+    "$ref": "defs.json#/$defs/worktreeStatus"
+  }
+}

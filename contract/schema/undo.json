@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam undo --json",
+  "description": "change_id is 0 when the undo changed nothing.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["change_id", "undone", "plot"],
+  "properties": {
+    "change_id": { "type": "integer", "minimum": 0 },
+    "undone": { "$ref": "defs.json#/$defs/changeId" },
+    "plot": { "$ref": "defs.json#/$defs/id" }
+  }
+}

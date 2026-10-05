@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam link edit --json",
+  "description": "change_id is 0 when the command changed nothing.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["change_id", "plot", "link"],
+  "properties": {
+    "change_id": { "type": "integer", "minimum": 0 },
+    "plot": { "$ref": "defs.json#/$defs/id" },
+    "link": { "$ref": "defs.json#/$defs/link" }
+  }
+}

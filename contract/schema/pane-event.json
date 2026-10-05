@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "pane socket line",
+  "description": "One line that loam hook writes to LOAM_PANE_SOCKET. It is not output of a loam command. The app must ignore events that it does not know.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event", "session_id", "cwd", "at"],
+  "properties": {
+    "event": { "enum": ["SessionStart", "SessionEnd", "UserPromptSubmit", "Stop", "PermissionRequest", "Notification", "PostToolUse", "StopFailure"] },
+    "session_id": { "type": "string" },
+    "cwd": { "type": "string" },
+    "source": { "description": "Only on SessionStart.", "type": "string", "minLength": 1 },
+    "notification_type": { "description": "Only on Notification: elicitation_dialog, elicitation_url_dialog, agent_needs_input, or permission_prompt.", "enum": ["elicitation_dialog", "elicitation_url_dialog", "agent_needs_input", "permission_prompt"] },
+    "at": { "type": "string", "format": "date-time" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "event": { "not": { "const": "SessionStart" } } } },
+      "then": { "not": { "required": ["source"] } }
+    },
+    {
+      "if": { "properties": { "event": { "const": "Notification" } }, "required": ["event"] },
+      "then": { "required": ["notification_type"] },
+      "else": { "not": { "required": ["notification_type"] } }
+    }
+  ]
+}

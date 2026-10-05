@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam repo add --json",
+  "description": "change_id is 0 when the command changed nothing. warnings says why the add left the checkout on its branch, or what else failed after the add.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["change_id", "plot", "repo"],
+  "properties": {
+    "change_id": { "type": "integer", "minimum": 0 },
+    "plot": { "$ref": "defs.json#/$defs/id" },
+    "repo": { "$ref": "defs.json#/$defs/repo" },
+    "warnings": { "type": "array", "items": { "type": "string" } }
+  }
+}

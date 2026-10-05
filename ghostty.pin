@@ -1,0 +1,5 @@
+# The ghostty commit and the Zig that builds it. scripts/build-ghosttykit.sh reads this file.
+# Change the commit on purpose only. A new commit rebuilds the xcframework.
+GHOSTTY_COMMIT=33da6848d63b3bba2b4f31ab1531d618f2795192
+ZIG_VERSION=0.16.0
+ZIG_SHA256=b23d70deaa879b5c2d486ed3316f7eaa53e84acf6fc9cc747de152450d401489

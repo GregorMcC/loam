@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam worktree new --json",
+  "description": "copied lists the files that Loam copied into the worktree, relative to the repo. It is [] when none.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "worktree",
+    "copied"
+  ],
+  "properties": {
+    "worktree": {
+      "$ref": "defs.json#/$defs/worktree"
+    },
+    "copied": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

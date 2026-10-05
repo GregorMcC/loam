@@ -1,0 +1,13 @@
+# The GhosttyKit xcframework link. scripts/build-ghosttykit.sh creates it.
+/app/vendor/
+/app/.build/
+.claude/worktrees/
+.DS_Store
+# Private: kept on disk, not in the public repo. They hold work tickets, agent
+# process docs, and the bench, which uses those tickets as fixtures.
+/.scratch/
+/bench/
+/docs/agents/
+/docs/superpowers/
+/docs/bench.md
+/docs/bench-multi.md

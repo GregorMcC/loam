@@ -1,0 +1,7 @@
+{
+  "error": {
+    "exit_code": 1,
+    "kind": "error",
+    "message": "Scrap is not archived. Archive it first with \"loam archive plotaaaaad\"."
+  }
+}
