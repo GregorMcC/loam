@@ -703,6 +703,15 @@ public final class AppModel {
         return true
     }
 
+    /// The close button of a tab (ticket 96): closes that tab of the active plot at once, selected
+    /// or not, and leaves the selection on the same tab. Returns false when the plot has no such tab.
+    @discardableResult
+    public func closeTab(_ id: UUID) -> Bool {
+        guard let plot = workspace.activePlotID, workspace.tabs(of: plot).contains(where: { $0.id == id }) else { return false }
+        workspace.closeTab(id, in: plot)
+        return true
+    }
+
     /// Closes the focused pane of the active plot. Returns false when there is none.
     @discardableResult
     public func closeFocusedPane() -> Bool {

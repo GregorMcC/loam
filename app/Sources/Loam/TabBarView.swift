@@ -7,7 +7,8 @@ import QuartzCore
 /// symbol, one label (the title of its focused pane, ticket 71), and the strongest attention mark
 /// of its panes (an `AttentionDotView`, so Needs you can play the halo). The selected pill has the
 /// ink at 9% as a fill, a hairline and `ink` text. Others are `ink-muted`, with the ink at 5% on
-/// hover. A `+` button after the last pill starts a new session, as the toolbar `+` does.
+/// hover. On hover an `x` takes the place of the symbol (ticket 96) and closes the tab. A `+` button
+/// after the last pill starts a new session, as the toolbar `+` does.
 final class TabBarView: NSView, FirstTabFraming {
     static let height: CGFloat = 40
     static let pillHeight: CGFloat = 28
@@ -20,11 +21,18 @@ final class TabBarView: NSView, FirstTabFraming {
 
     /// Called with the 0-based tab position when you click a tab.
     var onSelect: ((Int) -> Void)?
+    /// Called with the 0-based tab position when you click the `x` of a tab. The tab does not
+    /// become the selected tab first.
+    var onClose: ((Int) -> Void)?
     /// Called by the `+` button after the last tab.
     var onNewSession: (() -> Void)?
     private(set) var items: [TabBarModel.Item] = []
     private var frames: [CGRect] = []
-    private var hovered: Int?
+    private var hovered: Int? {
+        didSet { if hovered != oldValue { needsLayout = true } }
+    }
+    /// The one `x`: it sits on the symbol of the hovered tab and hides when no tab is hovered.
+    private let close = TabCloseButton(frame: .zero)
     /// One dot per tab, hidden when the tab has no mark.
     private var dots: [AttentionDotView] = []
     private let plus = ChromeIconButton(symbol: "plus", label: "New session", identifier: "tab-new-session")
@@ -44,6 +52,13 @@ final class TabBarView: NSView, FirstTabFraming {
         plus.target = self
         plus.action = #selector(newSession)
         addSubview(plus)
+        close.isHidden = true
+        close.onClick = { [weak self] in
+            guard let self, let index = self.hovered else { return }
+            self.hovered = nil  // The tab list changes, so no tab is under the pointer until it moves.
+            self.onClose?(index)
+        }
+        addSubview(close)
     }
 
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
@@ -83,11 +98,28 @@ final class TabBarView: NSView, FirstTabFraming {
         }
         let side = Self.pillHeight
         let x = (frames.last?.maxX).map { $0 + Self.pillGap } ?? Self.barPadding
+        if let index = hovered, items.indices.contains(index) {
+            close.frame = Self.iconBox(in: frames[index]).insetBy(dx: -1.5, dy: -1.5)
+            close.setAccessibilityIdentifier("tab-close-\(items[index].number)")
+            close.isHidden = false
+        } else {
+            close.isHidden = true
+        }
         plus.side = side
         plus.frame = CGRect(x: x, y: (bounds.height - side) / 2, width: side, height: side)
     }
 
     var firstTabFrame: CGRect? { tabFrames().first }
+
+    func tabFrame(at index: Int) -> CGRect? {
+        let frames = tabFrames()
+        return frames.indices.contains(index) ? frames[index] : nil
+    }
+
+    /// The 13 pt box of the pane symbol. The `x` (16 pt) covers it on hover.
+    private static func iconBox(in rect: CGRect) -> CGRect {
+        CGRect(x: rect.minX + pillPadding, y: rect.midY - iconSize / 2, width: iconSize, height: iconSize)
+    }
 
     private func tabFrames() -> [CGRect] {
         var x = Self.barPadding
@@ -144,9 +176,9 @@ final class TabBarView: NSView, FirstTabFraming {
             }
             let color = item.isSelected || hovered == index ? LoamTheme.ink : LoamTheme.inkMuted
             let iconColor = item.isSelected || hovered == index ? LoamTheme.inkMuted : LoamTheme.inkFaint
-            let iconBox = CGRect(x: rect.minX + Self.pillPadding, y: rect.midY - Self.iconSize / 2,
-                                 width: Self.iconSize, height: Self.iconSize)
-            if let image = ChromeIcon.image(item.icon, pointSize: 11) {
+            let iconBox = Self.iconBox(in: rect)
+            // On hover the `x` (a subview) takes the place of the symbol.
+            if hovered != index, let image = ChromeIcon.image(item.icon, pointSize: 11) {
                 let size = image.size
                 ChromeIcon.draw(image, in: CGRect(x: iconBox.midX - size.width / 2, y: iconBox.midY - size.height / 2,
                                                   width: size.width, height: size.height), color: iconColor)
@@ -170,11 +202,13 @@ final class TabBarView: NSView, FirstTabFraming {
         return frames.firstIndex { $0.contains(point) }
     }
 
-    /// A click on a tab's attention dot selects the tab, so the bar takes it.
+    /// A click on a tab's attention dot selects the tab, so the bar takes it. The `x` takes its own click.
     override func hitTest(_ point: NSPoint) -> NSView? {
         let hit = super.hitTest(point)
         return hit is AttentionDotView ? self : hit
     }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func mouseDown(with event: NSEvent) {
         if let index = index(at: event) { onSelect?(index) }
@@ -193,5 +227,48 @@ final class TabBarView: NSView, FirstTabFraming {
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         needsDisplay = true
+    }
+}
+
+/// The `x` on a hovered tab (ticket 96): a 16 pt square, the ink at 5% and radius 4 on hover,
+/// `xmark` at 9 pt in `ink-muted`, and `ink` on its own hover. It closes on `mouseDown`.
+final class TabCloseButton: NSView {
+    var onClick: (() -> Void)?
+    private var overButton = false { didSet { needsDisplay = true } }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.button)
+        setAccessibilityLabel("Close tab")
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                       owner: self, userInfo: nil))
+    }
+
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+    override var isFlipped: Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseEntered(with event: NSEvent) { overButton = true }
+    override func mouseExited(with event: NSEvent) { overButton = false }
+    override func mouseDown(with event: NSEvent) { onClick?() }
+    override func accessibilityPerformPress() -> Bool { onClick?(); return onClick != nil }
+
+    override var isHidden: Bool {
+        didSet { if isHidden { overButton = false } }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        if overButton {
+            LoamTheme.inkAlpha(LoamTheme.hoverFillAlpha).setFill()
+            NSBezierPath(roundedRect: bounds, xRadius: 4, yRadius: 4).fill()
+        }
+        let config = NSImage.SymbolConfiguration(pointSize: 9, weight: .semibold)
+        guard let image = NSImage(systemSymbolName: "xmark", accessibilityDescription: nil)?
+            .withSymbolConfiguration(config) else { return }
+        let size = image.size
+        ChromeIcon.draw(image, in: CGRect(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2,
+                                          width: size.width, height: size.height),
+                        color: overButton ? LoamTheme.ink : LoamTheme.inkMuted)
     }
 }

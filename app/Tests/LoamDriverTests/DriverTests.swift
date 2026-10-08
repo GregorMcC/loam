@@ -179,6 +179,14 @@ struct DriverTests {
         ])
     }
 
+    /// Ticket 96: hover a tab that is not selected and click its `x`: the tab goes and the selection stays.
+    /// The `x` of a tab with a session that is mid-turn shows the close question first.
+    @Test func closesATabFromItsHoverClose() async throws {
+        try await expectPass("tab-close", environment: [
+            "LOAM_DRIVER_LOAM": Self.loamBinary, "LOAM_DRIVER_FAKE_CLAUDE": Self.fakeClaude,
+        ])
+    }
+
     @Test func reloadsTheConfigAndRedrawsThePane() async throws { try await expectPass("config-reload") }
     @Test func routesGhosttyActionsAndLoamKeys() async throws { try await expectPass("keys") }
     /// Ticket 38: ⌘P and a few keys reach a pane, a plot, a link, and a menu action.

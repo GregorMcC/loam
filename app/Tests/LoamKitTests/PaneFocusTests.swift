@@ -60,4 +60,32 @@ import Testing
         #expect(workspace.paneIDs(of: "p") == [other])
         #expect(workspace.spec(of: first) == nil && workspace.spec(of: second) == nil)
     }
+
+    /// Ticket 96: the close button closes a tab that is not selected, and the selection stays put.
+    @Test func closesATabThatIsNotSelectedAndKeepsTheSelection() {
+        var workspace = Workspace()
+        workspace.activate(plot: "p")
+        let first = workspace.openTab(PaneSpec(kind: .shell, plot: "p", title: "one"))
+        let second = workspace.openTab(PaneSpec(kind: .shell, plot: "p", title: "two"))
+        let third = workspace.openTab(PaneSpec(kind: .shell, plot: "p", title: "three"))
+        let split = workspace.split(plot: "p", axis: .sideBySide, PaneSpec(kind: .shell, plot: "p", title: "four"))!
+        let tabs = workspace.tabs(of: "p")
+        let selected = workspace.selectedTab(of: "p")?.id
+        #expect(selected == tabs[2].id)
+
+        workspace.closeTab(tabs[0].id, in: "p")  // Before the selection.
+        #expect(workspace.tabs(of: "p").count == 2)
+        #expect(workspace.selectedTab(of: "p")?.id == selected)
+        #expect(workspace.spec(of: first) == nil)
+
+        workspace.selectTab(index: 0, in: "p")
+        let kept = workspace.selectedTab(of: "p")?.id
+        workspace.closeTab(tabs[2].id, in: "p")  // After the selection, a split tab: every pane goes.
+        #expect(workspace.tabs(of: "p").map(\.id) == [tabs[1].id])
+        #expect(workspace.selectedTab(of: "p")?.id == kept)
+        #expect(workspace.spec(of: third) == nil && workspace.spec(of: split) == nil && workspace.spec(of: second) != nil)
+
+        workspace.closeTab(UUID(), in: "p")  // An unknown tab does nothing.
+        #expect(workspace.tabs(of: "p").count == 1)
+    }
 }

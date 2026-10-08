@@ -7,4 +7,7 @@ import AppKit
 public protocol FirstTabFraming: NSView {
     /// The first tab's frame in the view's own coordinates.
     var firstTabFrame: CGRect? { get }
+    /// The frame of the tab at a 0-based position, in the view's own coordinates. The driver
+    /// hovers and clicks tabs with it (ticket 96).
+    func tabFrame(at index: Int) -> CGRect?
 }

@@ -53,6 +53,7 @@ enum Scenarios {
         Scenario(name: "restore-relaunch", limit: 90, body: restoreRelaunch),
         Scenario(name: "attention", limit: 120, body: attention),
         Scenario(name: "settings", limit: 60, body: settings),
+        Scenario(name: "tab-close", limit: 90, body: tabClose),
         Scenario(name: "readme-shots", limit: 1200, body: readmeShots),
     ]
 
