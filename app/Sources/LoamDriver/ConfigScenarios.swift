@@ -109,6 +109,8 @@ extension Scenarios {
             ("b", .command, .toggleSidebar, "⌘B"),
             ("i", .command, .togglePlotPanel, "⌘I"),
             ("t", [.command, .option], .newShellTab, "⌘⌥T"),
+            ("d", [.control, .command], .newShellSplit(.sideBySide), "⌃⌘D"),
+            ("d", [.control, .command, .shift], .newShellSplit(.stacked), "⌃⌘⇧D"),
             ("1", .control, .selectPlot(1), "⌃1"),
             ("9", .control, .selectPlot(9), "⌃9"),
         ]

@@ -134,6 +134,7 @@ Every release must use the same certificate, because macOS keeps a person's fold
 | ⌘T | New Claude Code session in the active plot |
 | ⌥⌘T | New shell tab |
 | ⌘D, ⇧⌘D | Split right, split down |
+| ⌃⌘D, ⌃⇧⌘D | Split right with a shell, split down with a shell |
 | ⌘P | Quick switcher |
 | ⌘J | Actions menu |
 | ⌘L | Next pane that needs you |

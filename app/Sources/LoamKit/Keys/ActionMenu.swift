@@ -35,6 +35,8 @@ public enum ActionMenu {
         Entry(command: .newTab, title: "New session", symbol: "play"),
         Entry(command: .newSplit(.sideBySide), title: "Split right", symbol: "rectangle.split.2x1"),
         Entry(command: .newSplit(.stacked), title: "Split down", symbol: "rectangle.split.1x2"),
+        Entry(command: .newShellSplit(.sideBySide), title: "Split right with shell", symbol: "apple.terminal"),
+        Entry(command: .newShellSplit(.stacked), title: "Split down with shell", symbol: "apple.terminal"),
         Entry(command: .closePane, title: "Close pane", symbol: "xmark"),
     ]
 

@@ -45,7 +45,7 @@ extension Scenarios {
         // ⌘J from the pane opens the menu, with the search field focused.
         app.press(letter: "j", flags: .command)
         try await app.waitUntil("the menu opens") { app.exists("actions-menu") }
-        let rows = ["New session", "Split right", "Split down", "Close pane", "Edit brief", "Add link", "Add repo", "Archive plot"]
+        let rows = ["New session", "Split right", "Split down", "Split right with shell", "Split down with shell", "Close pane", "Edit brief", "Add link", "Add repo", "Archive plot"]
         try await app.waitUntil("the menu lists the pane and plot actions") {
             rows.allSatisfy { app.exists("actions-row-\($0)") }
         }
@@ -76,7 +76,6 @@ extension Scenarios {
             app.exists("actions-row-Split down") && !app.exists("actions-row-Split right")
         }
         app.screenshot("night-menu-filter")
-        app.press(.down)  // One row only: the selection stays on it.
         app.press(.returnKey)
         try await app.waitUntil("Return splits the pane", timeout: 10) {
             tab()?.tree.paneIDs.count == 2 && !app.exists("actions-menu")

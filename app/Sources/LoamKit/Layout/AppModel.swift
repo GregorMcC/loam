@@ -457,7 +457,7 @@ public final class AppModel {
         workspace.openTab(spec(kind, in: plot, folder: folder, repo: repo, worktree: worktree))
     }
 
-    /// ⌘D and ⌘⇧D split with a seeded session. A shell split comes from the menu.
+    /// ⌘D and ⌘⇧D split with a seeded session. ⌃⌘D and ⌃⌘⇧D split with a shell.
     public func split(_ axis: SplitAxis, _ kind: PaneSpec.Kind = .shell, folder: String? = nil) {
         guard let plot = workspace.activePlotID else { return }
         workspace.split(plot: plot, axis: axis, spec(kind, in: plot, folder: folder))
