@@ -51,8 +51,6 @@ import Testing
         #expect(LoamKeys.route(KeyChord(.command, "b"), isGhosttyBinding: false) == .loam(.toggleSidebar))
         #expect(LoamKeys.route(KeyChord(.command, "i"), isGhosttyBinding: false) == .loam(.togglePlotPanel))
         #expect(LoamKeys.route(KeyChord([.command, .option], "t"), isGhosttyBinding: false) == .loam(.newShellTab))
-        #expect(LoamKeys.route(KeyChord([.control, .command], "d"), isGhosttyBinding: false) == .loam(.newShellSplit(.sideBySide)))
-        #expect(LoamKeys.route(KeyChord([.control, .command, .shift], "d"), isGhosttyBinding: false) == .loam(.newShellSplit(.stacked)))
         for n in 1...9 {
             #expect(LoamKeys.route(KeyChord(.control, "\(n)"), isGhosttyBinding: true) == .loam(.selectPlot(n)))
         }

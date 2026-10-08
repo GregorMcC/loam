@@ -32,8 +32,7 @@ import Testing
         #expect(items.first { $0.command == .newTab }?.keys == ["⌘", "T"])
         #expect(items.first { $0.command == .newSplit(.stacked) }?.keys == ["⇧", "⌘", "D"])
         #expect(items.first { $0.command == .archivePlot }?.keys == [])
-        #expect(items.first { $0.command == .newShellSplit(.sideBySide) }?.keys == ["⌃", "⌘", "D"])
-        #expect(items.first { $0.command == .newShellSplit(.stacked) }?.keys == ["⌃", "⇧", "⌘", "D"])
+        #expect(items.first { $0.command == .newShellSplit(.sideBySide) }?.keys == [])
         // A rebind in the Ghostty config moves the keycap with the menu item.
         let rebound = ActionMenu.sections(paneTitle: "p", plotName: "q", chord: { $0 == .newTab ? KeyChord([.control, .option], "n") : nil },
                                           isEnabled: { _ in true })

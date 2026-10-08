@@ -91,25 +91,6 @@ extension Scenarios {
                   "the review does not find the pane")
         Log.line("RESULT session IDs: \(first) then \(second)")
 
-        // 3b. ⌃⌘D splits right with a shell and ⌃⌘⇧D splits down with one, from the focused session pane.
-        for (flags, axis, name) in [(NSEvent.ModifierFlags([.control, .command]), SplitAxis.sideBySide, "⌃⌘D"),
-                                    ([.control, .command, .shift], .stacked, "⌃⌘⇧D")] {
-            try await app.waitUntil("the session pane has focus") { focused() == seeded && app.window.firstResponder === seededView }
-            app.press(letter: "d", flags: flags)
-            try await app.waitUntil("\(name) opens a split", timeout: 10) { model.workspace.paneCount(of: plot) == 2 }
-            let added = focused()!
-            try check(added != seeded && model.workspace.spec(of: added)?.kind == .shell, "\(name) did not open a shell split")
-            if case .split(let got, _, _, _) = model.workspace.selectedTab(of: plot)?.tree {
-                try check(got == axis, "\(name) split \(got), not \(axis)")
-            } else {
-                throw DriverFailure("\(name) left no split")
-            }
-            Log.line("RESULT \(name) opened a \(axis) shell split")
-            model.closePane(added)
-            try await app.waitUntil("the shell split closes") { model.workspace.paneCount(of: plot) == 1 }
-            model.focus(seeded)
-        }
-
         // 4. ⌘⌥T opens a shell tab in the plot's start folder, with its own socket.
         try app.pressMenuKey("t", flags: [.command, .option])
         try await app.waitUntil("a shell tab") { model.workspace.tabs(of: plot).count == 2 }

@@ -16,7 +16,8 @@ public enum AppCommand: Hashable, Sendable {
     case newShellTab
     /// ⌘, opens the settings window (ticket 81).
     case openSettings
-    /// ⌃⌘D and ⌃⌘⇧D (ticket 97).
+    /// A shell split has no key: macOS keeps ⌃⌘D for Look Up (ticket 97). It comes from the menu,
+    /// the switcher, or the ⌘J actions menu.
     case newShellSplit(SplitAxis)
 
     // Ghostty's tab and split actions, on the active plot.
@@ -88,9 +89,6 @@ public enum LoamKeys {
         FixedKey(KeyChord(.command, "b"), .toggleSidebar, "Toggle Sidebar"),
         FixedKey(KeyChord(.command, "i"), .togglePlotPanel, "Plot Panel"),
         FixedKey(KeyChord([.command, .option], "t"), .newShellTab, "New Shell Tab"),
-        // ⌥⌘D hides the Dock in macOS. ⌃⌘D sits next to ⌘D, which splits with a session.
-        FixedKey(KeyChord([.control, .command], "d"), .newShellSplit(.sideBySide), "Split Right with Shell"),
-        FixedKey(KeyChord([.control, .command, .shift], "d"), .newShellSplit(.stacked), "Split Down with Shell"),
         // Ghostty binds ⌘, to open_config. Loam's Settings wins, so Open Ghostty Config shows no key.
         FixedKey(KeyChord(.command, ","), .openSettings, "Settings"),
     ] + (1...9).map { FixedKey(KeyChord(.control, "\($0)"), .selectPlot($0), "Plot \($0)") }
