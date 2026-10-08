@@ -304,6 +304,13 @@ public struct Workspace: Codable, Equatable, Sendable {
     /// Ghostty `close_tab`: closes every pane of the selected tab.
     public mutating func closeSelectedTab(in plot: String) {
         guard let tab = selectedTab(of: plot) else { return }
+        closeTab(tab.id, in: plot)
+    }
+
+    /// Closes every pane of one tab, selected or not. The selection stays on the same tab, unless
+    /// that tab is the one that closes (ticket 96).
+    public mutating func closeTab(_ id: UUID, in plot: String) {
+        guard let tab = tabs(of: plot).first(where: { $0.id == id }) else { return }
         for pane in tab.tree.paneIDs { closePane(pane) }
     }
 

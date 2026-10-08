@@ -9,6 +9,20 @@ import Testing
         PlotSummary(id: id, name: name, what: "", createdAt: "2026-01-01T00:00:00Z")
     }
 
+    /// Ticket 96: the close button of a tab closes it by ID, selected or not.
+    @Test func closesATabByIDInTheActivePlot() throws {
+        let model = AppModel(client: LoamClient())
+        model.apply([plot("p", "P")])
+        model.activate(plot: "p")
+        model.openTab(.shell)
+        model.openTab(.shell)
+        let tabs = model.workspace.tabs(of: "p")
+        #expect(!model.closeTab(UUID()))
+        #expect(model.closeTab(tabs[0].id))
+        #expect(model.workspace.tabs(of: "p").map(\.id) == [tabs[1].id])
+        #expect(model.workspace.selectedTab(of: "p")?.id == tabs[1].id)
+    }
+
     @Test func reloadReadsTheListAndActivatesTheFirstPlot() async throws {
         let fake = try FakeLoam([("list", 0), ("list_archived", 0)])
         let model = AppModel(client: fake.client())

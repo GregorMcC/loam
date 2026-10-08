@@ -120,6 +120,7 @@ extension DriverApp {
         case .leftMouseDown: view.mouseDown(with: event)
         case .leftMouseDragged: view.mouseDragged(with: event)
         case .leftMouseUp: view.mouseUp(with: event)
+        case .mouseMoved: view.mouseMoved(with: event)
         default: break
         }
     }

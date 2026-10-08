@@ -308,6 +308,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let tab = active.flatMap { workspace.selectedTab(of: $0) }
         updatePaneLabels()
         tabBar.onSelect = { [weak model] index in model?.selectTab(index: index) }
+        tabBar.onClose = { [weak self] index in self?.closeTab(at: index) }
         tabBar.onNewSession = { [weak self] in self?.newSession(nil) }
         columnView.setTabBarShown(!tabBar.items.isEmpty)
         paneArea.onDividerDrag = { [weak model] path, ratio in model?.setSplitRatio(ratio, at: path) }
@@ -470,12 +471,28 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         confirm(ClosePrompt.make(.pane, closing: [pane], in: model.workspace)) { [model] in model.closePane(pane) }
     }
 
-    /// Ghostty `close_tab`. It asks first when a session in the tab is mid-turn.
+    /// Ghostty `close_tab`: the selected tab. It asks first when a session in the tab is mid-turn.
     private func closeTab() -> Bool {
         guard let plot = model.workspace.activePlotID, let tab = model.workspace.selectedTab(of: plot) else { return false }
-        let panes = tab.tree.paneIDs
-        guard let prompt = ClosePrompt.make(.tab, closing: panes, in: model.workspace) else { return model.closeTab() }
-        confirm(prompt) { [model] in panes.forEach(model.closePane) }
+        return closeTab(id: tab.id)
+    }
+
+    /// The `x` on a tab (ticket 96): the tab at `index`, selected or not, by the same path as ⌘W.
+    private func closeTab(at index: Int) {
+        guard let plot = model.workspace.activePlotID, model.workspace.tabs(of: plot).indices.contains(index) else { return }
+        closeTab(id: model.workspace.tabs(of: plot)[index].id)
+    }
+
+    /// Closes one tab. It asks first when a session in the tab is mid-turn, and closes the tab by its
+    /// ID after the answer, so the selection stays on the same tab.
+    @discardableResult
+    private func closeTab(id: UUID) -> Bool {
+        guard let plot = model.workspace.activePlotID,
+              let tab = model.workspace.tabs(of: plot).first(where: { $0.id == id }) else { return false }
+        guard let prompt = ClosePrompt.make(.tab, closing: tab.tree.paneIDs, in: model.workspace) else {
+            return model.closeTab(id)
+        }
+        confirm(prompt) { [model] in model.closeTab(id) }
         return true
     }
 
