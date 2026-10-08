@@ -45,7 +45,7 @@ extension Scenarios {
         // ⌘J from the pane opens the menu, with the search field focused.
         app.press(letter: "j", flags: .command)
         try await app.waitUntil("the menu opens") { app.exists("actions-menu") }
-        let rows = ["New session", "Split right", "Split down", "Close pane", "Edit brief", "Add link", "Add repo", "Archive plot"]
+        let rows = ["New session", "Split right", "Split down", "Split right with shell", "Split down with shell", "Close pane", "Edit brief", "Add link", "Add repo", "Archive plot"]
         try await app.waitUntil("the menu lists the pane and plot actions") {
             rows.allSatisfy { app.exists("actions-row-\($0)") }
         }
@@ -76,7 +76,6 @@ extension Scenarios {
             app.exists("actions-row-Split down") && !app.exists("actions-row-Split right")
         }
         app.screenshot("night-menu-filter")
-        app.press(.down)  // One row only: the selection stays on it.
         app.press(.returnKey)
         try await app.waitUntil("Return splits the pane", timeout: 10) {
             tab()?.tree.paneIDs.count == 2 && !app.exists("actions-menu")
@@ -84,6 +83,21 @@ extension Scenarios {
         if case .split(let axis, _, _, _) = tab()?.tree {
             try expectThat(axis == .stacked, "the split is \(axis), not down")
         }
+
+        // Split right with shell opens a shell next to the focused pane (ticket 97).
+        app.press(letter: "j", flags: .command)
+        try await app.waitUntil("the menu opens for a shell split") { app.exists("actions-menu") }
+        try await app.waitUntil("the search field has the keys") { host.window.firstResponder is NSTextView }
+        try app.type("shell right")
+        try await app.waitUntil("the filter leaves Split right with shell") {
+            app.exists("actions-row-Split right with shell") && !app.exists("actions-row-Split down with shell")
+        }
+        app.press(.returnKey)
+        try await app.waitUntil("Return splits with a shell", timeout: 10) {
+            tab()?.tree.paneIDs.count == 3 && !app.exists("actions-menu")
+        }
+        let shellPane = host.model.workspace.focusedPane
+        try expectThat(shellPane.flatMap { host.model.workspace.spec(of: $0)?.kind } == .shell, "the new pane is not a shell")
 
         // A plot action: Add link opens the panel with the add link row.
         app.press(letter: "j", flags: .command)

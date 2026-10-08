@@ -18,9 +18,10 @@ import Testing
     @Test func listsThePaneThenThePlot() {
         let all = sections()
         #expect(all.map(\.title) == ["claude", "Loam v1 build"])
-        #expect(all[0].items.map(\.title) == ["New session", "Split right", "Split down", "Close pane"])
+        #expect(all[0].items.map(\.title) == ["New session", "Split right", "Split down", "Split right with shell", "Split down with shell", "Close pane"])
         #expect(all[1].items.map(\.title) == ["New session in plot", "Edit brief", "Add link", "Add repo", "Archive plot"])
-        #expect(all[0].items.map(\.command) == [.newTab, .newSplit(.sideBySide), .newSplit(.stacked), .closePane])
+        #expect(all[0].items.map(\.command) == [.newTab, .newSplit(.sideBySide), .newSplit(.stacked),
+                                               .newShellSplit(.sideBySide), .newShellSplit(.stacked), .closePane])
         #expect(all[1].items.map(\.command) == [.newPlotSession, .editBrief, .addLink, .addRepo, .archivePlot])
         #expect(all.flatMap(\.items).allSatisfy { !$0.symbol.isEmpty })
     }
@@ -31,6 +32,7 @@ import Testing
         #expect(items.first { $0.command == .newTab }?.keys == ["⌘", "T"])
         #expect(items.first { $0.command == .newSplit(.stacked) }?.keys == ["⇧", "⌘", "D"])
         #expect(items.first { $0.command == .archivePlot }?.keys == [])
+        #expect(items.first { $0.command == .newShellSplit(.sideBySide) }?.keys == [])
         // A rebind in the Ghostty config moves the keycap with the menu item.
         let rebound = ActionMenu.sections(paneTitle: "p", plotName: "q", chord: { $0 == .newTab ? KeyChord([.control, .option], "n") : nil },
                                           isEnabled: { _ in true })
@@ -78,9 +80,11 @@ import Testing
 
     @Test func theFilterMatchesEachWordOfTheTitle() {
         let all = sections()
-        #expect(ActionMenu.filter(all, query: "").flatMap(\.items).count == 9)
-        #expect(ActionMenu.filter(all, query: "split").flatMap(\.items).map(\.title) == ["Split right", "Split down"])
-        #expect(ActionMenu.filter(all, query: "  DOWN sp ").flatMap(\.items).map(\.title) == ["Split down"])
+        #expect(ActionMenu.filter(all, query: "").flatMap(\.items).count == 11)
+        #expect(ActionMenu.filter(all, query: "split").flatMap(\.items).map(\.title) == [
+            "Split right", "Split down", "Split right with shell", "Split down with shell"])
+        #expect(ActionMenu.filter(all, query: "  DOWN sp ").flatMap(\.items).map(\.title) == ["Split down", "Split down with shell"])
+        #expect(ActionMenu.filter(all, query: "shell down").flatMap(\.items).map(\.title) == ["Split down with shell"])
         #expect(ActionMenu.filter(all, query: "link").map(\.title) == ["Loam v1 build"])
         #expect(ActionMenu.filter(all, query: "zzz").isEmpty)
     }

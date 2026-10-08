@@ -16,7 +16,8 @@ public enum AppCommand: Hashable, Sendable {
     case newShellTab
     /// ⌘, opens the settings window (ticket 81).
     case openSettings
-    /// A shell split has no key. It comes from the menu or the switcher.
+    /// A shell split has no key: macOS keeps ⌃⌘D for Look Up (ticket 97). It comes from the menu,
+    /// the switcher, or the ⌘J actions menu.
     case newShellSplit(SplitAxis)
 
     // Ghostty's tab and split actions, on the active plot.
