@@ -54,6 +54,8 @@ enum Scenarios {
         Scenario(name: "attention", limit: 120, body: attention),
         Scenario(name: "settings", limit: 60, body: settings),
         Scenario(name: "tab-close", limit: 90, body: tabClose),
+        Scenario(name: "tab-drag", limit: 90, body: tabDrag),
+        Scenario(name: "plot-drag", limit: 120, body: plotDrag),
         Scenario(name: "readme-shots", limit: 1200, body: readmeShots),
     ]
 

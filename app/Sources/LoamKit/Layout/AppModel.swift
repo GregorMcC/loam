@@ -312,7 +312,8 @@ public final class AppModel {
     }
 
     public func apply(_ list: [PlotSummary], archived: [PlotSummary] = []) {
-        plots = list
+        // A read that lands while `loam move` runs keeps the order that the sidebar shows (ticket 98).
+        plots = pendingPlotOrder.map { Self.sorted(list, by: $0) } ?? list
         archivedPlots = archived
         let ids = Set(list.map(\.id))
         var next = workspace
@@ -359,15 +360,63 @@ public final class AppModel {
         }
     }
 
-    /// Drop `moving` on `onto` in the sidebar: `loam move`, then reload now. The feed reloads too.
-    public func movePlot(_ moving: String, onto: String) async {
-        guard let position = sidebar.dropPosition(moving: moving, onto: onto) else { return }
+    /// A drag in the sidebar drops `moving` at `slot` of its section (ticket 98): `showPlotMove`, then
+    /// `storePlotMove`.
+    public func movePlot(_ moving: String, toSlot slot: Int) async {
+        guard let move = showPlotMove(moving, toSlot: slot) else { return }
+        await storePlotMove(move)
+    }
+
+    /// A plot move that the sidebar shows and the store does not have yet.
+    public struct PlotMove: Sendable {
+        let plot: String
+        let slot: Int
+        /// The sidebar order before the move.
+        let shown: [String]
+        let sidebar: SidebarModel
+    }
+
+    /// The sidebar shows the new order at once, and a plot list read keeps it until `storePlotMove`
+    /// ends. Nil when nothing moves, or while another move runs.
+    public func showPlotMove(_ moving: String, toSlot slot: Int) -> PlotMove? {
+        let shown = plots.map(\.id)
+        let sidebar = self.sidebar
+        guard pendingPlotOrder == nil, let next = sidebar.order(moving: moving, toSlot: slot, in: shown) else { return nil }
+        pendingPlotOrder = next
+        plots = Self.sorted(plots, by: next)
+        return PlotMove(plot: moving, slot: slot, shown: shown, sidebar: sidebar)
+    }
+
+    /// `loam move`, then a reload. The store order also holds the archived plots, so with any
+    /// archived plot the position comes from `loam export`. A failure puts the plot back and sets `lastError`.
+    public func storePlotMove(_ move: PlotMove) async {
         do {
-            _ = try await client.move(plot: moving, position: position)
+            let full = archivedPlots.isEmpty ? move.shown : try await client.export().plots.map(\.id)
+            if let position = move.sidebar.movePosition(moving: move.plot, toSlot: move.slot, in: full) {
+                _ = try await client.move(plot: move.plot, position: position)
+            }
+            // A read that started before the move still lands with the old order, so the new order
+            // holds until a read that started after it.
             await reloadPlots()
+            pendingPlotOrder = nil
         } catch {
+            pendingPlotOrder = nil
+            plots = Self.sorted(plots, by: move.shown)
             report(error)
         }
+    }
+
+    /// The order that the sidebar shows while `loam move` runs. Nil when no move runs.
+    @ObservationIgnored private var pendingPlotOrder: [String]?
+
+    /// True while a plot move is shown and not yet stored. The sidebar starts no new drag then.
+    public var isMovingPlot: Bool { pendingPlotOrder != nil }
+
+    /// The plots in `order`. A plot that `order` does not name keeps its place after the named ones.
+    private static func sorted(_ list: [PlotSummary], by order: [String]) -> [PlotSummary] {
+        let rank = Dictionary(order.enumerated().map { ($1, $0) }) { first, _ in first }
+        func key(_ offset: Int, _ plot: PlotSummary) -> Int { rank[plot.id] ?? order.count + offset }
+        return list.enumerated().sorted { key($0.offset, $0.element) < key($1.offset, $1.element) }.map(\.element)
     }
 
     // MARK: Plot selection
@@ -651,6 +700,13 @@ public final class AppModel {
     public func selectTab(index: Int) {
         guard let plot = workspace.activePlotID else { return }
         workspace.selectTab(index: index, in: plot)
+    }
+
+    /// A drag in the tab bar (ticket 98): moves the tab at `from` to `to` in the active plot. The
+    /// selected tab stays selected, and ⌘1 to ⌘9 follow the new order.
+    public func moveTab(from: Int, to: Int) {
+        guard let plot = workspace.activePlotID else { return }
+        workspace.moveTab(from: from, to: to, in: plot)
     }
 
     public func nextTab() { if let plot = workspace.activePlotID { workspace.nextTab(in: plot) } }

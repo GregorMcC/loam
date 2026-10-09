@@ -83,19 +83,55 @@ import Testing
         #expect(SidebarModel(plots: plots, workspace: Workspace(), collapsed: true).windowTitle == "Loam")
     }
 
-    @Test func dropPositionMovesDownToTheTargetSlot() {
-        let model = SidebarModel(plots: plots, workspace: Workspace(), collapsed: false)
-        // Dragging Alpha onto Gamma puts Alpha last: position 3.
-        #expect(model.dropPosition(moving: "a", onto: "c") == 3)
-        #expect(model.dropPosition(moving: "c", onto: "a") == 1)
-        #expect(model.dropPosition(moving: "b", onto: "a") == 1)
+    /// Ticket 98: plots a and c have panes, b and d do not. Store order a, b, c, d.
+    func sections() -> SidebarModel {
+        var ws = Workspace()
+        ws.openTab(spec("a"))
+        ws.openTab(spec("c"))
+        let all = plots + [plot("d", "Delta")]
+        return SidebarModel(plots: all, workspace: ws, collapsed: false)
     }
 
-    @Test func dropOnItselfOrAnUnknownPlotGivesNil() {
-        let model = SidebarModel(plots: plots, workspace: Workspace(), collapsed: false)
-        #expect(model.dropPosition(moving: "a", onto: "a") == nil)
-        #expect(model.dropPosition(moving: "a", onto: "zzz") == nil)
-        #expect(model.dropPosition(moving: "zzz", onto: "a") == nil)
+    @Test func aPlotMovesWithinItsSection() {
+        let model = sections()
+        #expect(model.section(of: "a") == .withPanes)
+        #expect(model.section(of: "b") == .noPanes)
+        #expect(model.section(of: "zzz") == nil)
+        #expect(model.plotIDs(in: .withPanes) == ["a", "c"])
+        let order = ["a", "b", "c", "d"]
+        // a to the end of "Plots": right after c.
+        #expect(model.order(moving: "a", toSlot: 1, in: order) == ["b", "c", "a", "d"])
+        #expect(model.movePosition(moving: "a", toSlot: 1, in: order) == 3)
+        // c to the top of "Plots": right before a.
+        #expect(model.order(moving: "c", toSlot: 0, in: order) == ["c", "a", "b", "d"])
+        #expect(model.movePosition(moving: "c", toSlot: 0, in: order) == 1)
+        // d to the top of "No panes": right before b.
+        #expect(model.movePosition(moving: "d", toSlot: 0, in: order) == 2)
+        // b to the end of "No panes": right after d.
+        #expect(model.movePosition(moving: "b", toSlot: 1, in: order) == 4)
+    }
+
+    @Test func archivedPlotsInTheStoreOrderDoNotShiftThePosition() {
+        let model = sections()
+        // x is archived, between a and b; y is archived and last.
+        let order = ["a", "x", "b", "c", "d", "y"]
+        #expect(model.order(moving: "a", toSlot: 1, in: order) == ["x", "b", "c", "a", "d", "y"])
+        #expect(model.movePosition(moving: "a", toSlot: 1, in: order) == 4)
+        #expect(model.movePosition(moving: "b", toSlot: 1, in: order) == 5)
+        #expect(model.movePosition(moving: "c", toSlot: 0, in: order) == 1)
+    }
+
+    @Test func noMoveForTheSameSlotAnUnknownPlotOrABadSlot() {
+        let model = sections()
+        let order = ["a", "b", "c", "d"]
+        #expect(model.movePosition(moving: "a", toSlot: 0, in: order) == nil)
+        #expect(model.movePosition(moving: "c", toSlot: 1, in: order) == nil)
+        #expect(model.movePosition(moving: "zzz", toSlot: 0, in: order) == nil)
+        #expect(model.movePosition(moving: "a", toSlot: 2, in: order) == nil)
+        #expect(model.movePosition(moving: "a", toSlot: -1, in: order) == nil)
+        // A plot alone in its section has nowhere to go.
+        let alone = SidebarModel(plots: [plot("a", "Alpha")], workspace: Workspace(), collapsed: false)
+        #expect(alone.movePosition(moving: "a", toSlot: 0, in: ["a"]) == nil)
     }
 
     @Test func nextAndPreviousPlotWrapInStoredOrder() {

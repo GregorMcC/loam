@@ -125,6 +125,33 @@ extension DriverApp {
         }
     }
 
+    /// A mouse event straight to `view`, as AppKit sends the drag and the release to the view that
+    /// took the press, wherever the pointer is (ticket 98).
+    func mouse(_ type: NSEvent.EventType, at point: NSPoint, on view: NSView) {
+        guard let event = NSEvent.mouseEvent(
+            with: type, location: point, modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+            context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1)
+        else { return }
+        switch type {
+        case .leftMouseDown: view.mouseDown(with: event)
+        case .leftMouseDragged: view.mouseDragged(with: event)
+        case .leftMouseUp: view.mouseUp(with: event)
+        default: break
+        }
+    }
+
+    /// A key through `NSApp.sendEvent`, so the app's local event monitors see it first, as they do
+    /// for a real key. A drag watches for Escape that way (ticket 98).
+    func pressThroughApp(_ key: Key) {
+        guard let event = NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+            context: nil, characters: key.characters, charactersIgnoringModifiers: key.characters,
+            isARepeat: false, keyCode: key.code) else { return }
+        NSApp.sendEvent(event)
+    }
+
     /// A scroll event as a trackpad sends it. Positive `pixels` scrolls up.
     func scroll(_ pane: TerminalSurfaceView, pixels: Int32, phase: Int64 = 0, momentum: Int64 = 0) {
         guard let cg = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: pixels, wheel2: 0, wheel3: 0)

@@ -10,7 +10,14 @@ One plot in the sidebar tree: its symbol, the name, and an attention mark at the
 - The trailing slot of a plot shows a `loam-badge` with the count of panes that need you, or a `loam-dot--unread` ring when only Done, unread applies, or nothing. A pane row shows its own mark.
 - A long name truncates with an ellipsis. Never wrap a plot name. A long branch truncates in the middle.
 - Section labels are in sentence case, 12 pt, medium, `ink-faint`, with 10 pt of extra space above: "Plots", "No panes", "Archived". A `+` button at the right of "Plots" does what File > New Plot does. The "Archived" section is collapsed by default. Archived rows are `ink-faint` and show no dots.
-- Order is the stored plot order. Drag a plot onto another plot to reorder.
+- Order is the stored plot order. Drag a plot between rows to reorder it (ticket 98), as the Finder sidebar Favorites move:
+  - A press on a plot row and a move of 4pt starts a drag. A shorter move is a click and selects the plot. A right click still opens the row menu.
+  - The plot follows the pointer up and down its own section, "Plots" or "No panes", and stays inside it. An open plot moves with its whole tree. It sits on a lifted card: `horizon-b`, radius 7, inset 8pt like the selected fill, with a soft shadow.
+  - The other plots part to open a gap where it will land, and the gap behind it closes: `duration-base`, `ease-settle`. A plot gives up its place when the edge of the dragged plot passes its midpoint, so a tall open plot lands where it shows.
+  - On release the plot settles into the gap in `duration-base`. The sidebar shows the new order at once, and the ⌃1 to ⌃9 numbers follow it. Then `loam move` stores it. If `loam move` fails, the plot goes back and the error shows under the list.
+  - Escape, or a release outside the sidebar, sends every row back in `duration-slow`.
+  - Archived plots do not drag.
+  - Reduce Motion: nothing slides. The dragged plot dims to 50% in place, a 2pt `moss` line marks the drop point, and the release moves the plot at once.
 
 The consumer provides the name, whether it is active or archived, the attention counts, and the tree.
 
