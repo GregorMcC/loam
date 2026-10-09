@@ -10,4 +10,7 @@ public protocol FirstTabFraming: NSView {
     /// The frame of the tab at a 0-based position, in the view's own coordinates. The driver
     /// hovers and clicks tabs with it (ticket 96).
     func tabFrame(at index: Int) -> CGRect?
+    /// Where the tab at a 0-based position draws now. It differs from `tabFrame(at:)` only while
+    /// a tab drag moves the tabs (ticket 98).
+    func shownTabFrame(at index: Int) -> CGRect?
 }

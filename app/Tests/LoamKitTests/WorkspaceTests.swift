@@ -46,6 +46,36 @@ import Testing
         #expect(ws.selectedTab(of: "A")?.focused == ids[0])
     }
 
+    /// Ticket 98: a drag in the tab bar moves a tab. The selected tab stays selected.
+    @Test func moveTabKeepsTheSelectedTab() {
+        var ws = Workspace()
+        let a = ws.openTab(PaneSpec(kind: .shell, plot: "P"))
+        let b = ws.openTab(PaneSpec(kind: .shell, plot: "P"))
+        let c = ws.openTab(PaneSpec(kind: .shell, plot: "P"))
+        ws.selectTab(index: 1, in: "P")
+        ws.moveTab(from: 0, to: 2, in: "P")
+        #expect(ws.tabs(of: "P").map(\.focused) == [b, c, a])
+        #expect(ws.selectedTab(of: "P")?.focused == b)
+        ws.moveTab(from: 0, to: 2, in: "P")
+        #expect(ws.tabs(of: "P").map(\.focused) == [c, a, b])
+        #expect(ws.selectedTab(of: "P")?.focused == b)
+        // ⌘1 follows the new order.
+        ws.selectTab(number: 1, in: "P")
+        #expect(ws.selectedTab(of: "P")?.focused == c)
+    }
+
+    @Test func moveTabOutOfRangeChangesNothing() {
+        var ws = Workspace()
+        ws.openTab(PaneSpec(kind: .shell, plot: "P"))
+        ws.openTab(PaneSpec(kind: .shell, plot: "P"))
+        let before = ws
+        ws.moveTab(from: 0, to: 2, in: "P")
+        ws.moveTab(from: -1, to: 0, in: "P")
+        ws.moveTab(from: 1, to: 1, in: "P")
+        ws.moveTab(from: 0, to: 1, in: "Q")
+        #expect(ws == before)
+    }
+
     @Test func nextAndPreviousTabWrap() {
         var ws = Workspace()
         let ids = (0..<3).map { _ in ws.openTab(spec("A")) }

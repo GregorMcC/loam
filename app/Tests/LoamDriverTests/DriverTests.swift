@@ -121,6 +121,16 @@ struct DriverTests {
         try await expectPass("panel-review", environment: ["LOAM_DRIVER_LOAM": Self.loamBinary])
     }
 
+    /// Ticket 98: drag a tab past two others, Escape and a release outside cancel, Reduce Motion.
+    @Test func dragsATabToANewSlotAndKeepsTheSelection() async throws {
+        try await expectPass("tab-drag", environment: ["LOAM_DRIVER_LOAM": Self.loamBinary])
+    }
+
+    /// Ticket 98: drag a plot down two rows, the store order and the ⌃ numbers follow, cancels, Reduce Motion.
+    @Test func dragsAPlotDownTwoRowsAndStoresTheOrder() async throws {
+        try await expectPass("plot-drag", environment: ["LOAM_DRIVER_LOAM": Self.loamBinary])
+    }
+
     /// The core's fake `claude` in hook mode, built from ../core: LOAM_DRIVER_FAKE_CLAUDE, else a build in a temp folder.
     static let fakeClaude: String = {
         if let path = ProcessInfo.processInfo.environment["LOAM_DRIVER_FAKE_CLAUDE"] { return path }

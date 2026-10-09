@@ -221,6 +221,16 @@ public struct Workspace: Codable, Equatable, Sendable {
         if tabs(of: plot).indices.contains(index) { selectedIndex[plot] = index }
     }
 
+    /// Moves the tab at `from` to `to` (0 based, the index it has after the move), for a drag in the
+    /// tab bar (ticket 98). The same tab stays selected. An index out of range changes nothing.
+    public mutating func moveTab(from: Int, to: Int, in plot: String) {
+        guard var tabs = plotTabs[plot], tabs.indices.contains(from), tabs.indices.contains(to), from != to else { return }
+        let selected = selectedTab(of: plot)?.id
+        tabs.insert(tabs.remove(at: from), at: to)
+        plotTabs[plot] = tabs
+        if let selected { selectedIndex[plot] = tabs.firstIndex { $0.id == selected } }
+    }
+
     public mutating func nextTab(in plot: String) { stepTab(1, in: plot) }
     public mutating func previousTab(in plot: String) { stepTab(-1, in: plot) }
 

@@ -368,13 +368,51 @@ public struct SidebarModel: Equatable, Sendable {
         return plots[(i + offset + plots.count) % plots.count].id
     }
 
-    /// The 1-based position to pass to `loam move` when `moving` is dropped on `onto`.
-    /// The dragged plot takes the slot of the plot it lands on. Nil for a drop on itself or an unknown plot.
-    public func dropPosition(moving: String, onto: String) -> Int? {
-        guard moving != onto,
-              plots.contains(where: { $0.id == moving }),
-              let target = plots.firstIndex(where: { $0.id == onto }) else { return nil }
-        return target + 1
+    /// A group of plot rows in the sidebar. A plot drags only within its own section (ticket 98).
+    public enum Section: Equatable, Sendable {
+        case withPanes, noPanes
+    }
+
+    /// The section that shows the plot. Nil for a plot that is not in the sidebar.
+    public func section(of plot: String) -> Section? {
+        if withPanes.contains(where: { $0.id == plot }) { return .withPanes }
+        if noPanes.contains(where: { $0.id == plot }) { return .noPanes }
+        return nil
+    }
+
+    /// The plot IDs of a section, in the order the sidebar shows them.
+    public func plotIDs(in section: Section) -> [String] {
+        (section == .withPanes ? withPanes : noPanes).map(\.id)
+    }
+
+    /// The store order after `moving` goes to `slot` of its section (0 based, the index it has after
+    /// the move). `order` is the full store order: both sections, and the archived plots that the
+    /// sidebar does not show. The plot goes right after the plot above its slot in the section, or
+    /// right before the plot below it at the top of the section. Nil for the slot it has now, an
+    /// unknown plot or slot, or when the store order already has the plot there.
+    public func order(moving: String, toSlot slot: Int, in order: [String]) -> [String]? {
+        guard let section = section(of: moving), let from = order.firstIndex(of: moving) else { return nil }
+        let ids = plotIDs(in: section)
+        let others = ids.filter { $0 != moving }
+        guard slot >= 0, slot <= others.count, ids.firstIndex(of: moving) != slot else { return nil }
+        var rest = order
+        rest.remove(at: from)
+        let index: Int
+        if slot > 0, let above = rest.firstIndex(of: others[slot - 1]) {
+            index = above + 1
+        } else if slot < others.count, let below = rest.firstIndex(of: others[slot]) {
+            index = below
+        } else {
+            return nil
+        }
+        rest.insert(moving, at: index)
+        return rest == order ? nil : rest
+    }
+
+    /// The 1-based position to pass to `loam move` when `moving` goes to `slot` of its section, from
+    /// the full store order. Nil when nothing moves.
+    public func movePosition(moving: String, toSlot slot: Int, in order: [String]) -> Int? {
+        self.order(moving: moving, toSlot: slot, in: order).flatMap { $0.firstIndex(of: moving) }.map { $0 + 1 }
     }
 }
 

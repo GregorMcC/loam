@@ -308,6 +308,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let tab = active.flatMap { workspace.selectedTab(of: $0) }
         updatePaneLabels()
         tabBar.onSelect = { [weak model] index in model?.selectTab(index: index) }
+        tabBar.onMove = { [weak model] from, to in model?.moveTab(from: from, to: to) }
         tabBar.onClose = { [weak self] index in self?.closeTab(at: index) }
         tabBar.onNewSession = { [weak self] in self?.newSession(nil) }
         columnView.setTabBarShown(!tabBar.items.isEmpty)

@@ -13,6 +13,13 @@ struct SidebarView: View {
     /// The "Archived" list starts collapsed (spec 8.1).
     @State private var archivedOpen = false
     @State private var disclosure = SidebarDisclosure()
+    /// Drag to reorder plots (ticket 98).
+    @State private var plotDrag: PlotDragController
+
+    init(model: AppModel) {
+        self.model = model
+        _plotDrag = State(initialValue: PlotDragController(model: model))
+    }
 
     var body: some View {
         let sidebar = model.sidebar
@@ -113,17 +120,27 @@ struct SidebarView: View {
         let tree = sidebar.tree(of: row.id)
         let id = SidebarModel.RowID.plot(row.id)
         if tree.isEmpty {
-            selectable(PlotRowView(row: row, model: model, selected: sidebar.selection == id), id, sidebar)
+            plotRow(row, sidebar)
                 .listRowBackground(rowFill(id, sidebar))
         } else {
             DisclosureGroup(isExpanded: plotOpen(row.id)) {
                 ForEach(tree.items) { itemNode($0, sidebar) }
                 ForEach(tree.checkouts) { checkoutNode($0, sidebar) }
             } label: {
-                selectable(PlotRowView(row: row, model: model, selected: sidebar.selection == id), id, sidebar)
+                plotRow(row, sidebar)
             }
             .listRowBackground(rowFill(id, sidebar))
         }
+    }
+
+    /// A plot row. An AppKit handle over it takes the press (ticket 98): a click selects the plot,
+    /// and a drag moves it. VoiceOver selects it with the row action.
+    private func plotRow(_ row: SidebarModel.PlotRow, _ sidebar: SidebarModel) -> some View {
+        let id = SidebarModel.RowID.plot(row.id)
+        return PlotRowView(row: row, model: model, selected: sidebar.selection == id)
+            .overlay(PlotDragHandle(plot: row.id, controller: plotDrag) { select(id) }.accessibilityHidden(true))
+            .accessibilityAction { select(id) }
+            .accessibilityAddTraits(sidebar.selection == id ? [.isButton, .isSelected] : .isButton)
     }
 
     /// A repo row, then its panes and its worktrees when it is open (ticket 92). A worktree row that
@@ -267,7 +284,7 @@ private struct SectionLabel: View {
 }
 
 /// One plot: its symbol (`moss` for the active plot), the name, and the trailing marks
-/// (docs/design/components/PlotRow). Drag it onto another plot to reorder.
+/// (docs/design/components/PlotRow). Drag it up or down its section to reorder (`PlotDragController`).
 private struct PlotRowView: View {
     let row: SidebarModel.PlotRow
     let model: AppModel
@@ -299,12 +316,6 @@ private struct PlotRowView: View {
                     .loamText(LoamTheme.captionStyle, LoamColor.inkFaint)
                     .fixedSize()
             }
-        }
-        .draggable(row.id)
-        .dropDestination(for: String.self) { items, _ in
-            guard let moving = items.first else { return false }
-            Task { await model.movePlot(moving, onto: row.id) }
-            return true
         }
         .contextMenu {
             // Ticket 93: a session in the plot folder, not in a repo.

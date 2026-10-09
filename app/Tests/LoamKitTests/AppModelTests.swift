@@ -67,20 +67,66 @@ import Testing
         #expect(fake.args().isEmpty)
     }
 
-    @Test func movePlotCallsLoamMoveWithTheDropPosition() async throws {
-        let fake = try FakeLoam([("move", 0), ("list", 0)])
+    /// Ticket 98: the sidebar shows the new order at once, then `loam move` runs with the position.
+    @Test func movePlotShowsTheNewOrderAndCallsLoamMove() async throws {
+        let fake = try FakeLoam([("move", 0), ("list", 0), ("list_archived", 0)])
         let model = AppModel(client: fake.client())
         model.apply([plot("plotaaaaab", "Loam"), plot("plotaaaaac", "Loam Docs")])
-        await model.movePlot("plotaaaaac", onto: "plotaaaaab")
+        let move = Task { await model.movePlot("plotaaaaac", toSlot: 0) }
+        for _ in 0..<100 where model.plots.first?.id != "plotaaaaac" { await Task.yield() }
+        #expect(model.plots.map(\.id) == ["plotaaaaac", "plotaaaaab"])
+        #expect(model.sidebar.noPanes.first?.number == 1)
+        // A read that lands while the move runs keeps the new order.
+        model.apply([plot("plotaaaaab", "Loam"), plot("plotaaaaac", "Loam Docs")])
+        #expect(model.plots.map(\.id) == ["plotaaaaac", "plotaaaaab"])
+        await move.value
         #expect(fake.args().first == "move plotaaaaac 1 --json --actor app")
+        #expect(model.lastError == nil)
     }
 
-    @Test func dropOnItselfCallsNothing() async throws {
+    @Test func aFailedMovePutsThePlotBackAndSetsTheError() async throws {
+        let fake = try FakeLoam([("error_generic", 1)])
+        let model = AppModel(client: fake.client())
+        model.apply([plot("plotaaaaab", "Loam"), plot("plotaaaaac", "Loam Docs")])
+        await model.movePlot("plotaaaaac", toSlot: 0)
+        #expect(model.plots.map(\.id) == ["plotaaaaab", "plotaaaaac"])
+        #expect(model.lastError != nil)
+        // The next read takes the stored order again.
+        model.apply([plot("plotaaaaac", "Loam Docs"), plot("plotaaaaab", "Loam")])
+        #expect(model.plots.map(\.id) == ["plotaaaaac", "plotaaaaab"])
+    }
+
+    @Test func aMoveToTheSameSlotCallsNothing() async throws {
         let fake = try FakeLoam([("move", 0)])
         let model = AppModel(client: fake.client())
-        model.apply([plot("a", "A")])
-        await model.movePlot("a", onto: "a")
+        model.apply([plot("a", "A"), plot("b", "B")])
+        await model.movePlot("a", toSlot: 0)
+        await model.movePlot("zzz", toSlot: 0)
         #expect(fake.args().isEmpty)
+    }
+
+    /// With an archived plot, the position comes from the full store order in `loam export`. Here
+    /// the store already has plotaaaaac first, so no `loam move` runs.
+    @Test func withAnArchivedPlotThePositionComesFromTheExport() async throws {
+        let fake = try FakeLoam([("export", 0), ("list", 0), ("list_archived", 0)])
+        let model = AppModel(client: fake.client())
+        model.apply([plot("plotaaaaab", "Loam"), plot("plotaaaaac", "Loam Docs")],
+                    archived: [plot("plotaaaaad", "Old")])
+        await model.movePlot("plotaaaaac", toSlot: 0)
+        #expect(fake.args() == ["export --json", "list --json", "list --archived --json"])
+        #expect(model.lastError == nil)
+    }
+
+    @Test func moveTabMovesInTheActivePlot() {
+        let model = AppModel(client: LoamClient())
+        model.apply([plot("p", "P")])
+        model.activate(plot: "p")
+        model.openTab(.shell)
+        model.openTab(.shell)
+        let tabs = model.workspace.tabs(of: "p")
+        model.moveTab(from: 1, to: 0)
+        #expect(model.workspace.tabs(of: "p").map(\.id) == [tabs[1].id, tabs[0].id])
+        #expect(model.workspace.selectedTab(of: "p")?.id == tabs[1].id)
     }
 
     @Test func deletedPlotsLoseTheirTabsAndTheActivePlotMoves() {
