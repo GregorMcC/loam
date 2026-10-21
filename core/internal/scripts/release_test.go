@@ -301,6 +301,69 @@ func TestInstallReleaseReplacesRunningLoam(t *testing.T) {
 	r.noStage(t)
 }
 
+// An update from a Loam pane ends when Loam quits and closes the pane, so the
+// swap links the CLI before it opens Loam again.
+func TestInstallReleaseLinksCLIBeforeLoamOpensAgain(t *testing.T) {
+	r := newReleaseRig(t)
+	fakeRelease(t, r.releases, "v0.1.0")
+	link := filepath.Join(r.prefix, "bin", "loam")
+	// A loam from a source install takes the place of the link.
+	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(link, []byte("#!/bin/sh\necho loam version dev\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	state := t.TempDir()
+	quit, linked := filepath.Join(state, "quit"), filepath.Join(state, "linked")
+	path := fakeTools(t, map[string]string{
+		"pgrep":     fmt.Sprintf(`[ ! -f %q ]`, quit),
+		"osascript": fmt.Sprintf(`touch %q`, quit),
+		"open":      fmt.Sprintf(`readlink %q > %q || true`, link, linked),
+	})
+	out, err := r.run(t, path)
+	if err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	b, _ := os.ReadFile(linked)
+	if want := filepath.Join(r.apps, "Loam.app", "Contents", "Helpers", "loam"); strings.TrimSpace(string(b)) != want {
+		t.Errorf("when Loam opened again, the link was %q, want %q: %s", b, want, out)
+	}
+	if !strings.Contains(out, "Linked "+link) {
+		t.Errorf("output lacks the link: %s", out)
+	}
+}
+
+// A failed link only warns: Loam opens again with the new app.
+func TestInstallReleaseReopensLoamWhenTheLinkFails(t *testing.T) {
+	r := newReleaseRig(t)
+	fakeRelease(t, r.releases, "v0.1.0")
+	// A file in the place of the bin folder blocks the link.
+	if err := os.WriteFile(filepath.Join(r.prefix, "bin"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	state := t.TempDir()
+	quit, opened := filepath.Join(state, "quit"), filepath.Join(state, "opened")
+	path := fakeTools(t, map[string]string{
+		"pgrep":     fmt.Sprintf(`[ ! -f %q ]`, quit),
+		"osascript": fmt.Sprintf(`touch %q`, quit),
+		"open":      fmt.Sprintf(`touch %q`, opened),
+	})
+	out, err := r.run(t, path)
+	if err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	if _, err := os.Stat(opened); err != nil {
+		t.Errorf("Loam did not open again: %s", out)
+	}
+	for _, want := range []string{"Could not link", "Fix: ln -sfn"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q: %s", want, out)
+		}
+	}
+	r.noStage(t)
+}
+
 // Loam asks first when a session is mid-turn, and answers the quit request
 // with "User canceled" (-128). A busy Loam can let the request time out
 // (-1712), and a Loam that quits already can miss it (-600, -609). The

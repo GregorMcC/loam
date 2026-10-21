@@ -80,7 +80,9 @@ old=""
 [ ! -f "$apps/Loam.app/Contents/Info.plist" ] ||
   old=$(/usr/libexec/PlistBuddy -c "Print :LoamVersion" "$apps/Loam.app/Contents/Info.plist" 2>/dev/null || echo unknown)
 link_cli() {
-  # The link points into Loam.app, so it stays correct across updates.
+  # The link points into Loam.app, so it stays correct across updates. This
+  # script links only when the version is installed already. After an install,
+  # swap.sh makes the same link.
   mkdir -p "$prefix/bin"
   ln -sfn "$apps/Loam.app/Contents/Helpers/loam" "$prefix/bin/loam"
 }
@@ -95,7 +97,7 @@ fi
 # terminal, because quitting Loam closes a Loam pane.
 cat > "$stage/swap.sh" <<'EOF'
 set -eu
-apps=$1 stage=$2 new=$3
+apps=$1 stage=$2 new=$3 prefix=$4
 fail() {
   echo "$1" >&2
   [ -z "${2:-}" ] || echo "Fix: $2" >&2
@@ -142,6 +144,14 @@ fi
 rm -rf "$stage"
 trap - EXIT
 echo "Installed $apps/Loam.app ($new)"
+# Link before Loam opens again: an update from a Loam pane ends when Loam quits.
+# A failed link must not keep Loam closed, so it only warns.
+if mkdir -p "$prefix/bin" && ln -sfn "$apps/Loam.app/Contents/Helpers/loam" "$prefix/bin/loam"; then
+  echo "Linked $prefix/bin/loam to the loam CLI in Loam.app."
+else
+  echo "Could not link $prefix/bin/loam to the loam CLI in Loam.app." >&2
+  echo "Fix: ln -sfn \"$apps/Loam.app/Contents/Helpers/loam\" \"$prefix/bin/loam\"" >&2
+fi
 # Register the new bundle, so Spotlight and "open -a Loam" find it at once.
 lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 [ ! -x "$lsregister" ] || "$lsregister" -f "$apps/Loam.app" >/dev/null 2>&1 || true
@@ -156,7 +166,7 @@ EOF
 
 # -a: from a Loam pane, Loam is an ancestor, and pgrep skips ancestors without it.
 if ! pgrep -af "^$apps/Loam.app/Contents/MacOS/Loam" >/dev/null 2>&1; then
-  sh "$stage/swap.sh" "$apps" "$stage" "$new"
+  sh "$stage/swap.sh" "$apps" "$stage" "$new" "$prefix"
   stage=""
 else
   log="$HOME/Library/Logs/loam-update.log"
@@ -165,7 +175,7 @@ else
   # perl ships with macOS. setsid puts the swap in its own session, with no
   # terminal, so it lives on when Loam closes this pane.
   perl -MPOSIX -e 'POSIX::setsid() >= 0 or die "setsid: $!\n"; exec @ARGV or die "exec: $!\n"' \
-    /bin/sh "$stage/swap.sh" "$apps" "$stage" "$new" </dev/null >>"$log" 2>&1 &
+    /bin/sh "$stage/swap.sh" "$apps" "$stage" "$new" "$prefix" </dev/null >>"$log" 2>&1 &
   pid=$!
   stage="" # the swap owns the staging folder now
   echo "Loam quits now, then opens again with $new."
@@ -181,8 +191,6 @@ else
   grep -q "^Installed $apps/Loam.app" "$log" || fail "The install failed. The log is $log."
 fi
 
-link_cli
-echo "Linked $prefix/bin/loam to the loam CLI in Loam.app."
 case ":$PATH:" in
   *":$prefix/bin:"*) ;;
   *) echo "$prefix/bin is not on your PATH. Add it in ~/.zshrc: export PATH=\"$prefix/bin:\$PATH\"" ;;
