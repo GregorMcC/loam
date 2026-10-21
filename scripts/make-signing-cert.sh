@@ -36,8 +36,8 @@ EOF
 openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
   -config "$work/cert.cnf" -keyout "$work/key.pem" -out "$work/cert.pem" 2>/dev/null
 
-# macOS's keychain reads only the older PKCS#12 algorithms. OpenSSL 3 needs
-# 3 and later need -legacy for them; LibreSSL uses them by default.
+# macOS's keychain reads only the older PKCS#12 algorithms. OpenSSL 3 and
+# later need -legacy for them; LibreSSL uses them by default.
 legacy=()
 if openssl version | grep -qE '^OpenSSL ([3-9]|[1-9][0-9])\.'; then legacy=(-legacy); fi
 openssl pkcs12 -export ${legacy[@]+"${legacy[@]}"} -name "$name" \
