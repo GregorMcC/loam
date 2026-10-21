@@ -109,12 +109,19 @@ trap 'rm -rf "$stage"' EXIT
 reopen=0
 if loam_running; then
   # Loam asks first when a session is mid-turn, so wait up to 10 minutes. While it
-  # asks, Loam answers the request with "User canceled" (-128). Any other error stops.
+  # asks, Loam answers the request with "User canceled" (-128). A busy Loam can let
+  # the request time out (-1712). Any other error stops, unless Loam quit anyway.
   echo "Quitting Loam. If Loam asks, choose Quit."
   if ! err=$(osascript -e 'tell application id "dev.loam.Loam" to quit' 2>&1 >/dev/null); then
     case "$err" in
-      *"(-128)"*) echo "Loam asks first. This script waits up to 10 minutes for your answer." ;;
-      *) fail "Could not ask Loam to quit: $err. Nothing is installed." "quit Loam, then run the install again" ;;
+      *"(-128)"*)
+        echo "Loam asks first. This script waits up to 10 minutes for your answer."
+        echo "If you choose Cancel, the install goes on if you quit Loam in that time, else it stops." ;;
+      *"(-1712)"*) echo "Loam did not answer yet. This script waits up to 10 minutes for Loam to quit." ;;
+      # Loam quits now: the request reached it too late (-600), or as it closed (-609).
+      *"(-600)"* | *"(-609)"*) echo "Loam is quitting. This script waits up to 10 minutes for it to close." ;;
+      *) ! loam_running ||
+        fail "Could not ask Loam to quit: ${err:-no error text}. Nothing is installed." "quit Loam, then run the install again" ;;
     esac
   fi
   waited=0
