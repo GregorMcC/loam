@@ -87,6 +87,7 @@ mkdir -p "$work"
   -Demit-xcframework=true \
   -Dxcframework-target=native \
   -Demit-macos-app=false \
+  -Demit-docs=false \
   -Dsentry=false \
   --prefix "$work/out")
 cp -R "$src_dir/macos/GhosttyKit.xcframework" "$work/GhosttyKit.xcframework"
