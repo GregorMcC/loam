@@ -81,10 +81,15 @@ loam_running() {
 
 quit_loam() {
   # Ask Loam to quit, as Cmd-Q does. Loam asks first when a session is mid-turn,
-  # so wait up to 10 minutes for an answer.
+  # so wait up to 10 minutes for an answer. While it asks, Loam answers the
+  # request with "User canceled" (-128). Any other error stops the install.
   echo "Quitting Loam. If Loam asks, choose Quit."
-  osascript -e 'tell application id "dev.loam.Loam" to quit' >/dev/null 2>&1 ||
-    fail "Could not ask Loam to quit. Nothing is installed." "quit Loam, then run scripts/update.sh again"
+  if ! err=$(osascript -e 'tell application id "dev.loam.Loam" to quit' 2>&1 >/dev/null); then
+    case "$err" in
+      *"(-128)"*) echo "Loam asks first. This script waits up to 10 minutes for your answer." ;;
+      *) fail "Could not ask Loam to quit: $err. Nothing is installed." "quit Loam, then run scripts/update.sh again" ;;
+    esac
+  fi
   waited=0
   while loam_running; do
     [ "$waited" -lt 600 ] || fail "Loam did not quit in 10 minutes. Nothing is installed." "quit Loam, then run scripts/update.sh again"
