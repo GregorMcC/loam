@@ -48,6 +48,10 @@ public enum AppCommand: Hashable, Sendable {
     /// A session or a shell tab in Home, from any space (ticket 99). The window makes Home active first.
     case newHomeSession
     case newHomeShell
+    /// Moves the selected Home tab to a plot (ticket 100). The window asks first when a session in
+    /// the tab is mid-turn. The other kind asks for a name, makes the plot, then moves the tab.
+    case moveTabToPlot(String)
+    case moveTabToNewPlot
 
     // The plot's own actions (ticket 89), in the Plot menu and the actions menu.
     /// A session in the plot folder, not in a repo (ticket 93).

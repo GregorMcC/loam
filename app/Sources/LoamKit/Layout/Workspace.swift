@@ -241,6 +241,24 @@ public struct Workspace: Codable, Equatable, Sendable {
         if let selected { selectedIndex[space] = tabs.firstIndex { $0.id == selected } }
     }
 
+    /// Moves a whole tab to another space (ticket 100). Its panes keep their tree, focus, sessions,
+    /// and processes. The old space selects the next tab, as a close does. The new space becomes
+    /// active with the tab selected, so a space that waits starts its panes. Returns false when no
+    /// space has the tab, or the tab is in `space` already.
+    @discardableResult
+    public mutating func moveTab(_ id: UUID, to space: Space) -> Bool {
+        guard let from = spaceTabs.first(where: { $0.value.contains { $0.id == id } })?.key, from != space,
+              var tabs = spaceTabs[from], let i = tabs.firstIndex(where: { $0.id == id }) else { return false }
+        let tab = tabs.remove(at: i)
+        selectedIndex[from] = selection(selectedIndex[from], removing: i, leaving: tabs.count)
+        spaceTabs[from] = tabs
+        for pane in tab.tree.paneIDs { specs[pane]?.space = space }
+        spaceTabs[space, default: []].append(tab)
+        selectedIndex[space] = spaceTabs[space]!.count - 1
+        activate(space)
+        return true
+    }
+
     public mutating func nextTab(in space: Space) { stepTab(1, in: space) }
     public mutating func previousTab(in space: Space) { stepTab(-1, in: space) }
 
@@ -300,10 +318,15 @@ public struct Workspace: Codable, Equatable, Sendable {
             tabs[i].tree = tree
         } else {
             tabs.remove(at: i)
-            let selected = selectedIndex[space] ?? 0
-            selectedIndex[space] = tabs.isEmpty ? nil : (i < selected ? selected - 1 : min(selected, tabs.count - 1))
+            selectedIndex[space] = selection(selectedIndex[space], removing: i, leaving: tabs.count)
         }
         spaceTabs[space] = tabs
+    }
+
+    /// The selection after the tab at `i` goes: the same tab, else the tab that takes its place.
+    private func selection(_ selected: Int?, removing i: Int, leaving count: Int) -> Int? {
+        let selected = selected ?? 0
+        return count == 0 ? nil : (i < selected ? selected - 1 : min(selected, count - 1))
     }
 
     /// Focuses the pane and selects its tab.

@@ -128,7 +128,7 @@ struct SidebarView: View {
                 .listRowBackground(rowFill(.home, sidebar))
         } else {
             DisclosureGroup(isExpanded: spaceOpen(.home)) {
-                ForEach(tree.items) { itemNode($0, sidebar) }
+                ForEach(tree.items) { itemNode($0, sidebar, inHome: true) }
             } label: {
                 homeRow(sidebar)
             }
@@ -201,24 +201,29 @@ struct SidebarView: View {
         }
     }
 
-    /// A pane, or a split tab and then its panes when it is open.
+    /// A pane, or a split tab and then its panes when it is open. In Home, each row has the menu
+    /// that moves its tab to a plot (ticket 100).
     @ViewBuilder
-    private func itemNode(_ item: SidebarModel.TreeItem, _ sidebar: SidebarModel) -> some View {
+    private func itemNode(_ item: SidebarModel.TreeItem, _ sidebar: SidebarModel, inHome: Bool = false) -> some View {
         switch item {
         case .pane(let pane):
-            paneNode(pane, sidebar)
+            // A pane on its own row is a tab of one pane.
+            paneNode(pane, sidebar, homeTab: inHome ? model.workspace.tabs(of: .home).first { $0.tree.contains(pane.id) }?.id : nil)
         case .tab(let tab):
             DisclosureGroup(isExpanded: tabOpen(tab.id)) {
-                ForEach(tab.panes) { paneNode($0, sidebar) }
+                ForEach(tab.panes) { paneNode($0, sidebar, homeTab: inHome ? tab.id : nil) }
             } label: {
                 TabRowView(row: tab, model: model, open: disclosure.isOpen(tab: tab.id))
+                    .moveToPlotMenu(inHome ? tab.id : nil, model: model)
             }
         }
     }
 
-    private func paneNode(_ pane: SidebarModel.PaneRow, _ sidebar: SidebarModel) -> some View {
+    /// `homeTab`: the Home tab of the pane, for its menu. Nil outside Home.
+    private func paneNode(_ pane: SidebarModel.PaneRow, _ sidebar: SidebarModel, homeTab: UUID? = nil) -> some View {
         let id = SidebarModel.RowID.pane(pane.id)
         return selectable(PaneRowView(row: pane), id, sidebar)
+            .moveToPlotMenu(homeTab, model: model)
             .listRowBackground(rowFill(id, sidebar))
     }
 
@@ -388,6 +393,35 @@ private struct PlotRowView: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("plot-\(row.id)")
+    }
+}
+
+/// "Move to Plot" for a Home tab (ticket 100): the plots in sidebar order, then "New Plot…".
+private struct MoveToPlotMenu: View {
+    let tab: UUID
+    let model: AppModel
+
+    var body: some View {
+        let targets = model.moveTargets
+        Menu("Move to Plot") {
+            ForEach(targets) { plot in
+                Button(plot.name) { MoveDialogs.askMove(tab, to: plot.id, model: model) }
+            }
+            if !targets.isEmpty { Divider() }
+            Button("New Plot\u{2026}") { MoveDialogs.askMoveToNewPlot(tab, model: model) }
+        }
+    }
+}
+
+private extension View {
+    /// The context menu of a row of a Home tab. `tab` nil, outside Home, adds no menu.
+    @ViewBuilder
+    func moveToPlotMenu(_ tab: UUID?, model: AppModel) -> some View {
+        if let tab {
+            contextMenu { MoveToPlotMenu(tab: tab, model: model) }
+        } else {
+            self
+        }
     }
 }
 

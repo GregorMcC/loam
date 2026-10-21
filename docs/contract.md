@@ -372,13 +372,15 @@ Writes the old values back as a new change by the actor (`--actor app` for the a
 | `loam mcp` | It speaks the MCP protocol on stdio. |
 | `loam hook` | It is hidden. It speaks the Claude Code hook protocol. |
 | `loam setup` | It is interactive. Use `loam setup --check --json` instead. |
-| `loam resume <session-id>` | It replaces the process with `claude --resume`. |
+| `loam resume <session-id> [--plot <plot>]` | It replaces the process with `claude --resume`. |
 
 ### Home sessions
 
 `loam start --home [--session-id <uuid> | --resume <uuid>]` starts a session that belongs to no plot. The app uses it for Home, its space for tabs with no plot. The session starts in the home folder. It gets no seed, no `--add-dir`, and no `LOAM_PLOT`, but it gets the same settings file as a seeded session, so the pane hooks and the allow rules work. It adds no session record, so `loam sessions` does not list it and `loam resume` does not know it. `--resume` runs `claude --resume` in the home folder, where Claude Code finds the session.
 
 `--home` with a plot, or with `--repo`, `--worktree`, or `--plot-folder`, exits with code 2 (`invalid`). So do `--resume` without `--home`, `--resume` with `--session-id`, and a value that is not a UUID.
+
+`loam resume <session-id> --plot <plot>` moves a Home session into a plot. The app runs it when you move a Home tab to a plot. When the session has no record, it adds a record in the plot, with the home folder as the start folder, because a Home session always runs there. Then it resumes the session as `loam resume` does: with the seed, the `--add-dir` folders, and `LOAM_PLOT`. It adds the record only when the launch plan is ready, so a failed check leaves no record. When the session is already recorded in that plot, it resumes it. When Claude Code keeps no conversation for the session (no `projects/*/<session-id>.jsonl` in `CLAUDE_CONFIG_DIR`, else `~/.claude`), for example because it never had a prompt, the session starts again with `--session-id` and the same ID. When the session is recorded in another plot, it exits with code 2 (`invalid`), so a session never moves between plots. So does a session ID that is not a UUID. An archived plot is refused as for `loam start`. The record writes no change.
 
 ### Worktree sessions
 

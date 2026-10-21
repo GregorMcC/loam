@@ -34,6 +34,7 @@ extension MainWindowController: NSMenuItemValidation {
             paneTitle: pane.map { workspace.title(of: $0, terminalTitles: model.terminalTitles) },
             plotName: workspace.activePlotID.flatMap { model.name(of: .plot($0)) },
             inHome: space == .home,
+            moveTargets: space == .home ? model.moveTargets : [],
             chord: { [weak self] in self?.menuChord(for: $0) },
             isEnabled: { [weak self] in self?.isEnabled($0) ?? false })
         actionBar.menu.open(sections)

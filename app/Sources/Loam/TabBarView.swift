@@ -34,6 +34,9 @@ final class TabBarView: NSView, FirstTabFraming {
     var onNewSession: (() -> Void)?
     /// Called with the 0-based position before and after a drag moves a tab.
     var onMove: ((Int, Int) -> Void)?
+    /// Called with the 0-based tab position on a right-click. It gives the tab's context menu, or nil
+    /// for none. The tab does not become the selected tab first.
+    var onMenu: ((Int) -> NSMenu?)?
     /// A move this far from the press starts a drag. A shorter one is a click.
     static let dragThreshold: CGFloat = 4
     private(set) var items: [TabBarModel.Item] = [] {
@@ -294,6 +297,11 @@ final class TabBarView: NSView, FirstTabFraming {
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard drag == nil, let index = index(at: event) else { return nil }
+        return onMenu?(index)
+    }
 
     /// A press waits: a release with less than 4 pt of move is a click and selects the tab, a
     /// longer move starts a drag. So a drag never changes the selected tab.

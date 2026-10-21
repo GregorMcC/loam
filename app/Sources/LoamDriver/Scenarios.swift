@@ -53,6 +53,8 @@ enum Scenarios {
         Scenario(name: "restore-relaunch", limit: 90, body: restoreRelaunch),
         Scenario(name: "home", limit: 90, body: home),
         Scenario(name: "home-relaunch", limit: 90, body: homeRelaunch),
+        Scenario(name: "move-to-plot", limit: 120, body: moveToPlot),
+        Scenario(name: "move-to-plot-relaunch", limit: 90, body: moveToPlotRelaunch),
         Scenario(name: "attention", limit: 120, body: attention),
         Scenario(name: "settings", limit: 60, body: settings),
         Scenario(name: "tab-close", limit: 90, body: tabClose),

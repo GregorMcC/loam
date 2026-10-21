@@ -21,6 +21,12 @@ public enum PaneCommand {
         loginShell(shell, running: [loam, "resume", sessionID])
     }
 
+    /// Resumes a Home session as a session of the plot (ticket 100). The core records the session in
+    /// the plot first, so from then on `resume` knows it.
+    public static func resumeInPlot(shell: String, loam: String, sessionID: String, plot: String) -> String {
+        loginShell(shell, running: [loam, "resume", sessionID, "--plot", plot])
+    }
+
     /// A new session in Home (ticket 99): no plot and no seed, in the home folder.
     public static func startHome(shell: String, loam: String, sessionID: String) -> String {
         loginShell(shell, running: [loam, "start", "--home", "--session-id", sessionID])

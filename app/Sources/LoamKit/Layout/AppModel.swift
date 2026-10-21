@@ -353,16 +353,19 @@ public final class AppModel {
 
     public func stopFeed() { feedTask?.cancel() }
 
-    /// `loam new --json`, then the new plot becomes active.
-    public func newPlot(named name: String) async {
+    /// `loam new --json`, then the new plot becomes active. Returns its ID, or nil when no plot was made.
+    @discardableResult
+    public func newPlot(named name: String) async -> String? {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return }
+        guard !name.isEmpty else { return nil }
         do {
             let plot = try await client.new(name: name)
             await reloadPlots()
             activate(plot: plot.id)
+            return plot.id
         } catch {
             report(error)
+            return nil
         }
     }
 
@@ -574,6 +577,58 @@ public final class AppModel {
     public func openHomeTab(_ kind: PaneSpec.Kind) {
         activateHome()
         openTab(kind, folder: kind == .shell ? homeFolder : nil)
+    }
+
+    // MARK: Move to Plot (ticket 100)
+
+    /// The plots that a Home tab can move to, in sidebar order: the plots with panes, then the rest.
+    public var moveTargets: [PlotSummary] {
+        let withPanes = Set(workspace.plotIDsWithPanes)
+        return plots.filter { withPanes.contains($0.id) } + plots.filter { !withPanes.contains($0.id) }
+    }
+
+    /// The question before a move, or nil when no session in the tab asks. A move stops each session,
+    /// so it uses the `ClosePrompt` rule.
+    public func movePrompt(tab id: UUID) -> ClosePrompt? {
+        guard let tab = workspace.tabs(of: .home).first(where: { $0.id == id }) else { return nil }
+        return ClosePrompt.make(.move, closing: tab.tree.paneIDs, in: workspace)
+    }
+
+    /// Moves a Home tab with all its panes to a plot of the list. The plot becomes active with the tab
+    /// selected. A shell keeps its process and the environment it started with, so it has no
+    /// `LOAM_PLOT`. A session stops and resumes in the plot with `loam resume <id> --plot <plot>`, in
+    /// the home folder, where Claude Code keeps a Home session. It resumes the ID that the pane has
+    /// now, because `/clear` changes it. The window asks first (`movePrompt`). Returns false when
+    /// the tab is not in Home or the plot is not in the list.
+    @discardableResult
+    public func moveToPlot(tab id: UUID, plot: String) -> Bool {
+        guard plots.contains(where: { $0.id == plot }),
+              let tab = workspace.tabs(of: .home).first(where: { $0.id == id }) else { return false }
+        let space = Space.plot(plot)
+        // A switch first, so the panel and the switcher see it as any switch. The move and the
+        // restarts then change the workspace in one step.
+        activate(space)
+        var next = workspace
+        next.moveTab(id, to: space)
+        for pane in tab.tree.paneIDs {
+            guard let spec = next.spec(of: pane), spec.kind == .session,
+                  let sessionID = next.session(of: pane)?.sessionID ?? spec.sessionID else { continue }
+            let command = PaneCommand.resumeInPlot(shell: shell, loam: client.binary.path, sessionID: sessionID, plot: plot)
+            // The sidebar shows the session right under the plot, as a plot session.
+            var moved = sessionSpec(in: space, command: command, sessionID: sessionID, repo: nil, worktree: nil, plotFolder: true)
+            moved.folder = homeFolder
+            next.restartPane(pane, with: moved)
+        }
+        workspace = next
+        return true
+    }
+
+    /// "Move to New Plot…": `loam new`, then the move. A failed `loam new` moves nothing and sets
+    /// `lastError`. A tab that left Home before the call makes no plot.
+    public func moveToNewPlot(tab id: UUID, named name: String) async {
+        guard workspace.tabs(of: .home).contains(where: { $0.id == id }),
+              let plot = await newPlot(named: name) else { return }
+        moveToPlot(tab: id, plot: plot)
     }
 
     // MARK: Sessions in panes

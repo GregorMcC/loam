@@ -5,7 +5,7 @@ import LoamTerminal
 /// Driver scenarios for ticket 99: Home, the space above the plots for tabs that belong to no plot.
 /// The two scenarios are two app runs on one rig: `LOAM_DRIVER_RIG` names its folder, with a temp
 /// store, a temp `state.json`, and a fake HOME. `claude` is the core's fake in hook mode
-/// (`LOAM_DRIVER_FAKE_CLAUDE`, see the `panes` scenario).
+/// (`LOAM_DRIVER_FAKE_CLAUDE`, see the `panes` scenario). The move scenarios (ticket 100) use the same rig.
 @MainActor
 extension Scenarios {
     private static func expect(_ condition: Bool, _ message: @autoclosure () -> String) throws {
@@ -20,20 +20,24 @@ extension Scenarios {
     }
 
     /// What the fake claude recorded about its last run.
-    private struct HomeInvocation: Decodable {
+    struct HomeInvocation: Decodable {
         var args: [String]
         var env: [String: String]
         var cwd: String
     }
 
-    @MainActor private struct HomeRig {
+    @MainActor struct HomeRig {
         let rig: PanelRig
         let environment: [String: String]
         var savedFile: URL { rig.root.appendingPathComponent("home-expect.json") }
         static let invocationName = "claude-invocation.json"
         var invocationFile: URL { rig.root.appendingPathComponent(Self.invocationName) }
 
-        init(fresh: Bool) throws {
+        /// Claude Code's folder for the panes: the core looks there for a conversation.
+        var claudeConfig: URL { rig.root.appendingPathComponent("claude-config") }
+
+        /// `turn`: how long a turn of the fake claude takes.
+        init(fresh: Bool, turn: String = "1s") throws {
             let env = ProcessInfo.processInfo.environment
             guard let folder = env["LOAM_DRIVER_RIG"] else { throw DriverFailure("LOAM_DRIVER_RIG does not name the rig folder") }
             guard let fake = env["LOAM_DRIVER_FAKE_CLAUDE"] else {
@@ -51,7 +55,8 @@ extension Scenarios {
                 "PATH": bin.path + ":" + (env["PATH"] ?? "/usr/bin:/bin"),
                 "LOAM_FAKE_CLAUDE_OUT": rig.root.appendingPathComponent(Self.invocationName).path,
                 "LOAM_FAKE_CLAUDE_HOOKS": "1",
-                "LOAM_FAKE_CLAUDE_TURN": "1s",
+                "LOAM_FAKE_CLAUDE_TURN": turn,
+                "CLAUDE_CONFIG_DIR": rig.root.appendingPathComponent("claude-config").path,
             ]) { $1 }
         }
 
@@ -66,7 +71,7 @@ extension Scenarios {
     }
 
     /// Calls the app's quit and waits for its answer.
-    private static func quitHome(_ host: AppHost, _ app: DriverApp) async throws {
+    static func quitHome(_ host: AppHost, _ app: DriverApp) async throws {
         var answer: Bool?
         host.quit { answer = $0 }
         try await app.waitUntil("quit answered", timeout: 15) { answer != nil }

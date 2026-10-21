@@ -28,11 +28,12 @@ import Testing
         #expect(all.flatMap(\.items).allSatisfy { !$0.symbol.isEmpty })
     }
 
-    /// Ticket 99: in Home, the Home rows would repeat "New session" and ⌘⌥T, so they go.
+    /// Ticket 99: in Home, the Home rows would repeat "New session" and ⌘⌥T, so they go. Ticket 100
+    /// adds the move to a plot.
     @Test func homeLeavesOutTheHomeSection() {
         let all = ActionMenu.sections(paneTitle: "zsh", plotName: nil, inHome: true, chord: menuChord,
                                       isEnabled: { ActionMenu.isAvailable($0, hasSpace: true, hasPlot: false, hasPane: true) })
-        #expect(all.map(\.id) == ["pane"])
+        #expect(all.map(\.id) == ["pane", "move"])
         #expect(all[0].items.map(\.command) == [.newTab, .newSplit(.sideBySide), .newSplit(.stacked),
                                                .newShellSplit(.sideBySide), .newShellSplit(.stacked), .closePane])
     }
