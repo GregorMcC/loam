@@ -1,10 +1,10 @@
 import Foundation
 
-/// The question before ⌘W, `close_tab`, archive, or quit (spec 8.2 and 8.5). The app asks only when
+/// The question before ⌘W, `close_tab`, archive, quit (spec 8.2 and 8.5), or a move to a plot (ticket 100). The app asks only when
 /// a session that the close ends is mid-turn or needs you, because a turn in progress loses its
 /// partial reply (ADR 0005), and a session that needs you waits for your answer.
 public struct ClosePrompt: Equatable, Sendable {
-    public enum Scope: Sendable { case pane, tab, quit, archive }
+    public enum Scope: Sendable { case pane, tab, quit, archive, move }
 
     public let title: String
     public let message: String
@@ -43,6 +43,12 @@ public struct ClosePrompt: Equatable, Sendable {
                 title: "Archive this plot?",
                 message: "\(count(working, needs, in: " in this plot")) If you archive the plot, \(stops) \(resumes) when you unarchive the plot and show it.",
                 confirm: "Archive")
+        case .move:
+            let resumes = one ? "Loam resumes the session" : "Loam resumes the sessions"
+            return ClosePrompt(
+                title: "Move this tab?",
+                message: "\(count(working, needs, in: " in this tab")) If you move the tab, \(stops) \(resumes) in the plot.",
+                confirm: "Move")
         case .quit:
             let resumes = one ? "Loam resumes the session" : "Loam resumes the sessions"
             return ClosePrompt(

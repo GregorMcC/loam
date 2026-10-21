@@ -5,6 +5,7 @@ package session
 import (
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -233,6 +234,11 @@ func PrepareResume(s *store.Store, sessionID, loam string) (*Plan, error) {
 	if err != nil {
 		return nil, err
 	}
+	return prepareResume(s, rec, []string{"--resume", sessionID}, loam)
+}
+
+// prepareResume prepares claude for the record, with idArgs to name the session.
+func prepareResume(s *store.Store, rec store.SessionRecord, idArgs []string, loam string) (*Plan, error) {
 	plot, err := s.GetPlot(rec.PlotID)
 	if err != nil {
 		return nil, err
@@ -250,7 +256,7 @@ func PrepareResume(s *store.Store, sessionID, loam string) (*Plan, error) {
 	if err != nil {
 		return nil, err
 	}
-	plan, err := build(s, plot, rec.StartFolder, claude, sessionID, []string{"--resume", sessionID}, loam)
+	plan, err := build(s, plot, rec.StartFolder, claude, rec.SessionID, idArgs, loam)
 	if err != nil {
 		return nil, err
 	}
@@ -260,6 +266,54 @@ func PrepareResume(s *store.Store, sessionID, loam string) (*Plan, error) {
 		}
 	}
 	return plan, nil
+}
+
+// PrepareResumeInPlot records a session that has no record in the plot, with
+// folder as its start folder, then prepares its resume as for PrepareResume.
+// The app moves a Home session into a plot with it (ticket 100). A session
+// that is already recorded in the plot resumes as it is, so a retry is safe.
+// A session recorded in another plot is refused: a session never moves
+// between plots. A session that never had a prompt has no conversation to
+// resume, so it starts again with the same ID. The record is added only when
+// the launch plan is ready, so a failed check leaves no record.
+func PrepareResumeInPlot(s *store.Store, sessionID, plotID, folder, loam string) (*Plan, error) {
+	rec, err := s.GetSession(sessionID)
+	switch {
+	case err == nil:
+		if rec.PlotID != plotID {
+			other := rec.PlotID
+			if p, err := s.GetPlot(rec.PlotID); err == nil {
+				other = p.Name
+			}
+			return nil, fmt.Errorf("session %s is in the plot %s, and --plot never moves a session between plots. Resume it with loam resume %s: %w",
+				sessionID, other, sessionID, store.ErrInvalid)
+		}
+		return prepareResume(s, rec, resumeOrStart(rec), loam)
+	case errors.Is(err, store.ErrNotFound):
+		if !uuidRE.MatchString(sessionID) {
+			return nil, fmt.Errorf("session ID %q is not a UUID: %w", sessionID, store.ErrInvalid)
+		}
+		rec = store.SessionRecord{SessionID: sessionID, PlotID: plotID, StartFolder: folder}
+		plan, err := prepareResume(s, rec, resumeOrStart(rec), loam)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.AddSession(rec); err != nil {
+			return nil, err
+		}
+		return plan, nil
+	default:
+		return nil, err
+	}
+}
+
+// resumeOrStart names the session for claude: --resume when Claude Code has its
+// conversation, else --session-id, which starts it with the same ID.
+func resumeOrStart(rec store.SessionRecord) []string {
+	if hasConversation(rec.SessionID) {
+		return []string{"--resume", rec.SessionID}
+	}
+	return []string{"--session-id", rec.SessionID}
 }
 
 // HomeOptions says how to start a session in Home, the space in the app for

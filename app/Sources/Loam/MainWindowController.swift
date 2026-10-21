@@ -312,6 +312,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         tabBar.onMove = { [weak model] from, to in model?.moveTab(from: from, to: to) }
         tabBar.onClose = { [weak self] index in self?.closeTab(at: index) }
         tabBar.onNewSession = { [weak self] in self?.newSession(nil) }
+        tabBar.onMenu = { [weak self] index in self.flatMap { MoveDialogs.tabMenu(at: index, model: $0.model, on: $0.window) } }
         columnView.setTabBarShown(!tabBar.items.isEmpty)
         paneArea.onDividerDrag = { [weak model] path, ratio in model?.setSplitRatio(ratio, at: path) }
         paneArea.show(tab?.tree)
@@ -438,18 +439,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     @objc func newPlot(_ sender: Any?) {
         guard let window else { return }
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
-        field.placeholderString = "Plot name"
-        let alert = NSAlert()
-        alert.messageText = "New plot"
-        alert.informativeText = "Name the plot."
-        alert.accessoryView = field
-        alert.addButton(withTitle: "Create")
-        alert.addButton(withTitle: "Cancel")
-        alert.window.initialFirstResponder = field
-        alert.beginSheetModal(for: window) { [model] response in
-            guard response == .alertFirstButtonReturn else { return }
-            let name = field.stringValue
+        PlotDialogs.askName(on: window) { [model] name in
             Task { @MainActor in await model.newPlot(named: name) }
         }
     }
@@ -570,6 +560,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         case .archivePlot:
             guard let plot = model.workspace.activePlotID else { return false }
             PlotDialogs.askArchive(plot, model: model)
+        case .moveTabToPlot(let plot):
+            guard model.workspace.activeSpace == .home, let tab = model.workspace.activeTab else { return false }
+            MoveDialogs.askMove(tab.id, to: plot, model: model, on: window)
+        case .moveTabToNewPlot:
+            guard model.workspace.activeSpace == .home, let tab = model.workspace.activeTab else { return false }
+            MoveDialogs.askMoveToNewPlot(tab.id, model: model, on: window)
         case .undo, .redo:
             // Ticket 36 (undo) builds these.
             commandLog.info("No handler yet for \(String(describing: command), privacy: .public)")

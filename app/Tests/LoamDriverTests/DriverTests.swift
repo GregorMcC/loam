@@ -192,6 +192,18 @@ struct DriverTests {
         try await expectPass("home-relaunch", environment: environment)
     }
 
+    /// Ticket 100: ⌘J moves a Home tab of a shell and a session to a plot. The shell keeps its process,
+    /// and the session resumes in the plot. "Move to New Plot…" makes a plot first. A relaunch
+    /// brings the moved tab back in the plot.
+    @Test func movesAHomeTabToAPlot() async throws {
+        let rig = FileManager.default.temporaryDirectory.appendingPathComponent("loam-driver-move-\(UUID().uuidString)")
+        let environment = [
+            "LOAM_DRIVER_LOAM": Self.loamBinary, "LOAM_DRIVER_FAKE_CLAUDE": Self.fakeClaude, "LOAM_DRIVER_RIG": rig.path,
+        ]
+        try await expectPass("move-to-plot", environment: environment)
+        try await expectPass("move-to-plot-relaunch", environment: environment)
+    }
+
     /// Ticket 32: 3 plots, a permission prompt in a plot that is not active shows on its sidebar row,
     /// ⌘L reaches it, and a key clears it. Also done, unread, the banner, the title bar button, and Reduce Motion.
     @Test func showsAPaneThatNeedsYouAndReachesItWithCommandL() async throws {

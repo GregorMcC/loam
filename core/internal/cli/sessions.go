@@ -2,9 +2,11 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"slices"
 
 	"github.com/GregorMcC/loam/core/internal/session"
+	"github.com/GregorMcC/loam/core/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -55,12 +57,15 @@ func newSessionsCmd() *cobra.Command {
 }
 
 func newResumeCmd() *cobra.Command {
-	return &cobra.Command{
+	var plotArg string
+	c := &cobra.Command{
 		Use:   "resume <session-id>",
 		Short: "Resume a seeded Claude Code session",
 		Long: "Read the session record, change to its start folder, write the seed again, and run claude --resume.\n" +
 			"In a worktree, it runs the setup command first if setup has not succeeded.\n" +
-			"The command fails if the start folder is gone.",
+			"The command fails if the start folder is gone.\n" +
+			"With --plot, a Home session, which has no record, gets a record in that plot first, with the\n" +
+			"home folder as its start folder. The app uses it to move a Home tab to a plot.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := openStore()
@@ -72,7 +77,12 @@ func newResumeCmd() *cobra.Command {
 				s.Close()
 				return err
 			}
-			plan, err := session.PrepareResume(s, args[0], exe)
+			var plan *session.Plan
+			if plotArg != "" {
+				plan, err = resumeInPlot(s, args[0], plotArg, exe)
+			} else {
+				plan, err = session.PrepareResume(s, args[0], exe)
+			}
 			s.Close()
 			if err != nil {
 				return err
@@ -83,4 +93,21 @@ func newResumeCmd() *cobra.Command {
 			return session.Exec(plan)
 		},
 	}
+	c.Flags().StringVar(&plotArg, "plot", "", "record a Home session in this plot, then resume it")
+	return c
+}
+
+// resumeInPlot records the Home session in the plot that plotArg names and
+// prepares its resume. A Home session always runs in the home folder
+// (PrepareHome), so that is its start folder, whatever the current folder.
+func resumeInPlot(s *store.Store, sessionID, plotArg, loam string) (*session.Plan, error) {
+	p, err := resolvePlot(s, plotArg)
+	if err != nil {
+		return nil, err
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+	return session.PrepareResumeInPlot(s, sessionID, p.ID, home, loam)
 }

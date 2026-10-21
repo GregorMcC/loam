@@ -6,11 +6,17 @@ import LoamKit
 enum PlotDialogs {
     /// Archive. It asks first when a session in the plot asks (`ClosePrompt`), else it goes ahead.
     static func askArchive(_ plot: String, model: AppModel) {
-        guard let prompt = model.archivePrompt(for: plot) else {
+        confirm(model.archivePrompt(for: plot)) {
             Task { @MainActor in await model.archivePlot(plot) }
-            return
         }
-        guard let window = NSApp.keyWindow ?? NSApp.mainWindow else { return }  // No window: ask nothing and archive nothing.
+    }
+
+    /// Runs `action` at once when there is no question. Else it shows the question, and runs
+    /// `action` on its confirm button. With no window, or with a sheet open, it asks nothing and runs
+    /// nothing. `window` nil uses the key window.
+    static func confirm(_ prompt: ClosePrompt?, on window: NSWindow? = nil, then action: @escaping @MainActor () -> Void) {
+        guard let prompt else { return action() }
+        guard let window = window ?? NSApp.keyWindow ?? NSApp.mainWindow, window.attachedSheet == nil else { return }
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = prompt.title
@@ -18,8 +24,26 @@ enum PlotDialogs {
         alert.addButton(withTitle: prompt.confirm)
         alert.addButton(withTitle: "Cancel")
         alert.beginSheetModal(for: window) { response in
+            if response == .alertFirstButtonReturn { action() }
+        }
+    }
+
+    /// The name sheet of a new plot, for ⌘N and "Move to New Plot…". Create runs `then` with the
+    /// name as typed. `window` nil uses the key window.
+    static func askName(on window: NSWindow? = nil, then: @escaping @MainActor (String) -> Void) {
+        guard let window = window ?? NSApp.keyWindow ?? NSApp.mainWindow else { return }
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        field.placeholderString = "Plot name"
+        let alert = NSAlert()
+        alert.messageText = "New plot"
+        alert.informativeText = "Name the plot."
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Create")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        alert.beginSheetModal(for: window) { response in
             guard response == .alertFirstButtonReturn else { return }
-            Task { @MainActor in await model.archivePlot(plot) }
+            then(field.stringValue)
         }
     }
 
