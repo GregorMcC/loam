@@ -1,6 +1,7 @@
 package scripts_test
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -128,6 +129,102 @@ func TestInstallAppAsksToQuitRunningLoam(t *testing.T) {
 	out, err := installApp(t, path, "--adhoc")
 	if err == nil || !strings.Contains(out, "Quit Loam") {
 		t.Fatalf("want quit request, got %v: %s", err, out)
+	}
+}
+
+// askThenQuit is a fake osascript for a Loam that asks first: the quit request
+// fails at once, and Loam quits a second later, when you choose Quit.
+func askThenQuit(quit string) string {
+	return fmt.Sprintf(`(sleep 1; touch %q) &
+echo 'Loam got an error: User canceled. (-128)' >&2
+exit 1`, quit)
+}
+
+// fakeBuildApp stands in for build-app.sh: it makes OUT/Loam.app with only an
+// Info.plist that names the version.
+const fakeBuildApp = `#!/bin/sh
+mkdir -p "$1/Loam.app/Contents"
+cat > "$1/Loam.app/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict><key>LoamVersion</key><string>v9.9.9</string></dict></plist>
+PLIST
+`
+
+// replaceRig is a copy of install.sh in a temp repo, with the real core and a
+// fake build-app.sh, so --replace-running runs without an app build.
+func replaceRig(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	core, err := filepath.Abs(filepath.Join("..", "..", "..", "core"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(core, filepath.Join(root, "core")); err != nil {
+		t.Fatal(err)
+	}
+	scripts := filepath.Join(root, "scripts")
+	if err := os.Mkdir(scripts, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(script("install.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(scripts, "install.sh"), b, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(scripts, "build-app.sh"), []byte(fakeBuildApp), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return filepath.Join(scripts, "install.sh")
+}
+
+// Loam asks first when a session is mid-turn, and answers the quit request
+// with a cancel. The install waits for the answer and goes on when Loam quits.
+func TestInstallAppReplaceWaitsWhileLoamAsks(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("the app installs on macOS only")
+	}
+	quit := filepath.Join(t.TempDir(), "quit")
+	apps := t.TempDir()
+	path := fakeTools(t, map[string]string{
+		"pgrep":     fmt.Sprintf(`[ ! -f %q ]`, quit),
+		"osascript": askThenQuit(quit),
+		"open":      "true",
+	})
+	cmd := exec.Command(replaceRig(t), "app", "--prefix", t.TempDir(), "--apps-dir", apps, "--adhoc", "--replace-running")
+	cmd.Env = append(os.Environ(), "PATH="+path)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(apps, "Loam.app", "Contents", "Info.plist")); err != nil {
+		t.Errorf("no app installed: %v: %s", err, out)
+	}
+	if !strings.Contains(string(out), "choose Quit") || !strings.Contains(string(out), "Reopened Loam") {
+		t.Errorf("output: %s", out)
+	}
+}
+
+// Any other failure of the quit request stops the install at once, with the
+// error, and installs nothing.
+func TestInstallAppReplaceStopsWhenTheQuitRequestFails(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("the app installs on macOS only")
+	}
+	apps := t.TempDir()
+	path := fakeTools(t, map[string]string{
+		"pgrep":     "true",
+		"osascript": "echo 'Not authorized to send Apple events to Loam. (-1743)' >&2; exit 1",
+	})
+	cmd := exec.Command(replaceRig(t), "app", "--prefix", t.TempDir(), "--apps-dir", apps, "--adhoc", "--replace-running")
+	cmd.Env = append(os.Environ(), "PATH="+path)
+	out, err := cmd.CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "(-1743)") || strings.Contains(string(out), "waits up to") {
+		t.Fatalf("want a stop with the error, got %v: %s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(apps, "Loam.app")); err == nil {
+		t.Errorf("an app was installed: %s", out)
 	}
 }
 

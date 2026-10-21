@@ -301,6 +301,50 @@ func TestInstallReleaseReplacesRunningLoam(t *testing.T) {
 	r.noStage(t)
 }
 
+// Loam asks first when a session is mid-turn, and answers the quit request
+// with a cancel. The install waits for the answer and goes on when Loam quits.
+func TestInstallReleaseWaitsWhileLoamAsks(t *testing.T) {
+	r := newReleaseRig(t)
+	fakeRelease(t, r.releases, "v0.1.0")
+	quit := filepath.Join(t.TempDir(), "quit")
+	path := fakeTools(t, map[string]string{
+		"pgrep":     fmt.Sprintf(`[ ! -f %q ]`, quit),
+		"osascript": askThenQuit(quit),
+		"open":      "true",
+	})
+	out, err := r.run(t, path)
+	if err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	if v := r.installedVersion(t); v != "v0.1.0" {
+		t.Errorf("installed %q", v)
+	}
+	if !strings.Contains(out, "choose Quit") || !strings.Contains(out, "Reopened Loam") {
+		t.Errorf("output: %s", out)
+	}
+	r.noStage(t)
+}
+
+// Any other failure of the quit request stops the install at once, with the
+// error. The old app stays in place.
+func TestInstallReleaseStopsWhenTheQuitRequestFails(t *testing.T) {
+	r := newReleaseRig(t)
+	fakeRelease(t, r.releases, "v0.1.0")
+	path := fakeTools(t, map[string]string{
+		"pgrep":     "true",
+		"osascript": "echo 'Not authorized to send Apple events to Loam. (-1743)' >&2; exit 1",
+		"open":      "true",
+	})
+	out, err := r.run(t, path)
+	if err == nil || !strings.Contains(out, "(-1743)") || strings.Contains(out, "waits up to") {
+		t.Fatalf("want a stop with the error, got %v: %s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(r.apps, "Loam.app")); err == nil {
+		t.Errorf("an app was installed: %s", out)
+	}
+	r.noStage(t)
+}
+
 func TestReleaseRejectsBadTag(t *testing.T) {
 	out, err := exec.Command(script("release.sh"), "1.0").CombinedOutput()
 	if err == nil || !strings.Contains(string(out), "usage") {
