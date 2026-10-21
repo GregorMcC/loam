@@ -104,5 +104,7 @@ final class WindowToolbar: NSObject, NSToolbarDelegate {
         let words = count > 0 ? "Plot panel \u{2318}I \u{00B7} \(count)" : "Plot panel \u{2318}I"
         panelItem?.label = words
         panelButton?.setAccessibilityLabel(words)
+        // Home has no plot panel (ticket 99).
+        panelButton?.isEnabled = model.workspace.activePlotID != nil
     }
 }

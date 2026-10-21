@@ -74,6 +74,9 @@ func argValues(args []string, flag string) []string {
 
 const fixedID = "11111111-2222-4333-8444-555555555555"
 
+// uuidV4 matches a session ID that Loam picks.
+var uuidV4 = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+
 func TestStartPlotWithRepos(t *testing.T) {
 	e := setup(t)
 	main, other, linkDir := t.TempDir(), t.TempDir(), t.TempDir()
@@ -181,7 +184,7 @@ func TestStartNoReposStartsInPlotFolder(t *testing.T) {
 		t.Errorf("--add-dir %v", dirs)
 	}
 	id := argValues(inv.Args, "--session-id")
-	if len(id) != 1 || !regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`).MatchString(id[0]) {
+	if len(id) != 1 || !uuidV4.MatchString(id[0]) {
 		t.Errorf("generated session ID %v", id)
 	}
 }

@@ -179,7 +179,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             model.sidebarCollapsed = saved.sidebarCollapsed
             if saved.panelOpen {
                 model.setPanelVisible(true)
-                panelItem.isCollapsed = false
+                // Home has no panel, so the column stays shut and does not open, then shut, at launch.
+                panelItem.isCollapsed = model.restoredSpace == .home
             }
         }
         let center = NotificationCenter.default
@@ -304,9 +305,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             paneArea.add(container)
         }
 
-        let active = workspace.activePlotID
-        let tab = active.flatMap { workspace.selectedTab(of: $0) }
+        let tab = workspace.activeTab
         updatePaneLabels()
+        showPanelForActiveSpace()
         tabBar.onSelect = { [weak model] index in model?.selectTab(index: index) }
         tabBar.onMove = { [weak model] from, to in model?.moveTab(from: from, to: to) }
         tabBar.onClose = { [weak self] index in self?.closeTab(at: index) }
@@ -330,7 +331,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private func updatePaneLabels() {
         let workspace = model.workspace
         let active = workspace.activePlotID
-        let focused = active.flatMap { workspace.selectedTab(of: $0) }?.focused
+        let focused = workspace.focusedPane
         let titles = model.terminalTitles
         for id in workspace.livePaneIDs {
             guard let spec = workspace.spec(of: id), let container = paneArea.container(for: id) else { continue }
@@ -341,12 +342,22 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             container.showEnded(spec.kind == .session && session?.exited == true, canResume: session?.started == true,
                               note: model.endedNote(of: id))
         }
-        tabBar.update(TabBarModel(workspace: workspace, plot: active, titles: titles, arriving: model.arrivingPanes()).items)
-        let plotName = model.plots.first { $0.id == active }?.name ?? ""
+        tabBar.update(TabBarModel(workspace: workspace, space: workspace.activeSpace, titles: titles,
+                                  arriving: model.arrivingPanes()).items)
+        let plotName = workspace.activeSpace.flatMap(model.name(of:)) ?? ""
         let paneLabel = focused.map { workspace.title(of: $0, terminalTitles: titles) } ?? ""
+        let isHome = workspace.activeSpace == .home
         if actionBar.plotID != active { actionBar.plotID = active }
         if actionBar.plotName != plotName { actionBar.plotName = plotName }
+        if actionBar.isHome != isHome { actionBar.isHome = isHome }
         if actionBar.paneLabel != paneLabel { actionBar.paneLabel = paneLabel }
+    }
+
+    /// Home has no plot panel (ticket 99). While Home is active the panel column collapses, and
+    /// `panel.visible` keeps your choice, so the panel comes back with the next plot.
+    private func showPanelForActiveSpace() {
+        let shown = model.panel.visible && model.workspace.activePlotID != nil
+        if panelItem.isCollapsed == shown { panelItem.animator().isCollapsed = !shown }
     }
 
     // MARK: Subtitle and chrome (ticket 68)
@@ -455,8 +466,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window?.makeFirstResponder(panelController.view)
     }
 
-    /// ⌘I. The panel loads the active plot while it shows.
+    /// ⌘I. The panel loads the active plot while it shows. Home has no panel.
     @objc func togglePlotPanel(_ sender: Any?) {
+        guard model.workspace.activePlotID != nil else { return }
         let show = panelItem.isCollapsed
         if !show { model.panel.request = nil }  // A request the panel could not run does not wait for the next show.
         model.setPanelVisible(show)
@@ -465,7 +477,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
     /// ⌘W closes the focused pane. It asks first when the session in it is mid-turn.
     @objc func closePane(_ sender: Any?) {
-        guard let plot = model.workspace.activePlotID, let pane = model.workspace.selectedTab(of: plot)?.focused else {
+        guard let pane = model.workspace.focusedPane else {
             window?.performClose(sender)
             return
         }
@@ -474,22 +486,22 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     /// Ghostty `close_tab`: the selected tab. It asks first when a session in the tab is mid-turn.
     private func closeTab() -> Bool {
-        guard let plot = model.workspace.activePlotID, let tab = model.workspace.selectedTab(of: plot) else { return false }
+        guard let tab = model.workspace.activeTab else { return false }
         return closeTab(id: tab.id)
     }
 
     /// The `x` on a tab (ticket 96): the tab at `index`, selected or not, by the same path as ⌘W.
     private func closeTab(at index: Int) {
-        guard let plot = model.workspace.activePlotID, model.workspace.tabs(of: plot).indices.contains(index) else { return }
-        closeTab(id: model.workspace.tabs(of: plot)[index].id)
+        guard let space = model.workspace.activeSpace, model.workspace.tabs(of: space).indices.contains(index) else { return }
+        closeTab(id: model.workspace.tabs(of: space)[index].id)
     }
 
     /// Closes one tab. It asks first when a session in the tab is mid-turn, and closes the tab by its
     /// ID after the answer, so the selection stays on the same tab.
     @discardableResult
     private func closeTab(id: UUID) -> Bool {
-        guard let plot = model.workspace.activePlotID,
-              let tab = model.workspace.tabs(of: plot).first(where: { $0.id == id }) else { return false }
+        guard let space = model.workspace.activeSpace,
+              let tab = model.workspace.tabs(of: space).first(where: { $0.id == id }) else { return false }
         guard let prompt = ClosePrompt.make(.tab, closing: tab.tree.paneIDs, in: model.workspace) else {
             return model.closeTab(id)
         }
@@ -508,7 +520,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     /// Runs the Ghostty config commands (open and reload). The app sets it.
     var onConfigCommand: ((AppCommand) -> Void)?
 
-    /// Runs one command on the active plot: a menu item, a fixed Loam key in a pane, or a Ghostty
+    /// Runs one command on the active space: a menu item, a fixed Loam key in a pane, or a Ghostty
     /// action (spec 8.3). Returns false for a command that did nothing, so a performable Ghostty
     /// binding (⌘Z) goes on to the terminal.
     @discardableResult
@@ -518,7 +530,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         case .toggleSidebar: toggleSidebar(nil)
         case .togglePlotPanel: togglePlotPanel(nil)
         case .selectPlot(let number): model.activate(number: number)
-        // ⌘T, ⌘D, and ⌘⇧D start a seeded session. A shell starts in the plot's start folder.
+        case .selectHome: model.activateHome()
+        case .newHomeSession: model.openHomeTab(.session)
+        case .newHomeShell: model.openHomeTab(.shell)
+        // ⌘T, ⌘D, and ⌘⇧D start a session: seeded in a plot, plain in Home. A shell starts in the
+        // start folder of the space.
         case .newTab: model.openTab(.session)
         case .newShellTab: Task { await model.openShellTab() }
         case .openSettings: showSettings()

@@ -7,6 +7,8 @@ public enum LoamIcon: Equatable, Sendable {
     case brand(BrandMark)
 
     public static let plot = LoamIcon.symbol("square.stack.3d.down.right")
+    /// Home, the space for tabs with no plot (ticket 99).
+    public static let home = LoamIcon.symbol("house")
     public static let shell = LoamIcon.symbol("terminal")
     /// A Claude session pane.
     public static let session = LoamIcon.brand(.claude)

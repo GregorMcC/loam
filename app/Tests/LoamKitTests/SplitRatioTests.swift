@@ -118,14 +118,14 @@ import Testing
 
     @Test func workspaceEqualizeAndResizeActOnTheSelectedTab() {
         var ws = Workspace()
-        ws.openTab(PaneSpec(kind: .shell, plot: "p"))
-        ws.split(plot: "p", axis: .sideBySide, PaneSpec(kind: .shell, plot: "p"))
+        ws.openTab(PaneSpec(kind: .shell, space: "p"))
+        ws.split(in: "p", axis: .sideBySide, PaneSpec(kind: .shell, space: "p"))
         let first = ws.selectedTab(of: "p")!.tree.paneIDs[0]
-        ws.resize(plot: "p", pane: first, toward: .right, by: 0.2)
+        ws.resize(in: "p", pane: first, toward: .right, by: 0.2)
         #expect(ratioOfRoot(ws.selectedTab(of: "p")!.tree) == 0.7)
-        ws.setRatio(0.3, at: [], plot: "p")
+        ws.setRatio(0.3, at: [], in: "p")
         #expect(ratioOfRoot(ws.selectedTab(of: "p")!.tree) == 0.3)
-        ws.equalize(plot: "p")
+        ws.equalize(in: "p")
         #expect(ratioOfRoot(ws.selectedTab(of: "p")!.tree) == 0.5)
     }
 }

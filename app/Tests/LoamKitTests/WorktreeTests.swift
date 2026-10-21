@@ -121,6 +121,18 @@ private func status(changed: Int = 0, unpushed: Int = 0, merged: Bool = true, me
         #expect(spec.command?.contains("start plotaaaaab --worktree wtreaaaaab --session-id") == true)
     }
 
+    /// Ticket 99: a worktree of a plot that is not in the list opens no tab, in Home or anywhere.
+    @Test func aWorktreeOfAPlotNotInTheListOpensNoTab() async throws {
+        let fake = try FakeLoam([("worktree_list", 0)])
+        let model = await model(fake)
+        let wt = model.worktreeStatus("wtreaaaaab")!.worktree
+        model.apply([plot("plotaaaaac")])
+        model.activateHome()
+        model.openWorktreePane(wt)
+        #expect(model.workspace.activeSpace == .home)
+        #expect(model.workspace.paneIDs(of: .home).isEmpty)
+    }
+
     @Test func resumeAndNewSessionKeepTheWorktree() async throws {
         let fake = try FakeLoam([("worktree_list", 0)])
         let model = await model(fake)

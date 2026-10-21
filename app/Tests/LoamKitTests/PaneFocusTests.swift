@@ -44,16 +44,16 @@ import Testing
 
     @Test func theWorkspaceMovesFocusAndClosesTheSelectedTab() {
         var workspace = Workspace()
-        workspace.activate(plot: "p")
-        let first = workspace.openTab(PaneSpec(kind: .shell, plot: "p", title: "one"))
-        let second = workspace.split(plot: "p", axis: .sideBySide, PaneSpec(kind: .shell, plot: "p", title: "two"))!
+        workspace.activate("p")
+        let first = workspace.openTab(PaneSpec(kind: .shell, space: "p", title: "one"))
+        let second = workspace.split(in: "p", axis: .sideBySide, PaneSpec(kind: .shell, space: "p", title: "two"))!
         #expect(workspace.selectedTab(of: "p")?.focused == second)
         workspace.focusPane(toward: .left, in: "p")
         #expect(workspace.selectedTab(of: "p")?.focused == first)
         workspace.focusPane(toward: .left, in: "p")
         #expect(workspace.selectedTab(of: "p")?.focused == first)
 
-        let other = workspace.openTab(PaneSpec(kind: .shell, plot: "p", title: "three"))
+        let other = workspace.openTab(PaneSpec(kind: .shell, space: "p", title: "three"))
         workspace.selectTab(number: 1, in: "p")
         workspace.closeSelectedTab(in: "p")
         #expect(workspace.tabs(of: "p").count == 1)
@@ -64,11 +64,11 @@ import Testing
     /// Ticket 96: the close button closes a tab that is not selected, and the selection stays put.
     @Test func closesATabThatIsNotSelectedAndKeepsTheSelection() {
         var workspace = Workspace()
-        workspace.activate(plot: "p")
-        let first = workspace.openTab(PaneSpec(kind: .shell, plot: "p", title: "one"))
-        let second = workspace.openTab(PaneSpec(kind: .shell, plot: "p", title: "two"))
-        let third = workspace.openTab(PaneSpec(kind: .shell, plot: "p", title: "three"))
-        let split = workspace.split(plot: "p", axis: .sideBySide, PaneSpec(kind: .shell, plot: "p", title: "four"))!
+        workspace.activate("p")
+        let first = workspace.openTab(PaneSpec(kind: .shell, space: "p", title: "one"))
+        let second = workspace.openTab(PaneSpec(kind: .shell, space: "p", title: "two"))
+        let third = workspace.openTab(PaneSpec(kind: .shell, space: "p", title: "three"))
+        let split = workspace.split(in: "p", axis: .sideBySide, PaneSpec(kind: .shell, space: "p", title: "four"))!
         let tabs = workspace.tabs(of: "p")
         let selected = workspace.selectedTab(of: "p")?.id
         #expect(selected == tabs[2].id)

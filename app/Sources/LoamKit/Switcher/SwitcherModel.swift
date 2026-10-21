@@ -99,11 +99,11 @@ public final class SwitcherModel {
         var panes: [SwitcherPreview.PaneFacts] = []
         if let app {
             let workspace = app.workspace
-            for plot in app.plots {
-                for pane in workspace.paneIDs(of: plot.id) {
+            for space in [Space.home] + app.plots.map({ .plot($0.id) }) {
+                for pane in workspace.paneIDs(of: space) {
                     guard let spec = workspace.spec(of: pane) else { continue }
                     panes.append(SwitcherPreview.PaneFacts(
-                        id: SwitcherItem.paneKey(pane.uuidString), plotID: plot.id,
+                        id: SwitcherItem.paneKey(pane.uuidString), space: space,
                         title: workspace.title(of: pane, terminalTitles: app.terminalTitles), kind: spec.kind,
                         state: workspace.state(of: pane), attention: workspace.attention(of: pane),
                         folder: workspace.folder(of: pane), worktree: spec.worktree, saved: false))
@@ -111,7 +111,7 @@ public final class SwitcherModel {
             }
             for saved in savedPanes() where app.plots.contains(where: { $0.id == saved.plotID }) {
                 panes.append(SwitcherPreview.PaneFacts(
-                    id: SwitcherItem.paneKey(saved.id), plotID: saved.plotID, title: saved.title, kind: nil, state: nil,
+                    id: SwitcherItem.paneKey(saved.id), space: .plot(saved.plotID), title: saved.title, kind: nil, state: nil,
                     attention: saved.attention, folder: nil, worktree: nil, saved: true))
             }
         }
@@ -134,22 +134,24 @@ public final class SwitcherModel {
             actions: actions())
     }
 
-    /// The items in source order: plots, panes, saved panes, links, actions.
+    /// The items in source order: Home, plots, panes, saved panes, links, actions.
     /// Plots that are not in `plots` (archived ones) have no items.
     static func items(plots: [PlotSummary], workspace: Workspace, terminalTitles: [PaneID: String],
                       attention: (PaneID) -> PaneAttention, savedPanes: [SavedPane],
                       links: [SwitcherLink], actions: [SwitcherAction]) -> [SwitcherItem] {
         let names = Dictionary(plots.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
-        var items: [SwitcherItem] = plots.map {
+        let home = SwitcherItem(id: SwitcherItem.homeKey, kind: .plot, title: Space.homeName, target: .home, icon: .home)
+        var items: [SwitcherItem] = [home] + plots.map {
             SwitcherItem(id: SwitcherItem.plotKey($0.id), kind: .plot, title: $0.name, target: .plot($0.id))
         }
-        for plot in plots {
-            for pane in workspace.paneIDs(of: plot.id) {
+        let spaces = [(space: Space.home, name: Space.homeName)] + plots.map { (space: Space.plot($0.id), name: $0.name) }
+        for (space, name) in spaces {
+            for pane in workspace.paneIDs(of: space) {
                 guard let spec = workspace.spec(of: pane) else { continue }
                 let title = workspace.title(of: pane, terminalTitles: terminalTitles)
                 items.append(SwitcherItem(
                     id: SwitcherItem.paneKey(pane.uuidString), kind: .pane, title: title,
-                    otherText: [plot.name], plotName: plot.name, attention: attention(pane), target: .pane(pane),
+                    otherText: [name], plotName: name, attention: attention(pane), target: .pane(pane),
                     icon: .pane(spec.kind)))
             }
         }
@@ -224,14 +226,14 @@ public final class SwitcherModel {
     public func choose(_ item: SwitcherItem) {
         guard let app else { close(); return }
         switch item.target {
+        case .home:
+            app.activateHome()
+            close()
         case .plot(let id):
             app.activate(plot: id)
             close()
         case .pane(let pane):
-            if let plot = app.workspace.spec(of: pane)?.plot {
-                app.activate(plot: plot)
-                app.focus(pane)
-            }
+            if app.workspace.spec(of: pane) != nil { app.goToPane(pane) }
             useTimes?.record(item.id)  // Also when the pane already had focus in its plot.
             close()
         case .savedPane(let saved):

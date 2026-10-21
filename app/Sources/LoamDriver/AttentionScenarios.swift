@@ -84,8 +84,8 @@ extension Scenarios {
         for plot in [one, two, three] {
             model.activate(plot: plot)
             try app.pressMenuKey("t")
-            try await app.waitUntil("a seeded pane in \(plot)") { model.workspace.selectedTab(of: plot) != nil }
-            let pane = model.workspace.selectedTab(of: plot)!.focused
+            try await app.waitUntil("a seeded pane in \(plot)") { model.workspace.selectedTab(of: .plot(plot)) != nil }
+            let pane = model.workspace.selectedTab(of: .plot(plot))!.focused
             try await app.waitUntil("the session in \(plot) started") { model.workspace.session(of: pane)?.started == true }
             try await app.waitUntil("the session text") { (try? surface(pane))?.screenText().contains("fake claude: session") == true }
             panes[plot] = pane

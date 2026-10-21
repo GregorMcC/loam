@@ -81,6 +81,15 @@ import Testing
         #expect(model.workspace.activePlotID == "plotaaaaac")
     }
 
+    /// Ticket 99: with no plot left, Home is active.
+    @Test func archiveOfTheLastPlotMovesToHome() async throws {
+        let fake = try FakeLoam([("archive", 0), ("error_generic", 1)])
+        let model = AppModel(client: fake.client())
+        model.apply([plot("plotaaaaab", "Loam")])
+        #expect(await model.archivePlot("plotaaaaab"))
+        #expect(model.workspace.activeSpace == .home)
+    }
+
     @Test func archiveOfAnInactivePlotKeepsTheActiveOne() async throws {
         let fake = try FakeLoam([("archive", 0), ("error_generic", 1)])
         let (model, _, _) = try model(fake)
@@ -160,7 +169,7 @@ import Testing
         #expect(fake.args().first == "delete plotaaaaac --json --actor app")
         model.apply([plot("plotaaaaab", "Loam")])  // The core no longer lists it.
         #expect(model.workspace.tabs(of: "plotaaaaac").isEmpty)
-        #expect(model.savedLayout.panes.allSatisfy { $0.plotID != "plotaaaaac" })
+        #expect(model.savedLayout.panes.allSatisfy { $0.space != "plotaaaaac" })
     }
 
     @Test func deleteRefusesAPlotThatIsNotArchived() async throws {

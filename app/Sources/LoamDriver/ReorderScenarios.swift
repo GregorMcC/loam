@@ -28,9 +28,9 @@ extension Scenarios {
         let model = host.model
         try await app.waitUntil("the plot is active") { model.workspace.activePlotID == plot }
         for _ in 0..<4 { model.openTab() }
-        try await app.waitUntil("four tabs") { model.workspace.tabs(of: plot).count == 4 }
-        func ids() -> [UUID] { model.workspace.tabs(of: plot).map(\.id) }
-        func selected() -> UUID? { model.workspace.selectedTab(of: plot)?.id }
+        try await app.waitUntil("four tabs") { model.workspace.tabs(of: .plot(plot)).count == 4 }
+        func ids() -> [UUID] { model.workspace.tabs(of: .plot(plot)).map(\.id) }
+        func selected() -> UUID? { model.workspace.selectedTab(of: .plot(plot))?.id }
         let start = ids()
         // The last tab is selected. The drag moves the first, so the selection must not follow it.
         try check(selected() == start[3], "the last tab is not selected")

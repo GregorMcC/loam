@@ -19,7 +19,7 @@ private func repo(_ id: String, _ path: String, main: Bool = false) -> Repo {
 private func paneFacts(_ id: String, plot: String = "p1", title: String = "shell", attention: PaneAttention = .none,
                        state: PaneState? = .running, folder: String? = nil, worktree: WorktreeRef? = nil,
                        kind: PaneSpec.Kind? = .shell, saved: Bool = false) -> SwitcherPreview.PaneFacts {
-    SwitcherPreview.PaneFacts(id: SwitcherItem.paneKey(id), plotID: plot, title: title, kind: kind, state: state,
+    SwitcherPreview.PaneFacts(id: SwitcherItem.paneKey(id), space: .plot(plot), title: title, kind: kind, state: state,
                               attention: attention, folder: folder, worktree: worktree, saved: saved)
 }
 

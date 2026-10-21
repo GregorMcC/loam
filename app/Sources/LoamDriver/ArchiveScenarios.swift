@@ -52,13 +52,13 @@ extension Scenarios {
         // 1. A session in the plot that will be archived, and a shell split.
         model.activate(plot: finished)
         try app.pressMenuKey("t")
-        try await app.waitUntil("a seeded pane") { model.workspace.selectedTab(of: finished) != nil }
-        let session = model.workspace.selectedTab(of: finished)!.focused
+        try await app.waitUntil("a seeded pane") { model.workspace.selectedTab(of: .plot(finished)) != nil }
+        let session = model.workspace.selectedTab(of: .plot(finished))!.focused
         try await app.waitUntil("the session started") { model.workspace.session(of: session)?.started == true }
         let sessionID = model.workspace.session(of: session)?.sessionID ?? ""
         await model.splitShell(.sideBySide)
-        try await app.waitUntil("a shell split") { model.workspace.paneCount(of: finished) == 2 }
-        let shell = model.workspace.selectedTab(of: finished)!.focused
+        try await app.waitUntil("a shell split") { model.workspace.paneCount(of: .plot(finished)) == 2 }
+        let shell = model.workspace.selectedTab(of: .plot(finished))!.focused
         try await app.waitUntil("idle") { model.workspace.state(of: session) == .idle }
         try expect(model.archivePrompt(for: finished) == nil, "archive asks while the session is idle")
 
@@ -68,14 +68,14 @@ extension Scenarios {
         try app.type("hello")
         app.press(.returnKey)
         try await app.waitUntil("working") { model.workspace.state(of: session) == .working }
-        let tabs = model.workspace.tabs(of: finished)
+        let tabs = model.workspace.tabs(of: .plot(finished))
         try expect(model.archivePrompt(for: finished)?.confirm == "Archive", "archive does not ask while the session works")
         app.screenshot("archive-working")
 
         // 3. Archive: the sessions end, the layout stays, and the plot leaves the sidebar.
         try expect(await model.archivePlot(finished), "archive failed: \(model.lastError ?? "no error")")
         try expect(host.paneView(session) == nil && host.paneView(shell) == nil, "a pane still has a view after archive")
-        try expect(model.workspace.tabs(of: finished) == tabs, "archive changed the layout")
+        try expect(model.workspace.tabs(of: .plot(finished)) == tabs, "archive changed the layout")
         try expect(model.archivedPlots.map(\.id) == [finished], "the archived list is \(model.archivedPlots.map(\.id))")
         try expect(!model.plots.contains { $0.id == finished }, "the plot is still in the plot list")
         try expect(model.workspace.activePlotID != finished, "the archived plot is still active")
@@ -93,7 +93,7 @@ extension Scenarios {
         // 4. Unarchive: the plot returns to its old place. Its session resumes when it shows.
         try expect(await model.unarchivePlot(finished), "unarchive failed: \(model.lastError ?? "no error")")
         try expect(model.plots.map(\.id) == [keep, finished, mistake], "the order is \(model.plots.map(\.id))")
-        try expect(model.workspace.isWaiting(finished) && host.paneView(session) == nil, "the panes started before the plot showed")
+        try expect(model.workspace.isWaiting(.plot(finished)) && host.paneView(session) == nil, "the panes started before the plot showed")
         model.activate(plot: finished)
         try await app.waitUntil("the session resumed") { model.workspace.session(of: session)?.started == true }
         try expect(model.workspace.session(of: session)?.sessionID == sessionID, "the session ID changed")
@@ -122,7 +122,7 @@ extension Scenarios {
         // 6. Delete an archived plot: the plot, its folder, and its panes go.
         model.activate(plot: mistake)
         try app.pressMenuKey("t")
-        try await app.waitUntil("a pane in the plot to delete") { model.workspace.paneCount(of: mistake) == 1 }
+        try await app.waitUntil("a pane in the plot to delete") { model.workspace.paneCount(of: .plot(mistake)) == 1 }
         try expect(await model.deletePlot(mistake) == nil, "delete ran for a plot that is not archived")
         try expect(await model.archivePlot(mistake), "archive failed: \(model.lastError ?? "no error")")
         let folder = model.plotFolder(mistake)
@@ -134,9 +134,9 @@ extension Scenarios {
         try expect(result.trash.hasPrefix(rig.fakeHome.path + "/.Trash/"), "the trash path is \(result.trash)")
         try expect(fm.fileExists(atPath: result.trash) && !fm.fileExists(atPath: folder), "the plot folder is not in the Trash")
         try expect(model.archivedPlots.isEmpty, "the archived list still has \(model.archivedPlots.map(\.id))")
-        try expect(model.workspace.tabs(of: mistake).isEmpty, "the deleted plot still has tabs")
+        try expect(model.workspace.tabs(of: .plot(mistake)).isEmpty, "the deleted plot still has tabs")
         try await app.waitUntil("state.json drops the panes") {
-            !SavedLayout.read(from: rig.stateFile).panes.contains { $0.plotID == mistake }
+            !SavedLayout.read(from: rig.stateFile).panes.contains { $0.space == .plot(mistake) }
         }
         try await app.waitUntil("the Archived header is gone") { !app.exists("archived-header") }
         let after = try rig.loam(["list", "--json"])

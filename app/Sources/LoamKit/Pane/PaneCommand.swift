@@ -21,6 +21,16 @@ public enum PaneCommand {
         loginShell(shell, running: [loam, "resume", sessionID])
     }
 
+    /// A new session in Home (ticket 99): no plot and no seed, in the home folder.
+    public static func startHome(shell: String, loam: String, sessionID: String) -> String {
+        loginShell(shell, running: [loam, "start", "--home", "--session-id", sessionID])
+    }
+
+    /// Resumes a Home session. It has no session record, so `loam resume` does not know it.
+    public static func resumeHome(shell: String, loam: String, sessionID: String) -> String {
+        loginShell(shell, running: [loam, "start", "--home", "--resume", sessionID])
+    }
+
     /// `$SHELL`, else `/bin/zsh`, the macOS default.
     public static func userShell(environment: [String: String] = ProcessInfo.processInfo.environment) -> String {
         if let shell = environment["SHELL"], !shell.isEmpty { return shell }

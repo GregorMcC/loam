@@ -111,6 +111,7 @@ extension Scenarios {
             ("t", [.command, .option], .newShellTab, "⌘⌥T"),
             ("1", .control, .selectPlot(1), "⌃1"),
             ("9", .control, .selectPlot(9), "⌃9"),
+            ("0", .control, .selectHome, "⌃0"),
         ]
         for (letter, flags, expected, name) in presses {
             commands.removeAll()

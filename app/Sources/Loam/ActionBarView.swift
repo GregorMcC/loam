@@ -48,7 +48,7 @@ struct ActionBarView: View {
 
     private func context(withToast: Bool) -> some View {
         HStack(spacing: 6) {
-            LoamIconView(icon: .plot, size: 12, color: LoamColor.moss)
+            LoamIconView(icon: bar.isHome ? .home : .plot, size: 12, color: LoamColor.moss)
                 .padding(.trailing, 2)
             Text(bar.plotName)
                 .font(.system(size: 12.5, weight: .medium))

@@ -26,7 +26,7 @@ extension Scenarios {
             guard let pane = host.model.workspace.focusedPane else { return false }
             return host.window.firstResponder === host.paneView(pane)
         }
-        func tab() -> Tab? { host.model.workspace.selectedTab(of: plot) }
+        func tab() -> Tab? { host.model.workspace.selectedTab(of: .plot(plot)) }
 
         // The bar names the plot and the focused pane, and has New session and Actions with keycaps.
         try await app.waitUntil("the bar names the plot") { app.text(of: "action-bar-plot") == "Loam v1 build" }

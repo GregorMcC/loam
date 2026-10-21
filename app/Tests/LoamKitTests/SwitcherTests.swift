@@ -200,7 +200,7 @@ private func at(_ seconds: Double) -> Date { Date(timeIntervalSince1970: seconds
         return model
     }
 
-    @Test func buildsItemsForPlotsPanesSavedPanesLinksAndActionsOfPlotsThatAreNotArchived() {
+    @Test func buildsItemsForHomePlotsPanesSavedPanesLinksAndActionsOfPlotsThatAreNotArchived() {
         let app = model()
         app.activate(plot: "p2")
         app.openTab()
@@ -219,19 +219,48 @@ private func at(_ seconds: Double) -> Date { Date(timeIntervalSince1970: seconds
             actions: [SwitcherAction(id: "File/New Tab", title: "New Tab", shortcut: "⌘T")])
 
         #expect(items.map(\.id) == [
-            "plot:p1", "plot:p2", "pane:\(pane.uuidString)", "pane:saved-1", "link:p1:l1", "action:File/New Tab",
+            "home", "plot:p1", "plot:p2", "pane:\(pane.uuidString)", "pane:saved-1", "link:p1:l1", "action:File/New Tab",
         ])
-        let live = items[2]
+        #expect(items[0].target == .home)
+        #expect(items[0].kind == .plot)
+        #expect(items[0].accessory == "Home")
+        #expect(items[0].icon == .home)
+        let live = items[3]
         #expect(live.title == "auth fix")
         #expect(live.otherText == ["Beta"])
         #expect(live.attention == .needsYou)
-        #expect(items[3].attention == .doneUnread)
-        #expect(items[4].otherText == ["https://github.com/a/b", "Alpha"])
-        #expect(items[5].shortcut == "⌘T")
-        #expect(items[0].icon == .plot)
+        #expect(items[4].attention == .doneUnread)
+        #expect(items[5].otherText == ["https://github.com/a/b", "Alpha"])
+        #expect(items[6].shortcut == "⌘T")
+        #expect(items[1].icon == .plot)
+        #expect(items[1].accessory == "Plot")
         #expect(live.icon == .pane(app.workspace.spec(of: pane)!.kind))
-        #expect(items[4].icon == .brand(.github))
-        #expect(items[5].icon == .action)
+        #expect(items[5].icon == .brand(.github))
+        #expect(items[6].icon == .action)
+    }
+
+    /// Ticket 99: Home panes list first, with "Home" where a plot pane has its plot name. Choosing
+    /// Home or a Home pane makes Home active.
+    @Test func homeAndItsPanesAreItems() {
+        let app = model()
+        app.activateHome()
+        app.openTab(.shell)
+        let pane = app.workspace.selectedTab(of: .home)!.focused
+        app.activate(plot: "p1")
+        app.openTab(.shell)
+        let items = SwitcherModel.items(
+            plots: app.plots, workspace: app.workspace, terminalTitles: [:], attention: { _ in .none },
+            savedPanes: [], links: [], actions: [])
+        let panes = items.filter { $0.kind == .pane }
+        #expect(panes.map(\.plotName) == ["Home", "Alpha"])
+        #expect(panes[0].target == .pane(pane))
+
+        app.switcher.choose(items[0])
+        #expect(app.workspace.activeSpace == .home)
+        app.activate(plot: "p1")
+        app.switcher.choose(panes[0])
+        #expect(app.workspace.activeSpace == .home)
+        #expect(app.workspace.focusedPane == pane)
     }
 
     @Test func aPaneWithNoTerminalTitleUsesItsSpecTitle() {
@@ -249,7 +278,7 @@ private func at(_ seconds: Double) -> Date { Date(timeIntervalSince1970: seconds
         app.switcher.open()
         #expect(app.switcher.isOpen)
         #expect(app.switcher.query == "")
-        #expect(app.switcher.results.map(\.item.id) == ["plot:p1", "plot:p2"])
+        #expect(app.switcher.results.map(\.item.id) == ["home", "plot:p1", "plot:p2"])
         app.switcher.close()
         app.switcher.open(actionsOnly: true)
         #expect(app.switcher.query == ">")
@@ -349,7 +378,7 @@ private func at(_ seconds: Double) -> Date { Date(timeIntervalSince1970: seconds
         app.switcher.moveSelection(-1)
         #expect(app.switcher.selection == 0)
         app.switcher.moveSelection(5)
-        #expect(app.switcher.selection == 1)
+        #expect(app.switcher.selection == 2)
     }
 
     @Test func recentUseMovesAPlotToTheTop() {

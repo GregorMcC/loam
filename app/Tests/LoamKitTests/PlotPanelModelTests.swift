@@ -168,6 +168,20 @@ import Testing
         #expect(m.missingLink?.linkID == "linkaaaaai")
     }
 
+    /// Ticket 99: a switch to Home loads no plot. A slow load of the plot before it must not come back.
+    @Test func aSlowLoadEndsStaleAfterALoadOfNoPlot() async throws {
+        let (m, fake) = try model([("show_links", 0)])
+        try """
+        #!/bin/sh
+        sleep 1; cat '\(Fixtures.dir.path)/show_links.json'
+        """.write(to: fake.script, atomically: true, encoding: .utf8)
+        let slow = Task { await m.load(plotID: "plotaaaaab") }
+        try await Task.sleep(for: .milliseconds(200))
+        await m.load(plotID: nil)
+        await slow.value
+        #expect(m.plot == nil)
+    }
+
     @Test func addLinkSendsLabelAndTarget() async throws {
         let (m, fake) = try model([("show_links", 0), ("link_add_app", 0), ("show_links", 0)])
         await m.load(plotID: "plotaaaaab")

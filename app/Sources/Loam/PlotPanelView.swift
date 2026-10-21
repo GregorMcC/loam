@@ -151,7 +151,7 @@ struct PlotPanelView: View {
     /// The label and value rows at the top: the main repo with its branch, the panes, and the last change.
     @ViewBuilder private func properties(_ plot: Plot) -> some View {
         let mainRepo = plot.repos.first(where: \.main)
-        let panes = app.workspace.paneIDs(of: plot.id)
+        let panes = app.workspace.paneIDs(of: .plot(plot.id))
         let needsYou = panes.filter { app.workspace.attention(of: $0) == .needsYou }.count
         let doneUnread = panes.filter { app.workspace.attention(of: $0) == .doneUnread }.count
         let last = review.log(plot: plot.id).first

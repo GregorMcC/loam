@@ -262,6 +262,55 @@ func PrepareResume(s *store.Store, sessionID, loam string) (*Plan, error) {
 	return plan, nil
 }
 
+// HomeOptions says how to start a session in Home, the space in the app for
+// tabs that belong to no plot (ticket 99).
+type HomeOptions struct {
+	// SessionID is the UUID of a new session. Empty means Loam picks one.
+	SessionID string
+	// Resume is the UUID of a Home session to resume. It does not go with
+	// SessionID.
+	Resume string
+	// Loam is the absolute path of the loam binary, for the hook command.
+	Loam string
+}
+
+// PrepareHome writes the settings file and returns the launch plan of a Home
+// session. The session starts in the home folder. It gets no seed, no added
+// folders, and no LOAM_PLOT, but it keeps the pane hooks and the allow rules.
+// It adds no session record, because a record belongs to a plot. A resume
+// needs no record: the session always starts in the home folder, where
+// Claude Code finds it.
+func PrepareHome(s *store.Store, o HomeOptions) (*Plan, error) {
+	if o.SessionID != "" && o.Resume != "" {
+		return nil, fmt.Errorf("--resume does not go with --session-id: %w", store.ErrInvalid)
+	}
+	flag, id := "--session-id", o.SessionID
+	if o.Resume != "" {
+		flag, id = "--resume", o.Resume
+	}
+	if id == "" {
+		var err error
+		if id, err = newUUID(); err != nil {
+			return nil, err
+		}
+	} else if !uuidRE.MatchString(id) {
+		return nil, fmt.Errorf("%s %q is not a UUID: %w", flag, id, store.ErrInvalid)
+	}
+	dir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+	extra, err := extraArgs()
+	if err != nil {
+		return nil, err
+	}
+	claude, err := findClaude()
+	if err != nil {
+		return nil, err
+	}
+	return launch(s, dir, claude, id, []string{flag, id}, extra, nil, o.Loam)
+}
+
 // refuseArchived fails for an archived plot. A session needs an active plot.
 func refuseArchived(p store.Plot) error {
 	if p.Archived {
@@ -307,6 +356,19 @@ func build(s *store.Store, plot store.Plot, dir, claude, id string, idArgs []str
 	if err := seed.WritePlot(s, plot); err != nil {
 		return nil, fmt.Errorf("write the seed: %w", err)
 	}
+
+	args := append([]string{}, idArgs...)
+	for _, a := range adds {
+		args = append(args, "--add-dir", a)
+	}
+	env := []string{"LOAM_PLOT=" + plot.ID, "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1"}
+	return launch(s, dir, claude, id, args, extra, env, loam)
+}
+
+// launch writes the settings file and returns the launch plan. args are the
+// claude arguments before --settings, and extra come after it. env is added
+// to the cleaned environment.
+func launch(s *store.Store, dir, claude, id string, args, extra, env []string, loam string) (*Plan, error) {
 	settingsDir := filepath.Join(s.Home(), "sessions")
 	if err := os.MkdirAll(settingsDir, 0o755); err != nil {
 		return nil, err
@@ -320,16 +382,9 @@ func build(s *store.Store, plot store.Plot, dir, claude, id string, idArgs []str
 		return nil, err
 	}
 
-	args := append([]string{}, idArgs...)
-	for _, a := range adds {
-		args = append(args, "--add-dir", a)
-	}
 	args = append(args, "--settings", settingsPath)
 	args = append(args, extra...)
-
-	env := cleanEnv(os.Environ())
-	env = append(env, "LOAM_PLOT="+plot.ID, "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1")
-	return &Plan{Claude: claude, Dir: dir, Args: args, Env: env, SessionID: id, SettingsPath: settingsPath}, nil
+	return &Plan{Claude: claude, Dir: dir, Args: args, Env: append(cleanEnv(os.Environ()), env...), SessionID: id, SettingsPath: settingsPath}, nil
 }
 
 // extraArgs reads LOAM_CLAUDE_EXTRA_ARGS, a JSON array of strings that only

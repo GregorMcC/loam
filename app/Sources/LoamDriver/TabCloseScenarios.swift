@@ -38,8 +38,8 @@ extension Scenarios {
             client: LoamClient(binary: rig.binary, environment: environment), state: rig.stateFile, terminals: true)
         let model = host.model
         try await app.waitUntil("the plot is active") { model.workspace.activePlotID == plot }
-        func tabs() -> [Tab] { model.workspace.tabs(of: plot) }
-        func selected() -> UUID? { model.workspace.selectedTab(of: plot)?.id }
+        func tabs() -> [Tab] { model.workspace.tabs(of: .plot(plot)) }
+        func selected() -> UUID? { model.workspace.selectedTab(of: .plot(plot))?.id }
 
         func bar(in view: NSView) -> (any FirstTabFraming)? {
             (view as? any FirstTabFraming) ?? view.subviews.lazy.compactMap(bar).first

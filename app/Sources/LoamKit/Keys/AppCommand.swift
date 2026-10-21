@@ -1,7 +1,7 @@
 import Foundation
 
 /// One thing the app can do from a key, a menu item, or a Ghostty action (spec 8.3).
-/// The window runs it on the active plot.
+/// The window runs it on the active space: Home or a plot.
 public enum AppCommand: Hashable, Sendable {
     // Loam's own keys, fixed in v1.
     case quickSwitcher
@@ -10,6 +10,8 @@ public enum AppCommand: Hashable, Sendable {
     case actionsMenu
     case nextPaneThatNeedsYou
     case selectPlot(Int)
+    /// ⌃0: Home, the space for tabs with no plot (ticket 99).
+    case selectHome
     case newPlot
     case toggleSidebar
     case togglePlotPanel
@@ -20,7 +22,7 @@ public enum AppCommand: Hashable, Sendable {
     /// the switcher, or the ⌘J actions menu.
     case newShellSplit(SplitAxis)
 
-    // Ghostty's tab and split actions, on the active plot.
+    // Ghostty's tab and split actions, on the active space.
     case newTab
     case newSplit(SplitAxis)
     case focusPane(PaneStep)
@@ -42,6 +44,10 @@ public enum AppCommand: Hashable, Sendable {
     case reloadConfig
 
     case quit
+
+    /// A session or a shell tab in Home, from any space (ticket 99). The window makes Home active first.
+    case newHomeSession
+    case newHomeShell
 
     // The plot's own actions (ticket 89), in the Plot menu and the actions menu.
     /// A session in the plot folder, not in a repo (ticket 93).
@@ -89,6 +95,8 @@ public enum LoamKeys {
         FixedKey(KeyChord(.command, "b"), .toggleSidebar, "Toggle Sidebar"),
         FixedKey(KeyChord(.command, "i"), .togglePlotPanel, "Plot Panel"),
         FixedKey(KeyChord([.command, .option], "t"), .newShellTab, "New Shell Tab"),
+        // ⌃0 sits before ⌃1 to ⌃9, as Home sits above the plots in the sidebar (ticket 99).
+        FixedKey(KeyChord(.control, "0"), .selectHome, "Home"),
         // Ghostty binds ⌘, to open_config. Loam's Settings wins, so Open Ghostty Config shows no key.
         FixedKey(KeyChord(.command, ","), .openSettings, "Settings"),
     ] + (1...9).map { FixedKey(KeyChord(.control, "\($0)"), .selectPlot($0), "Plot \($0)") }

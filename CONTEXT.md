@@ -57,8 +57,15 @@ A Claude Code session that Loam started with a plot's seed.
 _Avoid_: agent, plot session
 
 **Pane**:
-One terminal surface in the Loam app. A pane belongs to exactly one plot. It runs a seeded session or a shell. When its session ends, the pane stays until you close it.
+One terminal surface in the Loam app. A pane belongs to exactly one plot, or to Home. It runs a seeded session, a Home session, or a shell. When its session ends, the pane stays until you close it.
 _Avoid_: surface, split, window
+
+**Home**:
+The space above the plots in the sidebar for tabs that belong to no plot. Its panes start in your home folder. Home is not a plot: the core does not store it, and it has no brief, repos, or worktrees.
+_Avoid_: scratch plot, default plot, unplotted
+
+**Home session**:
+A Claude Code session that Loam started in Home. It gets no seed and belongs to no plot, but the pane still sees its alert states.
 
 **Needs you**:
 The alert state of a pane whose session waits on your answer in the middle of a turn, such as a permission prompt or a question. It clears only when the session moves on.

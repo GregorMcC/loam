@@ -122,7 +122,7 @@ extension Scenarios {
         }
         Log.line("RESULT worktree: \(made.path) branch \(made.branch)")
         try check(fm.fileExists(atPath: made.path + "/README.md"), "the worktree folder has no checkout")
-        let pane = try model.workspace.selectedTab(of: plot)?.focused ?? { throw DriverFailure("no pane") }()
+        let pane = try model.workspace.selectedTab(of: .plot(plot))?.focused ?? { throw DriverFailure("no pane") }()
         let spec = model.workspace.spec(of: pane)
         try check(spec?.kind == .session && spec?.worktree?.id == made.id, "the pane is not a session in the worktree")
         try check(spec?.command?.contains("--worktree \(made.id)") == true, "the command has no --worktree: \(spec?.command ?? "none")")
@@ -185,7 +185,7 @@ extension Scenarios {
 
         // 6. With the pane closed, the removal goes through. The folder is gone, so nothing is lost.
         try app.pressMenuKey("w")
-        try await app.waitUntil("the pane is closed") { model.workspace.paneCount(of: plot) == 0 }
+        try await app.waitUntil("the pane is closed") { model.workspace.paneCount(of: .plot(plot)) == 0 }
         let after = await model.planRemoval(of: made.id)
         try check(after?.needsConfirmation == true, "the plan after close is \(String(describing: after))")
         try check(await model.removeWorktree(made.id, force: true), "removal failed: \(model.lastError ?? "no error")")
@@ -205,8 +205,8 @@ extension Scenarios {
         try check(app.text(of: docsRow)?.contains("trunk") == true, "the repo row shows \(app.text(of: docsRow) ?? "nothing")")
         try check(app.treeParent(of: docsRow) == "plot-\(plot)", "the repo row sits under \(app.treeParent(of: docsRow) ?? "nothing")")
         try app.click(docsRow)
-        try await app.waitUntil("a session in the second repo") { model.workspace.paneCount(of: plot) == 1 }
-        let docsPane = try model.workspace.selectedTab(of: plot)?.focused ?? { throw DriverFailure("no pane") }()
+        try await app.waitUntil("a session in the second repo") { model.workspace.paneCount(of: .plot(plot)) == 1 }
+        let docsPane = try model.workspace.selectedTab(of: .plot(plot))?.focused ?? { throw DriverFailure("no pane") }()
         let docsSpec = model.workspace.spec(of: docsPane)
         try check(docsSpec?.kind == .session && docsSpec?.repo == docs.path, "the pane is not a session in docs")
         try check(docsSpec?.command?.contains("--repo") == true, "the command has no --repo: \(docsSpec?.command ?? "none")")
@@ -220,8 +220,8 @@ extension Scenarios {
 
         // 8. Ticket 93: a plot session starts in the plot folder, and its pane sits right under the plot.
         model.openPlotSession(plot)
-        try await app.waitUntil("a plot session") { model.workspace.paneCount(of: plot) == 2 }
-        let plotPane = try model.workspace.selectedTab(of: plot)?.focused ?? { throw DriverFailure("no pane") }()
+        try await app.waitUntil("a plot session") { model.workspace.paneCount(of: .plot(plot)) == 2 }
+        let plotPane = try model.workspace.selectedTab(of: .plot(plot))?.focused ?? { throw DriverFailure("no pane") }()
         let plotSpec = model.workspace.spec(of: plotPane)
         try check(plotSpec?.inPlotFolder == true && plotSpec?.command?.contains("--plot-folder") == true,
                   "the pane is not a plot session: \(plotSpec?.command ?? "none")")

@@ -16,12 +16,12 @@ import Testing
         PaneEvent(event: name, sessionID: id, cwd: cwd, at: "2026-10-03T09:00:00Z", source: nil, notificationType: nil)
     }
 
-    func session(_ plot: String, _ id: String, repo: String? = nil) -> PaneSpec {
-        PaneSpec(kind: .session, plot: plot, command: "loam start", title: "claude", repo: repo, sessionID: id)
+    func session(_ space: Space, _ id: String, repo: String? = nil) -> PaneSpec {
+        PaneSpec(kind: .session, space: space, command: "loam start", title: "claude", repo: repo, sessionID: id)
     }
 
-    func shell(_ plot: String, _ folder: String) -> PaneSpec {
-        PaneSpec(kind: .shell, plot: plot, folder: folder, title: "shell")
+    func shell(_ space: Space, _ folder: String) -> PaneSpec {
+        PaneSpec(kind: .shell, space: space, folder: folder, title: "shell")
     }
 
     func plot(_ id: String) -> PlotSummary {
@@ -34,14 +34,14 @@ import Testing
         var ws = Workspace()
         let a1 = ws.openTab(session("A", "s1"))
         ws.apply(event("SessionStart", "s1"), to: a1)
-        let aShell = ws.split(plot: "A", axis: .sideBySide, shell("A", "/repo/a"))!
-        ws.setRatio(0.3, at: [], plot: "A")
+        let aShell = ws.split(in: "A", axis: .sideBySide, shell("A", "/repo/a"))!
+        ws.setRatio(0.3, at: [], in: "A")
         ws.focus(a1)
         let a2 = ws.openTab(session("A", "s2", repo: "web"))
         ws.apply(event("SessionStart", "s2", cwd: "/repo/web"), to: a2)
         ws.apply(event("SessionStart", "s3", cwd: "/repo/web"), to: a2)  // /clear: a new ID.
         let bShell = ws.openTab(shell("B", "/repo/b"))
-        ws.activate(plot: "A")
+        ws.activate("A")
         return (ws, a1, aShell, a2, bShell)
     }
 
@@ -52,10 +52,10 @@ import Testing
         let saved = SavedLayout(workspace: s.ws, window: .init(frame: CGRect(x: 10, y: 20, width: 900, height: 600),
                                                               sidebarCollapsed: true, panelOpen: true))
         #expect(saved.panes.map(\.id) == [s.a1, s.aShell, s.a2, s.bShell])
-        #expect(saved.panes[0] == .init(id: s.a1, plotID: "A", folder: "/repo/a", kind: .session, sessionID: "s1"))
-        #expect(saved.panes[1] == .init(id: s.aShell, plotID: "A", folder: "/repo/a", kind: .shell))
+        #expect(saved.panes[0] == .init(id: s.a1, space: "A", folder: "/repo/a", kind: .session, sessionID: "s1"))
+        #expect(saved.panes[1] == .init(id: s.aShell, space: "A", folder: "/repo/a", kind: .shell))
         // The current session ID after /clear, and the folder where the session started.
-        #expect(saved.panes[2] == .init(id: s.a2, plotID: "A", folder: "/repo/web", kind: .session, sessionID: "s3", repo: "web"))
+        #expect(saved.panes[2] == .init(id: s.a2, space: "A", folder: "/repo/web", kind: .session, sessionID: "s3", repo: "web"))
         #expect(saved.layout.activePlot == "A")
         #expect(saved.layout.plots["A"]?.selected == 1)
         #expect(saved.layout.plots["A"]?.tabs.first?.focused == s.a1)
@@ -107,9 +107,9 @@ import Testing
     func restore(_ saved: SavedLayout, kept: Set<String>, shown: Set<String>? = nil) -> RestorePlan {
         RestorePlan(saved, kept: kept, shown: shown ?? kept) { pane in
             switch pane.kind {
-            case .session: pane.sessionID.map { PaneSpec(kind: .session, plot: pane.plotID, command: "loam resume \($0)",
+            case .session: pane.sessionID.map { PaneSpec(kind: .session, space: pane.space, command: "loam resume \($0)",
                                                           title: "claude", repo: pane.repo, sessionID: $0) }
-            case .shell: self.shell(pane.plotID, pane.folder ?? "~")
+            case .shell: self.shell(pane.space, pane.folder ?? "~")
             }
         }
     }
@@ -143,11 +143,11 @@ import Testing
         #expect(ws.waitingPaneIDs == [s.bShell])
         #expect(Set(ws.livePaneIDs) == [s.a1, s.aShell, s.a2])
         #expect(ws.folder(of: s.bShell) == "/repo/b")
-        ws.activate(plot: "B")
+        ws.activate("B")
         #expect(!ws.isWaiting("B"))
         #expect(ws.waitingPaneIDs.isEmpty)
         #expect(ws.livePaneIDs.count == 4)
-        ws.activate(plot: "A")
+        ws.activate("A")
         #expect(!ws.isWaiting("B"))
     }
 
@@ -181,8 +181,8 @@ import Testing
     @Test func aSessionPaneWithNoSessionIDIsDropped() {
         var ws = Workspace()
         let keep = ws.openTab(shell("A", "/x"))
-        ws.openTab(PaneSpec(kind: .session, plot: "A", title: "claude"))
-        ws.activate(plot: "A")
+        ws.openTab(PaneSpec(kind: .session, space: "A", title: "claude"))
+        ws.activate("A")
         let restored = restore(SavedLayout(workspace: ws), kept: ["A"]).workspace
         #expect(restored.paneIDs(of: "A") == [keep])
     }
@@ -236,7 +236,7 @@ import Testing
         #expect(model.workspace.activePlotID == "B")
         #expect(!model.workspace.isWaiting("B"))
         model.stateWriter!.flush()
-        #expect(SavedLayout.read(from: file).panes.map(\.plotID) == ["B"])
+        #expect(SavedLayout.read(from: file).panes.map(\.space) == ["B"])
     }
 
     @Test func manyFocusChangesMakeOneWriteOffTheMainThread() async throws {
@@ -339,8 +339,8 @@ import Testing
         let tree = WorktreeRef(id: "wtreeaaaab", name: "fix", branch: "fix", path: "/wt/web-fix")
         var ws = Workspace()
         ws.openTab(shell("A", "/repo/a"))
-        let pane = ws.openTab(PaneSpec(kind: .session, plot: "B", title: "claude", sessionID: "s9", worktree: tree))
-        ws.activate(plot: "A")
+        let pane = ws.openTab(PaneSpec(kind: .session, space: "B", title: "claude", sessionID: "s9", worktree: tree))
+        ws.activate("A")
         try file.setValues(SavedLayout(workspace: ws).jsonValues())
         #expect(SavedLayout.read(from: file).panes.last?.worktree == tree)
 

@@ -9,7 +9,7 @@ import Testing
     }
 
     func spec(_ plot: String, _ title: String = "shell") -> PaneSpec {
-        PaneSpec(kind: .shell, plot: plot, title: title)
+        PaneSpec(kind: .shell, space: .plot(plot), title: title)
     }
 
     var plots: [PlotSummary] { [plot("a", "Alpha"), plot("b", "Beta"), plot("c", "Gamma")] }
@@ -50,9 +50,9 @@ import Testing
     @Test func onlyTheActivePlotListsItsPanes() {
         var ws = Workspace()
         let a1 = ws.openTab(spec("a", "claude-1"))
-        ws.split(plot: "a", axis: .sideBySide, spec("a", "shell"))
+        ws.split(in: "a", axis: .sideBySide, spec("a", "shell"))
         ws.openTab(spec("b"))
-        ws.activate(plot: "a")
+        ws.activate("a")
         let model = SidebarModel(plots: plots, workspace: ws, collapsed: false)
         #expect(model.activePanes.map(\.title) == ["claude-1", "shell"])
         #expect(model.activePanes.first?.id == a1)
@@ -65,9 +65,9 @@ import Testing
     @Test func paneRowShowsTheStateAndFocus() {
         var ws = Workspace()
         let p = ws.openTab(spec("a"))
-        let q = ws.split(plot: "a", axis: .stacked, spec("a"))!
+        let q = ws.split(in: "a", axis: .stacked, spec("a"))!
         ws.setState(.ended, of: p)
-        ws.activate(plot: "a")
+        ws.activate("a")
         let model = SidebarModel(plots: plots, workspace: ws, collapsed: false)
         #expect(model.activePanes.map(\.state) == [.ended, .running])
         #expect(model.activePanes.map(\.isFocused) == [false, true])
@@ -77,7 +77,7 @@ import Testing
     /// Ticket 68: the toolbar shows the title, so it names the plot also while the sidebar shows.
     @Test func titleShowsThePlotName() {
         var ws = Workspace()
-        ws.activate(plot: "b")
+        ws.activate("b")
         #expect(SidebarModel(plots: plots, workspace: ws, collapsed: true).windowTitle == "Beta")
         #expect(SidebarModel(plots: plots, workspace: ws, collapsed: false).windowTitle == "Beta")
         #expect(SidebarModel(plots: plots, workspace: Workspace(), collapsed: true).windowTitle == "Loam")
@@ -143,7 +143,7 @@ import Testing
     // MARK: Attention (ticket 32)
 
     func seeded(_ plot: String, _ id: String) -> PaneSpec {
-        PaneSpec(kind: .session, plot: plot, title: "claude \(id)", sessionID: id)
+        PaneSpec(kind: .session, space: .plot(plot), title: "claude \(id)", sessionID: id)
     }
 
     func event(_ name: String, _ id: String) -> PaneEvent {
@@ -157,8 +157,8 @@ import Testing
         let b1 = ws.openTab(seeded("b", "b1"))
         let b2 = ws.openTab(seeded("b", "b2"))
         let a1 = ws.openTab(seeded("a", "a1"))
-        let a2 = ws.split(plot: "a", axis: .sideBySide, seeded("a", "a2"))!
-        ws.activate(plot: "a")
+        let a2 = ws.split(in: "a", axis: .sideBySide, seeded("a", "a2"))!
+        ws.activate("a")
         return (ws, a1, a2, b1, b2, c1)
     }
 
@@ -266,11 +266,11 @@ struct AttentionCycleTests {
     }
 
     func session(_ plot: String, _ worktree: WorktreeRef? = nil) -> PaneSpec {
-        PaneSpec(kind: .session, plot: plot, title: "claude", worktree: worktree)
+        PaneSpec(kind: .session, space: .plot(plot), title: "claude", worktree: worktree)
     }
 
     func shell(_ plot: String, _ worktree: WorktreeRef? = nil) -> PaneSpec {
-        PaneSpec(kind: .shell, plot: plot, title: "shell", worktree: worktree)
+        PaneSpec(kind: .shell, space: .plot(plot), title: "shell", worktree: worktree)
     }
 
     /// The plot's main repo, `/tmp/<plot>/repo`, on `branch`.
@@ -288,8 +288,8 @@ struct AttentionCycleTests {
         let main1 = ws.openTab(shell("a"))
         let fix1 = ws.openTab(session("a", fix))
         let main2 = ws.openTab(session("a"))
-        let fix2 = ws.split(plot: "a", axis: .stacked, shell("a", fix))!
-        ws.activate(plot: "a")
+        let fix2 = ws.split(in: "a", axis: .stacked, shell("a", fix))!
+        ws.activate("a")
         let worktrees = ["a": [status("wt-fix", "a", "fix-login"), status("wt-docs", "a", "docs-pass")]]
         return (ws, main1, fix1, main2, fix2, b1, worktrees)
     }
@@ -341,7 +341,7 @@ struct AttentionCycleTests {
     @Test func aWorktreeThatTheListMissesStillHoldsItsPane() {
         var ws = Workspace()
         let pane = ws.openTab(session("a", ref("wt-new", "spike")))
-        ws.activate(plot: "a")
+        ws.activate("a")
         let model = SidebarModel(plots: plots, workspace: ws, collapsed: false,
                                  worktrees: ["a": [status("wt-fix", "a", "fix-login")]], repos: mainRepo("a", "main"))
         let tree = model.tree(of: "a")
@@ -357,9 +357,9 @@ struct AttentionCycleTests {
     /// Every plot has its tree, so a plot you open shows its panes. The rows carry the marks and the focus.
     @Test func everyPlotHasItsTreeWithMarksAndFocus() {
         var ws = Workspace()
-        let b1 = ws.openTab(PaneSpec(kind: .session, plot: "b", title: "claude", sessionID: "b1"))
+        let b1 = ws.openTab(PaneSpec(kind: .session, space: "b", title: "claude", sessionID: "b1"))
         let a1 = ws.openTab(session("a"))
-        ws.activate(plot: "a")
+        ws.activate("a")
         ws.apply(PaneEvent(event: "PermissionRequest", sessionID: "b1", cwd: "/tmp", at: "2026-10-03T09:00:00Z",
                            source: nil, notificationType: nil), to: b1)
         let model = SidebarModel(plots: plots, workspace: ws, collapsed: false, arriving: [b1])
@@ -385,8 +385,8 @@ struct AttentionCycleTests {
         var ws = Workspace()
         let one = ws.openTab(shell("a"))
         let left = ws.openTab(session("a"))
-        let right = ws.split(plot: "a", axis: .sideBySide, shell("a"))!
-        ws.activate(plot: "a")
+        let right = ws.split(in: "a", axis: .sideBySide, shell("a"))!
+        ws.activate("a")
         ws.focus(left)
         let split = ws.tabs(of: "a")[1].id
         let model = SidebarModel(plots: plots, workspace: ws, collapsed: false, repos: mainRepo("a", "main"),
@@ -421,9 +421,9 @@ struct AttentionCycleTests {
     /// The tab row shows the strongest mark of its panes: needs you, then done, unread.
     @Test func aTabRowShowsTheStrongestMarkOfItsPanes() {
         var ws = Workspace()
-        let left = ws.openTab(PaneSpec(kind: .session, plot: "a", title: "claude", sessionID: "s1"))
-        let right = ws.split(plot: "a", axis: .sideBySide, PaneSpec(kind: .session, plot: "a", title: "claude", sessionID: "s2"))!
-        ws.activate(plot: "a")
+        let left = ws.openTab(PaneSpec(kind: .session, space: "a", title: "claude", sessionID: "s1"))
+        let right = ws.split(in: "a", axis: .sideBySide, PaneSpec(kind: .session, space: "a", title: "claude", sessionID: "s2"))!
+        ws.activate("a")
         ws.apply(PaneEvent(event: "PermissionRequest", sessionID: "s2", cwd: "/tmp", at: "2026-10-03T09:00:00Z",
                            source: nil, notificationType: nil), to: right)
         let model = SidebarModel(plots: plots, workspace: ws, collapsed: false, arriving: [right])
@@ -441,7 +441,7 @@ struct AttentionCycleTests {
         var webSpec = session("a")
         webSpec.repo = "/tmp/a/web/"
         let webPane = ws.openTab(webSpec)
-        ws.activate(plot: "a")
+        ws.activate("a")
         let repos = ["a": [RepoCheckout(id: "r-main", path: "/tmp/a/loam", isMain: true, branch: "main"),
                            RepoCheckout(id: "r-web", path: "/tmp/a/web", isMain: false, branch: "develop"),
                            RepoCheckout(id: "r-docs", path: "/tmp/a/docs", isMain: false)]]
@@ -465,7 +465,7 @@ struct AttentionCycleTests {
         var webRef = ref("wt-web", "web-fix")
         webRef.repo = "/tmp/a/web/"
         let pane = ws.openTab(session("a", webRef))
-        ws.activate(plot: "a")
+        ws.activate("a")
         let repos = ["a": [RepoCheckout(id: "r-main", path: "/tmp/a/loam", isMain: true, branch: "main"),
                            RepoCheckout(id: "r-web", path: "/tmp/a/web", isMain: false, branch: "develop")]]
         let worktrees = ["a": [status("wt-main", "a", "spike", repo: "/tmp/a/loam"),
@@ -488,7 +488,7 @@ struct AttentionCycleTests {
         spec.inPlotFolder = true
         let planning = ws.openTab(spec)
         let code = ws.openTab(session("a"))
-        ws.activate(plot: "a")
+        ws.activate("a")
         let model = SidebarModel(plots: plots, workspace: ws, collapsed: false, repos: mainRepo("a", "main"))
         let tree = model.tree(of: "a")
         #expect(tree.panes.map(\.id) == [planning])
@@ -510,7 +510,7 @@ struct AttentionCycleTests {
         s.ws.focus(s.fix2)
         #expect(SidebarModel(plots: plots, workspace: s.ws, collapsed: false).selection == .pane(s.fix2))
         var empty = Workspace()
-        empty.activate(plot: "b")
+        empty.activate("b")
         #expect(SidebarModel(plots: plots, workspace: empty, collapsed: false).selection == .plot("b"))
         #expect(SidebarModel(plots: plots, workspace: Workspace(), collapsed: false).selection == nil)
     }
@@ -520,42 +520,42 @@ struct AttentionCycleTests {
 @Suite struct SidebarDisclosureTests {
     @Test func theActivePlotOpensAndClosesWhenYouLeaveIt() {
         var disclosure = SidebarDisclosure()
-        disclosure.activePlotChanged(to: "a")
-        #expect(disclosure.isOpen(plot: "a"))
-        disclosure.activePlotChanged(to: "b")
-        #expect(!disclosure.isOpen(plot: "a") && disclosure.isOpen(plot: "b"))
-        disclosure.activePlotChanged(to: nil)
-        #expect(disclosure.openPlots.isEmpty)
+        disclosure.activeSpaceChanged(to: "a")
+        #expect(disclosure.isOpen("a"))
+        disclosure.activeSpaceChanged(to: "b")
+        #expect(!disclosure.isOpen("a") && disclosure.isOpen("b"))
+        disclosure.activeSpaceChanged(to: nil)
+        #expect(disclosure.openSpaces.isEmpty)
     }
 
     @Test func aPlotYouOpenStaysOpen() {
         var disclosure = SidebarDisclosure()
-        disclosure.activePlotChanged(to: "a")
-        disclosure.setPlot("c", open: true)
-        disclosure.activePlotChanged(to: "c")
-        disclosure.activePlotChanged(to: "b")
-        #expect(disclosure.openPlots == ["b", "c"])
+        disclosure.activeSpaceChanged(to: "a")
+        disclosure.setSpace("c", open: true)
+        disclosure.activeSpaceChanged(to: "c")
+        disclosure.activeSpaceChanged(to: "b")
+        #expect(disclosure.openSpaces == ["b", "c"])
     }
 
     @Test func theActivePlotThatYouCloseStaysClosedUntilYouComeBack() {
         var disclosure = SidebarDisclosure()
-        disclosure.activePlotChanged(to: "a")
-        disclosure.setPlot("a", open: false)
-        disclosure.activePlotChanged(to: "a")
-        #expect(!disclosure.isOpen(plot: "a"))
-        disclosure.activePlotChanged(to: "b")
-        disclosure.activePlotChanged(to: "a")
-        #expect(disclosure.isOpen(plot: "a") && !disclosure.isOpen(plot: "b"))
+        disclosure.activeSpaceChanged(to: "a")
+        disclosure.setSpace("a", open: false)
+        disclosure.activeSpaceChanged(to: "a")
+        #expect(!disclosure.isOpen("a"))
+        disclosure.activeSpaceChanged(to: "b")
+        disclosure.activeSpaceChanged(to: "a")
+        #expect(disclosure.isOpen("a") && !disclosure.isOpen("b"))
     }
 
     /// Opening the active plot again by hand makes it yours, so it stays open when you leave.
     @Test func reopeningTheActivePlotByHandKeepsItOpen() {
         var disclosure = SidebarDisclosure()
-        disclosure.activePlotChanged(to: "a")
-        disclosure.setPlot("a", open: false)
-        disclosure.setPlot("a", open: true)
-        disclosure.activePlotChanged(to: "b")
-        #expect(disclosure.openPlots == ["a", "b"])
+        disclosure.activeSpaceChanged(to: "a")
+        disclosure.setSpace("a", open: false)
+        disclosure.setSpace("a", open: true)
+        disclosure.activeSpaceChanged(to: "b")
+        #expect(disclosure.openSpaces == ["a", "b"])
     }
 
     @Test func aCheckoutIsOpenUntilYouCloseIt() {
@@ -579,7 +579,7 @@ struct AttentionCycleTests {
 }
 
 @Suite struct TabBarAttentionTests {
-    func seeded(_ id: String) -> PaneSpec { PaneSpec(kind: .session, plot: "p", title: id, sessionID: id) }
+    func seeded(_ id: String) -> PaneSpec { PaneSpec(kind: .session, space: "p", title: id, sessionID: id) }
 
     func event(_ name: String, _ id: String) -> PaneEvent {
         PaneEvent(event: name, sessionID: id, cwd: "/tmp", at: "2026-10-03T09:00:00Z", source: nil, notificationType: nil)
@@ -588,14 +588,14 @@ struct AttentionCycleTests {
     @Test func eachTabShowsTheStrongestMarkOfItsPanes() {
         var ws = Workspace()
         let one = ws.openTab(seeded("one"))
-        let two = ws.split(plot: "p", axis: .sideBySide, seeded("two"))!
+        let two = ws.split(in: "p", axis: .sideBySide, seeded("two"))!
         let three = ws.openTab(seeded("three"))
         let four = ws.openTab(seeded("four"))
         ws.apply(event("Stop", "one"), to: one)
         ws.apply(event("PermissionRequest", "two"), to: two)
         ws.apply(event("Stop", "three"), to: three)
         ws.focus(two)
-        let items = TabBarModel(workspace: ws, plot: "p", arriving: [two]).items
+        let items = TabBarModel(workspace: ws, space: "p", arriving: [two]).items
         #expect(items.map(\.attention) == [.needsYou, .doneUnread, .none])
         #expect(items[0].isArriving && items[0].paneFocused)
         #expect(!items[1].isArriving && !items[1].paneFocused)
