@@ -37,10 +37,10 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
   -config "$work/cert.cnf" -keyout "$work/key.pem" -out "$work/cert.pem" 2>/dev/null
 
 # macOS's keychain reads only the older PKCS#12 algorithms. OpenSSL 3 needs
-# -legacy for them; LibreSSL uses them by default.
+# 3 and later need -legacy for them; LibreSSL uses them by default.
 legacy=()
-if openssl version | grep -q '^OpenSSL 3'; then legacy=(-legacy); fi
-openssl pkcs12 -export "${legacy[@]}" -name "$name" \
+if openssl version | grep -qE '^OpenSSL ([3-9]|[1-9][0-9])\.'; then legacy=(-legacy); fi
+openssl pkcs12 -export ${legacy[@]+"${legacy[@]}"} -name "$name" \
   -inkey "$work/key.pem" -in "$work/cert.pem" -out "$work/cert.p12" -passout "pass:$pass"
 
 security import "$work/cert.p12" -k "$keychain" -P "$pass" -T /usr/bin/codesign >/dev/null
