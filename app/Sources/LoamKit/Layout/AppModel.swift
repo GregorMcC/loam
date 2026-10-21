@@ -100,6 +100,8 @@ public final class AppModel {
     @ObservationIgnored private var pendingRestore: SavedLayout?
     /// The window part of the saved layout. The window reads it once when it opens.
     @ObservationIgnored public private(set) var restoredWindow: SavedLayout.Window?
+    /// The active space of the saved layout. The window reads it once when it opens.
+    public var restoredSpace: Space? { pendingRestore?.layout.active }
     /// The window frame. The window sets it after a move or a resize.
     @ObservationIgnored public var windowFrame: CGRect? { didSet { if windowFrame != oldValue { saveLayout() } } }
 
@@ -170,10 +172,10 @@ public final class AppModel {
     func restoreSpec(_ pane: SavedLayout.Pane) -> PaneSpec? {
         switch pane.kind {
         case .session: pane.sessionID.map {
-            resumeSpec(in: pane.plotID, sessionID: $0, repo: pane.repo, worktree: pane.worktree,
+            resumeSpec(in: pane.space, sessionID: $0, repo: pane.repo, worktree: pane.worktree,
                        plotFolder: pane.plotFolder ?? false)
         }
-        case .shell: newShellSpec(in: pane.plotID, folder: pane.folder, worktree: pane.worktree)
+        case .shell: newShellSpec(in: pane.space, folder: pane.folder, worktree: pane.worktree)
         }
     }
 
@@ -323,9 +325,13 @@ public final class AppModel {
             pendingRestore = nil
         }
         for gone in Set(next.plotIDsWithPanes).subtracting(kept) { next.removePlot(gone) }
-        if next.activePlotID.map(ids.contains) != true {
-            next.activate(plot: list.first?.id)
+        let activeShown = switch next.activeSpace {
+        case .home: true
+        case .plot(let id): ids.contains(id)
+        case nil: false
         }
+        // With no plot, Home shows, so ⌘T and ⌘⌥T work on a fresh install (ticket 99).
+        if !activeShown { next.activate(list.first.map { .plot($0.id) } ?? .home) }
         workspace = next
     }
 
@@ -419,15 +425,30 @@ public final class AppModel {
         return list.enumerated().sorted { key($0.offset, $0.element) < key($1.offset, $1.element) }.map(\.element)
     }
 
-    // MARK: Plot selection
+    // MARK: Space selection
 
     public func activate(plot id: String) {
         guard plots.contains(where: { $0.id == id }) else { return }
+        activate(.plot(id))
+    }
+
+    /// ⌃0: makes Home active (ticket 99).
+    public func activateHome() { activate(.home) }
+
+    private func activate(_ space: Space) {
         // A switch with the panel open marks the plot that you leave as seen.
-        if panel.visible, id != workspace.activePlotID { review.markSeen(plot: workspace.activePlotID) }
-        workspace.activate(plot: id)
-        useTimes?.record(SwitcherItem.plotKey(id))
+        if panel.visible, space != workspace.activeSpace { review.markSeen(plot: workspace.activePlotID) }
+        workspace.activate(space)
+        useTimes?.record(SwitcherItem.key(of: space))
         if panel.visible { Task { await reloadPanel() } }
+    }
+
+    /// Makes the space active, unless it is a plot that is not in the list.
+    public func show(_ space: Space) {
+        switch space {
+        case .home: activateHome()
+        case .plot(let id): activate(plot: id)
+        }
     }
 
     public func activate(number: Int) {
@@ -444,25 +465,34 @@ public final class AppModel {
         DirectoryWatcher.home(environment: client.environment).appendingPathComponent("plots/\(plot)").path
     }
 
-    /// Where a shell pane of the plot starts (spec 8.2): the main repo, or the plot folder when the
-    /// plot has no repos. A failed read gives the plot folder.
-    public func startFolder(of plot: String) async -> String {
+    /// The home folder that the panes see. Home panes start there (ticket 99). libghostty starts each
+    /// pane through `login`, which sets `HOME` from the user record, so the app's `HOME` does not
+    /// count. `NSHomeDirectory()` reads the user record too. Tests set it.
+    @ObservationIgnored public var homeFolder = NSHomeDirectory()
+
+    /// Where a shell pane of the space starts (spec 8.2): the main repo, or the plot folder when the
+    /// plot has no repos. A failed read gives the plot folder. A Home shell starts in the home folder.
+    public func startFolder(of space: Space) async -> String {
+        guard case .plot(let plot) = space else { return homeFolder }
         let main = try? await client.show(plot: plot).repos.first(where: \.main)?.path
         return main ?? plotFolder(plot)
     }
 
-    /// A seeded session: `loam start` with a new session ID. The pane gets the client's environment,
+    /// A new session: `loam start` with a new session ID. The pane gets the client's environment,
     /// so it talks to the same store as the app.
-    /// With `worktree`, the command is `loam start <plot> --worktree <id> ...`.
-    public func newSessionSpec(in plot: String, repo: String? = nil, worktree: WorktreeRef? = nil,
+    /// With `worktree`, the command is `loam start <plot> --worktree <id> ...`. In Home, it is
+    /// `loam start --home`, and `repo`, `worktree`, and `plotFolder` must be left out.
+    public func newSessionSpec(in space: Space, repo: String? = nil, worktree: WorktreeRef? = nil,
                                plotFolder: Bool = false) -> PaneSpec {
         let id = UUID().uuidString.lowercased()
-        let command = PaneCommand.start(shell: shell, loam: client.binary.path, plot: plot, repo: repo,
-                                        worktree: worktree?.id, plotFolder: plotFolder, sessionID: id)
-        var spec = PaneSpec(kind: .session, plot: plot, command: command, env: client.environment,
-                            title: "claude", repo: repo, sessionID: id, worktree: worktree)
-        spec.inPlotFolder = plotFolder
-        return spec
+        let command = switch space {
+        case .home:
+            PaneCommand.startHome(shell: shell, loam: client.binary.path, sessionID: id)
+        case .plot(let plot):
+            PaneCommand.start(shell: shell, loam: client.binary.path, plot: plot, repo: repo,
+                              worktree: worktree?.id, plotFolder: plotFolder, sessionID: id)
+        }
+        return sessionSpec(in: space, command: command, sessionID: id, repo: repo, worktree: worktree, plotFolder: plotFolder)
     }
 
     /// Opens a plot session (ticket 93): a seeded session in the plot folder, with every repo as an
@@ -470,62 +500,80 @@ public final class AppModel {
     public func openPlotSession(_ plot: String) {
         if workspace.activePlotID != plot { activate(plot: plot) }
         guard workspace.activePlotID == plot else { return }
-        workspace.openTab(newSessionSpec(in: plot, plotFolder: true))
+        workspace.openTab(newSessionSpec(in: .plot(plot), plotFolder: true))
     }
 
-    /// `loam resume` of a session in the plot. The core resumes in the worktree, or fails if it is gone.
-    /// `plotFolder` marks a plot session (ticket 93). `loam resume` finds the folder from the record.
-    public func resumeSpec(in plot: String, sessionID: String, repo: String? = nil, worktree: WorktreeRef? = nil,
+    /// Resumes a session in the space: `loam resume` in a plot, `loam start --home --resume` in
+    /// Home. In a plot, the core resumes in the worktree, or fails if it is gone. `plotFolder` marks
+    /// a plot session (ticket 93). `loam resume` finds the folder from the record.
+    public func resumeSpec(in space: Space, sessionID: String, repo: String? = nil, worktree: WorktreeRef? = nil,
                            plotFolder: Bool = false) -> PaneSpec {
-        let command = PaneCommand.resume(shell: shell, loam: client.binary.path, sessionID: sessionID)
-        var spec = PaneSpec(kind: .session, plot: plot, command: command, env: client.environment,
+        let command = switch space {
+        case .home: PaneCommand.resumeHome(shell: shell, loam: client.binary.path, sessionID: sessionID)
+        case .plot: PaneCommand.resume(shell: shell, loam: client.binary.path, sessionID: sessionID)
+        }
+        return sessionSpec(in: space, command: command, sessionID: sessionID, repo: repo, worktree: worktree,
+                           plotFolder: plotFolder)
+    }
+
+    private func sessionSpec(in space: Space, command: String, sessionID: String, repo: String?,
+                             worktree: WorktreeRef?, plotFolder: Bool) -> PaneSpec {
+        assert(!space.isHome || (repo == nil && worktree == nil && !plotFolder), "a Home session has no repo, worktree, or plot folder")
+        var spec = PaneSpec(kind: .session, space: space, command: command, env: client.environment,
                             title: "claude", repo: repo, sessionID: sessionID, worktree: worktree)
         spec.inPlotFolder = plotFolder
         return spec
     }
 
     /// A login shell. `folder` nil starts it in your home folder. A worktree sets the folder.
-    public func newShellSpec(in plot: String, folder: String? = nil, worktree: WorktreeRef? = nil) -> PaneSpec {
-        PaneSpec(kind: .shell, plot: plot, folder: worktree?.path ?? folder, env: client.environment, title: "shell",
+    public func newShellSpec(in space: Space, folder: String? = nil, worktree: WorktreeRef? = nil) -> PaneSpec {
+        PaneSpec(kind: .shell, space: space, folder: worktree?.path ?? folder, env: client.environment, title: "shell",
                  worktree: worktree)
     }
 
-    private func spec(_ kind: PaneSpec.Kind, in plot: String, folder: String?, repo: String? = nil,
+    private func spec(_ kind: PaneSpec.Kind, in space: Space, folder: String?, repo: String? = nil,
                       worktree: WorktreeRef? = nil) -> PaneSpec {
-        kind == .session ? newSessionSpec(in: plot, repo: repo, worktree: worktree)
-                         : newShellSpec(in: plot, folder: folder, worktree: worktree)
+        kind == .session ? newSessionSpec(in: space, repo: repo, worktree: worktree)
+                         : newShellSpec(in: space, folder: folder, worktree: worktree)
     }
 
-    // MARK: Tabs and splits of the active plot
+    // MARK: Tabs and splits of the active space
 
-    /// Opens a tab in the active plot. ⌘T opens a seeded session. `repo` picks a repo other than the
+    /// Opens a tab in the active space. ⌘T opens a session. `repo` picks a repo other than the
     /// main repo for a session, and `folder` the start folder of a shell.
     public func openTab(_ kind: PaneSpec.Kind = .shell, folder: String? = nil, repo: String? = nil,
                         worktree: WorktreeRef? = nil) {
-        guard let plot = workspace.activePlotID else { return }
-        workspace.openTab(spec(kind, in: plot, folder: folder, repo: repo, worktree: worktree))
+        guard let space = workspace.activeSpace else { return }
+        workspace.openTab(spec(kind, in: space, folder: folder, repo: repo, worktree: worktree))
     }
 
-    /// ⌘D and ⌘⇧D split with a seeded session. A shell split comes from the menu or ⌘J.
+    /// ⌘D and ⌘⇧D split with a session. A shell split comes from the menu or ⌘J.
     public func split(_ axis: SplitAxis, _ kind: PaneSpec.Kind = .shell, folder: String? = nil) {
-        guard let plot = workspace.activePlotID else { return }
-        workspace.split(plot: plot, axis: axis, spec(kind, in: plot, folder: folder))
+        guard let space = workspace.activeSpace else { return }
+        workspace.split(in: space, axis: axis, spec(kind, in: space, folder: folder))
     }
 
-    /// ⌘⌥T: a shell tab in the plot's start folder. The plot is the one active at the call.
+    /// ⌘⌥T: a shell tab in the start folder of the space that is active at the call.
     public func openShellTab() async {
-        guard let plot = workspace.activePlotID else { return }
-        let folder = await startFolder(of: plot)
-        guard workspace.activePlotID == plot else { return }
+        guard let space = workspace.activeSpace else { return }
+        let folder = await startFolder(of: space)
+        guard workspace.activeSpace == space else { return }
         openTab(.shell, folder: folder)
     }
 
-    /// A shell split in the plot's start folder.
+    /// A shell split in the start folder of the active space.
     public func splitShell(_ axis: SplitAxis) async {
-        guard let plot = workspace.activePlotID else { return }
-        let folder = await startFolder(of: plot)
-        guard workspace.activePlotID == plot else { return }
+        guard let space = workspace.activeSpace else { return }
+        let folder = await startFolder(of: space)
+        guard workspace.activeSpace == space else { return }
         split(axis, .shell, folder: folder)
+    }
+
+    /// ⌘J "New Session in Home" and "New Shell in Home" (ticket 99): makes Home active from any
+    /// space, then opens the tab there.
+    public func openHomeTab(_ kind: PaneSpec.Kind) {
+        activateHome()
+        openTab(kind, folder: kind == .shell ? homeFolder : nil)
     }
 
     // MARK: Sessions in panes
@@ -560,32 +608,37 @@ public final class AppModel {
         workspace.markSeen(pane)
     }
 
-    /// The panes that need you, in sidebar order: plot order, then tab order, then layout order.
-    public var needsYouPanes: [PaneID] {
-        plots.flatMap { workspace.paneIDs(of: $0.id) }.filter { workspace.state(of: $0) == .needsYou }
+    /// Every pane of Home and of the plots in the sidebar, in sidebar order: Home, then plot order,
+    /// then tab order, then layout order. The panes of archived plots are not in it.
+    private var sidebarPaneIDs: [PaneID] {
+        workspace.paneIDs(of: .home) + plots.flatMap { workspace.paneIDs(of: .plot($0.id)) }
     }
 
-    /// The panes that need you in plots other than the active one. The title bar button counts them.
+    /// The panes that need you, in sidebar order.
+    public var needsYouPanes: [PaneID] {
+        sidebarPaneIDs.filter { workspace.state(of: $0) == .needsYou }
+    }
+
+    /// The panes that need you in spaces other than the active one. The title bar button counts them.
     public var elsewhereNeedYouCount: Int {
-        needsYouPanes.filter { workspace.spec(of: $0)?.plot != workspace.activePlotID }.count
+        needsYouPanes.filter { workspace.spec(of: $0)?.space != workspace.activeSpace }.count
     }
 
     /// ⌘L: the next pane that needs you after the focused pane, in sidebar order, round to the start.
-    /// `elsewhere` skips the panes of the active plot (the title bar button). Nil when there is none.
+    /// `elsewhere` skips the panes of the active space (the title bar button). Nil when there is none.
     public func nextPaneThatNeedsYou(elsewhere: Bool = false) -> PaneID? {
-        let waiting = Set(needsYouPanes.filter { !elsewhere || workspace.spec(of: $0)?.plot != workspace.activePlotID })
-        return AttentionCycle.next(order: plots.flatMap { workspace.paneIDs(of: $0.id) }, matching: waiting,
-                                   after: workspace.focusedPane)
+        let waiting = Set(needsYouPanes.filter { !elsewhere || workspace.spec(of: $0)?.space != workspace.activeSpace })
+        return AttentionCycle.next(order: sidebarPaneIDs, matching: waiting, after: workspace.focusedPane)
     }
 
     /// The next pane that is done, unread, by the same rule as `nextPaneThatNeedsYou`.
     public func nextPaneDoneUnread() -> PaneID? {
-        let order = plots.flatMap { workspace.paneIDs(of: $0.id) }
+        let order = sidebarPaneIDs
         return AttentionCycle.next(order: order, matching: Set(order.filter { workspace.attention(of: $0) == .doneUnread }),
                                    after: workspace.focusedPane)
     }
 
-    /// A click on a fixed attention row of the sidebar: goes to the next pane in that state, across plots.
+    /// A click on a fixed attention row of the sidebar: goes to the next pane in that state, across spaces.
     /// It does nothing for another state or when no pane is in the state.
     public func goToNextPane(in attention: PaneAttention) {
         let pane = switch attention {
@@ -628,10 +681,17 @@ public final class AppModel {
     }
 
     private func banner(for pane: PaneID) -> AttentionBanner {
-        let spec = workspace.spec(of: pane)
-        let plotName = plots.first { $0.id == spec?.plot }?.name ?? ""
+        let plotName = workspace.spec(of: pane).flatMap { name(of: $0.space) } ?? ""
         return AttentionBanner(pane: pane, plotName: plotName, paneTitle: workspace.title(of: pane, terminalTitles: terminalTitles),
                                reason: workspace.session(of: pane)?.waitsOn)
+    }
+
+    /// The name that the window shows for a space: "Home", or the plot name. Nil for a plot that is gone.
+    public func name(of space: Space) -> String? {
+        switch space {
+        case .home: Space.homeName
+        case .plot(let id): plots.first { $0.id == id }?.name ?? archivedPlots.first { $0.id == id }?.name
+        }
     }
 
     /// The pane's process exited. A seeded pane stays and shows "Session ended".
@@ -647,7 +707,7 @@ public final class AppModel {
         guard let spec = workspace.spec(of: pane), spec.kind == .session,
               let session = workspace.session(of: pane), session.exited, session.started,
               let id = session.sessionID else { return }
-        workspace.restartPane(pane, with: resumeSpec(in: spec.plot, sessionID: id, repo: spec.repo, worktree: spec.worktree,
+        workspace.restartPane(pane, with: resumeSpec(in: spec.space, sessionID: id, repo: spec.repo, worktree: spec.worktree,
                                                      plotFolder: spec.inPlotFolder))
     }
 
@@ -655,65 +715,64 @@ public final class AppModel {
     public func newSession(in pane: PaneID) {
         guard let spec = workspace.spec(of: pane), spec.kind == .session,
               workspace.session(of: pane)?.exited == true else { return }
-        workspace.restartPane(pane, with: newSessionSpec(in: spec.plot, repo: spec.repo, worktree: spec.worktree,
+        workspace.restartPane(pane, with: newSessionSpec(in: spec.space, repo: spec.repo, worktree: spec.worktree,
                                                          plotFolder: spec.inPlotFolder))
     }
 
     /// The pane that runs or ran a session, for the actor label in the review.
     public func paneRef(forSession id: String) -> PaneRef? {
         guard let pane = workspace.pane(forSession: id), let spec = workspace.spec(of: pane) else { return nil }
-        let plotName = plots.first { $0.id == spec.plot }?.name ?? archivedPlots.first { $0.id == spec.plot }?.name
-        return PaneRef(id: pane, name: plotName.map { "\(spec.title) \u{00B7} \($0)" } ?? spec.title)
+        return PaneRef(id: pane, name: name(of: spec.space).map { "\(spec.title) \u{00B7} \($0)" } ?? spec.title)
     }
 
-    /// Makes the pane's plot active and focuses the pane. The switcher counts it as a use.
+    /// Makes the pane's space active and focuses the pane. The switcher counts it as a use.
     public func goToPane(_ pane: PaneID) {
-        guard let plot = workspace.spec(of: pane)?.plot else { return }
-        if plot != workspace.activePlotID { activate(plot: plot) }
+        guard let space = workspace.spec(of: pane)?.space else { return }
+        if space != workspace.activeSpace { show(space) }
         focus(pane)
     }
 
-    /// Ghostty `equalize_splits`, on the selected tab of the active plot.
+    /// Ghostty `equalize_splits`, on the selected tab of the active space.
     public func equalizeSplits() {
-        guard let plot = workspace.activePlotID else { return }
-        workspace.equalize(plot: plot)
+        guard let space = workspace.activeSpace else { return }
+        workspace.equalize(in: space)
     }
 
     /// Ghostty `resize_split`, on the focused pane. `delta` is a fraction of the split (0.05 is 5 percent).
     public func resizeSplit(_ direction: SplitTree.ResizeDirection, by delta: Double) {
-        guard let plot = workspace.activePlotID, let tab = workspace.selectedTab(of: plot) else { return }
-        workspace.resize(plot: plot, pane: tab.focused, toward: direction, by: delta)
+        guard let space = workspace.activeSpace, let tab = workspace.selectedTab(of: space) else { return }
+        workspace.resize(in: space, pane: tab.focused, toward: direction, by: delta)
     }
 
     /// A divider drag: sets the ratio of the split at `path` in the selected tab.
     public func setSplitRatio(_ ratio: Double, at path: [Int]) {
-        guard let plot = workspace.activePlotID else { return }
-        workspace.setRatio(ratio, at: path, plot: plot)
+        guard let space = workspace.activeSpace else { return }
+        workspace.setRatio(ratio, at: path, in: space)
     }
 
     public func selectTab(number: Int) {
-        guard let plot = workspace.activePlotID else { return }
-        workspace.selectTab(number: number, in: plot)
+        guard let space = workspace.activeSpace else { return }
+        workspace.selectTab(number: number, in: space)
     }
 
     /// A click on a tab of the tab bar: selects by position, so tab 9 of 12 is the 9th tab.
     public func selectTab(index: Int) {
-        guard let plot = workspace.activePlotID else { return }
-        workspace.selectTab(index: index, in: plot)
+        guard let space = workspace.activeSpace else { return }
+        workspace.selectTab(index: index, in: space)
     }
 
-    /// A drag in the tab bar (ticket 98): moves the tab at `from` to `to` in the active plot. The
+    /// A drag in the tab bar (ticket 98): moves the tab at `from` to `to` in the active space. The
     /// selected tab stays selected, and ⌘1 to ⌘9 follow the new order.
     public func moveTab(from: Int, to: Int) {
-        guard let plot = workspace.activePlotID else { return }
-        workspace.moveTab(from: from, to: to, in: plot)
+        guard let space = workspace.activeSpace else { return }
+        workspace.moveTab(from: from, to: to, in: space)
     }
 
-    public func nextTab() { if let plot = workspace.activePlotID { workspace.nextTab(in: plot) } }
-    public func previousTab() { if let plot = workspace.activePlotID { workspace.previousTab(in: plot) } }
+    public func nextTab() { if let space = workspace.activeSpace { workspace.nextTab(in: space) } }
+    public func previousTab() { if let space = workspace.activeSpace { workspace.previousTab(in: space) } }
 
     public func focus(_ pane: PaneID) {
-        let changed = workspace.selectedTab(of: workspace.spec(of: pane)?.plot ?? "")?.focused != pane
+        let changed = workspace.spec(of: pane).flatMap { workspace.selectedTab(of: $0.space) }?.focused != pane
         workspace.focus(pane)
         if changed { useTimes?.record(SwitcherItem.paneKey(pane.uuidString)) }
     }
@@ -737,41 +796,41 @@ public final class AppModel {
         do { _ = try await client.open(plot: plot, link: link) } catch { report(error) }
     }
 
-    /// Ghostty `goto_split`, in the selected tab of the active plot.
+    /// Ghostty `goto_split`, in the selected tab of the active space.
     public func focusPane(_ step: AppCommand.PaneStep) {
-        guard let plot = workspace.activePlotID else { return }
+        guard let space = workspace.activeSpace else { return }
         switch step {
-        case .next: workspace.focusNextPane(in: plot)
-        case .previous: workspace.focusPreviousPane(in: plot)
-        case .left: workspace.focusPane(toward: .left, in: plot)
-        case .right: workspace.focusPane(toward: .right, in: plot)
-        case .up: workspace.focusPane(toward: .up, in: plot)
-        case .down: workspace.focusPane(toward: .down, in: plot)
+        case .next: workspace.focusNextPane(in: space)
+        case .previous: workspace.focusPreviousPane(in: space)
+        case .left: workspace.focusPane(toward: .left, in: space)
+        case .right: workspace.focusPane(toward: .right, in: space)
+        case .up: workspace.focusPane(toward: .up, in: space)
+        case .down: workspace.focusPane(toward: .down, in: space)
         }
     }
 
-    /// Ghostty `close_tab`: closes the selected tab of the active plot at once. The window asks
+    /// Ghostty `close_tab`: closes the selected tab of the active space at once. The window asks
     /// first when a session in the tab is mid-turn (`ClosePrompt`). Returns false when there is no tab.
     @discardableResult
     public func closeTab() -> Bool {
-        guard let plot = workspace.activePlotID, workspace.selectedTab(of: plot) != nil else { return false }
-        workspace.closeSelectedTab(in: plot)
+        guard let space = workspace.activeSpace, workspace.selectedTab(of: space) != nil else { return false }
+        workspace.closeSelectedTab(in: space)
         return true
     }
 
-    /// The close button of a tab (ticket 96): closes that tab of the active plot at once, selected
-    /// or not, and leaves the selection on the same tab. Returns false when the plot has no such tab.
+    /// The close button of a tab (ticket 96): closes that tab of the active space at once, selected
+    /// or not, and leaves the selection on the same tab. Returns false when the space has no such tab.
     @discardableResult
     public func closeTab(_ id: UUID) -> Bool {
-        guard let plot = workspace.activePlotID, workspace.tabs(of: plot).contains(where: { $0.id == id }) else { return false }
-        workspace.closeTab(id, in: plot)
+        guard let space = workspace.activeSpace, workspace.tabs(of: space).contains(where: { $0.id == id }) else { return false }
+        workspace.closeTab(id, in: space)
         return true
     }
 
-    /// Closes the focused pane of the active plot. Returns false when there is none.
+    /// Closes the focused pane of the active space. Returns false when there is none.
     @discardableResult
     public func closeFocusedPane() -> Bool {
-        guard let plot = workspace.activePlotID, let pane = workspace.selectedTab(of: plot)?.focused else { return false }
+        guard let pane = workspace.focusedPane else { return false }
         workspace.closePane(pane)
         return true
     }
@@ -826,6 +885,8 @@ public final class AppModel {
     /// command first, and asks on the terminal when the command is new or changed.
     public func openWorktreePane(_ worktree: Worktree, kind: PaneSpec.Kind = .session) {
         if workspace.activePlotID != worktree.plotID { activate(plot: worktree.plotID) }
+        // A plot that is not in the list does not become active. The tab must not open in another space.
+        guard workspace.activePlotID == worktree.plotID else { return }
         openTab(kind, worktree: WorktreeRef(worktree))
     }
 
@@ -877,7 +938,7 @@ public final class AppModel {
     /// The question before archive, or nil when no session in the plot asks.
     /// It uses the `ClosePrompt` rule, so ticket 32 adds "needs you" in one place.
     public func archivePrompt(for plot: String) -> ClosePrompt? {
-        ClosePrompt.make(.archive, closing: workspace.livePaneIDs(of: plot), in: workspace)
+        ClosePrompt.make(.archive, closing: workspace.livePaneIDs(of: .plot(plot)), in: workspace)
     }
 
     /// `loam archive`, then the plot's panes end and the layout stays. The panes wait like restored
@@ -899,10 +960,10 @@ public final class AppModel {
             switch spec.kind {
             case .session:
                 (session.sessionID ?? spec.sessionID).map {
-                    resumeSpec(in: id, sessionID: $0, repo: spec.repo, worktree: spec.worktree, plotFolder: spec.inPlotFolder)
+                    resumeSpec(in: .plot(id), sessionID: $0, repo: spec.repo, worktree: spec.worktree, plotFolder: spec.inPlotFolder)
                 } ?? spec
             case .shell:
-                newShellSpec(in: id, folder: workspace.folder(of: pane), worktree: spec.worktree)
+                newShellSpec(in: .plot(id), folder: workspace.folder(of: pane), worktree: spec.worktree)
             }
         }
         // The panes and the active plot change in one step, so the window never shows a waiting plot.
@@ -911,9 +972,9 @@ public final class AppModel {
         let rest = plots.filter { $0.id != id }
         if wasActive {
             if panel.visible { review.markSeen(plot: id) }
-            let neighbour = rest.indices.contains(index) ? rest[index].id : rest.last?.id
-            next.activate(plot: neighbour)
-            if let neighbour { useTimes?.record(SwitcherItem.plotKey(neighbour)) }
+            let neighbour: Space = (rest.indices.contains(index) ? rest[index].id : rest.last?.id).map { .plot($0) } ?? .home
+            next.activate(neighbour)
+            useTimes?.record(SwitcherItem.key(of: neighbour))
         }
         workspace = next
         row.archived = true

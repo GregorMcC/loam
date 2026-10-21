@@ -5,7 +5,7 @@ import Testing
 
 @Suite struct WorkspaceTests {
     func spec(_ plot: String, _ title: String = "shell") -> PaneSpec {
-        PaneSpec(kind: .shell, plot: plot, folder: "/tmp", title: title)
+        PaneSpec(kind: .shell, space: .plot(plot), folder: "/tmp", title: title)
     }
 
     @Test func openTabAddsAPaneAndSelectsTheTab() {
@@ -49,9 +49,9 @@ import Testing
     /// Ticket 98: a drag in the tab bar moves a tab. The selected tab stays selected.
     @Test func moveTabKeepsTheSelectedTab() {
         var ws = Workspace()
-        let a = ws.openTab(PaneSpec(kind: .shell, plot: "P"))
-        let b = ws.openTab(PaneSpec(kind: .shell, plot: "P"))
-        let c = ws.openTab(PaneSpec(kind: .shell, plot: "P"))
+        let a = ws.openTab(PaneSpec(kind: .shell, space: "P"))
+        let b = ws.openTab(PaneSpec(kind: .shell, space: "P"))
+        let c = ws.openTab(PaneSpec(kind: .shell, space: "P"))
         ws.selectTab(index: 1, in: "P")
         ws.moveTab(from: 0, to: 2, in: "P")
         #expect(ws.tabs(of: "P").map(\.focused) == [b, c, a])
@@ -66,8 +66,8 @@ import Testing
 
     @Test func moveTabOutOfRangeChangesNothing() {
         var ws = Workspace()
-        ws.openTab(PaneSpec(kind: .shell, plot: "P"))
-        ws.openTab(PaneSpec(kind: .shell, plot: "P"))
+        ws.openTab(PaneSpec(kind: .shell, space: "P"))
+        ws.openTab(PaneSpec(kind: .shell, space: "P"))
         let before = ws
         ws.moveTab(from: 0, to: 2, in: "P")
         ws.moveTab(from: -1, to: 0, in: "P")
@@ -88,7 +88,7 @@ import Testing
     @Test func splitAddsASecondPaneNextToTheFocusedOne() {
         var ws = Workspace()
         let first = ws.openTab(spec("A"))
-        let second = ws.split(plot: "A", axis: .sideBySide, spec("A"))
+        let second = ws.split(in: "A", axis: .sideBySide, spec("A"))
         #expect(second != nil)
         #expect(ws.selectedTab(of: "A")?.tree.paneIDs == [first, second!])
         #expect(ws.selectedTab(of: "A")?.focused == second)
@@ -97,13 +97,13 @@ import Testing
 
     @Test func splitWithNoTabDoesNothing() {
         var ws = Workspace()
-        #expect(ws.split(plot: "A", axis: .stacked, spec("A")) == nil)
+        #expect(ws.split(in: "A", axis: .stacked, spec("A")) == nil)
     }
 
     @Test func closingAPaneFocusesItsNeighbour() {
         var ws = Workspace()
         let first = ws.openTab(spec("A"))
-        let second = ws.split(plot: "A", axis: .sideBySide, spec("A"))!
+        let second = ws.split(in: "A", axis: .sideBySide, spec("A"))!
         ws.closePane(second)
         #expect(ws.selectedTab(of: "A")?.tree == .leaf(first))
         #expect(ws.selectedTab(of: "A")?.focused == first)
@@ -135,9 +135,9 @@ import Testing
         var ws = Workspace()
         let a = ws.openTab(spec("A"))
         let b = ws.openTab(spec("B"))
-        ws.activate(plot: "A")
+        ws.activate("A")
         #expect(ws.activePlotID == "A")
-        ws.activate(plot: "B")
+        ws.activate("B")
         #expect(ws.paneIDs(of: "A") == [a])
         #expect(ws.paneIDs(of: "B") == [b])
         #expect(ws.allPaneIDs.count == 2)
@@ -146,9 +146,9 @@ import Testing
     @Test func removePlotReturnsItsPanes() {
         var ws = Workspace()
         let a1 = ws.openTab(spec("A"))
-        let a2 = ws.split(plot: "A", axis: .stacked, spec("A"))!
+        let a2 = ws.split(in: "A", axis: .stacked, spec("A"))!
         let b = ws.openTab(spec("B"))
-        ws.activate(plot: "A")
+        ws.activate("A")
         let removed = ws.removePlot("A")
         #expect(Set(removed) == [a1, a2])
         #expect(ws.allPaneIDs == [b])
@@ -158,7 +158,7 @@ import Testing
     @Test func focusMovesBetweenPanesOfTheSelectedTab() {
         var ws = Workspace()
         let first = ws.openTab(spec("A"))
-        let second = ws.split(plot: "A", axis: .sideBySide, spec("A"))!
+        let second = ws.split(in: "A", axis: .sideBySide, spec("A"))!
         ws.focus(first)
         #expect(ws.selectedTab(of: "A")?.focused == first)
         ws.focusNextPane(in: "A")
@@ -184,8 +184,8 @@ import Testing
     @Test func roundTripsThroughJSON() throws {
         var ws = Workspace()
         _ = ws.openTab(spec("A"))
-        _ = ws.split(plot: "A", axis: .sideBySide, spec("A"))
-        ws.activate(plot: "A")
+        _ = ws.split(in: "A", axis: .sideBySide, spec("A"))
+        ws.activate("A")
         let data = try JSONEncoder().encode(ws)
         #expect(try JSONDecoder().decode(Workspace.self, from: data) == ws)
     }

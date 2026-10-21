@@ -92,7 +92,7 @@ extension Scenarios {
         let host = try await setup.launch(app)
         let model = host.model
         try await app.waitUntil("the first plot is active") { model.workspace.activePlotID == first }
-        func focused(_ plot: String) -> PaneID? { model.workspace.selectedTab(of: plot)?.focused }
+        func focused(_ plot: String) -> PaneID? { model.workspace.selectedTab(of: .plot(plot))?.focused }
         func started(_ pane: PaneID) -> Bool { model.workspace.session(of: pane)?.started == true }
 
         // Plot 1: a session tab, split with a shell.
@@ -101,7 +101,7 @@ extension Scenarios {
         let firstSession = focused(first)!
         try await app.waitUntil("the first session started") { started(firstSession) }
         await model.splitShell(.sideBySide)
-        try await app.waitUntil("a shell split") { model.workspace.paneCount(of: first) == 2 }
+        try await app.waitUntil("a shell split") { model.workspace.paneCount(of: .plot(first)) == 2 }
         let firstShell = focused(first)!
         try expect(model.workspace.spec(of: firstShell)?.kind == .shell, "the split is not a shell")
 
@@ -130,7 +130,7 @@ extension Scenarios {
         let saved = Saved(
             first: first, second: second, firstSession: firstSession, firstShell: firstShell, secondSession: secondSession,
             sessionIDs: ids, shellFolder: model.workspace.spec(of: firstShell)?.folder ?? "",
-            trees: [first: model.workspace.tabs(of: first).map(\.tree), second: model.workspace.tabs(of: second).map(\.tree)])
+            trees: [first: model.workspace.tabs(of: .plot(first)).map(\.tree), second: model.workspace.tabs(of: .plot(second)).map(\.tree)])
         try JSONEncoder().encode(saved).write(to: setup.savedFile)
         Log.line("RESULT sessions before quit: \(ids)")
 
@@ -173,8 +173,8 @@ extension Scenarios {
         }
 
         try await app.waitUntil("the first plot is active") { model.workspace.activePlotID == saved.first }
-        try expect(model.workspace.tabs(of: saved.first).map(\.tree) == saved.trees[saved.first], "plot 1 has another layout")
-        try expect(model.workspace.tabs(of: saved.second).map(\.tree) == saved.trees[saved.second], "plot 2 has another layout")
+        try expect(model.workspace.tabs(of: .plot(saved.first)).map(\.tree) == saved.trees[saved.first], "plot 1 has another layout")
+        try expect(model.workspace.tabs(of: .plot(saved.second)).map(\.tree) == saved.trees[saved.second], "plot 2 has another layout")
 
         // Plot 1 shows: its session resumes, and its shell starts in the same folder.
         try await resumed(saved.firstSession)
@@ -183,7 +183,7 @@ extension Scenarios {
         try expect(host.paneView(saved.firstShell) is TerminalSurfaceView, "the shell pane has no terminal")
 
         // Plot 2 waits: no terminal and no session until it shows.
-        try expect(model.workspace.isWaiting(saved.second), "plot 2 does not wait")
+        try expect(model.workspace.isWaiting(.plot(saved.second)), "plot 2 does not wait")
         try expect(host.paneView(saved.secondSession) == nil, "plot 2's pane started before its plot showed")
         app.screenshot("relaunch-plot-1")
         model.activate(plot: saved.second)

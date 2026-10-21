@@ -50,7 +50,7 @@ extension Scenarios {
             client: LoamClient(binary: rig.binary, environment: environment), state: rig.stateFile, terminals: true)
         let model = host.model
         try await app.waitUntil("the plot is active") { model.workspace.activePlotID == plot }
-        func focused() -> PaneID? { model.workspace.selectedTab(of: plot)?.focused }
+        func focused() -> PaneID? { model.workspace.selectedTab(of: .plot(plot))?.focused }
         func surface(_ pane: PaneID) throws -> TerminalSurfaceView {
             guard let view = host.paneView(pane) as? TerminalSurfaceView else { throw DriverFailure("pane \(pane) has no terminal") }
             return view
@@ -93,7 +93,7 @@ extension Scenarios {
 
         // 4. ⌘⌥T opens a shell tab in the plot's start folder, with its own socket.
         try app.pressMenuKey("t", flags: [.command, .option])
-        try await app.waitUntil("a shell tab") { model.workspace.tabs(of: plot).count == 2 }
+        try await app.waitUntil("a shell tab") { model.workspace.tabs(of: .plot(plot)).count == 2 }
         let shell = focused()!
         let shellSpec = model.workspace.spec(of: shell)
         try check(shellSpec?.kind == .shell && shellSpec?.command == nil, "⌘⌥T did not open a shell")
@@ -135,7 +135,7 @@ extension Scenarios {
         // 6. Return resumes the last session ID in the same pane: same ID and place, a new terminal.
         app.press(.returnKey)
         try await app.waitUntil("the pane restarted") { model.workspace.launch(of: seeded) == 1 }
-        try check(focused() == seeded && model.workspace.selectedTab(of: plot)?.tree == .leaf(seeded),
+        try check(focused() == seeded && model.workspace.selectedTab(of: .plot(plot))?.tree == .leaf(seeded),
                   "the resumed pane is not in the old place")
         try await app.waitUntil("the fake claude resumed") { invocation()?.args.starts(with: ["--resume", second]) == true }
         try await app.waitUntil("SessionStart of the resume") { session(seeded)?.started == true }
@@ -163,8 +163,8 @@ extension Scenarios {
         app.press(.returnKey)
         try await app.waitUntil("the new session ended") { app.exists("pane-ended-\(seeded.uuidString)") }
         try app.pressMenuKey("w")
-        try await app.waitUntil("one tab left") { model.workspace.tabs(of: plot).count == 1 }
-        try check(model.workspace.paneIDs(of: plot) == [shell], "the shell pane is gone")
+        try await app.waitUntil("one tab left") { model.workspace.tabs(of: .plot(plot)).count == 1 }
+        try check(model.workspace.paneIDs(of: .plot(plot)) == [shell], "the shell pane is gone")
         await app.sleep(0.5)  // The safe close runs, then the socket goes.
         try check(!fm.fileExists(atPath: socket), "the first pane's socket is still there")
     }

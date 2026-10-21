@@ -5,9 +5,10 @@ import SwiftUI
 /// The plot sidebar (spec 8.1). It renders `SidebarModel` and calls `AppModel` for every action.
 /// Ticket 71: a native sidebar tree on the system's glass sidebar. A plot holds its main checkout and
 /// its worktrees, and each of those holds its panes (`SidebarModel.tree(of:)`). A tab of 2 or more
-/// panes groups them under a tab row (ticket 75). The list gives the indentation, the disclosure
-/// arrows, the selection highlight and the row height. The selected row is where you are: the
-/// focused pane, else the active plot.
+/// panes groups them under a tab row (ticket 75). Home sits above the plots and holds its panes
+/// directly (ticket 99). The list gives the indentation, the disclosure arrows, the selection
+/// highlight and the row height. The selected row is where you are: the focused pane, else the
+/// active space.
 struct SidebarView: View {
     let model: AppModel
     /// The "Archived" list starts collapsed (spec 8.1).
@@ -39,6 +40,9 @@ struct SidebarView: View {
             }
             if !model.setupSteps.isEmpty {
                 setupBanner(model.setupSteps)
+            }
+            Section {
+                homeNode(sidebar)
             }
             Section {
                 ForEach(sidebar.withPanes) { plotNode($0, sidebar) }
@@ -84,7 +88,7 @@ struct SidebarView: View {
         .listStyle(.sidebar)
         // No ground of its own: the system's glass sidebar shows through (ticket 68).
         .scrollContentBackground(.hidden)
-        .onChange(of: sidebar.activePlotID, initial: true) { _, plot in disclosure.activePlotChanged(to: plot) }
+        .onChange(of: sidebar.activeSpace, initial: true) { _, space in disclosure.activeSpaceChanged(to: space) }
         // A focus change that lands in a closed checkout or tab opens it, so the selected row shows.
         .onChange(of: sidebar.selection) { _, selected in
             guard case .pane(let pane) = selected else { return }
@@ -98,9 +102,10 @@ struct SidebarView: View {
         }
     }
 
-    /// A click on a row. Selecting a plot makes it active. Selecting a pane goes to it.
+    /// A click on a row. Selecting Home or a plot makes it active. Selecting a pane goes to it.
     private func select(_ row: SidebarModel.RowID) {
         switch row {
+        case .home: model.activateHome()
         case .plot(let plot): model.activate(plot: plot)
         case .pane(let pane): model.goToPane(pane)
         }
@@ -114,6 +119,28 @@ struct SidebarView: View {
             .padding(.horizontal, 8)
     }
 
+    /// Home, then its panes when it is open. Home with no pane is a plain row.
+    @ViewBuilder
+    private func homeNode(_ sidebar: SidebarModel) -> some View {
+        let tree = sidebar.homeTree
+        if tree.isEmpty {
+            homeRow(sidebar)
+                .listRowBackground(rowFill(.home, sidebar))
+        } else {
+            DisclosureGroup(isExpanded: spaceOpen(.home)) {
+                ForEach(tree.items) { itemNode($0, sidebar) }
+            } label: {
+                homeRow(sidebar)
+            }
+            .listRowBackground(rowFill(.home, sidebar))
+        }
+    }
+
+    /// The Home row. It does not drag, so a tap selects it.
+    private func homeRow(_ sidebar: SidebarModel) -> some View {
+        selectable(HomeRowView(row: sidebar.home, model: model, selected: sidebar.selection == .home), .home, sidebar)
+    }
+
     /// A plot, then its tree when it is open. A plot with nothing under it is a plain row.
     @ViewBuilder
     private func plotNode(_ row: SidebarModel.PlotRow, _ sidebar: SidebarModel) -> some View {
@@ -123,7 +150,7 @@ struct SidebarView: View {
             plotRow(row, sidebar)
                 .listRowBackground(rowFill(id, sidebar))
         } else {
-            DisclosureGroup(isExpanded: plotOpen(row.id)) {
+            DisclosureGroup(isExpanded: spaceOpen(.plot(row.id))) {
                 ForEach(tree.items) { itemNode($0, sidebar) }
                 ForEach(tree.checkouts) { checkoutNode($0, sidebar) }
             } label: {
@@ -204,8 +231,8 @@ struct SidebarView: View {
             .accessibilityAddTraits(sidebar.selection == id ? [.isButton, .isSelected] : .isButton)
     }
 
-    private func plotOpen(_ plot: String) -> Binding<Bool> {
-        Binding(get: { disclosure.isOpen(plot: plot) }, set: { disclosure.setPlot(plot, open: $0) })
+    private func spaceOpen(_ space: Space) -> Binding<Bool> {
+        Binding(get: { disclosure.isOpen(space) }, set: { disclosure.setSpace(space, open: $0) })
     }
 
     private func checkoutOpen(_ checkout: String) -> Binding<Bool> {
@@ -283,6 +310,51 @@ private struct SectionLabel: View {
     }
 }
 
+/// The attention mark of a plot row or the Home row: the count of panes that need you, else a blue
+/// ring for done, unread, else nothing. The row combines its children for accessibility, so each
+/// mark carries its words.
+private struct SpaceAttentionMark: View {
+    let needsYouCount: Int
+    let hasDoneUnread: Bool
+    let isArriving: Bool
+
+    var body: some View {
+        if needsYouCount > 0 {
+            NeedsYouBadge(count: needsYouCount, isArriving: isArriving)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Needs you: \(needsYouCount)")
+        } else if hasDoneUnread {
+            PaneMark(attention: .doneUnread)
+                .frame(width: AttentionDotView.size, height: AttentionDotView.size)
+        }
+    }
+}
+
+/// Home (ticket 99): the space for tabs with no plot, above the plots. Its symbol is `moss` while it
+/// is active, as a plot's is. It has no change count and does not drag. ⌃0 selects it
+/// (docs/design/components/PlotRow, "Home row").
+private struct HomeRowView: View {
+    let row: SidebarModel.HomeRow
+    let model: AppModel
+    let selected: Bool
+
+    var body: some View {
+        TreeRow(icon: .home, symbolColor: row.isActive ? LoamColor.moss : LoamColor.inkMuted,
+                title: Space.homeName, titleColor: selected ? LoamColor.ink : LoamColor.inkMuted, bold: true) {
+            SpaceAttentionMark(needsYouCount: row.needsYouCount, hasDoneUnread: row.hasDoneUnread, isArriving: row.isArriving)
+            Text("\u{2303}0")
+                .loamText(LoamTheme.captionStyle, LoamColor.inkFaint)
+                .fixedSize()
+        }
+        .contextMenu {
+            Button("New session") { model.openHomeTab(.session) }
+            Button("New shell") { model.openHomeTab(.shell) }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("home-row")
+    }
+}
+
 /// One plot: its symbol (`moss` for the active plot), the name, and the trailing marks
 /// (docs/design/components/PlotRow). Drag it up or down its section to reorder (`PlotDragController`).
 private struct PlotRowView: View {
@@ -293,17 +365,7 @@ private struct PlotRowView: View {
     var body: some View {
         TreeRow(icon: .plot, symbolColor: row.isActive ? LoamColor.moss : LoamColor.inkMuted,
                 title: row.name, titleColor: selected ? LoamColor.ink : LoamColor.inkMuted, bold: true) {
-            // The attention mark: the count of panes that need you, else a blue ring for done,
-            // unread, else nothing. The row combines its children for accessibility, so each mark
-            // carries its words.
-            if row.needsYouCount > 0 {
-                NeedsYouBadge(count: row.needsYouCount, isArriving: row.isArriving)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Needs you: \(row.needsYouCount)")
-            } else if row.hasDoneUnread {
-                PaneMark(attention: .doneUnread)
-                    .frame(width: AttentionDotView.size, height: AttentionDotView.size)
-            }
+            SpaceAttentionMark(needsYouCount: row.needsYouCount, hasDoneUnread: row.hasDoneUnread, isArriving: row.isArriving)
             if row.newChangeCount > 0 {
                 Text("\u{270E} \(row.newChangeCount)")
                     .loamText(LoamTheme.captionStyle, LoamColor.inkMuted)

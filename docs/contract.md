@@ -264,6 +264,8 @@ It deletes the local branch with `git branch -d`, so `branch_deleted` is false a
 { "panes": [{ "plot_id": "k3v9q2mxa7", "folder": "/abs/path/of/the/pane/working/folder" }] }
 ```
 
+A pane in Home (see [Home sessions](#home-sessions)) has `"home": true` and an empty `plot_id`, so it matches no plot.
+
 ### Sessions
 
 `loam sessions [<plot>] --json` prints an array of session records, newest first. It is `[]` when no record exists.
@@ -371,6 +373,12 @@ Writes the old values back as a new change by the actor (`--actor app` for the a
 | `loam hook` | It is hidden. It speaks the Claude Code hook protocol. |
 | `loam setup` | It is interactive. Use `loam setup --check --json` instead. |
 | `loam resume <session-id>` | It replaces the process with `claude --resume`. |
+
+### Home sessions
+
+`loam start --home [--session-id <uuid> | --resume <uuid>]` starts a session that belongs to no plot. The app uses it for Home, its space for tabs with no plot. The session starts in the home folder. It gets no seed, no `--add-dir`, and no `LOAM_PLOT`, but it gets the same settings file as a seeded session, so the pane hooks and the allow rules work. It adds no session record, so `loam sessions` does not list it and `loam resume` does not know it. `--resume` runs `claude --resume` in the home folder, where Claude Code finds the session.
+
+`--home` with a plot, or with `--repo`, `--worktree`, or `--plot-folder`, exits with code 2 (`invalid`). So do `--resume` without `--home`, `--resume` with `--session-id`, and a value that is not a UUID.
 
 ### Worktree sessions
 

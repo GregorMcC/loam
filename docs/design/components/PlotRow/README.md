@@ -21,6 +21,17 @@ One plot in the sidebar tree: its symbol, the name, and an attention mark at the
 
 The consumer provides the name, whether it is active or archived, the attention counts, and the tree.
 
+## Home row (ticket 99)
+
+Home is the space for tabs that belong to no plot. Its row sits above the "Plots" section, with no section label.
+
+- The row shows `house`, "Home" in semibold, and the keycap ⌃0 at the trailing edge. The symbol is `moss` while Home is active, as a plot's symbol is.
+- Under it, the Home panes show as a plot's panes do, with no checkout level.
+- The row is always there, also with no Home tab. It has no change count, no shortcut number from ⌃1 to ⌃9, and it does not drag.
+- The trailing slot shows the same attention marks as a plot row: the `loam-badge` for the panes that need you, else the `loam-dot--unread` ring.
+- A right click shows "New session" and "New shell". Each makes Home active and opens the tab there.
+- In Home, the plot panel collapses, and the panel button and the plot actions are off. The panel opens again when you go back to a plot, if you had it open.
+
 ## Top of the sidebar (ticket 86)
 
 - Search button: under the window buttons, full width, 32 pt high, radius 8. The fill is the ink at 5% with an ink hairline at 8%. It shows `magnifyingglass`, "Search" in `ink-faint`, and the keycaps command and K. A click opens the switcher, as the key does. It does not take text.

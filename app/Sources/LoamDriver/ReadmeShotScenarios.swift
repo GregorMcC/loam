@@ -282,7 +282,7 @@ extension Scenarios {
         let accountNotes = ["Claude Code v", "session limit", "weekly limit", "usage limit", "/upgrade", "/login", "login expires"]
         /// Fails when a pane on screen shows something private.
         func checkPrivate() throws {
-            let panes = model.workspace.activePlotID.flatMap { model.workspace.selectedTab(of: $0)?.tree.paneIDs } ?? []
+            let panes = model.workspace.activeTab?.tree.paneIDs ?? []
             for pane in panes {
                 let screenText = text(pane)
                 try ensure(screenText.range(of: email, options: .regularExpression) == nil, "a pane shows an email address")
@@ -317,19 +317,19 @@ extension Scenarios {
         for other in [notes, website] {
             model.activate(plot: other)
             await model.openShellTab()
-            otherPanes += model.workspace.selectedTab(of: other).map { [$0.focused] } ?? []
+            otherPanes += model.workspace.selectedTab(of: .plot(other)).map { [$0.focused] } ?? []
         }
         let made = try await model.client.worktreeNew(plot: plot, repo: repo.path, name: "native-panel", base: "main")
         await model.reloadWorktrees()
         model.activate(plot: plot)
         model.openTab(.session)
         await model.splitShell(.stacked)
-        let mainPanes = model.workspace.tabs(of: plot).first?.tree.paneIDs ?? []
+        let mainPanes = model.workspace.tabs(of: .plot(plot)).first?.tree.paneIDs ?? []
         try ensure(mainPanes.count == 2, "the main checkout tab has \(mainPanes.count) panes")
         let claudePane = mainPanes[0], shellPane = mainPanes[1]
         model.setSplitRatio(0.55, at: [])
         model.openWorktreePane(made.worktree, kind: .shell)
-        let worktreePane = try model.workspace.selectedTab(of: plot)?.focused ?? { throw DriverFailure("no worktree tab") }()
+        let worktreePane = try model.workspace.selectedTab(of: .plot(plot))?.focused ?? { throw DriverFailure("no worktree tab") }()
         model.selectTab(number: 1)
         if let split = host.window.contentViewController as? NSSplitViewController {
             split.splitView.setPosition(230, ofDividerAt: 0)

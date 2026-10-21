@@ -181,6 +181,17 @@ struct DriverTests {
         try await expectPass("restore-relaunch", environment: environment)
     }
 
+    /// Ticket 99: a store with no plot opens Home, and ⌘T starts a session there with no plot. ⌃0, ⌘⌥T,
+    /// and ⌘J "New session in Home" work from a plot. A relaunch brings the Home tabs back and resumes each session.
+    @Test func opensTabsInHomeAndRestoresThem() async throws {
+        let rig = FileManager.default.temporaryDirectory.appendingPathComponent("loam-driver-home-\(UUID().uuidString)")
+        let environment = [
+            "LOAM_DRIVER_LOAM": Self.loamBinary, "LOAM_DRIVER_FAKE_CLAUDE": Self.fakeClaude, "LOAM_DRIVER_RIG": rig.path,
+        ]
+        try await expectPass("home", environment: environment)
+        try await expectPass("home-relaunch", environment: environment)
+    }
+
     /// Ticket 32: 3 plots, a permission prompt in a plot that is not active shows on its sidebar row,
     /// ⌘L reaches it, and a key clears it. Also done, unread, the banner, the title bar button, and Reduce Motion.
     @Test func showsAPaneThatNeedsYouAndReachesItWithCommandL() async throws {

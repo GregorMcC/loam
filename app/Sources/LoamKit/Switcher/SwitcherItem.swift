@@ -76,6 +76,8 @@ public struct SwitcherItem: Equatable, Sendable, Identifiable {
     }
 
     public enum Target: Equatable, Sendable {
+        /// Home (ticket 99). It is a `.plot` kind item, so it lists with the plots.
+        case home
         case plot(String)
         case pane(PaneID)
         case savedPane(SavedPane)
@@ -117,10 +119,10 @@ public struct SwitcherItem: Equatable, Sendable, Identifiable {
         self.linkTarget = linkTarget
     }
 
-    /// The kind in words, on the right of the row: "Plot", "Pane", "Local link", "Action".
+    /// The kind in words, on the right of the row: "Home", "Plot", "Pane", "Local link", "Action".
     public var accessory: String {
         switch kind {
-        case .plot: "Plot"
+        case .plot: target == .home ? Space.homeName : "Plot"
         case .pane: "Pane"
         case .action: "Action"
         case .link: SwitcherItem.linkKindLabel(linkKind)
@@ -140,6 +142,14 @@ public struct SwitcherItem: Equatable, Sendable, Identifiable {
     }
 
     public static func plotKey(_ id: String) -> String { "plot:\(id)" }
+    public static let homeKey = "home"
+    /// The use time key of a space.
+    public static func key(of space: Space) -> String {
+        switch space {
+        case .home: homeKey
+        case .plot(let id): plotKey(id)
+        }
+    }
     public static func paneKey(_ id: String) -> String { "pane:\(id)" }
     public static func linkKey(plot: String, link: String) -> String { "link:\(plot):\(link)" }
 }

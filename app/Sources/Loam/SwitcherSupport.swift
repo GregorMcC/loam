@@ -19,23 +19,21 @@ extension MainWindowController {
         }
     }
 
-    /// Gives the keyboard back to the focused pane of the active plot.
+    /// Gives the keyboard back to the focused pane of the active space.
     func focusActivePane() {
-        let workspace = model.workspace
-        guard let plot = workspace.activePlotID, let focused = workspace.selectedTab(of: plot)?.focused,
-              let container = paneArea.container(for: focused) else { return }
+        guard let focused = model.workspace.focusedPane, let container = paneArea.container(for: focused) else { return }
         window?.makeFirstResponder(container.focusTarget)
     }
 
     // MARK: Menu commands
 
-    /// Commands the switcher does not list: its own two items, and the numbered items
-    /// (Plot 1 to 9, Tab 1 to 9), which plots and panes already cover.
+    /// Commands the switcher does not list: its own two items, the numbered items (Plot 1 to 9,
+    /// Tab 1 to 9), which plots and panes already cover, and Home, which its own row covers.
     private func isListed(_ item: NSMenuItem) -> Bool {
         guard !item.isSeparatorItem, item.submenu == nil, item.action != nil else { return false }
         guard let command = (item.representedObject as? MenuCommand)?.command else { return true }
         switch command {
-        case .quickSwitcher, .quickSwitcherActions, .actionsMenu, .selectPlot, .selectTab: return false
+        case .quickSwitcher, .quickSwitcherActions, .actionsMenu, .selectPlot, .selectHome, .selectTab: return false
         default: return true
         }
     }

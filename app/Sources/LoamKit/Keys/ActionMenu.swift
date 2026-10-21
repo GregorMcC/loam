@@ -13,9 +13,9 @@ public struct ActionItem: Equatable, Sendable, Identifiable {
     public var id: String { title }
 }
 
-/// A section of the actions menu: the focused pane, or the active plot.
+/// A section of the actions menu: the focused pane, the active plot, or Home.
 public struct ActionSection: Equatable, Sendable, Identifiable {
-    /// "pane" or "plot". Not the title: a pane and its plot can have the same name.
+    /// "pane", "plot", or "home". Not the title: a pane and its plot can have the same name.
     public var id: String
     public var title: String
     public var items: [ActionItem]
@@ -48,10 +48,17 @@ public enum ActionMenu {
         Entry(command: .archivePlot, title: "Archive plot", symbol: "archivebox"),
     ]
 
-    /// The sections for the focused pane and the active plot. `chord` gives the key of a command
-    /// as the menu bar shows it, `isEnabled` whether its menu item is enabled.
-    public static func sections(paneTitle: String?, plotName: String?, chord: (AppCommand) -> KeyChord?,
-                                isEnabled: (AppCommand) -> Bool) -> [ActionSection] {
+    /// Home (ticket 99): a tab in Home from any plot. In Home itself, ⌘T and ⌘⌥T do the same.
+    static let homeEntries = [
+        Entry(command: .newHomeSession, title: "New session in Home", symbol: "house"),
+        Entry(command: .newHomeShell, title: "New shell in Home", symbol: "apple.terminal"),
+    ]
+
+    /// The sections for the focused pane, the active plot, and Home. `chord` gives the key of a
+    /// command as the menu bar shows it, `isEnabled` whether its menu item is enabled. `inHome`
+    /// leaves out the Home section, because its rows would repeat "New session" and ⌘⌥T.
+    public static func sections(paneTitle: String?, plotName: String?, inHome: Bool = false,
+                                chord: (AppCommand) -> KeyChord?, isEnabled: (AppCommand) -> Bool) -> [ActionSection] {
         func items(_ entries: [Entry]) -> [ActionItem] {
             entries.filter { isEnabled($0.command) }.map {
                 ActionItem(command: $0.command, title: $0.title, symbol: $0.symbol, keys: keycaps(chord($0.command)))
@@ -60,15 +67,18 @@ public enum ActionMenu {
         return [
             ActionSection(id: "pane", title: paneTitle.flatMap { $0.isEmpty ? nil : $0 } ?? "Pane", items: items(paneEntries)),
             ActionSection(id: "plot", title: plotName.flatMap { $0.isEmpty ? nil : $0 } ?? "Plot", items: items(plotEntries)),
+            ActionSection(id: "home", title: Space.homeName, items: inHome ? [] : items(homeEntries)),
         ].filter { !$0.items.isEmpty }
     }
 
     /// Whether a command can run now. The menu bar validates its items with this, so the menu and
-    /// the actions list agree. Pane commands need a focused pane, plot commands an active plot.
-    public static func isAvailable(_ command: AppCommand, hasPlot: Bool, hasPane: Bool) -> Bool {
+    /// the actions list agree. Tab commands need an active space (Home or a plot), pane commands a
+    /// focused pane, and plot commands an active plot.
+    public static func isAvailable(_ command: AppCommand, hasSpace: Bool, hasPlot: Bool, hasPane: Bool) -> Bool {
         switch command {
-        case .newTab, .newShellTab, .newPlotSession, .editBrief, .addLink, .addRepo, .archivePlot: hasPlot
-        case .newSplit, .newShellSplit, .closePane: hasPlot && hasPane
+        case .newTab, .newShellTab: hasSpace
+        case .newPlotSession, .editBrief, .addLink, .addRepo, .archivePlot, .togglePlotPanel: hasPlot
+        case .newSplit, .newShellSplit, .closePane: hasSpace && hasPane
         default: true
         }
     }

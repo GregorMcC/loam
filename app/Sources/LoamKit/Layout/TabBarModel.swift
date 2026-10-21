@@ -25,10 +25,10 @@ public struct TabBarModel: Equatable, Sendable {
 
     /// `titles`: the titles that the terminals set (`AppModel.terminalTitles`).
     /// `arriving`: the panes that just started to need you (`AppModel.arrivingPanes`).
-    public init(workspace: Workspace, plot: String?, titles: [PaneID: String] = [:], arriving: Set<PaneID> = []) {
-        guard let plot else { items = []; return }
-        let selected = workspace.selectedTab(of: plot)?.id
-        items = workspace.tabs(of: plot).enumerated().map { index, tab in
+    public init(workspace: Workspace, space: Space?, titles: [PaneID: String] = [:], arriving: Set<PaneID> = []) {
+        guard let space else { items = []; return }
+        let selected = workspace.selectedTab(of: space)?.id
+        items = workspace.tabs(of: space).enumerated().map { index, tab in
             let panes = tab.tree.paneIDs
             let needs = panes.filter { workspace.attention(of: $0) == .needsYou }
             let attention: PaneAttention = !needs.isEmpty ? .needsYou
@@ -56,8 +56,8 @@ extension Workspace {
     /// The pane header rule: a pane shows its header only in a tab of two or more panes. In a tab of
     /// one pane the tab label, the tab dot and the pane ring already say what the header would say.
     public func showsHeader(_ pane: PaneID) -> Bool {
-        guard let plot = spec(of: pane)?.plot,
-              let tab = tabs(of: plot).first(where: { $0.tree.paneIDs.contains(pane) }) else { return false }
+        guard let space = spec(of: pane)?.space,
+              let tab = tabs(of: space).first(where: { $0.tree.paneIDs.contains(pane) }) else { return false }
         return tab.tree.paneIDs.count > 1
     }
 }

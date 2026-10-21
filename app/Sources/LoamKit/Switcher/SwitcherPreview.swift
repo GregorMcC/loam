@@ -35,7 +35,7 @@ public struct SwitcherPreview: Equatable, Sendable {
     /// The facts about one pane that the preview needs.
     public struct PaneFacts: Equatable, Sendable {
         public var id: String
-        public var plotID: String
+        public var space: Space
         public var title: String
         public var kind: PaneSpec.Kind?
         public var state: PaneState?
@@ -45,10 +45,10 @@ public struct SwitcherPreview: Equatable, Sendable {
         /// True for a pane in `state.json` that has not resumed.
         public var saved: Bool
 
-        public init(id: String, plotID: String, title: String, kind: PaneSpec.Kind?, state: PaneState?,
+        public init(id: String, space: Space, title: String, kind: PaneSpec.Kind?, state: PaneState?,
                     attention: PaneAttention, folder: String?, worktree: WorktreeRef?, saved: Bool) {
             self.id = id
-            self.plotID = plotID
+            self.space = space
             self.title = title
             self.kind = kind
             self.state = state
@@ -80,15 +80,17 @@ public struct SwitcherPreview: Equatable, Sendable {
             self.home = home
         }
 
-        func panes(of plot: String) -> [PaneFacts] { panes.filter { $0.plotID == plot } }
+        func panes(of space: Space) -> [PaneFacts] { panes.filter { $0.space == space } }
     }
 
     // MARK: Row text
 
-    /// The text after the title of a row: a plot's pane count, else the plot name. Nil for an action.
+    /// The text after the title of a row: the pane count of Home or a plot, else the plot name, or
+    /// "Home" for a Home pane. Nil for an action.
     public static func subtitle(for item: SwitcherItem, in context: Context) -> String? {
         switch item.target {
-        case .plot(let id): count(context.panes(of: id).count, "pane")
+        case .home: count(context.panes(of: .home).count, "pane")
+        case .plot(let id): count(context.panes(of: .plot(id)).count, "pane")
         default: item.plotName
         }
     }
@@ -97,6 +99,7 @@ public struct SwitcherPreview: Equatable, Sendable {
 
     public static func make(for item: SwitcherItem, in context: Context) -> SwitcherPreview {
         switch item.target {
+        case .home: home(item, context)
         case .plot(let id): plot(item, id: id, context)
         case .pane, .savedPane: pane(item, context)
         case .link: link(item, context)
@@ -104,8 +107,16 @@ public struct SwitcherPreview: Equatable, Sendable {
         }
     }
 
+    /// Home has no brief, repos, or links: only its panes.
+    private static func home(_ item: SwitcherItem, _ context: Context) -> SwitcherPreview {
+        let panes = context.panes(of: .home)
+        let rows = (panes.isEmpty ? [] : [Row(label: "Panes", value: .text("\(panes.count)"))]) + attentionRows(panes)
+        return SwitcherPreview(icon: item.icon, title: item.title, caption: "Home · \(count(panes.count, "pane"))",
+                               whereItStands: nil, rows: rows, footerAction: "Open Home")
+    }
+
     private static func plot(_ item: SwitcherItem, id: String, _ context: Context) -> SwitcherPreview {
-        let panes = context.panes(of: id)
+        let panes = context.panes(of: .plot(id))
         var caption = ["Plot", count(panes.count, "pane")]
         let detail = context.plots[id]
         if let detail { caption.append(count(detail.links.count, "link")) }
@@ -117,12 +128,7 @@ public struct SwitcherPreview: Equatable, Sendable {
             rows.append(Row(label: "Main repo", value: .branch(name: folderName(main.path), branch: nil)))
         }
         if detail != nil || !panes.isEmpty { rows.append(Row(label: "Panes", value: .text("\(panes.count)"))) }
-        for (attention, label) in [(PaneAttention.needsYou, "Needs you"), (.doneUnread, "Done, unread")] {
-            let named = panes.filter { $0.attention == attention }
-            guard let first = named.first else { continue }
-            let text = named.count == 1 ? first.title : "\(first.title) and \(named.count - 1) more"
-            rows.append(Row(label: label, value: .attention(attention, text)))
-        }
+        rows += attentionRows(panes)
         if let last = context.changes.filter({ $0.plotID == id }).max(by: { $0.id < $1.id }) {
             let text = "\(context.actorText(last)): \(ChangeRules.summary(last)), \(context.clock(last))"
             rows.append(Row(label: "Last change", value: .text(text)))
@@ -135,11 +141,22 @@ public struct SwitcherPreview: Equatable, Sendable {
                                whereItStands: detail?.whereItStands, rows: rows, footerAction: "Open plot")
     }
 
+    /// A "Needs you" row and a "Done, unread" row, each when a pane is in that state.
+    private static func attentionRows(_ panes: [PaneFacts]) -> [Row] {
+        [(PaneAttention.needsYou, "Needs you"), (.doneUnread, "Done, unread")].compactMap { attention, label in
+            let named = panes.filter { $0.attention == attention }
+            guard let first = named.first else { return nil }
+            let text = named.count == 1 ? first.title : "\(first.title) and \(named.count - 1) more"
+            return Row(label: label, value: .attention(attention, text))
+        }
+    }
+
     private static func pane(_ item: SwitcherItem, _ context: Context) -> SwitcherPreview {
         let facts = context.panes.first { $0.id == item.id }
         let kind = facts?.kind == .session ? "Claude session" : "Shell"
         var rows: [Row] = []
-        if let plot = item.plotName { rows.append(Row(label: "Plot", value: .text(plot))) }
+        // A Home pane has no plot. Its row in the list says "Home".
+        if let plot = item.plotName, facts?.space.isHome != true { rows.append(Row(label: "Plot", value: .text(plot))) }
         if let facts {
             if let checkout = checkout(of: facts, context) { rows.append(Row(label: "Checkout", value: checkout)) }
             rows.append(Row(label: "State", value: state(of: facts)))
@@ -153,7 +170,7 @@ public struct SwitcherPreview: Equatable, Sendable {
 
     private static func checkout(of pane: PaneFacts, _ context: Context) -> Value? {
         if let worktree = pane.worktree { return .branch(name: worktree.name, branch: worktree.branch) }
-        let repos = context.checkouts[pane.plotID] ?? []
+        let repos = pane.space.plotID.flatMap { context.checkouts[$0] } ?? []
         let inside = pane.folder.flatMap { folder in repos.first { $0.holds(folder) || folder.hasPrefix($0.path + "/") } }
         guard let repo = inside ?? repos.first(where: \.isMain) else { return nil }
         return .branch(name: repo.name, branch: repo.branch)

@@ -20,6 +20,18 @@ public struct SidebarModel: Equatable, Sendable {
         public var isArriving = false
     }
 
+    /// The Home row above the plots (ticket 99). It is always there, with no number and no change count.
+    public struct HomeRow: Equatable, Sendable {
+        public var paneCount: Int
+        public var isActive: Bool
+        /// The Home panes that need you. Above 0, the row shows the amber badge.
+        public var needsYouCount: Int = 0
+        /// A Home pane is done, unread. The row shows the blue ring when no pane needs you.
+        public var hasDoneUnread = false
+        /// A Home pane just started to need you and has no focus. The badge dot plays the halo.
+        public var isArriving = false
+    }
+
     public struct PaneRow: Equatable, Sendable, Identifiable {
         public var id: PaneID
         public var title: String
@@ -38,9 +50,10 @@ public struct SidebarModel: Equatable, Sendable {
     public struct NeedsYouRow: Equatable, Sendable, Identifiable {
         public var id: PaneID
         public var title: String
-        public var plotID: String
+        public var space: Space
+        /// The plot name, or "Home".
         public var plotName: String
-        /// The focused pane of the active plot.
+        /// The focused pane of the active space.
         public var isFocused: Bool
         public var isArriving: Bool
     }
@@ -130,7 +143,7 @@ public struct SidebarModel: Equatable, Sendable {
         public var worktrees: [CheckoutRow] = []
     }
 
-    /// What a plot holds in the tree (ticket 71).
+    /// What a plot holds in the tree (ticket 71). Home has a tree too, with only `panes` and `items`.
     public struct PlotTree: Equatable, Sendable {
         /// The plot sessions, and the panes of a plot with no repos outside a worktree. They sit right
         /// under the plot.
@@ -147,6 +160,7 @@ public struct SidebarModel: Equatable, Sendable {
 
     /// A row that the sidebar can select.
     public enum RowID: Hashable, Sendable {
+        case home
         case plot(String)
         case pane(PaneID)
     }
@@ -154,28 +168,32 @@ public struct SidebarModel: Equatable, Sendable {
     public let plots: [PlotSummary]
     /// The worktrees of each plot, oldest first.
     public let worktreeRows: [String: [WorktreeRow]]
-    public let activePlotID: String?
+    public let activeSpace: Space?
+    public var activePlotID: String? { activeSpace?.plotID }
+    public let home: HomeRow
+    /// The panes of Home, as the tree under the Home row shows them.
+    public let homeTree: PlotTree
     /// Plots that own at least one pane, in stored order.
     public let withPanes: [PlotRow]
     /// Plots with no pane, in stored order. They show in a group at the bottom.
     public let noPanes: [PlotRow]
-    /// The panes of the active plot, in tab order then layout order.
+    /// The panes of the active space, in tab order then layout order.
     public let activePanes: [PaneRow]
     public let collapsed: Bool
     public let windowTitle: String
-    /// Every pane that needs you, in plot order, then tab order, then layout order. The list at the
-    /// top of the sidebar shows only while it is not empty.
+    /// Every pane that needs you, in sidebar order: Home, then plot order, then tab order, then
+    /// layout order. The list at the top of the sidebar shows only while it is not empty.
     public let needsYou: [NeedsYouRow]
     /// The panes that are done, unread, in the same order. A pane that needs you is not in it.
     public let doneUnread: [PaneID]
     /// The counts on the two fixed rows under the search field (ticket 86).
     public var needsYouCount: Int { needsYou.count }
     public var doneUnreadCount: Int { doneUnread.count }
-    /// The panes that need you in plots other than the active one, for the title bar button.
+    /// The panes that need you in spaces other than the active one, for the title bar button.
     public let elsewhereNeedYou: Int
     /// The tree under each plot (ticket 71). Every plot has one. The view opens the active plot.
     public let trees: [String: PlotTree]
-    /// Where you are: the focused pane of the active plot, else the active plot. The list selects it.
+    /// Where you are: the focused pane of the active space, else the active space. The list selects it.
     public let selection: RowID?
 
     /// `arriving`: the panes that just started to need you (`AppModel.arrivingPanes`).
@@ -197,11 +215,17 @@ public struct SidebarModel: Equatable, Sendable {
             }
         }
         self.collapsed = collapsed
-        let active = workspace.activePlotID
-        activePlotID = active
+        let activeSpace = workspace.activeSpace
+        self.activeSpace = activeSpace
+        let active = activeSpace?.plotID
         let focused = workspace.focusedPane
+        let homePanes = workspace.paneIDs(of: .home)
+        let homeNeeds = homePanes.filter { workspace.attention(of: $0) == .needsYou }
+        home = HomeRow(paneCount: homePanes.count, isActive: activeSpace == .home, needsYouCount: homeNeeds.count,
+                       hasDoneUnread: homePanes.contains { workspace.attention(of: $0) == .doneUnread },
+                       isArriving: homeNeeds.contains { arriving.contains($0) && $0 != focused })
         let rows = plots.enumerated().map { index, plot in
-            let panes = workspace.paneIDs(of: plot.id)
+            let panes = workspace.paneIDs(of: .plot(plot.id))
             let needs = panes.filter { workspace.attention(of: $0) == .needsYou }
             return PlotRow(id: plot.id, name: plot.name, number: index < 9 ? index + 1 : nil,
                            paneCount: panes.count, isActive: plot.id == active,
@@ -212,8 +236,8 @@ public struct SidebarModel: Equatable, Sendable {
         }
         withPanes = rows.filter { $0.paneCount > 0 }
         noPanes = rows.filter { $0.paneCount == 0 }
-        func paneRows(of plot: String) -> [PaneRow] {
-            workspace.paneIDs(of: plot).compactMap { id in
+        func paneRows(of space: Space) -> [PaneRow] {
+            workspace.paneIDs(of: space).compactMap { id in
                 guard let spec = workspace.spec(of: id) else { return nil }
                 return PaneRow(id: id, title: workspace.title(of: id, terminalTitles: titles),
                                state: workspace.state(of: id) ?? .running, isFocused: id == focused,
@@ -222,24 +246,37 @@ public struct SidebarModel: Equatable, Sendable {
             }
         }
         // One pass builds the pane rows of each plot. The active plot's list and the trees share them.
-        let rowsByPlot = Dictionary(plots.map { ($0.id, paneRows(of: $0.id)) }) { first, _ in first }
-        activePanes = active.map { rowsByPlot[$0] ?? paneRows(of: $0) } ?? []
+        let rowsByPlot = Dictionary(plots.map { ($0.id, paneRows(of: .plot($0.id))) }) { first, _ in first }
+        let homeRows = paneRows(of: .home)
+        homeTree = PlotTree(panes: homeRows, items: Self.items(homeRows, tabs: workspace.tabs(of: .home)))
+        activePanes = switch activeSpace {
+        case .home: homeRows
+        case .plot(let id): rowsByPlot[id] ?? paneRows(of: .plot(id))
+        case nil: []
+        }
         let worktreeRows = self.worktreeRows
         trees = rowsByPlot.reduce(into: [:]) { all, entry in
             all[entry.key] = Self.tree(of: entry.key, panes: entry.value, workspace: workspace,
                                        worktrees: worktreeRows[entry.key] ?? [], repos: repos[entry.key] ?? [])
         }
-        selection = active.map { plot in focused.map(RowID.pane) ?? .plot(plot) }
-        needsYou = plots.flatMap { plot in
-            workspace.paneIDs(of: plot.id).filter { workspace.attention(of: $0) == .needsYou }.map { id in
-                NeedsYouRow(id: id, title: workspace.title(of: id, terminalTitles: titles), plotID: plot.id,
-                            plotName: plot.name, isFocused: id == focused, isArriving: arriving.contains(id))
+        selection = activeSpace.map { space in
+            focused.map(RowID.pane) ?? space.plotID.map(RowID.plot) ?? .home
+        }
+        let spaces = [(space: Space.home, name: Space.homeName)] + plots.map { (space: Space.plot($0.id), name: $0.name) }
+        needsYou = spaces.flatMap { space, name in
+            workspace.paneIDs(of: space).filter { workspace.attention(of: $0) == .needsYou }.map { id in
+                NeedsYouRow(id: id, title: workspace.title(of: id, terminalTitles: titles), space: space,
+                            plotName: name, isFocused: id == focused, isArriving: arriving.contains(id))
             }
         }
-        doneUnread = plots.flatMap { workspace.paneIDs(of: $0.id) }.filter { workspace.attention(of: $0) == .doneUnread }
-        elsewhereNeedYou = needsYou.filter { $0.plotID != active }.count
-        let activeName = plots.first { $0.id == active }?.name
-        windowTitle = activeName ?? "Loam"  // The toolbar title (ticket 68).
+        doneUnread = spaces.flatMap { workspace.paneIDs(of: $0.space) }.filter { workspace.attention(of: $0) == .doneUnread }
+        elsewhereNeedYou = needsYou.filter { $0.space != activeSpace }.count
+        // The toolbar title (ticket 68).
+        windowTitle = switch activeSpace {
+        case .home: Space.homeName
+        case .plot(let id): plots.first { $0.id == id }?.name ?? "Loam"
+        case nil: "Loam"
+        }
     }
 
     /// Groups the panes of one plot by `PaneSpec.worktree`, then by `PaneSpec.repo`. A plot session
@@ -277,7 +314,7 @@ public struct SidebarModel: Equatable, Sendable {
             if !listed.contains(ref.id), !unlisted.contains(where: { $0.id == ref.id }) { unlisted.append(ref) }
             inside[ref.id, default: []].append(pane)
         }
-        let tabs = workspace.tabs(of: plot)
+        let tabs = workspace.tabs(of: .plot(plot))
         // With more than one repo, a branch name alone does not say which repo a row is.
         let named = repos.count > 1
         var tree = PlotTree()
@@ -442,41 +479,41 @@ public struct RepoCheckout: Equatable, Sendable, Identifiable {
     }
 }
 
-/// Which rows of the sidebar tree are open (ticket 71). The active plot opens by itself, so by
-/// default only the active plot shows its panes (spec 8.1). A plot that opened that way closes when
-/// another plot becomes active. A plot that you open stays open until you close it. A checkout (the
-/// main checkout or a worktree) and a tab row are open until you close them.
+/// Which rows of the sidebar tree are open (ticket 71). The active space (Home or a plot) opens by
+/// itself, so by default only the active space shows its panes (spec 8.1). A space that opened that
+/// way closes when another space becomes active. A space that you open stays open until you close
+/// it. A checkout (the main checkout or a worktree) and a tab row are open until you close them.
 public struct SidebarDisclosure: Equatable, Sendable {
-    public private(set) var openPlots: Set<String> = []
-    private var active: String?
-    /// The plot that opened because it became active.
-    private var autoOpened: String?
+    public private(set) var openSpaces: Set<Space> = []
+    private var active: Space?
+    /// The space that opened because it became active.
+    private var autoOpened: Space?
     private var closedCheckouts: Set<String> = []
     private var closedTabs: Set<UUID> = []
 
     public init() {}
 
-    public func isOpen(plot: String) -> Bool { openPlots.contains(plot) }
+    public func isOpen(_ space: Space) -> Bool { openSpaces.contains(space) }
     public func isOpen(checkout: String) -> Bool { !closedCheckouts.contains(checkout) }
     public func isOpen(tab: UUID) -> Bool { !closedTabs.contains(tab) }
 
-    /// Call it with the active plot on each change. The same plot again changes nothing.
-    public mutating func activePlotChanged(to plot: String?) {
-        guard plot != active else { return }
-        active = plot
+    /// Call it with the active space on each change. The same space again changes nothing.
+    public mutating func activeSpaceChanged(to space: Space?) {
+        guard space != active else { return }
+        active = space
         if let old = autoOpened {
-            openPlots.remove(old)
+            openSpaces.remove(old)
             autoOpened = nil
         }
-        guard let plot, !openPlots.contains(plot) else { return }
-        openPlots.insert(plot)
-        autoOpened = plot
+        guard let space, !openSpaces.contains(space) else { return }
+        openSpaces.insert(space)
+        autoOpened = space
     }
 
-    /// You opened or closed the plot. Your choice holds when the active plot changes.
-    public mutating func setPlot(_ plot: String, open: Bool) {
-        if open { openPlots.insert(plot) } else { openPlots.remove(plot) }
-        if plot == autoOpened { autoOpened = nil }
+    /// You opened or closed the space. Your choice holds when the active space changes.
+    public mutating func setSpace(_ space: Space, open: Bool) {
+        if open { openSpaces.insert(space) } else { openSpaces.remove(space) }
+        if space == autoOpened { autoOpened = nil }
     }
 
     public mutating func setCheckout(_ checkout: String, open: Bool) {

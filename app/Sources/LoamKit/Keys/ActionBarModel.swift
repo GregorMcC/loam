@@ -9,8 +9,10 @@ public final class ActionBarModel {
     public var plotID: String? {
         didSet { if plotID != oldValue { toast = nil } }
     }
-    /// The name of the active plot.
+    /// The name of the active plot, or "Home".
     public var plotName = ""
+    /// Home is active (ticket 99). The bar shows the Home symbol in place of the plot symbol.
+    public var isHome = false
     /// The label of the focused tab: the title of its focused pane.
     public var paneLabel = ""
     /// The last change of the active plot, such as "Claude set Where it stands". Nil when none shows.

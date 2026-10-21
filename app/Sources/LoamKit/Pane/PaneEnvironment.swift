@@ -13,6 +13,9 @@ public enum PaneEnvironment {
         "TERM_PROGRAM_VERSION",
         "TERM_SESSION_ID",
         "COLORTERM",
+        // A seeded session sets it for its tools. Loam started from inside that session must not
+        // give it to a pane: a shell or a Home session belongs to no plot (ticket 99).
+        "LOAM_PLOT",
     ]
 
     /// Variables removed by prefix. `LOAM_PANE` covers the socket of a parent

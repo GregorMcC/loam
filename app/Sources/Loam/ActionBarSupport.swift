@@ -28,28 +28,27 @@ extension MainWindowController: NSMenuItemValidation {
         if actionBar.menu.isOpen { return closeActionsMenu() }
         if model.switcher.isOpen { model.switcher.close() }
         let workspace = model.workspace
-        let plot = workspace.activePlotID
-        let pane = plot.flatMap { workspace.selectedTab(of: $0) }?.focused
+        let space = workspace.activeSpace
+        let pane = workspace.focusedPane
         let sections = ActionMenu.sections(
             paneTitle: pane.map { workspace.title(of: $0, terminalTitles: model.terminalTitles) },
-            plotName: model.plots.first { $0.id == plot }?.name,
+            plotName: workspace.activePlotID.flatMap { model.name(of: .plot($0)) },
+            inHome: space == .home,
             chord: { [weak self] in self?.menuChord(for: $0) },
             isEnabled: { [weak self] in self?.isEnabled($0) ?? false })
         actionBar.menu.open(sections)
-        actionsContext = ActionsContext(plot: plot, pane: pane)
+        actionsContext = ActionsContext(space: space, pane: pane)
         actionsHost.isHidden = false
         window?.makeFirstResponder(actionsHost)
     }
 
-    /// The rows name the pane and the plot that were focused when the menu opened. When the focus
+    /// The rows name the pane and the space that were focused when the menu opened. When the focus
     /// moves (⌘2, a new session, a click in the sidebar), the menu closes, so no row acts on another
-    /// pane or plot than it names.
+    /// pane or space than it names.
     func closeActionsMenuIfContextChanged() {
         guard actionBar.menu.isOpen else { return }
         let workspace = model.workspace
-        let plot = workspace.activePlotID
-        let pane = plot.flatMap { workspace.selectedTab(of: $0) }?.focused
-        if actionsContext != ActionsContext(plot: plot, pane: pane) { closeActionsMenu() }
+        if actionsContext != ActionsContext(space: workspace.activeSpace, pane: workspace.focusedPane) { closeActionsMenu() }
     }
 
     func closeActionsMenu() {
@@ -106,9 +105,8 @@ extension MainWindowController: NSMenuItemValidation {
 
     private func availability(_ command: AppCommand) -> Bool {
         let workspace = model.workspace
-        let plot = workspace.activePlotID
-        let pane = plot.flatMap { workspace.selectedTab(of: $0) }?.focused
-        return ActionMenu.isAvailable(command, hasPlot: plot != nil, hasPane: pane != nil)
+        return ActionMenu.isAvailable(command, hasSpace: workspace.activeSpace != nil, hasPlot: workspace.activePlotID != nil,
+                                      hasPane: workspace.focusedPane != nil)
     }
 
     /// The menu bar and the actions menu agree on what can run (`ActionMenu.isAvailable`).
@@ -122,7 +120,7 @@ extension MainWindowController: NSMenuItemValidation {
 
 /// The focus that an open actions menu was built for.
 struct ActionsContext: Equatable {
-    var plot: String?
+    var space: Space?
     var pane: PaneID?
 }
 

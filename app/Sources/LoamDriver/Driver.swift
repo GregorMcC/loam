@@ -251,7 +251,7 @@ final class DriverApp: NSObject, NSApplicationDelegate {
 
     /// Adds a pane and lays out every pane side by side.
     func addPane(_ name: String, command: String?, env: [String: String] = [:]) throws -> TerminalSurfaceView {
-        let spec = PaneSpec(kind: .shell, plot: "driver", folder: outFolder, command: command,
+        let spec = PaneSpec(kind: .shell, space: .plot("driver"), folder: outFolder, command: command,
                             env: env.merging(["LOAM_DRIVER_PANE": name]) { a, _ in a }, title: name)
         let pane = try TerminalSurfaceView(runtime: runtime, spec: spec)
         pane.identifier = NSUserInterfaceItemIdentifier(name)

@@ -109,11 +109,12 @@ public final class PlotPanelModel {
 
     /// Reads the plot. A different plot drops the drafts. The same plot keeps them.
     public func load(plotID: String?) async {
+        // Each load, a nil one too, makes a load still in flight stale. Home loads nil (ticket 99).
+        loadToken += 1
         guard let plotID else {
             plot = nil; drafts = [:]; clash = nil; missingLink = nil
             return
         }
-        loadToken += 1
         let token = loadToken
         do {
             let fresh = try await client.show(plot: plotID)

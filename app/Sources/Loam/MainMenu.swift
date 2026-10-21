@@ -52,6 +52,8 @@ func makeMainMenu(target: MainWindowController) -> NSMenu {
     item(file, "New Plot\u{2026}", .newPlot)
     ghostty(file, "New Tab", "new_tab")
     item(file, "New Shell Tab", .newShellTab)
+    item(file, "New Session in Home", .newHomeSession)
+    item(file, "New Shell in Home", .newHomeShell)
     ghostty(file, "Split Right", "new_split:right")
     ghostty(file, "Split Down", "new_split:down")
     item(file, "Split Right with Shell", .newShellSplit(.sideBySide))
@@ -84,6 +86,7 @@ func makeMainMenu(target: MainWindowController) -> NSMenu {
     item(plots, "Add Repo\u{2026}", .addRepo)
     item(plots, "Archive Plot\u{2026}", .archivePlot)
     plots.addItem(.separator())
+    item(plots, "Home", .selectHome)
     for n in 1...9 { item(plots, "Plot \(n)", .selectPlot(n)) }
 
     let tabs = submenu("Tab")

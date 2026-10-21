@@ -5,8 +5,8 @@ public struct PaneSpec: Codable, Equatable, Sendable {
     public enum Kind: String, Codable, Sendable { case shell, session }
 
     public var kind: Kind
-    /// The plot ID that owns the pane.
-    public var plot: String
+    /// The plot that owns the pane, or Home.
+    public var space: Space
     public var folder: String?
     public var command: String?
     public var env: [String: String]
@@ -28,11 +28,11 @@ public struct PaneSpec: Codable, Equatable, Sendable {
         set { plotFolder = newValue ? true : nil }
     }
 
-    public init(kind: Kind, plot: String, folder: String? = nil, command: String? = nil,
+    public init(kind: Kind, space: Space, folder: String? = nil, command: String? = nil,
                 env: [String: String] = [:], title: String = "shell", repo: String? = nil, sessionID: String? = nil,
                 worktree: WorktreeRef? = nil) {
         self.kind = kind
-        self.plot = plot
+        self.space = space
         self.folder = folder
         self.command = command
         self.env = env
@@ -73,39 +73,46 @@ public struct Tab: Codable, Equatable, Sendable, Identifiable {
     public var focused: PaneID
 }
 
-/// The tabs and splits of every plot, plus the active plot. A value type with no views in it,
-/// so tests cover it. The window turns it into views, and `state.json` (ticket 29) can encode it.
+/// The tabs and splits of Home and of every plot, plus the active space. A value type with no views
+/// in it, so tests cover it. The window turns it into views, and `SavedLayout` saves it.
 public struct Workspace: Codable, Equatable, Sendable {
-    public private(set) var activePlotID: String?
-    private var plotTabs: [String: [Tab]] = [:]
-    private var selectedIndex: [String: Int] = [:]
+    /// The space that the window shows: Home or a plot. Nil only before the first plot list.
+    public private(set) var activeSpace: Space?
+    private var spaceTabs: [Space: [Tab]] = [:]
+    private var selectedIndex: [Space: Int] = [:]
     private var specs: [PaneID: PaneSpec] = [:]
     private var sessions: [PaneID: PaneSession] = [:]
     private var launches: [PaneID: Int] = [:]
-    /// Plots restored from `state.json` that were not shown since the launch. Their panes have no
-    /// process yet: a pane starts when its plot is first shown (spec 8.5).
-    private var waitingPlots: Set<String> = []
+    /// Spaces restored from `state.json` that were not shown since the launch. Their panes have no
+    /// process yet: a pane starts when its space is first shown (spec 8.5).
+    private var waitingSpaces: Set<Space> = []
 
     public init() {}
 
     // MARK: Reads
 
-    public func tabs(of plot: String) -> [Tab] { plotTabs[plot] ?? [] }
+    /// The active plot. Nil when Home is active, so the plot panel and the review see no plot.
+    public var activePlotID: String? { activeSpace?.plotID }
 
-    public func selectedTab(of plot: String) -> Tab? {
-        let tabs = tabs(of: plot)
-        guard let i = selectedIndex[plot], tabs.indices.contains(i) else { return nil }
+    public func tabs(of space: Space) -> [Tab] { spaceTabs[space] ?? [] }
+
+    public func selectedTab(of space: Space) -> Tab? {
+        let tabs = tabs(of: space)
+        guard let i = selectedIndex[space], tabs.indices.contains(i) else { return nil }
         return tabs[i]
     }
 
-    public func selectedTabIndex(of plot: String) -> Int? {
-        selectedTab(of: plot) == nil ? nil : selectedIndex[plot]
+    public func selectedTabIndex(of space: Space) -> Int? {
+        selectedTab(of: space) == nil ? nil : selectedIndex[space]
     }
 
-    /// Every pane of the plot in tab order, then layout order.
-    public func paneIDs(of plot: String) -> [PaneID] { tabs(of: plot).flatMap { $0.tree.paneIDs } }
-    public func paneCount(of plot: String) -> Int { paneIDs(of: plot).count }
-    public var allPaneIDs: [PaneID] { plotTabs.values.flatMap { $0.flatMap { $0.tree.paneIDs } } }
+    /// The selected tab of the active space.
+    public var activeTab: Tab? { activeSpace.flatMap(selectedTab(of:)) }
+
+    /// Every pane of the space in tab order, then layout order.
+    public func paneIDs(of space: Space) -> [PaneID] { tabs(of: space).flatMap { $0.tree.paneIDs } }
+    public func paneCount(of space: Space) -> Int { paneIDs(of: space).count }
+    public var allPaneIDs: [PaneID] { spaceTabs.values.flatMap { $0.flatMap { $0.tree.paneIDs } } }
     public func spec(of pane: PaneID) -> PaneSpec? { specs[pane] }
     public func state(of pane: PaneID) -> PaneState? { sessions[pane]?.state }
     public func session(of pane: PaneID) -> PaneSession? { sessions[pane] }
@@ -117,46 +124,48 @@ public struct Workspace: Codable, Equatable, Sendable {
         return session.doneUnread ? .doneUnread : .none
     }
 
-    /// The pane that you see with the keys: the focused pane of the active plot's selected tab.
+    /// The pane that you see with the keys: the focused pane of the active space's selected tab.
     /// The app counts it as looked at only while Loam is frontmost.
-    public var focusedPane: PaneID? { activePlotID.flatMap { selectedTab(of: $0)?.focused } }
+    public var focusedPane: PaneID? { activeTab?.focused }
 
     /// The seeded pane that runs or ran this session ID. The current ID wins over an old one.
     public func pane(forSession id: String) -> PaneID? {
         let seeded = sessions.filter { specs[$0.key]?.kind == .session }
         return seeded.first { $0.value.sessionID == id }?.key ?? seeded.first { $0.value.ran(id) }?.key
     }
-    public var plotIDsWithPanes: [String] { plotTabs.filter { !$0.value.isEmpty }.map(\.key) }
+    /// The spaces that have tabs.
+    public var spacesWithPanes: [Space] { spaceTabs.filter { !$0.value.isEmpty }.map(\.key) }
+    public var plotIDsWithPanes: [String] { spacesWithPanes.compactMap(\.plotID) }
 
     // MARK: Restored panes that wait
 
-    /// True when the plot's panes came from `state.json` and the plot was not shown yet.
-    public func isWaiting(_ plot: String) -> Bool { waitingPlots.contains(plot) }
-    /// The saved panes of the plot that have not started (resumed) yet. Empty once the plot shows.
-    public func waitingPaneIDs(of plot: String) -> [PaneID] { isWaiting(plot) ? paneIDs(of: plot) : [] }
-    /// The panes of the plot that have a view and a process now. Empty while the plot waits.
-    public func livePaneIDs(of plot: String) -> [PaneID] { isWaiting(plot) ? [] : paneIDs(of: plot) }
-    /// Every saved pane that has not started yet, in every plot.
-    public var waitingPaneIDs: [PaneID] { waitingPlots.sorted().flatMap { paneIDs(of: $0) } }
+    /// True when the space's panes came from `state.json` and the space was not shown yet.
+    public func isWaiting(_ space: Space) -> Bool { waitingSpaces.contains(space) }
+    /// The saved panes of the space that have not started (resumed) yet. Empty once the space shows.
+    public func waitingPaneIDs(of space: Space) -> [PaneID] { isWaiting(space) ? paneIDs(of: space) : [] }
+    /// The panes of the space that have a view and a process now. Empty while the space waits.
+    public func livePaneIDs(of space: Space) -> [PaneID] { isWaiting(space) ? [] : paneIDs(of: space) }
+    /// Every saved pane that has not started yet, in every space.
+    public var waitingPaneIDs: [PaneID] { waitingSpaces.sorted().flatMap { paneIDs(of: $0) } }
     /// The panes that have a view and a process: every pane except the waiting ones.
-    public var livePaneIDs: [PaneID] { allPaneIDs.filter { specs[$0].map { !waitingPlots.contains($0.plot) } ?? false } }
+    public var livePaneIDs: [PaneID] { allPaneIDs.filter { specs[$0].map { !waitingSpaces.contains($0.space) } ?? false } }
     /// The working folder of a pane: its worktree, else where its session started (from `SessionStart`),
     /// else the spec folder.
     public func folder(of pane: PaneID) -> String? {
         specs[pane]?.worktree?.path ?? sessions[pane]?.folder ?? specs[pane]?.folder
     }
 
-    /// Puts back the saved tabs of a plot. Every tree leaf must have a spec and a session. The panes
-    /// wait until `activate(plot:)` shows the plot. A plot that already has tabs changes nothing.
-    public mutating func restorePlot(_ plot: String, tabs: [Tab], selected: Int,
-                                     specs newSpecs: [PaneID: PaneSpec], sessions newSessions: [PaneID: PaneSession]) {
-        guard plotTabs[plot, default: []].isEmpty, !tabs.isEmpty else { return }
+    /// Puts back the saved tabs of a space. Every tree leaf must have a spec and a session. The panes
+    /// wait until `activate(_:)` shows the space. A space that already has tabs changes nothing.
+    public mutating func restore(_ space: Space, tabs: [Tab], selected: Int,
+                                 specs newSpecs: [PaneID: PaneSpec], sessions newSessions: [PaneID: PaneSession]) {
+        guard spaceTabs[space, default: []].isEmpty, !tabs.isEmpty else { return }
         let panes = tabs.flatMap { $0.tree.paneIDs }
-        guard panes.allSatisfy({ newSpecs[$0]?.plot == plot && newSessions[$0] != nil && specs[$0] == nil }) else { return }
+        guard panes.allSatisfy({ newSpecs[$0]?.space == space && newSessions[$0] != nil && specs[$0] == nil }) else { return }
         for pane in panes { specs[pane] = newSpecs[pane]; sessions[pane] = newSessions[pane] }
-        plotTabs[plot] = tabs
-        selectedIndex[plot] = min(max(selected, 0), tabs.count - 1)
-        if plot != activePlotID { waitingPlots.insert(plot) }
+        spaceTabs[space] = tabs
+        selectedIndex[space] = min(max(selected, 0), tabs.count - 1)
+        if space != activeSpace { waitingSpaces.insert(space) }
     }
 
     // MARK: Plots
@@ -166,8 +175,8 @@ public struct Workspace: Codable, Equatable, Sendable {
     /// pane back. Each session starts clean with its current ID, so a stale `working` mark is gone.
     /// The plot stops being active.
     public mutating func suspendPlot(_ plot: String, respec: (PaneID, PaneSpec, PaneSession) -> PaneSpec) {
-        let panes = paneIDs(of: plot)
-        if activePlotID == plot { activePlotID = nil }
+        let panes = paneIDs(of: .plot(plot))
+        if activePlotID == plot { activeSpace = nil }
         guard !panes.isEmpty else { return }
         for pane in panes {
             guard let spec = specs[pane], let session = sessions[pane] else { continue }
@@ -175,112 +184,113 @@ public struct Workspace: Codable, Equatable, Sendable {
             sessions[pane] = PaneSession(sessionID: session.sessionID ?? spec.sessionID, pastSessionIDs: session.pastSessionIDs,
                                          folder: session.folder, doneUnread: session.doneUnread)
         }
-        waitingPlots.insert(plot)
+        waitingSpaces.insert(.plot(plot))
     }
 
-    /// Makes the plot active. A plot that waits is shown now, so its panes start.
-    public mutating func activate(plot: String?) {
-        activePlotID = plot
-        if let plot { waitingPlots.remove(plot) }
+    /// Makes the space active. A space that waits is shown now, so its panes start.
+    public mutating func activate(_ space: Space?) {
+        activeSpace = space
+        if let space { waitingSpaces.remove(space) }
     }
 
     /// Drops the plot's tabs. Returns the pane IDs, so the caller can close their views.
     @discardableResult
     public mutating func removePlot(_ plot: String) -> [PaneID] {
-        let removed = paneIDs(of: plot)
+        let space = Space.plot(plot)
+        let removed = paneIDs(of: space)
         for id in removed { specs[id] = nil; sessions[id] = nil; launches[id] = nil }
-        plotTabs[plot] = nil
-        selectedIndex[plot] = nil
-        waitingPlots.remove(plot)
-        if activePlotID == plot { activePlotID = nil }
+        spaceTabs[space] = nil
+        selectedIndex[space] = nil
+        waitingSpaces.remove(space)
+        if activeSpace == space { activeSpace = nil }
         return removed
     }
 
     // MARK: Tabs
 
-    /// Opens a tab with one pane, in the plot named by `spec.plot`, and selects it.
+    /// Opens a tab with one pane, in the space of `spec.space`, and selects it.
     @discardableResult
     public mutating func openTab(_ spec: PaneSpec) -> PaneID {
         let pane = PaneID()
         specs[pane] = spec
         sessions[pane] = PaneSession(sessionID: spec.sessionID)
-        plotTabs[spec.plot, default: []].append(Tab(id: UUID(), tree: .leaf(pane), focused: pane))
-        selectedIndex[spec.plot] = plotTabs[spec.plot]!.count - 1
+        spaceTabs[spec.space, default: []].append(Tab(id: UUID(), tree: .leaf(pane), focused: pane))
+        selectedIndex[spec.space] = spaceTabs[spec.space]!.count - 1
         return pane
     }
 
     /// Selects tab `number` (1 based). 9 selects the last tab, as in Ghostty. Other numbers out of range change nothing.
-    public mutating func selectTab(number: Int, in plot: String) {
-        let count = tabs(of: plot).count
-        if number == 9, count > 0 { selectedIndex[plot] = count - 1 }
-        else if number >= 1, number <= count { selectedIndex[plot] = number - 1 }
+    public mutating func selectTab(number: Int, in space: Space) {
+        let count = tabs(of: space).count
+        if number == 9, count > 0 { selectedIndex[space] = count - 1 }
+        else if number >= 1, number <= count { selectedIndex[space] = number - 1 }
     }
 
     /// Selects the tab at `index` (0 based), for a click on the tab bar. Out of range changes nothing.
-    public mutating func selectTab(index: Int, in plot: String) {
-        if tabs(of: plot).indices.contains(index) { selectedIndex[plot] = index }
+    public mutating func selectTab(index: Int, in space: Space) {
+        if tabs(of: space).indices.contains(index) { selectedIndex[space] = index }
     }
 
     /// Moves the tab at `from` to `to` (0 based, the index it has after the move), for a drag in the
     /// tab bar (ticket 98). The same tab stays selected. An index out of range changes nothing.
-    public mutating func moveTab(from: Int, to: Int, in plot: String) {
-        guard var tabs = plotTabs[plot], tabs.indices.contains(from), tabs.indices.contains(to), from != to else { return }
-        let selected = selectedTab(of: plot)?.id
+    public mutating func moveTab(from: Int, to: Int, in space: Space) {
+        guard var tabs = spaceTabs[space], tabs.indices.contains(from), tabs.indices.contains(to), from != to else { return }
+        let selected = selectedTab(of: space)?.id
         tabs.insert(tabs.remove(at: from), at: to)
-        plotTabs[plot] = tabs
-        if let selected { selectedIndex[plot] = tabs.firstIndex { $0.id == selected } }
+        spaceTabs[space] = tabs
+        if let selected { selectedIndex[space] = tabs.firstIndex { $0.id == selected } }
     }
 
-    public mutating func nextTab(in plot: String) { stepTab(1, in: plot) }
-    public mutating func previousTab(in plot: String) { stepTab(-1, in: plot) }
+    public mutating func nextTab(in space: Space) { stepTab(1, in: space) }
+    public mutating func previousTab(in space: Space) { stepTab(-1, in: space) }
 
-    private mutating func stepTab(_ offset: Int, in plot: String) {
-        let count = tabs(of: plot).count
-        guard count > 0, let i = selectedIndex[plot] else { return }
-        selectedIndex[plot] = (i + offset + count) % count
+    private mutating func stepTab(_ offset: Int, in space: Space) {
+        let count = tabs(of: space).count
+        guard count > 0, let i = selectedIndex[space] else { return }
+        selectedIndex[space] = (i + offset + count) % count
     }
 
     // MARK: Panes
 
-    /// Splits the focused pane of the plot's selected tab. The new pane gets focus.
-    /// Returns nil when the plot has no tab.
+    /// Splits the focused pane of the space's selected tab. The new pane gets focus.
+    /// Returns nil when the space has no tab.
     @discardableResult
-    public mutating func split(plot: String, axis: SplitAxis, _ spec: PaneSpec) -> PaneID? {
-        guard let i = selectedTabIndex(of: plot) else { return nil }
+    public mutating func split(in space: Space, axis: SplitAxis, _ spec: PaneSpec) -> PaneID? {
+        guard let i = selectedTabIndex(of: space) else { return nil }
         let pane = PaneID()
         specs[pane] = spec
         sessions[pane] = PaneSession(sessionID: spec.sessionID)
-        var tab = plotTabs[plot]![i]
+        var tab = spaceTabs[space]![i]
         tab.tree = tab.tree.splitting(tab.focused, axis: axis, inserting: pane)
         tab.focused = pane
-        plotTabs[plot]![i] = tab
+        spaceTabs[space]![i] = tab
         return pane
     }
 
-    /// Edits the tree of the plot's selected tab. Nothing happens when the plot has no tab.
-    private mutating func editTree(plot: String, _ edit: (SplitTree) -> SplitTree) {
-        guard let i = selectedTabIndex(of: plot) else { return }
-        plotTabs[plot]![i].tree = edit(plotTabs[plot]![i].tree)
+    /// Edits the tree of the space's selected tab. Nothing happens when the space has no tab.
+    private mutating func editTree(in space: Space, _ edit: (SplitTree) -> SplitTree) {
+        guard let i = selectedTabIndex(of: space) else { return }
+        spaceTabs[space]![i].tree = edit(spaceTabs[space]![i].tree)
     }
 
     /// Sets the ratio of one split in the selected tab (a divider drag). `path` is `SplitTree.Divider.path`.
-    public mutating func setRatio(_ ratio: Double, at path: [Int], plot: String) {
-        editTree(plot: plot) { $0.settingRatio(ratio, at: path) }
+    public mutating func setRatio(_ ratio: Double, at path: [Int], in space: Space) {
+        editTree(in: space) { $0.settingRatio(ratio, at: path) }
     }
 
     /// Ghostty `equalize_splits`: gives every pane of the selected tab equal size.
-    public mutating func equalize(plot: String) {
-        editTree(plot: plot) { $0.equalized() }
+    public mutating func equalize(in space: Space) {
+        editTree(in: space) { $0.equalized() }
     }
 
     /// Ghostty `resize_split`: moves the divider next to `pane` by `delta`, a fraction of its split.
-    public mutating func resize(plot: String, pane: PaneID, toward direction: SplitTree.ResizeDirection, by delta: Double) {
-        editTree(plot: plot) { $0.resizing(pane, toward: direction, by: delta) }
+    public mutating func resize(in space: Space, pane: PaneID, toward direction: SplitTree.ResizeDirection, by delta: Double) {
+        editTree(in: space) { $0.resizing(pane, toward: direction, by: delta) }
     }
 
     /// Removes the pane. A neighbour pane gets focus. The last pane of a tab closes the tab.
     public mutating func closePane(_ pane: PaneID) {
-        guard let plot = specs[pane]?.plot, var tabs = plotTabs[plot],
+        guard let space = specs[pane]?.space, var tabs = spaceTabs[space],
               let i = tabs.firstIndex(where: { $0.tree.contains(pane) }) else { return }
         specs[pane] = nil
         sessions[pane] = nil
@@ -290,45 +300,45 @@ public struct Workspace: Codable, Equatable, Sendable {
             tabs[i].tree = tree
         } else {
             tabs.remove(at: i)
-            let selected = selectedIndex[plot] ?? 0
-            selectedIndex[plot] = tabs.isEmpty ? nil : (i < selected ? selected - 1 : min(selected, tabs.count - 1))
+            let selected = selectedIndex[space] ?? 0
+            selectedIndex[space] = tabs.isEmpty ? nil : (i < selected ? selected - 1 : min(selected, tabs.count - 1))
         }
-        plotTabs[plot] = tabs
+        spaceTabs[space] = tabs
     }
 
     /// Focuses the pane and selects its tab.
     public mutating func focus(_ pane: PaneID) {
-        guard let plot = specs[pane]?.plot, var tabs = plotTabs[plot],
+        guard let space = specs[pane]?.space, var tabs = spaceTabs[space],
               let i = tabs.firstIndex(where: { $0.tree.contains(pane) }) else { return }
         tabs[i].focused = pane
-        plotTabs[plot] = tabs
-        selectedIndex[plot] = i
+        spaceTabs[space] = tabs
+        selectedIndex[space] = i
     }
 
     /// Focuses the pane next to the focused one on one side. Nothing happens at the edge.
-    public mutating func focusPane(toward direction: SplitTree.ResizeDirection, in plot: String) {
-        guard let tab = selectedTab(of: plot), let next = tab.tree.pane(nextTo: tab.focused, toward: direction) else { return }
+    public mutating func focusPane(toward direction: SplitTree.ResizeDirection, in space: Space) {
+        guard let tab = selectedTab(of: space), let next = tab.tree.pane(nextTo: tab.focused, toward: direction) else { return }
         focus(next)
     }
 
     /// Ghostty `close_tab`: closes every pane of the selected tab.
-    public mutating func closeSelectedTab(in plot: String) {
-        guard let tab = selectedTab(of: plot) else { return }
-        closeTab(tab.id, in: plot)
+    public mutating func closeSelectedTab(in space: Space) {
+        guard let tab = selectedTab(of: space) else { return }
+        closeTab(tab.id, in: space)
     }
 
     /// Closes every pane of one tab, selected or not. The selection stays on the same tab, unless
     /// that tab is the one that closes (ticket 96).
-    public mutating func closeTab(_ id: UUID, in plot: String) {
-        guard let tab = tabs(of: plot).first(where: { $0.id == id }) else { return }
+    public mutating func closeTab(_ id: UUID, in space: Space) {
+        guard let tab = tabs(of: space).first(where: { $0.id == id }) else { return }
         for pane in tab.tree.paneIDs { closePane(pane) }
     }
 
-    public mutating func focusNextPane(in plot: String) { stepPane(1, in: plot) }
-    public mutating func focusPreviousPane(in plot: String) { stepPane(-1, in: plot) }
+    public mutating func focusNextPane(in space: Space) { stepPane(1, in: space) }
+    public mutating func focusPreviousPane(in space: Space) { stepPane(-1, in: space) }
 
-    private mutating func stepPane(_ offset: Int, in plot: String) {
-        guard let tab = selectedTab(of: plot) else { return }
+    private mutating func stepPane(_ offset: Int, in space: Space) {
+        guard let tab = selectedTab(of: space) else { return }
         let next = offset > 0 ? tab.tree.pane(after: tab.focused) : tab.tree.pane(before: tab.focused)
         if let next { focus(next) }
     }
@@ -368,10 +378,10 @@ public struct Workspace: Codable, Equatable, Sendable {
 
     /// Runs a new command in the pane: the same pane ID, place, and focus, with a new spec and a new
     /// session. `launch(of:)` goes up by one, so the window closes the old view and starts a new one.
-    /// The plot cannot change. Returns false when the pane is gone.
+    /// The space cannot change. Returns false when the pane is gone.
     @discardableResult
     public mutating func restartPane(_ pane: PaneID, with spec: PaneSpec) -> Bool {
-        guard let old = specs[pane], old.plot == spec.plot else { return false }
+        guard let old = specs[pane], old.space == spec.space else { return false }
         specs[pane] = spec
         // The pane keeps the IDs it ran, so a change by an earlier session still finds it.
         var past = sessions[pane].map { $0.pastSessionIDs + ($0.sessionID.map { [$0] } ?? []) } ?? []

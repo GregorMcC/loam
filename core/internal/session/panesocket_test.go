@@ -334,7 +334,12 @@ func TestStartAndResumeRegisterTheEventTable(t *testing.T) {
 	p := e.plot(t, store.PlotInput{Name: "Alpha"})
 	want := session.PaneEvents()
 	slices.Sort(want)
-	for _, args := range [][]string{{"start", p.ID, "--session-id", fixedID}, {"resume", fixedID}} {
+	for _, args := range [][]string{
+		{"start", p.ID, "--session-id", fixedID},
+		{"resume", fixedID},
+		{"start", "--home", "--session-id", otherID},
+		{"start", "--home", "--resume", otherID},
+	} {
 		if out, err := e.run(t, args...); err != nil {
 			t.Fatalf("%v: %s", err, out)
 		}

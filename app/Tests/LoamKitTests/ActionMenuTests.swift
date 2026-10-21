@@ -15,15 +15,26 @@ import Testing
         ActionMenu.sections(paneTitle: pane, plotName: plot, chord: menuChord, isEnabled: enabled)
     }
 
-    @Test func listsThePaneThenThePlot() {
+    @Test func listsThePaneThenThePlotThenHome() {
         let all = sections()
-        #expect(all.map(\.title) == ["claude", "Loam v1 build"])
+        #expect(all.map(\.title) == ["claude", "Loam v1 build", "Home"])
         #expect(all[0].items.map(\.title) == ["New session", "Split right", "Split down", "Split right with shell", "Split down with shell", "Close pane"])
         #expect(all[1].items.map(\.title) == ["New session in plot", "Edit brief", "Add link", "Add repo", "Archive plot"])
         #expect(all[0].items.map(\.command) == [.newTab, .newSplit(.sideBySide), .newSplit(.stacked),
                                                .newShellSplit(.sideBySide), .newShellSplit(.stacked), .closePane])
         #expect(all[1].items.map(\.command) == [.newPlotSession, .editBrief, .addLink, .addRepo, .archivePlot])
+        #expect(all[2].items.map(\.title) == ["New session in Home", "New shell in Home"])
+        #expect(all[2].items.map(\.command) == [.newHomeSession, .newHomeShell])
         #expect(all.flatMap(\.items).allSatisfy { !$0.symbol.isEmpty })
+    }
+
+    /// Ticket 99: in Home, the Home rows would repeat "New session" and ⌘⌥T, so they go.
+    @Test func homeLeavesOutTheHomeSection() {
+        let all = ActionMenu.sections(paneTitle: "zsh", plotName: nil, inHome: true, chord: menuChord,
+                                      isEnabled: { ActionMenu.isAvailable($0, hasSpace: true, hasPlot: false, hasPane: true) })
+        #expect(all.map(\.id) == ["pane"])
+        #expect(all[0].items.map(\.command) == [.newTab, .newSplit(.sideBySide), .newSplit(.stacked),
+                                               .newShellSplit(.sideBySide), .newShellSplit(.stacked), .closePane])
     }
 
     /// The keycaps are the real keys of the menu bar, one keycap per symbol.
@@ -57,30 +68,35 @@ import Testing
 
     @Test func aPaneAndAPlotWithOneNameKeepTwoSections() {
         let all = sections(pane: "loam", plot: "loam")
-        #expect(all.map(\.id) == ["pane", "plot"])
-        #expect(ActionMenu.filter(all, query: "e").map(\.id) == ["pane", "plot"])
+        #expect(all.map(\.id) == ["pane", "plot", "home"])
+        #expect(ActionMenu.filter(all, query: "e").map(\.id) == ["pane", "plot", "home"])
     }
 
     @Test func noPaneAndNoPlotNameUseTheirKind() {
-        #expect(sections(pane: nil, plot: nil).map(\.title) == ["Pane", "Plot"])
+        #expect(sections(pane: nil, plot: nil).map(\.title) == ["Pane", "Plot", "Home"])
     }
 
-    /// The menu and the list agree on what can run: pane commands need a focused pane, plot
-    /// commands need an active plot.
+    /// The menu and the list agree on what can run: tab commands need an active space (Home or a
+    /// plot), pane commands a focused pane, and plot commands an active plot.
     @Test func availabilityFollowsWhatIsFocused() {
-        #expect(ActionMenu.isAvailable(.newTab, hasPlot: true, hasPane: false))
-        #expect(!ActionMenu.isAvailable(.newTab, hasPlot: false, hasPane: false))
-        #expect(!ActionMenu.isAvailable(.newSplit(.sideBySide), hasPlot: true, hasPane: false))
-        #expect(!ActionMenu.isAvailable(.closePane, hasPlot: true, hasPane: false))
-        #expect(ActionMenu.isAvailable(.closePane, hasPlot: true, hasPane: true))
-        #expect(!ActionMenu.isAvailable(.archivePlot, hasPlot: false, hasPane: false))
-        #expect(ActionMenu.isAvailable(.archivePlot, hasPlot: true, hasPane: false))
-        #expect(ActionMenu.isAvailable(.toggleSidebar, hasPlot: false, hasPane: false))
+        #expect(ActionMenu.isAvailable(.newTab, hasSpace: true, hasPlot: true, hasPane: false))
+        #expect(ActionMenu.isAvailable(.newTab, hasSpace: true, hasPlot: false, hasPane: false))
+        #expect(!ActionMenu.isAvailable(.newTab, hasSpace: false, hasPlot: false, hasPane: false))
+        #expect(ActionMenu.isAvailable(.newShellTab, hasSpace: true, hasPlot: false, hasPane: false))
+        #expect(ActionMenu.isAvailable(.newSplit(.sideBySide), hasSpace: true, hasPlot: false, hasPane: true))
+        #expect(!ActionMenu.isAvailable(.togglePlotPanel, hasSpace: true, hasPlot: false, hasPane: true))
+        #expect(ActionMenu.isAvailable(.newHomeSession, hasSpace: false, hasPlot: false, hasPane: false))
+        #expect(!ActionMenu.isAvailable(.newSplit(.sideBySide), hasSpace: true, hasPlot: true, hasPane: false))
+        #expect(!ActionMenu.isAvailable(.closePane, hasSpace: true, hasPlot: true, hasPane: false))
+        #expect(ActionMenu.isAvailable(.closePane, hasSpace: true, hasPlot: true, hasPane: true))
+        #expect(!ActionMenu.isAvailable(.archivePlot, hasSpace: true, hasPlot: false, hasPane: false))
+        #expect(ActionMenu.isAvailable(.archivePlot, hasSpace: true, hasPlot: true, hasPane: false))
+        #expect(ActionMenu.isAvailable(.toggleSidebar, hasSpace: true, hasPlot: false, hasPane: false))
     }
 
     @Test func theFilterMatchesEachWordOfTheTitle() {
         let all = sections()
-        #expect(ActionMenu.filter(all, query: "").flatMap(\.items).count == 11)
+        #expect(ActionMenu.filter(all, query: "").flatMap(\.items).count == 13)
         #expect(ActionMenu.filter(all, query: "split").flatMap(\.items).map(\.title) == [
             "Split right", "Split down", "Split right with shell", "Split down with shell"])
         #expect(ActionMenu.filter(all, query: "  DOWN sp ").flatMap(\.items).map(\.title) == ["Split down", "Split down with shell"])
@@ -117,7 +133,7 @@ import Testing
         menu.move(1)
         #expect(menu.selected?.title == "Split down")
         for _ in 0..<20 { menu.move(1) }
-        #expect(menu.selected?.title == "Archive plot")
+        #expect(menu.selected?.title == "New shell in Home")
     }
 
     @Test func typingFiltersAndSelectsTheFirstMatch() {

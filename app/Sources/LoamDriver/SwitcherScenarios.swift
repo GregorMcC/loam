@@ -56,7 +56,7 @@ extension Scenarios {
         // Beta holds two panes. The first has a terminal title. Alpha is active last.
         model.activate(plot: beta)
         model.openTab()
-        guard let first = model.workspace.selectedTab(of: beta)?.focused else { throw DriverFailure("no pane") }
+        guard let first = model.workspace.selectedTab(of: .plot(beta))?.focused else { throw DriverFailure("no pane") }
         model.setTerminalTitle("zebra build", of: first)
         model.openTab()
         model.activate(plot: alpha)
@@ -83,7 +83,7 @@ extension Scenarios {
         app.press(.returnKey)
         try await closed(app)
         try await app.waitUntil("the pane has focus") {
-            model.workspace.activePlotID == beta && model.workspace.selectedTab(of: beta)?.focused == first
+            model.workspace.activePlotID == beta && model.workspace.selectedTab(of: .plot(beta))?.focused == first
         }
 
         // A plot.

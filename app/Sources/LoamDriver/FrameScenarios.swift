@@ -167,7 +167,7 @@ extension Scenarios {
         try await app.waitUntil("4 demo panes ran", timeout: 15) {
             ((try? fm.contentsOfDirectory(atPath: "\(app.outFolder)/demo-runs"))?.count ?? 0) >= 4
         }
-        let tabs = host.model.workspace.tabs(of: plot)
+        let tabs = host.model.workspace.tabs(of: .plot(plot))
         let mainPanes = tabs.first?.tree.paneIDs ?? []
         let worktreePane = try tabs.last?.focused ?? { throw DriverFailure("no worktree tab") }()
         try await app.waitUntil("the main checkout row") { app.text(of: "main-checkout-\(plot)")?.contains("main") == true }
@@ -207,7 +207,7 @@ extension Scenarios {
 
         /// The focused pane's background, read from the surface libghostty presents.
         func panePixel() -> (Int, Int, Int)? {
-            let pane = host.model.workspace.selectedTab(of: host.model.workspace.activePlotID ?? "")?.focused
+            let pane = host.model.workspace.focusedPane
             return pane.flatMap { host.paneView($0) as? TerminalSurfaceView }.flatMap(app.backgroundPixel)
         }
         /// A shot once the panes and the window agree on Night or Day. The window takes its
@@ -270,7 +270,7 @@ extension Scenarios {
         try await shot("night-one-pane", .darkAqua)
         // Selecting another plot makes it active. Its tree opens and the tree of the plot you left closes.
         let other = try host.model.sidebar.plotID(forNumber: 2) ?? { throw DriverFailure("no second plot") }()
-        let otherPane = try host.model.workspace.tabs(of: other).first?.focused ?? { throw DriverFailure("no pane in \(other)") }()
+        let otherPane = try host.model.workspace.tabs(of: .plot(other)).first?.focused ?? { throw DriverFailure("no pane in \(other)") }()
         try app.selectRow("plot-\(other)")
         try await app.waitUntil("the other plot is active") { host.model.workspace.activePlotID == other }
         try await app.waitUntil("its tree opens and the old one closes") {

@@ -20,6 +20,7 @@ import Testing
             "TERM_PROGRAM_VERSION": "1.3.1",
             "COLORTERM": "truecolor",
             "LOAM_PANE_SOCKET": "/tmp/other-pane.sock",
+            "LOAM_PLOT": "plotaaaaab",
             "LOAM_HOME": "/tmp/loam-test",
         ]
 

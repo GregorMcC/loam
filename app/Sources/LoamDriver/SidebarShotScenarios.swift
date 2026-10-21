@@ -57,8 +57,8 @@ extension Scenarios {
         }
         let sidebar = model.sidebar
         let second = sidebar.withPanes[1].id, third = sidebar.withPanes[2].id
-        let panesTwo = model.workspace.paneIDs(of: second)
-        let paneThree = model.workspace.paneIDs(of: third)[0]
+        let panesTwo = model.workspace.paneIDs(of: .plot(second))
+        let paneThree = model.workspace.paneIDs(of: .plot(third))[0]
         try want(model.sidebar.needsYouCount == 0 && model.sidebar.doneUnreadCount == 0, "a pane is in a state at the start")
         // A pane starts its session when its plot first shows.
         model.activate(number: 2)
@@ -80,7 +80,7 @@ extension Scenarios {
 
         func appearance(_ name: NSAppearance.Name) async {
             NSApp.appearance = NSAppearance(named: name)
-            let pane = model.workspace.selectedTab(of: plot)?.focused
+            let pane = model.workspace.selectedTab(of: .plot(plot))?.focused
             try? await app.waitUntil("the pane follows \(name.rawValue)", timeout: 10) {
                 guard let view = pane.flatMap({ host.paneView($0) as? TerminalSurfaceView }),
                       let pixel = app.backgroundPixel(view) else { return false }

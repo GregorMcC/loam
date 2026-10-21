@@ -162,13 +162,15 @@ import Testing
         #expect(model.resumeSpec(in: "b", sessionID: "s", plotFolder: true).inPlotFolder)
     }
 
-    @Test func anEmptyListClearsTheActivePlot() {
+    /// Ticket 99: with no plot, Home shows, so ⌘T and ⌘⌥T still open a tab.
+    @Test func anEmptyListShowsHome() {
         let model = AppModel(client: LoamClient())
         model.apply([plot("a", "A")])
         model.apply([])
         #expect(model.workspace.activePlotID == nil)
+        #expect(model.workspace.activeSpace == .home)
         model.openTab()
-        #expect(model.workspace.allPaneIDs.isEmpty)
+        #expect(model.workspace.paneIDs(of: .home).count == 1)
     }
 
     @Test func tabAndSplitActionsApplyToTheActivePlot() {

@@ -168,7 +168,7 @@ import Testing
 
     @Test func theWorkspaceKeepsSessionsThroughAnEncode() throws {
         var ws = Workspace()
-        let pane = ws.openTab(PaneSpec(kind: .session, plot: "A", sessionID: "a"))
+        let pane = ws.openTab(PaneSpec(kind: .session, space: "A", sessionID: "a"))
         ws.apply(paneEvent("SessionStart", "a", source: "startup"), to: pane)
         ws.apply(paneEvent("SessionStart", "b", source: "clear"), to: pane)
         let copy = try JSONDecoder().decode(Workspace.self, from: JSONEncoder().encode(ws))

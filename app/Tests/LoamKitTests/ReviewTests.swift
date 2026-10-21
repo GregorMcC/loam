@@ -344,7 +344,7 @@ private func tempState() -> AppStateFile {
 
     @Test func sidebarRowsCarryTheCountsExceptForTheActivePlot() {
         var workspace = Workspace()
-        workspace.activate(plot: "p1")
+        workspace.activate("p1")
         let plots = [PlotSummary(id: "p1", name: "p1", what: "", createdAt: "2026-10-02T00:00:00Z"), PlotSummary(id: "p2", name: "p2", what: "", createdAt: "2026-10-02T00:00:00Z")]
         let sidebar = SidebarModel(plots: plots, workspace: workspace, collapsed: false, newChangeCounts: ["p1": 3, "p2": 2])
         let rows = sidebar.withPanes + sidebar.noPanes

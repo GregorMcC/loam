@@ -79,7 +79,7 @@ extension Scenarios {
         /// theme stays dark in Day, so a timeout does not fail the run.
         func appearance(_ name: NSAppearance.Name) async {
             NSApp.appearance = NSAppearance(named: name)
-            let pane = host.model.workspace.selectedTab(of: plot)?.focused
+            let pane = host.model.workspace.selectedTab(of: .plot(plot))?.focused
             try? await app.waitUntil("the pane follows \(name.rawValue)", timeout: 10) {
                 guard let view = pane.flatMap({ host.paneView($0) as? TerminalSurfaceView }),
                       let pixel = app.backgroundPixel(view) else { return false }
