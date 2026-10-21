@@ -54,7 +54,7 @@ func fakeRelease(t *testing.T, dir, version string) {
 		}
 	}
 	files := map[string]string{
-		filepath.Join(macos, "Loam"): "#!/bin/sh\nexit 0\n",
+		filepath.Join(macos, "Loam"):   "#!/bin/sh\nexit 0\n",
 		filepath.Join(helpers, "loam"): "#!/bin/sh\necho loam version " + version + "\n",
 		filepath.Join(build, "Loam.app", "Contents", "Info.plist"): `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -302,47 +302,85 @@ func TestInstallReleaseReplacesRunningLoam(t *testing.T) {
 }
 
 // Loam asks first when a session is mid-turn, and answers the quit request
-// with a cancel. The install waits for the answer and goes on when Loam quits.
+// with "User canceled" (-128). A busy Loam can let the request time out
+// (-1712), and a Loam that quits already can miss it (-600, -609). The
+// install waits and goes on when Loam quits.
 func TestInstallReleaseWaitsWhileLoamAsks(t *testing.T) {
+	for _, c := range waitCases {
+		t.Run(c.code, func(t *testing.T) {
+			r := newReleaseRig(t)
+			fakeRelease(t, r.releases, "v0.1.0")
+			quit, calls := filepath.Join(t.TempDir(), "quit"), filepath.Join(t.TempDir(), "calls")
+			path := fakeTools(t, map[string]string{
+				"pgrep":     runningUntil(quit, calls),
+				"osascript": askThenQuit(quit, c.code),
+				"open":      "true",
+			})
+			out, err := r.run(t, path)
+			if err != nil {
+				t.Fatalf("%v: %s", err, out)
+			}
+			if v := r.installedVersion(t); v != "v0.1.0" {
+				t.Errorf("installed %q", v)
+			}
+			for _, want := range []string{"choose Quit", c.says, "Reopened Loam"} {
+				if !strings.Contains(out, want) {
+					t.Errorf("output lacks %q: %s", want, out)
+				}
+			}
+			// Two checks before the quit request (the install, then swap.sh), then
+			// at least one in the wait.
+			if n := lineCount(t, calls); n < 3 {
+				t.Errorf("the install did not wait: pgrep saw Loam %d times: %s", n, out)
+			}
+			r.noStage(t)
+		})
+	}
+}
+
+// Any failed request changes nothing when Loam is gone after it: the install
+// goes on.
+func TestInstallReleaseGoesOnWhenLoamIsGone(t *testing.T) {
 	r := newReleaseRig(t)
 	fakeRelease(t, r.releases, "v0.1.0")
-	quit := filepath.Join(t.TempDir(), "quit")
+	quit, calls := filepath.Join(t.TempDir(), "quit"), filepath.Join(t.TempDir(), "calls")
 	path := fakeTools(t, map[string]string{
-		"pgrep":     fmt.Sprintf(`[ ! -f %q ]`, quit),
-		"osascript": askThenQuit(quit),
+		"pgrep":     runningUntil(quit, calls),
+		"osascript": fmt.Sprintf(`touch %q; echo "Loam got an error: Some other error. (-1708)" >&2; exit 1`, quit),
 		"open":      "true",
 	})
 	out, err := r.run(t, path)
-	if err != nil {
+	if err != nil || strings.Contains(out, "Could not ask") {
 		t.Fatalf("%v: %s", err, out)
 	}
 	if v := r.installedVersion(t); v != "v0.1.0" {
 		t.Errorf("installed %q", v)
 	}
-	if !strings.Contains(out, "choose Quit") || !strings.Contains(out, "Reopened Loam") {
-		t.Errorf("output: %s", out)
-	}
 	r.noStage(t)
 }
 
 // Any other failure of the quit request stops the install at once, with the
-// error. The old app stays in place.
+// error. The old app stays in place. An error with no text says so.
 func TestInstallReleaseStopsWhenTheQuitRequestFails(t *testing.T) {
-	r := newReleaseRig(t)
-	fakeRelease(t, r.releases, "v0.1.0")
-	path := fakeTools(t, map[string]string{
-		"pgrep":     "true",
-		"osascript": "echo 'Not authorized to send Apple events to Loam. (-1743)' >&2; exit 1",
-		"open":      "true",
-	})
-	out, err := r.run(t, path)
-	if err == nil || !strings.Contains(out, "(-1743)") || strings.Contains(out, "waits up to") {
-		t.Fatalf("want a stop with the error, got %v: %s", err, out)
+	for _, c := range stopCases {
+		t.Run(c.want, func(t *testing.T) {
+			r := newReleaseRig(t)
+			fakeRelease(t, r.releases, "v0.1.0")
+			path := fakeTools(t, map[string]string{
+				"pgrep":     "true",
+				"osascript": c.stderr + "\nexit 1",
+				"open":      "true",
+			})
+			out, err := r.run(t, path)
+			if err == nil || !strings.Contains(out, c.want) || strings.Contains(out, "waits up to") {
+				t.Fatalf("want a stop with %q, got %v: %s", c.want, err, out)
+			}
+			if _, err := os.Stat(filepath.Join(r.apps, "Loam.app")); err == nil {
+				t.Errorf("an app was installed: %s", out)
+			}
+			r.noStage(t)
+		})
 	}
-	if _, err := os.Stat(filepath.Join(r.apps, "Loam.app")); err == nil {
-		t.Errorf("an app was installed: %s", out)
-	}
-	r.noStage(t)
 }
 
 func TestReleaseRejectsBadTag(t *testing.T) {
