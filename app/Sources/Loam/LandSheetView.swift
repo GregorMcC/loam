@@ -44,7 +44,12 @@ struct LandSheetView: View {
         .focusable()
         .focused($focus, equals: .sheet)
         .focusEffectDisabled()
-        .onKeyPress(.escape) { app.closeLandSheet(); return .handled }
+        // During input method composition in the box, Escape cancels the composed text, so it must not close the sheet.
+        .onKeyPress(.escape) {
+            if fieldEditor?.hasMarkedText() == true { return .ignored }
+            app.closeLandSheet()
+            return .handled
+        }
         // Only a first press of Return merges, and never one that the box takes. The box returns `.ignored` while an input
         // method has marked text, so a Return that commits that text must not reach the merge. The window says whether the
         // box has the keys (its field editor is a text view), because `focus` can be a short time behind it.
@@ -336,7 +341,12 @@ struct LandSheetView: View {
                     editor.insertNewlineIgnoringFieldEditor(nil)
                     return .handled
                 }
-                .onKeyPress(.escape) { app.closeLandSheet(); return .handled }
+                // During input method composition, Escape cancels the composed text.
+                .onKeyPress(.escape) {
+                    if fieldEditor?.hasMarkedText() == true { return .ignored }
+                    app.closeLandSheet()
+                    return .handled
+                }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
                 .background(LoamColor.horizonB, in: RoundedRectangle(cornerRadius: 8))

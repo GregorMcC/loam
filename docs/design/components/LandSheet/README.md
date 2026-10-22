@@ -54,7 +54,7 @@ A merge writes no change-log row. The toast and the Where it stands change recor
 
 ## Keys
 
-- Return merges, Escape or Cancel closes, and a click on the scrim closes. A merge that runs ignores all three.
+- Return merges, Escape or Cancel closes, and a click on the scrim closes. A merge that runs ignores all three. While an input method composes text in the box, Escape cancels the composed text and does not close the sheet.
 - Only a first press of Return merges. A held Return does not repeat the merge. A Return that the box takes never merges: the box adds a line, or commits text that an input method composes. The sheet asks the window whether an editable text view has the keys (a selection in the error callout does not stop Return), and not only the focus of SwiftUI, which can be a short time behind the window. A held Return adds a line for each repeat, and it does not select the text.
 - The sheet takes the keys when it opens. The keys go back to the focused pane when it closes.
 
