@@ -17,7 +17,7 @@ import SwiftUI
 @Observable
 final class LinkDrag {
     /// The coordinate space of the Links section.
-    static let space = "panel-links"
+    nonisolated static let space = "panel-links"
     /// A move this far from the press starts a drag. A shorter one is a click.
     static let threshold: CGFloat = 4
     /// The spacing of the Links `VStack`.
