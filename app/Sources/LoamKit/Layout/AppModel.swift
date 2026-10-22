@@ -1197,7 +1197,10 @@ public final class AppModel {
     private func followPullRequestRow() {
         guard let id = prPopover.worktreeID else { return }
         guard let status = worktreeStatus(id) else { return prPopover.close() }
-        if PRPopoverContent(status).passedChecks.isEmpty { prPopover.hidePassedChecks() }
+        let content = PRPopoverContent(status)
+        if content.passedChecks.isEmpty { prPopover.hidePassedChecks() }
+        // A worktree that got its PR has no Goal row to edit (ticket 115).
+        if content.goal == nil { prPopover.cancelGoalEdit() }
     }
 
     /// Re-run failed: `loam worktree rerun`. The popover shows what GitHub did, then asks about the

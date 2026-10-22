@@ -87,24 +87,4 @@ extension AppModel {
         if sheet.isCurrent(open) { sheet.close() }
         openWorktreePane(made.worktree)
     }
-
-    // MARK: Goal
-
-    /// Sets the goal of a worktree: `loam worktree edit --goal`, as one change with Undo. The edit expects the version that
-    /// the row has, so a goal that a session changed meanwhile is not lost. An empty goal clears it. Returns the message
-    /// when it did not save, else nil.
-    public func setWorktreeGoal(_ id: String, to goal: String) async -> String? {
-        guard let worktree = worktreeStatus(id)?.worktree else { return "The worktree is gone." }
-        let text = goal.trimmingCharacters(in: .whitespacesAndNewlines)
-        do {
-            _ = try await client.worktreeEdit(plot: worktree.plotID, worktree: id, goal: text, expect: worktree.version)
-        } catch LoamError.stale {
-            await reloadWorktrees()
-            return "The goal changed meanwhile. Loam shows the new goal."
-        } catch {
-            return Self.message(for: error)
-        }
-        await reloadWorktrees()
-        return nil
-    }
 }

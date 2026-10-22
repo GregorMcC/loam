@@ -14,6 +14,8 @@ struct PRPopoverView: View {
     /// Return, or a click on the primary button.
     let runPrimary: (PRPrimaryAction) -> Void
     @FocusState private var focused: Bool
+    /// The goal field of a worktree with no PR (ticket 115) holds the keys while you edit it.
+    @FocusState private var goalFocused: Bool
     @Environment(\.colorScheme) private var scheme
 
     static let width: CGFloat = 360
@@ -45,6 +47,8 @@ struct PRPopoverView: View {
             runPrimary(primary)
             return .handled
         }
+        // The keys go back to the card when the goal edit ends, so Escape closes the popover and not nothing.
+        .onChange(of: model.goalDraft == nil) { if model.goalDraft == nil { focused = true } }
         .task(id: model.openCount) {
             // The hosting view becomes first responder after this view appears. A popover that closed meanwhile
             // takes no keys: they went back to where they were.
@@ -141,9 +145,12 @@ struct PRPopoverView: View {
         .accessibilityIdentifier("pr-popover-heading")
     }
 
-    /// Checks, Review, Base and Conflicts, or the rows of a worktree with no PR, between two hairlines.
+    /// Checks, Review, Base and Conflicts, or the rows of a worktree with no PR, between two hairlines. A worktree with no
+    /// PR starts with its Goal and its Link (ticket 115, board WorktreeGoal).
     private func rows(_ content: PRPopoverContent) -> some View {
         VStack(spacing: 0) {
+            if let goal = content.goal { goalRow(goal) }
+            if let link = content.link { linkRow(link) }
             ForEach(content.rows, id: \.label) { row in
                 PropertyRow(label: row.label) {
                     statusLineText(row.parts, color: LoamColor.ink, separator: LoamColor.ink)
@@ -161,6 +168,72 @@ struct PRPopoverView: View {
         .overlay(alignment: .bottom) {
             if content.hasPullRequest { LoamColor.inkHairline.frame(height: 1) }
         }
+    }
+
+    // MARK: Goal and link
+
+    /// The Goal row: the goal as a button that opens the edit, or the field. Return saves, Escape cancels. A goal of more
+    /// than 20 words saves, with the soft limit under the field in `needs`.
+    private func goalRow(_ goal: PRPopoverContent.Goal) -> some View {
+        let model = app.prPopover
+        let note = model.goalProblem ?? model.goalDraft.flatMap(WorktreeGoal.warning(for:))
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 10) {
+                Text("Goal").foregroundStyle(LoamColor.inkFaint).frame(width: 84, alignment: .leading)
+                if model.goalDraft != nil {
+                    TextField("Goal", text: Binding(get: { model.goalDraft ?? "" }, set: { model.setGoalDraft($0) }))
+                        .labelsHidden()
+                        .textFieldStyle(.plain)
+                        .focused($goalFocused)
+                        .onSubmit { Task { await app.saveGoalEdit() } }
+                        .onKeyPress(.escape) { app.cancelGoalEdit(); return .handled }
+                        .onAppear { goalFocused = true }
+                        .disabled(model.isSavingGoal)
+                        .padding(.horizontal, 6)
+                        .frame(height: 24)
+                        .background(LoamColor.horizonA, in: RoundedRectangle(cornerRadius: 5))
+                        .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(LoamColor.edge))
+                        .accessibilityLabel("Goal")
+                        .accessibilityIdentifier("pr-popover-goal-field")
+                } else {
+                    GoalButton(text: goal.text) { app.beginGoalEdit() }
+                }
+            }
+            .font(.system(size: 12.5))
+            .frame(minHeight: 28)
+            if let note {
+                Text(note)
+                    .font(.system(size: 11))
+                    .foregroundStyle(model.goalProblem == nil ? LoamColor.needsYou : LoamColor.rust)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 94)
+                    .accessibilityIdentifier("pr-popover-goal-note")
+            }
+        }
+    }
+
+    /// The Link row: the issue that the work started from, with the mark of its service. A click opens it.
+    private func linkRow(_ link: PRPopoverContent.LinkRow) -> some View {
+        HStack(spacing: 10) {
+            Text("Link").foregroundStyle(LoamColor.inkFaint).frame(width: 84, alignment: .leading)
+            let label = HStack(spacing: 6) {
+                LoamIconView(icon: link.icon, size: 12)
+                Text(link.label).lineLimit(1).truncationMode(.tail)
+            }
+            if let url = link.url {
+                Button { SystemActions.open(url) } label: { label.contentShape(Rectangle()) }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(link.label)
+                    .accessibilityIdentifier("pr-popover-link")
+            } else {
+                label.accessibilityElement(children: .combine).accessibilityIdentifier("pr-popover-link")
+            }
+            Spacer(minLength: 0)
+        }
+        .font(.system(size: 12.5))
+        .foregroundStyle(LoamColor.ink)
+        .frame(height: 28)
+        .help(link.url?.absoluteString ?? link.label)
     }
 
     // MARK: Failed checks
@@ -433,5 +506,40 @@ private struct PopoverButtonStyle: ButtonStyle {
             .overlay(shape.strokeBorder(LoamColor.edge))
             .opacity(enabled ? 1 : 0.5)
             .contentShape(shape)
+    }
+}
+
+/// The goal in the Goal row. A worktree with no goal invites one. A hover shows the pencil on a neutral fill, and a click
+/// opens the edit (board WorktreeGoal).
+private struct GoalButton: View {
+    let text: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Text(text.isEmpty ? PRPopoverContent.Goal.placeholder : text)
+                    .foregroundStyle(text.isEmpty ? LoamColor.inkFaint : LoamColor.ink)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "pencil")
+                    .font(.system(size: 11))
+                    .foregroundStyle(LoamColor.inkMuted)
+                    .opacity(hovering ? 1 : 0)
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(RoundedRectangle(cornerRadius: 5).fill(LoamColor.hoverFill).opacity(hovering ? 1 : 0))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.leading, -6)
+        .onHover { hovering = $0 }
+        .help(text.isEmpty ? "Add a goal" : text)
+        .accessibilityLabel(text.isEmpty ? PRPopoverContent.Goal.placeholder : "Goal, \(text)")
+        .accessibilityHint("Edit the goal")
+        .accessibilityIdentifier("pr-popover-goal")
     }
 }

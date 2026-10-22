@@ -77,6 +77,23 @@ public struct PRPopoverContent: Equatable, Sendable {
         public var log: URL?
     }
 
+    /// The goal row of a worktree with no PR (ticket 115). You click it to edit the goal. `text` is empty when the
+    /// worktree has no goal, and the row then invites one.
+    public struct Goal: Equatable, Sendable {
+        public var text: String
+
+        /// The words of a row with no goal.
+        public static let placeholder = "Add a goal"
+    }
+
+    /// The link row of a worktree with no PR: the issue that the work started from. A click opens it.
+    public struct LinkRow: Equatable, Sendable {
+        public var label: String
+        /// Where a click goes. Nil when the target is not an https address, such as a path: the row then only names it.
+        public var url: URL?
+        public var icon: LoamIcon
+    }
+
     /// The stage in the header. Nil for a worktree with no PR, which has no header.
     public let stage: WorktreeStage?
     public let hasPullRequest: Bool
@@ -87,6 +104,10 @@ public struct PRPopoverContent: Equatable, Sendable {
     /// "link-labels → main · 9 commits", or why there is no PR.
     public let subtitle: String
     public let rows: [Row]
+    /// The goal row, above Base. Nil for a worktree with a PR, and for a folder that is gone.
+    public let goal: Goal?
+    /// The link row, above Base. Nil for a worktree with a PR, or with no link.
+    public let link: LinkRow?
     public let failedChecks: [CheckRow]
     /// The passed checks, behind the row "12 passed" at the end of the failed checks (ticket 116). Empty unless
     /// the PR is open and has failed checks and passed checks. With no failed check, the Checks row already says
@@ -127,6 +148,8 @@ public struct PRPopoverContent: Equatable, Sendable {
                 ? [Row(label: "Checks", parts: StatusLine.checks(of: pr)), Row(label: "Review", parts: StatusLine.review(of: pr)),
                    Row(label: "Base", parts: StatusLine.base(of: pr)), Row(label: "Conflicts", parts: StatusLine.conflicts(of: pr))]
                 : [Row(label: "State", parts: line.parts)]
+            goal = nil
+            link = nil
             failedChecks = open ? pr.failedChecks.map(Self.row(of:)) : []
             passedChecks = open && !pr.failedChecks.isEmpty ? (pr.passedChecks ?? []).map(Self.row(of:)) : []
             stageNote = Self.stageNote(for: stage, line: line)
@@ -149,6 +172,8 @@ public struct PRPopoverContent: Equatable, Sendable {
             }
             if !status.missing { local.append(Row(label: "Local", parts: line.parts)) }
             rows = local
+            goal = status.missing ? nil : Goal(text: status.worktree.goal ?? "")
+            link = status.missing ? nil : status.worktree.link.map(Self.linkRow(of:))
             failedChecks = []
             passedChecks = []
             stageNote = nil
@@ -192,6 +217,12 @@ public struct PRPopoverContent: Equatable, Sendable {
         default:
             return nil
         }
+    }
+
+    /// The issue shows the mark of its service. A link that is not an issue shows the mark of a link.
+    private static func linkRow(of link: WorktreeLink) -> LinkRow {
+        let kind: LinkKind = IssueLink(target: link.target).map { $0.service == .linear ? .linear : .github } ?? .url
+        return LinkRow(label: link.label, url: URL(https: link.target), icon: .link(kind, target: link.target))
     }
 
     // MARK: Checks

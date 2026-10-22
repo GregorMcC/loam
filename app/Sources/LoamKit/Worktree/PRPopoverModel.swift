@@ -54,6 +54,12 @@ public final class PRPopoverModel {
     /// True while the passed checks show in the card (ticket 116). The list is closed on each open, because each
     /// open is a new card. A refresh and a button leave it as it is, unless the refresh takes its row away.
     public private(set) var showsPassedChecks = false
+    /// The goal that you edit in the card (ticket 115), or nil when no edit is open. Each open starts with none.
+    public private(set) var goalDraft: String?
+    /// Why the last save of the goal failed.
+    public private(set) var goalProblem: String?
+    /// The save of the goal runs.
+    public private(set) var isSavingGoal = false
     /// The worktrees whose refresh runs now (`AppModel.refreshWorktree`), shown or not.
     private var refreshing: Set<String> = []
     /// The button that runs for each worktree. One runs at a time for a worktree.
@@ -81,6 +87,7 @@ public final class PRPopoverModel {
         attemptedAt = nil
         note = nil
         showsPassedChecks = false
+        cancelGoalEdit()
         if !wasOpen { onOpenChange?(true) }
         onOpen?()
     }
@@ -93,6 +100,7 @@ public final class PRPopoverModel {
         attemptedAt = nil
         note = nil
         showsPassedChecks = false
+        cancelGoalEdit()
         onOpenChange?(false)
     }
 
@@ -113,6 +121,40 @@ public final class PRPopoverModel {
     /// back later shows the list closed.
     func hidePassedChecks() {
         showsPassedChecks = false
+    }
+
+    // MARK: Goal
+
+    /// Opens the goal for edit with its text so far. Does nothing when the popover is closed or an edit is open.
+    func beginGoalEdit(_ current: String) {
+        guard isOpen, goalDraft == nil else { return }
+        goalDraft = current
+        goalProblem = nil
+    }
+
+    /// What you typed in the goal field.
+    public func setGoalDraft(_ text: String) {
+        guard goalDraft != nil, !isSavingGoal else { return }
+        goalDraft = text
+        goalProblem = nil
+    }
+
+    /// Closes the edit and forgets the text. A save that runs ends on its own.
+    func cancelGoalEdit() {
+        goalDraft = nil
+        goalProblem = nil
+        isSavingGoal = false
+    }
+
+    func beginSavingGoal() {
+        isSavingGoal = true
+        goalProblem = nil
+    }
+
+    /// The save did not happen. The edit stays open with the message.
+    func goalFailed(_ message: String) {
+        isSavingGoal = false
+        goalProblem = message
     }
 
     // MARK: Refresh
