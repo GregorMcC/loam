@@ -421,6 +421,8 @@ import Testing
         #expect(rig.model.landSheet.isMerging)
         rig.model.closeLandSheet()
         #expect(rig.model.landSheet.isOpen, "Cancel is off while the merge runs")
+        #expect(!rig.model.openLandSheet(failed) && rig.model.landSheet.worktreeID == ready && rig.model.landSheet.isMerging,
+                "an open of another worktree would drop the state of the merge")
         await rig.model.land()
         #expect(rig.lands().count == 1, "a second press runs nothing")
         rig.remove("hold-land")

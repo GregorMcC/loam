@@ -1,8 +1,8 @@
 import Foundation
 
-/// The question before ⌘W, `close_tab`, archive, quit (spec 8.2 and 8.5), a move to a plot (ticket 100), or a land (ticket 112). The app asks only when
-/// a session that the close ends is mid-turn or needs you, because a turn in progress loses its
-/// partial reply (ADR 0005), and a session that needs you waits for your answer.
+/// The question before ⌘W, `close_tab`, archive, quit (spec 8.2 and 8.5), a move to a plot (ticket 100), or a land
+/// (ticket 112). The app asks only when a session that the close ends is mid-turn or needs you, because a turn in
+/// progress loses its partial reply (ADR 0005), and a session that needs you waits for your answer.
 public struct ClosePrompt: Equatable, Sendable {
     public enum Scope: Sendable { case pane, tab, quit, archive, move, land }
 

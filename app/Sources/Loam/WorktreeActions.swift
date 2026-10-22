@@ -4,8 +4,9 @@ import SwiftUI
 
 /// The actions of one worktree, built once for the hover menu and the context menu of the panel row and
 /// for the context menu of the sidebar row (ticket 108). Send failures to session shows only when the checks
-/// failed (ticket 110), and Land… only when the PR is ready to merge (ticket 112). Open on GitHub opens the PR in the browser, or the
-/// compare page of a branch that is pushed and has no PR, as the PR popover does. The PR popover has the details.
+/// failed (ticket 110), and Land… only when the PR is ready to merge (ticket 112). Open on GitHub opens the PR in
+/// the browser, or the compare page of a branch that is pushed and has no PR, as the PR popover does. The PR popover
+/// has the details.
 struct WorktreeActions: View {
     let model: AppModel
     let id: String
