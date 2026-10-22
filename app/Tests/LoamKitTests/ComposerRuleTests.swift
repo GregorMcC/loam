@@ -334,6 +334,26 @@ import Testing
         #expect(!session.typedSinceSubmit)
     }
 
+    /// A new process cannot put a stash back, so the first `SessionStart` of the pane empties the composer, also
+    /// after ⌃S in the setup command or the trust question. A `resume` inside a running session brings the stash
+    /// back, as `/clear` does.
+    @Test func onlyAClearOrAResumeInTheSessionBringsTheStashBack() {
+        for source in ["startup", "resume"] {
+            var first = PaneSession(sessionID: "s1")
+            first.input(.stash, now: t0)
+            first.apply(paneEvent("SessionStart", "s1", source: source), now: t0.addingTimeInterval(1))
+            #expect(!first.typedSinceSubmit && !first.typedSinceReturn && !first.stashPending, "\(source)")
+        }
+        var running = session()
+        running.input(.stash, now: t0)
+        running.apply(paneEvent("SessionStart", "s2", source: "resume"), now: t0.addingTimeInterval(1))
+        #expect(running.typedSinceSubmit && !running.stashPending)
+        var started = session()
+        started.input(.stash, now: t0)
+        started.apply(paneEvent("SessionStart", "s2", source: "startup"), now: t0.addingTimeInterval(1))
+        #expect(!started.typedSinceSubmit && !started.stashPending)
+    }
+
     /// The stash can hold the prompt that Loam typed, so Loam keeps it in mind until the next submit.
     @Test func aStashKeepsLoamsPrompt() {
         var session = session()

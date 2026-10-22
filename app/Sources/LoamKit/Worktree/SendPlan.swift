@@ -122,6 +122,18 @@ public struct SendPlan: Equatable, Sendable {
         toast(kind, into: "the new session")
     }
 
+    /// The notice when the session that Start session with prompt opened cannot take the prompt at its
+    /// `SessionStart`, so Loam is never silent. `step` is what Send to session would do now, or nil when the
+    /// worktree has no prompt now.
+    public static func startNotTypedToast(_ step: Step?) -> String {
+        switch step {
+        case nil: "Loam did not type a prompt into the new session, because the worktree has nothing to fix now."
+        case .copy(.typed):
+            "Loam did not type the prompt into the new session, because the session has your text. Copy the prompt from the PR popover."
+        default: "Loam did not type the prompt into the new session. Copy the prompt from the PR popover."
+        }
+    }
+
     /// The notice when the new session sent no `SessionStart` in the 30 seconds of `AppModel.sessionStartWait`. It
     /// names the worktree, because you may work in another pane by then. Nil when the worktree is gone.
     public static func notStartedToast(worktree: String?) -> String {

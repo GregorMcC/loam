@@ -13,7 +13,7 @@ import Foundation
 ///   event, and what it does:
 ///   - A key (`.key`, or `.pick` and `.escape` outside a dialog) sets `typedSinceSubmit` and `typedSinceReturn`.
 ///   - ⌃S (`.stash`) is a key that also sets `stashPending`: Claude Code keeps the draft aside and puts it back
-///     into the composer at the next submit, or after `/clear`.
+///     into the composer at the next submit, or after `/clear` or a `/resume` inside the session.
 ///   - A paste, a drop, or text from dictation or a picker (`.text`) sets both, also while `dialogOpen`. The
 ///     dialog may have closed before Loam knows, and too careful is fine.
 ///   - A submit Return (`.submit`) clears `typedSinceReturn` and sets `pendingSubmit` to now. While
@@ -24,11 +24,11 @@ import Foundation
 ///     input, because it can stop a turn and put a queued prompt back into the composer. Other keys do nothing.
 ///   - `UserPromptSubmit` with source `user`, or with no source (Claude Code does not send one today), takes the
 ///     composer only when `pendingSubmit` is 0 to `submitWindow` seconds old: `typedSinceSubmit` becomes
-///     `typedSinceReturn`, `loamPrompt` clears when `typedSinceReturn` is false, and `pendingSubmit` ends. While
-///     `stashPending`, the stash comes back, so `typedSinceSubmit` stays set, `loamPrompt` stays, and
-///     `stashPending` ends. With
-///     no pending Return it changes nothing, because a background task, a message from a peer, or an
-///     auto-continuation starts a turn with the same line while your text stays in the composer.
+///     `typedSinceReturn`, `loamPrompt` clears when `typedSinceReturn` is false, and `pendingSubmit` ends.
+///     While `stashPending`, the stash comes back, so `typedSinceSubmit` stays set, `loamPrompt` stays, and
+///     `stashPending` ends. With no pending Return it changes nothing, because a background task, a message
+///     from a peer, or an auto-continuation starts a turn with the same line while your text stays in the
+///     composer.
 ///   - `UserPromptSubmit` with any other source changes nothing, and `pendingSubmit` stays.
 ///   - Send to session types `loamPrompt` with no Return (`prompted(_:)`). A Return before it did not send it, so
 ///     `pendingSubmit` ends.
@@ -44,7 +44,8 @@ import Foundation
 ///     know. So does the process exit.
 ///   - `Stop` changes nothing else, because Claude Code keeps a draft that you typed during the turn.
 ///   - `SessionStart` with source `startup`, `resume` or `clear` starts with an empty composer, so all of the
-///     rule resets. While `stashPending`, the stash comes back instead: the flags stay set, `loamPrompt` stays,
+///     rule resets. A new process cannot put a stash back, but for `clear`, and for a `resume` inside a session
+///     that started before, the stash comes back while `stashPending`: the flags stay set, `loamPrompt` stays,
 ///     and `stashPending` ends. Any other source, such as `compact` or `fork`, keeps all of the rule.
 /// - The process exit means ended for good: later events change nothing.
 /// - An event for another session ID changes nothing. Only `SessionStart` takes a new ID.
@@ -115,6 +116,7 @@ public struct PaneSession: Codable, Equatable, Sendable {
                 pastSessionIDs.append(old)
             }
             sessionID = event.sessionID
+            let inSession = started
             started = true
             if !event.cwd.isEmpty { folder = event.cwd }
             // A compact can come in the middle of a turn. It keeps the state.
@@ -122,8 +124,11 @@ public struct PaneSession: Codable, Equatable, Sendable {
             dialogOpen = false
             dialogAnswered = false
             // `/clear` took the text, and the keys before the first SessionStart went to the setup command or the
-            // trust question. A compact, a fork, or a source that Loam does not know keeps the composer.
-            if let source = event.source, Self.emptyComposerSources.contains(source) { emptyComposer() }
+            // trust question. A compact, a fork, or a source that Loam does not know keeps the composer. A new
+            // process cannot put a stash back, but `/clear` and a `/resume` inside the session can.
+            if let source = event.source, Self.emptyComposerSources.contains(source) {
+                emptyComposer(stashComesBack: source == "clear" || (source == "resume" && inSession))
+            }
             return self != before
         }
         guard sessionID == nil || event.sessionID == sessionID else { return false }
@@ -232,10 +237,10 @@ public struct PaneSession: Codable, Equatable, Sendable {
         if !typedSinceReturn { loamPrompt = nil }
     }
 
-    /// The composer is empty: a new session started. A stash comes back into it.
-    private mutating func emptyComposer() {
+    /// The composer is empty: a new session started. A stash can come back into it.
+    private mutating func emptyComposer(stashComesBack: Bool) {
         pendingSubmit = nil
-        if stashPending {
+        if stashPending, stashComesBack {
             typedSinceSubmit = true
             typedSinceReturn = true
             stashPending = false
@@ -243,6 +248,7 @@ public struct PaneSession: Codable, Equatable, Sendable {
         }
         typedSinceSubmit = false
         typedSinceReturn = false
+        stashPending = false
         loamPrompt = nil
     }
 

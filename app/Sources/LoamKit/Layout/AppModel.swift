@@ -1267,13 +1267,22 @@ public final class AppModel {
     }
 
     /// The first `SessionStart` of a session that Start session with prompt opened. Loam types the prompt that
-    /// the worktree needs now. The pane does not take the focus, since you may work in another pane by now.
+    /// the worktree needs now. The pane does not take the focus, since you may work in another pane by now. When
+    /// Loam cannot type, a notice says why.
     private func typeStartPrompt(into pane: PaneID) {
         guard let start = startPrompts.removeValue(forKey: pane) else { return }
         start.wait.cancel()
-        guard let prompt = worktreeStatus(start.worktree).flatMap(FixPrompt.init), let session = workspace.session(of: pane),
-              SendPlan.step(for: pane, session: session, prompt: prompt.text) == .type(pane),
-              typePrompt(prompt.text, into: pane) else { return }
+        guard let prompt = worktreeStatus(start.worktree).flatMap(FixPrompt.init) else {
+            onToast?(SendPlan.startNotTypedToast(nil), .notice)
+            return
+        }
+        let step = workspace.session(of: pane).map { SendPlan.step(for: pane, session: $0, prompt: prompt.text) } ?? .start
+        guard step == .type(pane) else {
+            onToast?(SendPlan.startNotTypedToast(step), .notice)
+            return
+        }
+        // `typePrompt` reports its own error.
+        guard typePrompt(prompt.text, into: pane) else { return }
         onToast?(SendPlan.toastForNewSession(prompt.kind), .done)
     }
 

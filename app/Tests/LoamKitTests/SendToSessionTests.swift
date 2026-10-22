@@ -548,6 +548,42 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
         #expect(record.typed.count == 1)
     }
 
+    /// ⌃S in the setup command or the trust question stashes nothing in Claude Code, so the first `SessionStart`
+    /// still gets the prompt.
+    @Test func aStashBeforeTheSessionStartsStillGetsThePrompt() async throws {
+        let (model, record) = try await rig()
+        #expect(model.sendToSession(review)?.step == .start)
+        let pane = try #require(model.workspace.focusedPane)
+        model.input(.stash, in: pane)
+        send("SessionStart", to: pane, model, source: "startup")
+        #expect(record.typed.map(\.pane) == [pane])
+        #expect(record.notices.isEmpty)
+    }
+
+    /// When the new session cannot take the prompt at its `SessionStart`, a notice says so. Loam is never silent.
+    @Test func aNewSessionThatCannotTakeThePromptGetsANotice() async throws {
+        let (model, record, rows) = try await rigWithRows()
+        #expect(model.sendToSession(review)?.step == .start)
+        let pane = try #require(model.workspace.focusedPane)
+        // A source that Loam does not know keeps the composer, and your key is in it.
+        model.input(.key, in: pane)
+        send("SessionStart", to: pane, model, source: "something-new")
+        #expect(record.typed.isEmpty)
+        #expect(record.notices == ["Loam did not type the prompt into the new session, because the session has your text. "
+                                   + "Copy the prompt from the PR popover."])
+
+        #expect(model.sendToSession(conflicts)?.step == .start)
+        let other = try #require(model.workspace.focusedPane)
+        var list = try JSONDecoder().decode([WorktreeStatus].self, from: Data(contentsOf: rows))
+        let i = try #require(list.firstIndex { $0.worktree.id == conflicts })
+        list[i].pr = nil
+        try JSONEncoder().encode(list).write(to: rows)
+        await model.reloadWorktrees()
+        send("SessionStart", to: other, model, source: "startup")
+        #expect(record.typed.isEmpty)
+        #expect(record.notices.last == "Loam did not type a prompt into the new session, because the worktree has nothing to fix now.")
+    }
+
     /// The pane can still show the setup question. Loam does not open the popover over it, because Return would then
     /// run Copy prompt. A toast says what happened, and a late SessionStart types nothing.
     @Test func aSessionThatDoesNotStartInTimeGetsNoPromptAndAToast() async throws {
