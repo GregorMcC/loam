@@ -89,6 +89,9 @@ public struct LandSheetContent: Equatable, Sendable {
     /// "Close its 2 panes and remove the worktree". The view sets the name of the worktree after it, in the mono face.
     public let removeLabel: String
     public let worktreeName: String
+    /// The name of the plot link that the worktree started from (ticket 115): its issue key, else its label. Nil when
+    /// the worktree did not start from a link of the plot, or that link is not in the plot any more.
+    public let removeLinkName: String?
     /// Under "After the merge", for a merge that waits for GitHub. Nil for a merge now.
     public let afterNote: String?
     public let number: Int
@@ -101,8 +104,16 @@ public struct LandSheetContent: Equatable, Sendable {
     /// the core records no Where it stands text for it.
     public var canMoveWhereItStandsOn: Bool { !usesAuto && !mergeQueue && !isMerged }
 
-    /// `openPanes` are the panes that run in the worktree now.
-    public init(_ plan: LandResult, openPanes: Int) {
+    /// The fourth box: "Remove ENG-482 from the plot's links" (ticket 115). Nil unless the plot link is still there. The
+    /// issue is done only at a merge, so a merge that waits for GitHub has no box.
+    public var removeLinkLabel: String? {
+        guard let removeLinkName, canMoveWhereItStandsOn else { return nil }
+        return "Remove \(removeLinkName) from the plot's links"
+    }
+
+    /// `openPanes` are the panes that run in the worktree now. `startLink` is the link of the plot that the worktree
+    /// started from, when it is still in the plot.
+    public init(_ plan: LandResult, openPanes: Int, startLink: PlotLink? = nil) {
         let pr = plan.pr
         number = pr.number
         prTitle = FixPrompt.oneLine(pr.title)
@@ -111,6 +122,10 @@ public struct LandSheetContent: Equatable, Sendable {
         isMerged = plan.merged || pr.state == "MERGED"
         mergeQueue = plan.mergeQueue && !isMerged
         worktreeName = plan.worktree.name
+        removeLinkName = startLink.map { link in
+            let key = plan.worktree.link?.key ?? ""
+            return key.isEmpty ? link.label : key
+        }
         removeLabel = switch openPanes {
         case 0: "Remove the worktree"
         case 1: "Close its pane and remove the worktree"

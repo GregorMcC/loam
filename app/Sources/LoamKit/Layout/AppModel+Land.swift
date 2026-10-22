@@ -49,7 +49,7 @@ extension AppModel {
     /// The words of the sheet for the plan that it shows. Nil until the plan is back.
     public var landContent: LandSheetContent? {
         guard let plan = landSheet.plan else { return nil }
-        return LandSheetContent(plan, openPanes: landPanes(of: plan.worktree).count)
+        return LandSheetContent(plan, openPanes: landPanes(of: plan.worktree).count, startLink: landSheet.startLink)
     }
 
     // MARK: The plan
@@ -63,7 +63,10 @@ extension AppModel {
             async let current = first ? client.show(plot: plot) : nil
             let (read, text) = try await (plan, current)
             guard landSheet.isCurrent(open) else { return }
-            landSheet.loaded(read, where: text.map { ($0.whereItStands, $0.versions["where"]) })
+            // The link of the plot that the worktree started from, if it is still there (ticket 115).
+            let startID = read.worktree.link?.linkID ?? ""
+            let start = startID.isEmpty ? nil : text?.links.first { $0.id == startID }
+            landSheet.loaded(read, where: text.map { ($0.whereItStands, $0.versions["where"]) }, link: start)
         } catch {
             guard landSheet.isCurrent(open) else { return }
             landSheet.failed(Self.message(for: error))
@@ -125,6 +128,11 @@ extension AppModel {
            let problem = await saveWhereItStands(worktree.plotID, merged: result.pr.number) {
             toast = (toast.text + " " + problem, .notice)
         }
+        if result.merged, landSheet.removesLink, content.removeLinkLabel != nil, let link = landSheet.startLink,
+           let name = content.removeLinkName {
+            let removed = await removeStartLink(worktree.plotID, link: link, name: name)
+            toast = (toast.text + " " + removed.text, removed.failed ? .notice : toast.kind)
+        }
         await reloadWorktrees()
         landSheet.close()
         onToast?(toast.text, toast.kind)
@@ -146,6 +154,22 @@ extension AppModel {
             return "Where it stands changed meanwhile, so Loam did not save it."
         } catch {
             return "Loam could not save Where it stands: \(Self.message(for: error))"
+        }
+    }
+
+    /// Removes the link that the work started from, as the panel does: one change with Undo, expecting the version that
+    /// the sheet read. The sentence is for the toast.
+    private func removeStartLink(_ plot: String, link: PlotLink, name: String) async -> (text: String, failed: Bool) {
+        do {
+            let removed = try await client.linkRemove(plot: plot, link: link.id, expect: ["link:\(link.id)": link.version])
+            onOwnChange?(removed.changeID)
+            await review.reload()
+            await reloadPanel()
+            return ("Removed \(name) from the plot's links.", false)
+        } catch LoamError.stale {
+            return ("\(name) changed in the plot meanwhile, so Loam did not remove it.", true)
+        } catch {
+            return ("Loam could not remove \(name) from the plot's links: \(Self.message(for: error))", true)
         }
     }
 

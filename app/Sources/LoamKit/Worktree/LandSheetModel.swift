@@ -28,6 +28,11 @@ public final class LandSheetModel {
     public var deletesBranch = true
     /// The third box: save Where it stands after the merge.
     public var movesWhereItStandsOn = true
+    /// The fourth box (ticket 115): remove the link of the plot that the work started from. It shows only when that link
+    /// is still in the plot (`startLink`).
+    public var removesLink = true
+    /// The link of the plot that the worktree started from, when the first read found it in the plot. Nil otherwise.
+    public private(set) var startLink: PlotLink?
     /// The text of the box under the third checkbox. It starts as the sentence about the merge, then the text of the plot.
     public var whereText = ""
     /// The first sentence of `whereText`, which the box selects when it takes the keys.
@@ -77,6 +82,8 @@ public final class LandSheetModel {
         removesWorktree = true
         deletesBranch = true
         movesWhereItStandsOn = true
+        removesLink = true
+        startLink = nil
         whereText = ""
         whereSentence = ""
         whereVersion = nil
@@ -113,9 +120,10 @@ public final class LandSheetModel {
 
     /// The plan came back. The first read also gives the Where it stands text; a read after Update branch keeps
     /// what you typed.
-    func loaded(_ plan: LandResult, where whereRead: (text: String, version: Int?)? = nil) {
+    func loaded(_ plan: LandResult, where whereRead: (text: String, version: Int?)? = nil, link: PlotLink? = nil) {
         phase = .plan(plan)
         guard let whereRead else { return }
+        startLink = link
         let prefill = LandSheetContent.whereItStands(merged: plan.pr.number, title: plan.pr.title, current: whereRead.text)
         whereText = prefill.text
         whereSentence = prefill.sentence

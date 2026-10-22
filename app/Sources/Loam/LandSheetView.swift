@@ -309,6 +309,11 @@ struct LandSheetView: View {
                     .disabled(!content.canMoveWhereItStandsOn)
                     .accessibilityIdentifier("land-sheet-move-on")
                 if moves { whereItStands(sheet) }
+                // The plot link that the work started from (ticket 115).
+                if let label = content.removeLinkLabel {
+                    Toggle(label, isOn: Binding(get: { sheet.removesLink }, set: { sheet.removesLink = $0 }))
+                        .accessibilityIdentifier("land-sheet-remove-link")
+                }
             }
             .toggleStyle(.checkbox)
             .tint(LoamColor.moss)
