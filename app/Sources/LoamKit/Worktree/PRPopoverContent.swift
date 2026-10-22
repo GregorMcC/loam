@@ -163,7 +163,7 @@ public struct PRPopoverContent: Equatable, Sendable {
     private static let openState = "OPEN"
 
     /// "link-labels → main · 9 commits".
-    private static func subtitle(of pr: PullRequest) -> String {
+    static func subtitle(of pr: PullRequest) -> String {
         var words = ["\(pr.head) \u{2192} \(pr.base)"]
         if pr.commits > 0 { words.append("\(pr.commits) \(pr.commits == 1 ? "commit" : "commits")") }
         return words.joined(separator: StatusLine.separator)
