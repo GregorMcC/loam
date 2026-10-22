@@ -76,6 +76,12 @@ func newHarness(t *testing.T) *harness {
 	testutil.GitEnv(t)
 	h.bin = testutil.BuildLoam(t)
 	fake := testutil.FakeClaude(t)
+	// A fake gh answers each refresh from a made-up GitHub repo.
+	state, err := os.ReadFile(filepath.Join("testdata", "github.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	testutil.FakeGH(t, string(state))
 	// The editor writes a fixed brief into the file that loam gives it.
 	ed := filepath.Join(root, "ed.sh")
 	script := "#!/bin/sh\nprintf '# Name\\nLoam\\n\\n# What\\nA personal tool.\\n\\n# Why\\nTo keep work in one place.\\n\\n# Where it stands\\nBuilding.\\n' > \"$1\"\n"
@@ -197,10 +203,9 @@ func (h *harness) normalize(s string) string {
 		reals = append(reals, real)
 	}
 	sort.Strings(reals) // map order is random: keep the replacer deterministic
-	// Claude Code names a folder after a path with "/" and "." changed to "-".
-	// The temp root is in such a name too.
-	dashed := strings.NewReplacer("/", "-", ".", "-")
-	pairs := []string{dashed.Replace(h.root), "-tmp-loam-contract"}
+	// Claude Code names a folder after a path (see claudeProjectName). The
+	// temp root is in such a name too.
+	pairs := []string{claudeProjectName(h.root), claudeProjectName("/tmp/loam-contract")}
 	for _, real := range reals {
 		pairs = append(pairs, real, h.tokens[real])
 	}
@@ -443,6 +448,22 @@ func scenario(t *testing.T) *harness {
 	h.run("worktree_list", "worktree-list", 0, "worktree", "list", loam)
 	h.run("worktree_rm", "worktree-rm", 0, "worktree", "rm", loam, "fix-login")
 	h.run("worktree_list_empty", "worktree-list", 0, "worktree", "list", loam)
+
+	// Ship state: one worktree for each stage, in the order of the rule. Each
+	// worktree comes from the local remote. Then origin names a made-up
+	// GitHub repo, so no command may fetch after this. testdata/github.json
+	// holds what the fake gh answers.
+	for _, name := range []string{"add-search", "old-theme", "fix-login", "new-api", "rename-users", "native-panel", "deploy-docs",
+		"update-deps", "speed-up-tests", "add-billing", "try-dark-mode", "link-labels", "pushed-only", "local-work"} {
+		if _, errOut, code := h.raw("worktree", "new", loam, gitRepo, name); code != 0 {
+			t.Fatalf("worktree new %s: exit %d: %s", name, code, errOut)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(h.home, "worktrees", loam, "web-local-work", "notes.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	testutil.Git(t, gitRepo, "remote", "set-url", "origin", "https://github.com/example/widgets.git")
+	h.run("worktree_list_stages", "worktree-list", 0, "worktree", "list", loam, "--refresh")
 
 	// Archive, unarchive, and delete. They run last too.
 	h.run("archive", "show", 0, "archive", "Loam Docs")

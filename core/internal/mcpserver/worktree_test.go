@@ -161,3 +161,38 @@ func TestRemoveRepoRefusedWhileWorktreesExist(t *testing.T) {
 		t.Fatal("repo removed")
 	}
 }
+
+// list_worktrees reads the PR cache. With refresh, it asks GitHub first.
+func TestListWorktreesRefresh(t *testing.T) {
+	testutil.GitEnv(t)
+	e := setup(t, opts{plotEnv: "ALPHA"})
+	repo := withGitRepo(t, e)
+	e.ok("create_worktree", map[string]any{"name": "fix-login"})
+	testutil.Git(t, repo, "remote", "set-url", "origin", "https://github.com/example/widgets.git")
+	testutil.FakeGH(t, `{"refs": ["fix-login"], "pulls": [], "details": {}}`)
+
+	type listed struct {
+		Worktrees []struct {
+			Stage       string  `json:"stage"`
+			PR          any     `json:"pr"`
+			PRNote      string  `json:"pr_note"`
+			PRCheckedAt *string `json:"pr_checked_at"`
+			CompareURL  string  `json:"compare_url"`
+		} `json:"worktrees"`
+	}
+	var before listed
+	json.Unmarshal([]byte(e.ok("list_worktrees", nil)), &before)
+	if w := before.Worktrees[0]; w.Stage != "" || w.PRCheckedAt != nil || len(testutil.FakeGHCalls(t)) != 0 {
+		t.Fatalf("a list with no refresh: %+v", w)
+	}
+
+	var after listed
+	json.Unmarshal([]byte(e.ok("list_worktrees", map[string]any{"refresh": true})), &after)
+	if w := after.Worktrees[0]; w.Stage != "pushed_no_pr" || w.PR != nil || w.PRNote != "" || w.PRCheckedAt == nil ||
+		w.CompareURL != "https://github.com/example/widgets/compare/main...fix-login" {
+		t.Fatalf("%+v", w)
+	}
+	if n := len(testutil.FakeGHCalls(t)); n != 1 {
+		t.Fatalf("%d gh calls", n)
+	}
+}

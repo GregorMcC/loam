@@ -180,7 +180,7 @@
     "worktreeStatus": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["worktree", "missing", "changed", "unpushed", "merged"],
+      "required": ["worktree", "missing", "changed", "unpushed", "merged", "stage", "pr", "pr_note"],
       "properties": {
         "worktree": { "$ref": "#/$defs/worktree" },
         "missing": { "description": "True when the worktree folder is gone.", "type": "boolean" },
@@ -188,7 +188,77 @@
         "unpushed": { "description": "Commits of the branch that no remote branch holds.", "type": "integer", "minimum": 0 },
         "merged": { "description": "True when the branch holds nothing that merged_into lacks.", "type": "boolean" },
         "merged_into": { "description": "The branch that merged is checked against. It is left out when none is known.", "type": "string" },
-        "error": { "description": "Why a check failed. It is left out when no check failed.", "type": "string" }
+        "error": { "description": "Why a check failed. It is left out when no check failed.", "type": "string" },
+        "stage": {
+          "description": "The one stage of the worktree, from the first rule that matches. Empty when there is nothing to show.",
+          "enum": ["merged", "closed", "in_merge_queue", "conflicts", "changes_requested", "checks_failed", "approval_needed", "behind_base",
+            "checks_running", "waiting_for_review", "draft", "ready_to_merge", "pushed_no_pr", "not_pushed", ""]
+        },
+        "pr": {
+          "description": "The pull request of the branch from the last refresh, or null.",
+          "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/pullRequest" }]
+        },
+        "pr_note": {
+          "description": "Why the ship state is missing or old: the result of the last refresh. Empty after a refresh that got an answer.",
+          "enum": ["gh_missing", "gh_signed_out", "no_github_remote", "offline", "rate_limited", ""]
+        },
+        "pr_checked_at": { "description": "When the ship state came from GitHub. It is left out when GitHub never answered.", "$ref": "#/$defs/time" },
+        "compare_url": { "description": "The GitHub compare page of the branch. Only for the stage pushed_no_pr.", "type": "string" }
+      }
+    },
+    "pullRequest": {
+      "description": "A pull request. The fields from behind_base to failed_checks are 0 or empty for a merged or closed PR.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["number", "title", "url", "state", "draft", "mergeable", "merge_state", "review_decision", "in_merge_queue",
+        "queue_position", "base", "head", "head_oid", "commits", "behind_base", "approvals", "comments", "checks", "failed_checks"],
+      "properties": {
+        "number": { "type": "integer", "minimum": 1 },
+        "title": { "type": "string" },
+        "url": { "type": "string" },
+        "state": { "enum": ["OPEN", "CLOSED", "MERGED"] },
+        "draft": { "type": "boolean" },
+        "mergeable": { "description": "UNKNOWN while GitHub checks.", "type": "string" },
+        "merge_state": { "description": "The mergeStateStatus of GitHub, such as CLEAN, BEHIND, BLOCKED, or DIRTY.", "type": "string" },
+        "review_decision": { "description": "APPROVED, CHANGES_REQUESTED, or REVIEW_REQUIRED. Empty when the base branch needs no review.", "type": "string" },
+        "in_merge_queue": { "type": "boolean" },
+        "queue_position": { "description": "The place in the merge queue, from 1. 0 out of the queue.", "type": "integer", "minimum": 0 },
+        "base": { "description": "The base branch name.", "type": "string" },
+        "head": { "description": "The head branch name.", "type": "string" },
+        "head_oid": { "description": "The commit at the head of the PR.", "type": "string" },
+        "merged_at": { "description": "Left out when the PR is not merged.", "$ref": "#/$defs/time" },
+        "closed_at": { "description": "Left out when the PR is open.", "$ref": "#/$defs/time" },
+        "commits": { "type": "integer", "minimum": 0 },
+        "behind_base": { "description": "The commits of the base branch that the head does not have.", "type": "integer", "minimum": 0 },
+        "approvals": { "description": "The reviewers with write access whose last review approves.", "type": "integer", "minimum": 0 },
+        "comments": { "description": "The review threads that are not resolved.", "type": "integer", "minimum": 0 },
+        "checks": { "$ref": "#/$defs/checkCounts" },
+        "failed_checks": { "type": "array", "items": { "$ref": "#/$defs/failedCheck" } }
+      }
+    },
+    "checkCounts": {
+      "description": "The checks of the head commit. A cancelled or stale check counts only in total.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "total", "passed", "failed", "running", "waiting"],
+      "properties": {
+        "state": { "description": "The summary of GitHub: SUCCESS, FAILURE, ERROR, PENDING, or EXPECTED. Empty when the head has no checks.", "type": "string" },
+        "total": { "type": "integer", "minimum": 0 },
+        "passed": { "type": "integer", "minimum": 0 },
+        "failed": { "type": "integer", "minimum": 0 },
+        "running": { "type": "integer", "minimum": 0 },
+        "waiting": { "description": "The checks that wait for a person, such as a workflow that needs approval.", "type": "integer", "minimum": 0 }
+      }
+    },
+    "failedCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "url", "duration", "required"],
+      "properties": {
+        "name": { "description": "A GitHub Actions job has its workflow name first, such as lint / swiftformat.", "type": "string" },
+        "url": { "description": "The page of the check, with its log.", "type": "string" },
+        "duration": { "description": "The run time in seconds. 0 when GitHub gives no start or end.", "type": "integer", "minimum": 0 },
+        "required": { "description": "True when the base branch needs the check to pass before a merge.", "type": "boolean" }
       }
     }
   }

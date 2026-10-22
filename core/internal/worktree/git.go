@@ -4,6 +4,9 @@
 // and branch -d. For a repo add, it also runs switch and merge --ff-only on
 // the normal checkout (see [SwitchToDefault]). It never deletes a remote branch and never runs the setup
 // command of a repo. `loam start` runs the setup command.
+//
+// It reads the pull request of each branch from GitHub through gh and keeps
+// it in the PR cache (see [RefreshPRs] and [StageOf]). It never writes to GitHub.
 package worktree
 
 import (

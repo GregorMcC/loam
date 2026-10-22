@@ -121,4 +121,39 @@ func decodeFixture(schema: String, data: Data) throws {
         let del = try JSONDecoder().decode(DeleteResult.self, from: Fixtures.data("delete"))
         #expect(del.claudeFiles.count == 1)
     }
+
+    @Test func prStateDecodes() throws {
+        let plain = try JSONDecoder().decode([WorktreeStatus].self, from: Fixtures.data("worktree_list"))
+        #expect(plain[0].stage == .noStage)
+        #expect(plain[0].pr == nil)
+        #expect(plain[0].prNote == .noNote)
+        #expect(plain[0].prCheckedAt == nil)
+
+        // One worktree for each stage, in the order of the rule.
+        let list = try JSONDecoder().decode([WorktreeStatus].self, from: Fixtures.data("worktree_list_stages"))
+        #expect(list.map(\.stage) == WorktreeStage.allCases.filter { $0 != .noStage })
+        #expect(list.allSatisfy { $0.prCheckedAt != nil && $0.prNote == .noNote })
+        let merged = try #require(list.first { $0.stage == .merged }?.pr)
+        #expect(merged.mergedAt != nil)
+        #expect(list.first { $0.stage == .inMergeQueue }?.pr?.queuePosition == 2)
+        let failed = try #require(list.first { $0.stage == .checksFailed }?.pr)
+        #expect(failed.checks.failed == 2)
+        #expect(failed.failedChecks.map(\.name) == ["lint / swiftformat", "test / macos"])
+        #expect(failed.failedChecks[0].duration == 42 && failed.failedChecks[0].required)
+        let pushed = try #require(list.first { $0.stage == .pushedNoPR })
+        #expect(pushed.pr == nil)
+        #expect(pushed.compareURL == "https://github.com/example/widgets/compare/main...pushed-only")
+    }
+
+    @Test func anUnknownStageOrNoteDecodesAsNothing() throws {
+        let json = Data(#"[{"stage": "some_new_stage", "pr_note": "some_new_note"}]"#.utf8)
+        struct Row: Decodable {
+            var stage: WorktreeStage
+            var prNote: PRNote
+            enum CodingKeys: String, CodingKey { case stage, prNote = "pr_note" }
+        }
+        let rows = try JSONDecoder().decode([Row].self, from: json)
+        #expect(rows[0].stage == .noStage)
+        #expect(rows[0].prNote == .noNote)
+    }
 }

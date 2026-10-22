@@ -76,13 +76,25 @@ func newWorktreeNewCmd() *cobra.Command {
 }
 
 func newWorktreeListCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "list [<plot>]",
-		Short: "List worktrees with their checks",
-		Long: "List the worktrees of a plot, or of every plot. For each worktree, show the files with uncommitted changes, the commits that are not pushed, and whether the branch is merged into the default branch of origin.\n" +
-			"The checks use the last fetched state. They do not use the network.",
+	var refresh bool
+	var only, repo string
+	c := &cobra.Command{
+		Use:   "list [<plot>] [--refresh [--worktree <worktree>] [--repo <repo>]]",
+		Short: "List worktrees with their checks and pull requests",
+		Long: "List the worktrees of a plot, or of every plot. For each worktree, show the files with uncommitted changes, the commits that are not pushed, and whether the branch is merged into the default branch of origin. Also show the pull request (PR) of the branch on GitHub, and one stage, such as ready to merge.\n" +
+			"The checks use the last fetched state. Without --refresh, the ship state comes from the last refresh, and the command does not use the network.\n" +
+			"--refresh asks GitHub first, through the GitHub CLI (gh). Loam holds no credentials. A repo whose origin is not on GitHub gets no question. When GitHub does not answer, the list keeps the last ship state and says why.\n" +
+			"--worktree refreshes only one worktree of the plot. It takes an ID, a folder name, or a name.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			switch {
+			case only != "" && !refresh:
+				return fmt.Errorf("--worktree works only with --refresh: %w", store.ErrInvalid)
+			case only != "" && len(args) == 0:
+				return fmt.Errorf("--worktree needs a plot: %w", store.ErrInvalid)
+			case repo != "" && only == "":
+				return fmt.Errorf("--repo works only with --worktree: %w", store.ErrInvalid)
+			}
 			s, err := openStore()
 			if err != nil {
 				return err
@@ -95,6 +107,22 @@ func newWorktreeListCmd() *cobra.Command {
 					return err
 				}
 				plotID = p.ID
+			}
+			if refresh {
+				ws, err := s.ListWorktrees(plotID)
+				if err != nil {
+					return err
+				}
+				if only != "" {
+					w, err := worktree.Find(s, plotID, repo, only)
+					if err != nil {
+						return err
+					}
+					ws = []store.Worktree{w}
+				}
+				if err := worktree.RefreshPRs(s, ws); err != nil {
+					return err
+				}
 			}
 			list, err := worktree.List(s, plotID)
 			if err != nil {
@@ -110,9 +138,13 @@ func newWorktreeListCmd() *cobra.Command {
 			return nil
 		},
 	}
+	c.Flags().BoolVar(&refresh, "refresh", false, "ask GitHub for the ship state through gh before the list")
+	c.Flags().StringVar(&only, "worktree", "", "with --refresh, ask only about this worktree")
+	c.Flags().StringVar(&repo, "repo", "", "the repo of --worktree, when two repos have a worktree with that name")
+	return c
 }
 
-// describe is the checks of a worktree as one line of text.
+// describe is the checks and the ship state of a worktree as one line of text.
 func describe(st worktree.Status) string {
 	text := ""
 	switch {
@@ -135,7 +167,51 @@ func describe(st worktree.Status) string {
 	if st.Error != "" {
 		text += ", check failed: " + st.Error
 	}
+	switch {
+	case st.PR != nil:
+		text += fmt.Sprintf(", PR #%d %s", st.PR.Number, prStageText(st))
+	case st.Stage == worktree.StagePushedNoPR:
+		text += ", pushed, no PR"
+	}
+	if st.PRNote != "" {
+		text += ", " + noteText[st.PRNote]
+	}
 	return text
+}
+
+// prStageText is the stage of a worktree with a PR, for the words after "PR #12".
+func prStageText(st worktree.Status) string {
+	if st.Stage == worktree.StageBehindBase {
+		return "behind " + st.PR.Base
+	}
+	if text, ok := prStageWords[st.Stage]; ok {
+		return text
+	}
+	return "open" // an open PR that matches no stage
+}
+
+// prStageWords holds the text of each stage of a PR. Behind base names the base.
+var prStageWords = map[worktree.Stage]string{
+	worktree.StageMerged:           "merged",
+	worktree.StageClosed:           "closed without a merge",
+	worktree.StageInMergeQueue:     "in the merge queue",
+	worktree.StageConflicts:        "has conflicts",
+	worktree.StageChangesRequested: "has changes requested",
+	worktree.StageChecksFailed:     "has failed checks",
+	worktree.StageApprovalNeeded:   "has a workflow that waits for approval",
+	worktree.StageChecksRunning:    "has checks running",
+	worktree.StageWaitingForReview: "waits for review",
+	worktree.StageDraft:            "is a draft",
+	worktree.StageReadyToMerge:     "ready to merge",
+}
+
+// noteText holds the text of each PR note.
+var noteText = map[worktree.PRNote]string{
+	worktree.NoteGHMissing:      "install gh to see PRs",
+	worktree.NoteGHSignedOut:    "gh is signed out, run gh auth login",
+	worktree.NoteNoGitHubRemote: "no GitHub remote",
+	worktree.NoteOffline:        "could not reach GitHub",
+	worktree.NoteRateLimited:    "GitHub rate limit, ship state is old",
 }
 
 func newWorktreeRmCmd() *cobra.Command {

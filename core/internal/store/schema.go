@@ -103,6 +103,18 @@ CREATE INDEX worktrees_plot ON worktrees(plot_id, repo_path);
 	// 5: the setup command that you last approved for a repo path. Loam runs
 	// a setup command only when it matches.
 	`ALTER TABLE repo_settings ADD COLUMN setup_approved TEXT NOT NULL DEFAULT '';`,
+	// 6: the PR cache: what GitHub last said about a branch of a repo (keyed
+	// by path, as repo_settings is). It is not in the change log.
+	`
+CREATE TABLE pr_cache (
+  repo_path TEXT NOT NULL,
+  branch TEXT NOT NULL,
+  data TEXT NOT NULL DEFAULT '',
+  checked_at INTEGER NOT NULL DEFAULT 0,
+  note TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (repo_path, branch)
+);
+`,
 }
 
 // SchemaVersion is the schema version of this binary.

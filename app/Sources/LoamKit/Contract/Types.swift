@@ -273,10 +273,133 @@ public struct WorktreeStatus: Codable, Equatable, Sendable {
     public var mergedInto: String?
     /// Why a check failed. Nil when no check failed.
     public var error: String?
+    /// The one stage of the worktree. The ship state fields are nil from a core
+    /// that has no ship state.
+    public var stage: WorktreeStage?
+    /// The pull request of the branch from the last refresh. Nil when no PR has the branch as its head.
+    public var pr: PullRequest?
+    /// Why the ship state is missing or old: the result of the last refresh.
+    public var prNote: PRNote?
+    /// When the ship state came from GitHub. Nil when GitHub never answered.
+    public var prCheckedAt: String?
+    /// The GitHub page that compares the branch with its base. Only for `.pushedNoPR`.
+    public var compareURL: String?
     enum CodingKeys: String, CodingKey {
-        case worktree, missing, changed, unpushed, merged, error
-        case mergedInto = "merged_into"
+        case worktree, missing, changed, unpushed, merged, error, stage, pr
+        case mergedInto = "merged_into", prNote = "pr_note", prCheckedAt = "pr_checked_at", compareURL = "compare_url"
     }
+}
+
+/// The stage of a worktree, in the order that the core checks them
+/// (docs/contract.md, "Ship state of worktrees").
+public enum WorktreeStage: String, Codable, Equatable, Sendable, CaseIterable {
+    case merged, closed
+    case inMergeQueue = "in_merge_queue"
+    case conflicts
+    case changesRequested = "changes_requested"
+    case checksFailed = "checks_failed"
+    case approvalNeeded = "approval_needed"
+    case behindBase = "behind_base"
+    case checksRunning = "checks_running"
+    case waitingForReview = "waiting_for_review"
+    case draft
+    case readyToMerge = "ready_to_merge"
+    case pushedNoPR = "pushed_no_pr"
+    case notPushed = "not_pushed"
+    /// Nothing to show.
+    case noStage = ""
+
+    /// A stage that this app does not know decodes as `.noStage`, so a newer
+    /// core cannot break the list. The app shows nothing for it.
+    public init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = WorktreeStage(rawValue: raw) ?? .noStage
+    }
+}
+
+/// Why the ship state of a worktree is missing or old.
+public enum PRNote: String, Codable, Equatable, Sendable, CaseIterable {
+    case ghMissing = "gh_missing"
+    case ghSignedOut = "gh_signed_out"
+    case noGitHubRemote = "no_github_remote"
+    case offline
+    case rateLimited = "rate_limited"
+    /// The last refresh got an answer from GitHub, or no refresh ran.
+    case noNote = ""
+
+    /// A note that this app does not know decodes as `.noNote`, as for `WorktreeStage`.
+    public init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = PRNote(rawValue: raw) ?? .noNote
+    }
+}
+
+/// A pull request on GitHub. The fields from `behindBase` to `failedChecks`
+/// are for an open PR. They are 0 or empty for a merged or closed PR.
+public struct PullRequest: Codable, Equatable, Sendable {
+    public var number: Int
+    public var title: String
+    public var url: String
+    /// OPEN, CLOSED, or MERGED.
+    public var state: String
+    public var draft: Bool
+    /// MERGEABLE, CONFLICTING, or UNKNOWN while GitHub checks.
+    public var mergeable: String
+    /// The mergeStateStatus of GitHub, such as CLEAN, BEHIND, BLOCKED, or DIRTY.
+    public var mergeState: String
+    /// APPROVED, CHANGES_REQUESTED, or REVIEW_REQUIRED. Empty when the base branch needs no review.
+    public var reviewDecision: String
+    public var inMergeQueue: Bool
+    /// The place in the merge queue, from 1. Zero out of the queue.
+    public var queuePosition: Int
+    /// The base branch name, such as main.
+    public var base: String
+    /// The head branch name.
+    public var head: String
+    public var headOID: String
+    /// Nil when the PR is not merged.
+    public var mergedAt: String?
+    /// Nil when the PR is open.
+    public var closedAt: String?
+    public var commits: Int
+    /// The commits of the base branch that the head does not have.
+    public var behindBase: Int
+    /// The reviewers with write access whose last review approves.
+    public var approvals: Int
+    /// The review threads that are not resolved.
+    public var comments: Int
+    public var checks: PRCheckCounts
+    public var failedChecks: [FailedCheck]
+    enum CodingKeys: String, CodingKey {
+        case number, title, url, state, draft, mergeable, base, head, commits, approvals, comments, checks
+        case mergeState = "merge_state", reviewDecision = "review_decision", inMergeQueue = "in_merge_queue"
+        case queuePosition = "queue_position", headOID = "head_oid", mergedAt = "merged_at", closedAt = "closed_at"
+        case behindBase = "behind_base", failedChecks = "failed_checks"
+    }
+}
+
+/// The checks of the head commit of a PR. A cancelled or stale check counts only in `total`.
+public struct PRCheckCounts: Codable, Equatable, Sendable {
+    /// The summary of GitHub: SUCCESS, FAILURE, ERROR, PENDING, or EXPECTED. Empty when the head has no checks.
+    public var state: String
+    public var total: Int
+    public var passed: Int
+    public var failed: Int
+    public var running: Int
+    /// The checks that wait for a person, such as a workflow that needs approval.
+    public var waiting: Int
+}
+
+/// A check of a PR that failed.
+public struct FailedCheck: Codable, Equatable, Sendable {
+    /// A GitHub Actions job has its workflow name first, such as "lint / swiftformat".
+    public var name: String
+    /// The page of the check, with its log.
+    public var url: String
+    /// The run time in seconds. Zero when GitHub gives no start or end.
+    public var duration: Int
+    /// True when the base branch needs the check to pass before a merge.
+    public var required: Bool
 }
 
 public struct WorktreeNewResult: Codable, Equatable, Sendable {

@@ -595,6 +595,18 @@
     "schema": "worktree-list"
   },
   {
+    "name": "worktree_list_stages",
+    "args": [
+      "worktree",
+      "list",
+      "plotaaaaab",
+      "--refresh",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "worktree-list"
+  },
+  {
     "name": "archive",
     "args": [
       "archive",

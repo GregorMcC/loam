@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/GregorMcC/loam/core/internal/session"
+	"github.com/GregorMcC/loam/core/internal/worktree"
 	"github.com/google/jsonschema-go/jsonschema"
 )
 
@@ -323,6 +324,43 @@ func TestContractPaneEvents(t *testing.T) {
 	for _, ev := range want {
 		if !strings.Contains(section, "| `"+ev+"` |") {
 			t.Errorf("'Pane socket' in docs/contract.md has no row for %s", ev)
+		}
+	}
+}
+
+// The stages and the PR notes in the code and in schema/defs.json are the same.
+func TestContractStagesAndNotes(t *testing.T) {
+	var defs struct {
+		Defs struct {
+			WorktreeStatus struct {
+				Properties struct {
+					Stage  struct{ Enum []string } `json:"stage"`
+					PRNote struct{ Enum []string } `json:"pr_note"`
+				} `json:"properties"`
+			} `json:"worktreeStatus"`
+		} `json:"$defs"`
+	}
+	if err := json.Unmarshal(readFile(t, "schema", "defs.json"), &defs); err != nil {
+		t.Fatal(err)
+	}
+	stages := []string{string(worktree.StageNone)}
+	for _, s := range worktree.Stages {
+		stages = append(stages, string(s))
+	}
+	notes := []string{""}
+	for _, n := range worktree.PRNotes {
+		notes = append(notes, string(n))
+	}
+	props := defs.Defs.WorktreeStatus.Properties
+	for _, c := range []struct {
+		field     string
+		got, want []string
+	}{{"stage", props.Stage.Enum, stages}, {"pr_note", props.PRNote.Enum, notes}} {
+		got := append([]string{}, c.got...)
+		sort.Strings(got)
+		sort.Strings(c.want)
+		if !reflect.DeepEqual(got, c.want) {
+			t.Errorf("schema/defs.json lists %s %q, and the code has %q", c.field, got, c.want)
 		}
 	}
 }
