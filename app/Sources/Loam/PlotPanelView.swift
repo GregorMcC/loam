@@ -618,6 +618,10 @@ struct BriefText: View {
                 return .handled
             }
             .onKeyPress(.escape) {
+                // During input method composition, Escape cancels the composed text.
+                if let editor = (window.window ?? NSApp.keyWindow)?.firstResponder as? NSTextView, editor.hasMarkedText() {
+                    return .ignored
+                }
                 focused = false
                 Task { model.onEditorClosed?() }
                 return .handled
