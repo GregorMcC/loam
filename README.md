@@ -137,6 +137,7 @@ Every release must use the same certificate, because macOS keeps a person's fold
 | ⌘P | Quick switcher |
 | ⌘J | Actions menu |
 | ⌘L | Next pane that needs you |
+| ⇧⌘L | Next worktree that is ready to merge |
 | ⌃1 to ⌃9 | Go to plot 1 to 9 |
 | ⌘N | New plot |
 | ⌘B | Show or hide the sidebar |

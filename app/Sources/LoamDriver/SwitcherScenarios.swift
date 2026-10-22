@@ -25,7 +25,7 @@ extension Scenarios {
 
     /// Performs the menu item whose key and modifiers equal these. `NSMenu.performKeyEquivalent`
     /// with a synthetic event ignores Shift, so ⌘P would run the ⌘⇧P item. This picks the item by its own key.
-    private static func pressExactMenuKey(_ key: String, _ mask: NSEvent.ModifierFlags) throws {
+    static func pressExactMenuKey(_ key: String, _ mask: NSEvent.ModifierFlags) throws {
         func find(_ menu: NSMenu) -> NSMenuItem? {
             for item in menu.items {
                 if item.keyEquivalent == key, item.keyEquivalentModifierMask == mask, item.action != nil { return item }

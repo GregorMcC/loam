@@ -212,6 +212,38 @@ struct DriverTests {
         ])
     }
 
+    /// The core's fake `gh`, built from ../core: LOAM_DRIVER_FAKE_GH, else a build in a temp folder.
+    static let fakeGH: String = {
+        if let path = ProcessInfo.processInfo.environment["LOAM_DRIVER_FAKE_GH"] { return path }
+        let core = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("core")
+        let out = FileManager.default.temporaryDirectory.appendingPathComponent("loam-driver-fakegh-\(UUID().uuidString)")
+        let build = Process()
+        build.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        build.arguments = ["go", "build", "-o", out.path, "./internal/testutil/fakegh"]
+        build.currentDirectoryURL = core
+        do { try build.run() } catch { fatalError("go build did not start: \(error)") }
+        build.waitUntilExit()
+        if build.terminationStatus != 0 { fatalError("go build of the fake gh failed with \(build.terminationStatus)") }
+        return out.path
+    }()
+
+    /// Ticket 107: two plots with a worktree each that is ready to merge. The Ready to merge row counts 2,
+    /// ⌘⇧L selects the first, then the second, then the first again, and the row goes while gh is missing.
+    @Test func reachesTheWorktreesThatAreReadyToMergeWithCommandShiftL() async throws {
+        try await expectPass("ready-to-merge", environment: [
+            "LOAM_DRIVER_LOAM": Self.loamBinary, "LOAM_DRIVER_FAKE_GH": Self.fakeGH,
+        ])
+    }
+
+    /// Ticket 107: a worktree row that no repo row holds sits right under its plot. ⌘⇧L selects it, and the
+    /// row shows as selected, as a row under a repo row does.
+    @Test func selectsAWorktreeRowThatSitsUnderItsPlot() async throws {
+        try await expectPass("ready-to-merge-homeless", environment: [
+            "LOAM_DRIVER_LOAM": Self.loamBinary, "LOAM_DRIVER_FAKE_GH": Self.fakeGH,
+        ])
+    }
+
     /// Ticket 96: hover a tab that is not selected and click its `x`: the tab goes and the selection stays.
     /// The `x` of a tab with a session that is mid-turn shows the close question first.
     @Test func closesATabFromItsHoverClose() async throws {

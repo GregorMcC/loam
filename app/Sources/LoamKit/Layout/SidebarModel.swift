@@ -72,6 +72,11 @@ public struct SidebarModel: Equatable, Sendable {
         public var missing: Bool
         public var changed: Int
         public var unpushed: Int
+        /// The PR number and stage symbol, else the ✎ mark for local work, else nil (ticket 107).
+        public var mark: StageMark? = nil
+
+        /// The worktree has a PR at the Ready to merge stage.
+        public var isReadyToMerge: Bool { mark?.stage == .readyToMerge }
     }
 
     /// A tab of 2 or more panes in one checkout. It groups those panes in the tree. A tab of one
@@ -163,6 +168,8 @@ public struct SidebarModel: Equatable, Sendable {
         case home
         case plot(String)
         case pane(PaneID)
+        /// A worktree row, by worktree ID. ⌘⇧L selects it when the worktree has no pane (ticket 107).
+        case worktree(String)
     }
 
     public let plots: [PlotSummary]
@@ -193,15 +200,28 @@ public struct SidebarModel: Equatable, Sendable {
     public let elsewhereNeedYou: Int
     /// The tree under each plot (ticket 71). Every plot has one. The view opens the active plot.
     public let trees: [String: PlotTree]
-    /// Where you are: the focused pane of the active space, else the active space. The list selects it.
+    /// Every worktree of the plots in the sidebar, in sidebar order: plots with panes, then the others,
+    /// and in each plot the order of its tree (ticket 107). Archived plots are not in it.
+    public let orderedWorktrees: [WorktreeRow]
+    /// The "Ready to merge" row shows while `gh` works and a worktree has a PR (ticket 107). `gh` does
+    /// not work when a worktree says `gh_missing` or `gh_signed_out`: the stages are then old, or local.
+    public let showsReadyToMerge: Bool
+    /// The worktrees with a PR at the Ready to merge stage, in sidebar order. Empty while the row is hidden.
+    public let readyToMerge: [WorktreeRow]
+    /// The count on the Ready to merge row.
+    public var readyToMergeCount: Int { readyToMerge.count }
+    /// Where you are: the selected worktree (⌘⇧L), else the focused pane of the active space, else the
+    /// active space. The list selects it.
     public let selection: RowID?
 
     /// `arriving`: the panes that just started to need you (`AppModel.arrivingPanes`).
     /// `repos`: the repos of each plot with their branches, main repo first (`AppModel.repoCheckouts`).
     /// A plot with no entry has no repos. `titles`: the titles that the terminals set (`AppModel.terminalTitles`).
+    /// `selectedWorktree`: the worktree that ⌘⇧L selected (`AppModel.selectedWorktree`). It selects its row
+    /// only while it is a worktree of the active plot.
     public init(plots: [PlotSummary], workspace: Workspace, collapsed: Bool, newChangeCounts: [String: Int] = [:],
                 worktrees: [String: [WorktreeStatus]] = [:], arriving: Set<PaneID> = [],
-                repos: [String: [RepoCheckout]] = [:], titles: [PaneID: String] = [:]) {
+                repos: [String: [RepoCheckout]] = [:], titles: [PaneID: String] = [:], selectedWorktree: String? = nil) {
         self.plots = plots
         var panesIn: [String: Int] = [:]
         for id in workspace.allPaneIDs {
@@ -211,7 +231,7 @@ public struct SidebarModel: Equatable, Sendable {
             list.map {
                 WorktreeRow(id: $0.worktree.id, plotID: $0.worktree.plotID, name: $0.worktree.name,
                             branch: $0.worktree.branch, repo: $0.worktree.repo, paneCount: panesIn[$0.worktree.id] ?? 0,
-                            missing: $0.missing, changed: $0.changed, unpushed: $0.unpushed)
+                            missing: $0.missing, changed: $0.changed, unpushed: $0.unpushed, mark: StageMark($0))
             }
         }
         self.collapsed = collapsed
@@ -259,8 +279,19 @@ public struct SidebarModel: Equatable, Sendable {
             all[entry.key] = Self.tree(of: entry.key, panes: entry.value, workspace: workspace,
                                        worktrees: worktreeRows[entry.key] ?? [], repos: repos[entry.key] ?? [])
         }
-        selection = activeSpace.map { space in
-            focused.map(RowID.pane) ?? space.plotID.map(RowID.plot) ?? .home
+        let treeOfPlot = self.trees
+        let ordered = (withPanes + noPanes).flatMap { treeOfPlot[$0.id]?.allCheckouts.compactMap(\.worktree) ?? [] }
+        orderedWorktrees = ordered
+        // The row needs `gh` to work and a PR to show. A worktree of an archived plot does not count.
+        let statuses = plots.flatMap { worktrees[$0.id] ?? [] }
+        let ghWorks = !statuses.contains { $0.prNote == .ghMissing || $0.prNote == .ghSignedOut }
+        showsReadyToMerge = ghWorks && statuses.contains { $0.pr != nil }
+        readyToMerge = showsReadyToMerge ? ordered.filter(\.isReadyToMerge) : []
+        selection = activeSpace.map { space -> RowID in
+            if let selectedWorktree, ordered.contains(where: { $0.id == selectedWorktree && $0.plotID == space.plotID }) {
+                return .worktree(selectedWorktree)
+            }
+            return focused.map(RowID.pane) ?? space.plotID.map(RowID.plot) ?? .home
         }
         let spaces = [(space: Space.home, name: Space.homeName)] + plots.map { (space: Space.plot($0.id), name: $0.name) }
         needsYou = spaces.flatMap { space, name in
@@ -378,6 +409,12 @@ public struct SidebarModel: Equatable, Sendable {
     /// The checkout that holds the pane. Nil for a pane that sits right under its plot, or an unknown pane.
     public func checkout(holding pane: PaneID) -> CheckoutRow? {
         trees.values.lazy.flatMap(\.allCheckouts).first { $0.panes.contains { $0.id == pane } }
+    }
+
+    /// The repo row that lists the worktree (ticket 92). Nil for a worktree right under its plot, and for an
+    /// unknown worktree.
+    public func repoRow(holding worktree: String) -> CheckoutRow? {
+        trees.values.lazy.flatMap(\.checkouts).first { $0.worktrees.contains { $0.id == worktree } }
     }
 
     /// The tab row that holds the pane. Nil for a pane that has no tab row, or an unknown pane.
@@ -527,9 +564,10 @@ public struct SidebarDisclosure: Equatable, Sendable {
 
 /// The rule behind a click on "Needs you" or "Done, unread" (ticket 86): the next pane in a state
 /// after the focused pane, in sidebar order, round to the start. With no focused pane in the order,
-/// the first pane in the state. Nil when no pane is in the state.
+/// the first pane in the state. Nil when no pane is in the state. The "Ready to merge" row uses it
+/// for worktrees (ticket 107).
 public enum AttentionCycle {
-    public static func next(order: [PaneID], matching: Set<PaneID>, after current: PaneID?) -> PaneID? {
+    public static func next<ID: Hashable>(order: [ID], matching: Set<ID>, after current: ID?) -> ID? {
         guard !matching.isEmpty else { return nil }
         guard let current, let i = order.firstIndex(of: current) else { return order.first(where: matching.contains) }
         return (order[(i + 1)...] + order[...i]).first(where: matching.contains)

@@ -89,11 +89,18 @@ struct SidebarView: View {
         // No ground of its own: the system's glass sidebar shows through (ticket 68).
         .scrollContentBackground(.hidden)
         .onChange(of: sidebar.activeSpace, initial: true) { _, space in disclosure.activeSpaceChanged(to: space) }
-        // A focus change that lands in a closed checkout or tab opens it, so the selected row shows.
+        // A focus change that lands in a closed checkout or tab opens it, so the selected row shows. So does
+        // a selected worktree (⌘⇧L) under a closed repo row.
         .onChange(of: sidebar.selection) { _, selected in
-            guard case .pane(let pane) = selected else { return }
-            if let checkout = sidebar.checkout(holding: pane) { disclosure.setCheckout(checkout.id, open: true) }
-            if let tab = sidebar.tab(holding: pane) { disclosure.setTab(tab.id, open: true) }
+            switch selected {
+            case .pane(let pane):
+                if let checkout = sidebar.checkout(holding: pane) { disclosure.setCheckout(checkout.id, open: true) }
+                if let tab = sidebar.tab(holding: pane) { disclosure.setTab(tab.id, open: true) }
+            case .worktree(let worktree):
+                if let repo = sidebar.repoRow(holding: worktree) { disclosure.setCheckout(repo.id, open: true) }
+            case .home, .plot, nil:
+                break
+            }
         }
         // The main checkout labels: again when the plot list moves or a repo changes.
         .task(id: MainCheckoutKey(plots: model.plots.map(\.id), lastRepoChange: model.review.lastRepoChangeID)) {
@@ -108,6 +115,7 @@ struct SidebarView: View {
         case .home: model.activateHome()
         case .plot(let plot): model.activate(plot: plot)
         case .pane(let pane): model.goToPane(pane)
+        case .worktree(let worktree): model.goToWorktree(worktree)
         }
     }
 
@@ -171,10 +179,13 @@ struct SidebarView: View {
     }
 
     /// A repo row, then its panes and its worktrees when it is open (ticket 92). A worktree row that
-    /// sits right under the plot, because its repo has no row, shows the same way.
+    /// sits right under the plot, because its repo has no row, draws as `worktreeNode` does, so ⌘⇧L can
+    /// select it (ticket 107).
     @ViewBuilder
     private func checkoutNode(_ checkout: SidebarModel.CheckoutRow, _ sidebar: SidebarModel) -> some View {
-        if checkout.panes.isEmpty && checkout.worktrees.isEmpty {
+        if checkout.kind == .worktree {
+            worktreeNode(checkout, sidebar)
+        } else if checkout.panes.isEmpty && checkout.worktrees.isEmpty {
             CheckoutRowView(row: checkout, model: model, open: false)
         } else {
             DisclosureGroup(isExpanded: checkoutOpen(checkout.id)) {
@@ -190,14 +201,18 @@ struct SidebarView: View {
     /// itself, because an opaque view type cannot recurse.
     @ViewBuilder
     private func worktreeNode(_ worktree: SidebarModel.CheckoutRow, _ sidebar: SidebarModel) -> some View {
+        let id = SidebarModel.RowID.worktree(worktree.id)
+        let selected = sidebar.selection == id
         if worktree.panes.isEmpty {
-            CheckoutRowView(row: worktree, model: model, open: false)
+            CheckoutRowView(row: worktree, model: model, open: false, selected: selected)
+                .listRowBackground(rowFill(id, sidebar))
         } else {
             DisclosureGroup(isExpanded: checkoutOpen(worktree.id)) {
                 ForEach(worktree.items) { itemNode($0, sidebar) }
             } label: {
-                CheckoutRowView(row: worktree, model: model, open: disclosure.isOpen(checkout: worktree.id))
+                CheckoutRowView(row: worktree, model: model, open: disclosure.isOpen(checkout: worktree.id), selected: selected)
             }
+            .listRowBackground(rowFill(id, sidebar))
         }
     }
 
@@ -427,19 +442,23 @@ private extension View {
 
 /// A repo of the plot (`arrow.triangle.branch`) or a worktree (`arrow.triangle.pull`), named by its
 /// branch. In a plot with more than one repo, a repo row shows its folder and then its branch
-/// (ticket 76). A worktree shows a mark for work that removal would lose. A closed row counts its
-/// panes. A click shows its pane, or opens a session when it has none.
+/// (ticket 76). A worktree shows its PR number and stage symbol, else a mark for work that removal
+/// would lose (ticket 107). A closed row counts its panes. A click shows its pane, or opens a
+/// session when it has none.
 private struct CheckoutRowView: View {
     let row: SidebarModel.CheckoutRow
     let model: AppModel
     /// The row shows its panes, so it needs no count.
     let open: Bool
+    /// ⌘⇧L selected the worktree, which has no pane to take the selection.
+    var selected = false
 
     private var missing: Bool { row.worktree?.missing ?? false }
 
     var body: some View {
         TreeRow(icon: .symbol(row.kind == .worktree ? "arrow.triangle.pull" : "arrow.triangle.branch"),
-                title: row.label, titleColor: missing ? LoamColor.inkFaint : LoamColor.inkMuted, truncation: .middle) {
+                title: row.label, titleColor: missing ? LoamColor.inkFaint : selected ? LoamColor.ink : LoamColor.inkMuted,
+                truncation: .middle) {
             if let detail = row.detail {
                 Text(detail)
                     .loamText(LoamTheme.captionStyle, LoamColor.inkFaint)
@@ -448,13 +467,14 @@ private struct CheckoutRowView: View {
             }
             if missing {
                 Text("gone").loamText(LoamTheme.captionStyle, LoamColor.inkFaint)
-            } else if let worktree = row.worktree, worktree.changed > 0 || worktree.unpushed > 0 {
-                Text("\u{270E}").loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+            } else if let mark = row.worktree?.mark {
+                WorktreeMarkView(mark: mark)
             }
             if !open, !row.panes.isEmpty {
                 CountChip(text: "\(row.panes.count)")
             }
         }
+        .help(row.worktree?.mark?.tooltip ?? "")
         .onTapGesture { show() }
         .contextMenu {
             Button("New pane") { newPane() }
@@ -463,6 +483,7 @@ private struct CheckoutRowView: View {
             }
         }
         .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityAction { show() }
         .accessibilityIdentifier(identifier)
     }
@@ -565,7 +586,8 @@ private struct PaneRowView: View {
 
 /// The top of the sidebar (ticket 86), under the window buttons: a search button that looks like a
 /// field, then two fixed attention rows. A click on an attention row goes to the next pane in that
-/// state, across plots. With a count of 0 the row shows no count and does nothing.
+/// state, across plots. With a count of 0 the row shows no count and does nothing. The "Ready to
+/// merge" row of ticket 107 follows them, and goes to the next ready worktree.
 private struct SidebarTop: View {
     let model: AppModel
     let sidebar: SidebarModel
@@ -604,9 +626,16 @@ private struct SidebarTop: View {
                              action: { model.goToNextPane(in: .doneUnread) }) {
                     AttentionDot(mark: .unread).frame(width: 8, height: 8)
                 } trailing: {
-                    Text("\(sidebar.doneUnreadCount)")
-                        .font(.system(size: 12)).monospacedDigit()
-                        .foregroundStyle(LoamColor.inkFaint)
+                    PlainCount(count: sidebar.doneUnreadCount)
+                }
+                // Ship state, not an alert: the symbol is `ink-muted` and the count is plain (ADR 0007).
+                if sidebar.showsReadyToMerge {
+                    AttentionRow(title: WorktreeStage.readyToMerge.words, count: sidebar.readyToMergeCount,
+                                 id: "attention-ready-to-merge", action: { model.goToNextReadyWorktree() }) {
+                        StageGlyph(stage: .readyToMerge, color: LoamColor.inkMuted)
+                    } trailing: {
+                        PlainCount(count: sidebar.readyToMergeCount)
+                    }
                 }
             }
             .padding(.top, 10)
@@ -648,6 +677,16 @@ private struct AttentionRow<Mark: View, Trailing: View>: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(count > 0 ? "\(title): \(count)" : title)
         .accessibilityIdentifier(id)
+    }
+}
+
+/// The count on a fixed row that is not an alert: 12 pt, `ink-faint`.
+private struct PlainCount: View {
+    let count: Int
+    var body: some View {
+        Text("\(count)")
+            .font(.system(size: 12)).monospacedDigit()
+            .foregroundStyle(LoamColor.inkFaint)
     }
 }
 

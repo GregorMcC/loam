@@ -21,7 +21,7 @@ extension Scenarios {
     }
 
     /// Runs git in a folder with no global config, so the host's signing and hooks do not matter.
-    private static func git(_ folder: URL, _ args: [String]) throws {
+    static func git(_ folder: URL, _ args: [String]) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.arguments = ["-c", "user.name=Driver", "-c", "user.email=driver@example.com",

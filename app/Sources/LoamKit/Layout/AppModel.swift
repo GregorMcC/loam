@@ -32,10 +32,24 @@ public final class AppModel {
                 let live = Set(storedWorkspace.allPaneIDs)
                 terminalTitles = terminalTitles.filter { live.contains($0.key) }
             }
+            // A move of the focus or of the active space ends the selection of a worktree row (ticket 107).
+            if storedWorkspace.focusedPane != oldValue.focusedPane || storedWorkspace.activeSpace != oldValue.activeSpace {
+                endWorktreeSelection()
+            }
             attentionChanged()
             onWorkspaceChange?()
             saveLayout()
         }
+    }
+    /// The worktree row that ⌘⇧L selected, for a worktree that has no pane to focus (ticket 107). It stays
+    /// until the focus or the active space moves, or until an explicit focus of a pane or activation of a
+    /// plot, even when that pane or plot is the one you are in (`endWorktreeSelection`).
+    public private(set) var selectedWorktree: String?
+
+    /// Ends the selection of a worktree row. A click on the focused pane or on the active plot moves
+    /// nothing in the workspace, so the workspace cannot tell that the selection is over.
+    private func endWorktreeSelection() {
+        if selectedWorktree != nil { selectedWorktree = nil }
     }
     /// The worktrees of each plot with their checks, as the core last listed them.
     public private(set) var worktrees: [String: [WorktreeStatus]] = [:] { didSet { if worktrees != oldValue { onWorkspaceChange?() } } }
@@ -133,7 +147,7 @@ public final class AppModel {
         SidebarModel(
             plots: plots, workspace: workspace, collapsed: sidebarCollapsed,
             newChangeCounts: review.sidebarCounts(activePlot: workspace.activePlotID), worktrees: worktrees,
-            arriving: arrivingPanes(), repos: repoCheckouts, titles: terminalTitles)
+            arriving: arrivingPanes(), repos: repoCheckouts, titles: terminalTitles, selectedWorktree: selectedWorktree)
     }
 
     /// ⌘I. Closing the panel marks the changes of the active plot as seen.
@@ -439,6 +453,7 @@ public final class AppModel {
     public func activateHome() { activate(.home) }
 
     private func activate(_ space: Space) {
+        endWorktreeSelection()
         // A switch with the panel open marks the plot that you leave as seen.
         if panel.visible, space != workspace.activeSpace { review.markSeen(plot: workspace.activePlotID) }
         workspace.activate(space)
@@ -712,6 +727,43 @@ public final class AppModel {
         return true
     }
 
+    // MARK: Ready to merge (ticket 107)
+
+    /// ⌘⇧L: the next worktree at the Ready to merge stage after the current one, in sidebar order, round
+    /// to the start. The current worktree is the one that you selected, else the one that holds the
+    /// focused pane. Nil when no worktree is ready.
+    public func nextReadyWorktree() -> SidebarModel.WorktreeRow? {
+        let sidebar = self.sidebar
+        let current = selectedWorktree ?? workspace.focusedPane.flatMap { sidebar.checkout(holding: $0)?.worktree?.id }
+        let next = AttentionCycle.next(order: sidebar.orderedWorktrees.map(\.id), matching: Set(sidebar.readyToMerge.map(\.id)),
+                                       after: current)
+        return sidebar.readyToMerge.first { $0.id == next }
+    }
+
+    /// ⌘⇧L and a click on the "Ready to merge" row: goes to the next ready worktree, in any plot.
+    /// Returns false when no worktree is ready.
+    @discardableResult
+    public func goToNextReadyWorktree() -> Bool {
+        guard let row = nextReadyWorktree() else { return false }
+        goToWorktree(row.id)
+        // The one place that ticket 109 extends with "and opens its PR popover".
+        return true
+    }
+
+    /// Makes the plot of the worktree active and selects its row. A worktree with a pane gives its first
+    /// pane in the sidebar the focus, and that pane is the selection then. Does nothing for a worktree
+    /// that the sidebar does not list.
+    public func goToWorktree(_ id: String) {
+        let sidebar = self.sidebar
+        guard let row = sidebar.orderedWorktrees.first(where: { $0.id == id }) else { return }
+        if let pane = sidebar.tree(of: row.plotID).allCheckouts.first(where: { $0.id == id })?.panes.first {
+            goToPane(pane.id)  // The focus of the pane ends any selection of a worktree row.
+        } else {
+            if workspace.activePlotID != row.plotID { activate(plot: row.plotID) }
+            selectedWorktree = id
+        }
+    }
+
     /// The panes that started to need you less than `arrivalWindow` ago. Their dots play the halo.
     public func arrivingPanes(at now: Date = Date()) -> Set<PaneID> {
         Set(needsYouSince.filter { now.timeIntervalSince($0.value) < Self.arrivalWindow }.keys)
@@ -827,6 +879,7 @@ public final class AppModel {
     public func previousTab() { if let space = workspace.activeSpace { workspace.previousTab(in: space) } }
 
     public func focus(_ pane: PaneID) {
+        endWorktreeSelection()
         let changed = workspace.spec(of: pane).flatMap { workspace.selectedTab(of: $0.space) }?.focused != pane
         workspace.focus(pane)
         if changed { useTimes?.record(SwitcherItem.paneKey(pane.uuidString)) }
@@ -854,6 +907,7 @@ public final class AppModel {
     /// Ghostty `goto_split`, in the selected tab of the active space.
     public func focusPane(_ step: AppCommand.PaneStep) {
         guard let space = workspace.activeSpace else { return }
+        endWorktreeSelection()
         switch step {
         case .next: workspace.focusNextPane(in: space)
         case .previous: workspace.focusPreviousPane(in: space)
