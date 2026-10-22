@@ -126,5 +126,6 @@ public struct StageMark: Equatable, Sendable {
         self.spoken = spoken
     }
 
-    private static func numberText(_ number: Int) -> String { "#\(number)" }
+    /// "#16".
+    static func numberText(_ number: Int) -> String { "#\(number)" }
 }

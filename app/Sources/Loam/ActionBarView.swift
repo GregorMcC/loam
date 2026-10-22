@@ -8,6 +8,8 @@ struct ActionBarView: View {
     let bar: ActionBarModel
     let review: ReviewModel
     let app: AppModel
+    /// Tells the window where the chip is, for a popover that a key opens.
+    let chipProbe: AnchorProbe
     /// The keycaps of New session and of Actions, from the menu bar.
     let newSessionKeys: () -> [String]
     let actionsKeys: () -> [String]
@@ -15,19 +17,26 @@ struct ActionBarView: View {
     let toggleActions: () -> Void
 
     static let height: CGFloat = 40
+    /// The room left of the plot name.
+    static let leadingInset: CGFloat = 16
 
     var body: some View {
         HStack(spacing: 8) {
+            // The toast and the PR chip share the place after the pane label, and the toast wins while it
+            // shows. A narrow bar drops the toast, then the words of the chip. A bar that still has no room
+            // cuts the pane label short, so the chip stays and the buttons stay in view.
             ViewThatFits(in: .horizontal) {
-                context(withToast: true)
-                context(withToast: false)
+                context(bar.trailing, words: true)
+                context(chipOnly, words: true)
+                context(chipOnly, words: false)
+                context(chipOnly, words: false, cutsLabel: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             BarButton(title: "New session", keys: newSessionKeys(), id: "action-bar-new-session", isOn: false, action: newSession)
             LoamColor.ink.opacity(0.13).frame(width: 1, height: 16)
             BarButton(title: "Actions", keys: actionsKeys(), id: "action-bar-actions", isOn: bar.menu.isOpen, action: toggleActions)
         }
-        .padding(.leading, 16)
+        .padding(.leading, Self.leadingInset)
         .padding(.trailing, 8)
         .frame(height: Self.height)
         // The fade-out timer runs here, not on the toast: in a narrow bar the toast does not show,
@@ -46,7 +55,11 @@ struct ActionBarView: View {
         .accessibilityIdentifier("action-bar")
     }
 
-    private func context(withToast: Bool) -> some View {
+    private var chipOnly: ActionBarModel.Trailing { bar.chip.map { .chip($0) } ?? .nothing }
+
+    /// `cutsLabel` lets the pane label end in an ellipsis. The other variants keep their full size, so
+    /// `ViewThatFits` can tell whether they fit.
+    private func context(_ trailing: ActionBarModel.Trailing, words: Bool, cutsLabel: Bool = false) -> some View {
         HStack(spacing: 6) {
             LoamIconView(icon: bar.isHome ? .home : .plot, size: 12, color: LoamColor.moss)
                 .padding(.trailing, 2)
@@ -59,9 +72,11 @@ struct ActionBarView: View {
                 Text(bar.paneLabel)
                     .font(.system(size: 12.5))
                     .foregroundStyle(LoamColor.inkMuted)
+                    .layoutPriority(-1)
                     .accessibilityIdentifier("action-bar-pane")
             }
-            if withToast, let toast = bar.toast {
+            switch trailing {
+            case .toast(let toast):
                 HStack(spacing: 6) {
                     Image(systemName: "checkmark")
                         .font(.system(size: 10, weight: .semibold))
@@ -72,11 +87,53 @@ struct ActionBarView: View {
                 .transition(.opacity)
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("action-bar-toast")
+            case .chip(let mark):
+                PullRequestChip(mark: mark, words: words, probe: chipProbe) {
+                    if let id = app.focusedWorktree?.id { app.openPullRequest(id, anchor: chipProbe.anchor) }
+                }
+                .fixedSize()
+                .layoutPriority(1)
+                .padding(.leading, 8)
+            case .nothing:
+                EmptyView()
             }
         }
         .lineLimit(1)
-        .fixedSize()
-        .animation(LoamAnimation.fast, value: bar.toast)
+        .fixedSize(horizontal: !cutsLabel, vertical: true)
+        .animation(LoamAnimation.fast, value: bar.trailing)
+    }
+}
+
+/// The PR of the focused pane's worktree (ticket 109, board 1.1): the number in `ink-muted`, the stage symbol
+/// and, when there is room, the stage in words in the colour of the stage. A click opens the PR popover above it.
+private struct PullRequestChip: View {
+    let mark: StageMark
+    let words: Bool
+    let probe: AnchorProbe
+    let open: () -> Void
+
+    var body: some View {
+        Button(action: open) {
+            HStack(spacing: 6) {
+                if let label = mark.label {
+                    Text(label).font(.system(size: 12.5)).foregroundStyle(LoamColor.inkMuted).monospacedDigit()
+                }
+                StageGlyph(stage: mark.stage, size: 12)
+                if words {
+                    Text(mark.stage.words).font(.system(size: 12.5)).foregroundStyle(LoamColor.stage(mark.tone))
+                }
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 24)
+            .background(LoamColor.inkFill, in: RoundedRectangle(cornerRadius: 7))
+            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(LoamColor.inkHairline))
+            .contentShape(RoundedRectangle(cornerRadius: 7))
+        }
+        .buttonStyle(.plain)
+        .background(AnchorReader(probe: probe))
+        .help(mark.tooltip ?? "")
+        .accessibilityLabel(mark.spoken)
+        .accessibilityIdentifier("action-bar-pr-chip")
     }
 }
 

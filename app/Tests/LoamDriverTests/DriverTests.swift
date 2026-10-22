@@ -186,6 +186,14 @@ struct DriverTests {
         ])
     }
 
+    /// Ticket 109: the chip of the action bar opens the PR popover, which asks about one worktree and runs Re-run failed
+    /// and Update branch through `loam`. Escape gives the keys back. The switcher, the sidebar, ⌘⇧L and the ⌘J menu open it.
+    @Test func opensThePullRequestPopoverFromTheChipAndTheMenus() async throws {
+        try await expectPass("pr-popover", environment: [
+            "LOAM_DRIVER_LOAM": Self.loamBinary, "LOAM_DRIVER_FAKE_GH": Self.fakeGH,
+        ])
+    }
+
     /// Ticket 48: archive a plot with a session, unarchive it and see the session resume, and delete an archived plot.
     /// Ticket 61: an unarchive and show at once still gives one `claude` for the session.
     @Test func archivesUnarchivesAndDeletesAPlot() async throws {

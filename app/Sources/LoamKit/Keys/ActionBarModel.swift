@@ -1,8 +1,8 @@
 import Foundation
 import Observation
 
-/// The bottom action bar (ticket 89): the focused plot and pane on the left, the last change as a
-/// short toast, and the actions menu.
+/// The bottom action bar (ticket 89): the focused plot and pane on the left, then the last change as a
+/// short toast or the PR of the pane's worktree as a chip (ticket 109), and the actions menu.
 @MainActor @Observable
 public final class ActionBarModel {
     /// The active plot. A switch to another plot clears the toast, which named a change of the last one.
@@ -15,11 +15,28 @@ public final class ActionBarModel {
     public var isHome = false
     /// The label of the focused tab: the title of its focused pane.
     public var paneLabel = ""
+    /// The PR of the worktree that the focused pane runs in. Nil for a pane in the main checkout or in Home,
+    /// and for a worktree with no PR.
+    public var chip: StageMark?
     /// The last change of the active plot, such as "Claude set Where it stands". Nil when none shows.
     public private(set) var toast: String?
     /// Counts the toasts, so a fade-out timer clears only its own toast.
     public private(set) var toastID = 0
     public let menu = ActionMenuModel()
+
+    /// What the bar shows after the pane label. The toast and the chip share the place, and the toast wins
+    /// while it shows.
+    public enum Trailing: Equatable, Sendable {
+        case toast(String)
+        case chip(StageMark)
+        case nothing
+    }
+
+    public var trailing: Trailing {
+        if let toast { return .toast(toast) }
+        if let chip { return .chip(chip) }
+        return .nothing
+    }
     /// How long a toast shows before it fades.
     public static let toastSeconds: Double = 6
 

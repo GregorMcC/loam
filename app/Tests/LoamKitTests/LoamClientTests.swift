@@ -93,6 +93,15 @@ struct FakeLoam {
         #expect(fake.args() == ["worktree list plotaaaaab --refresh --json"])
     }
 
+    /// Ticket 109: the PR popover asks about one worktree. The core takes its ID, and the list that comes
+    /// back is the whole plot, so the app shows it as it shows any refresh.
+    @Test func aRefreshCanAskAboutOneWorktree() async throws {
+        let fake = try FakeLoam([("worktree_list_stages", 0)])
+        let rows = try await fake.client().refreshWorktree(plot: "plotaaaaab", worktree: "wtaaaaaaaa")
+        #expect(rows.count == 16)
+        #expect(fake.args() == ["worktree list plotaaaaab --refresh --worktree wtaaaaaaaa --json"])
+    }
+
     @Test func aWorktreeListWithoutRefreshReadsTheCache() async throws {
         let fake = try FakeLoam([("worktree_list", 0), ("worktree_list", 0)])
         _ = try await fake.client().worktrees(plot: "plotaaaaab")

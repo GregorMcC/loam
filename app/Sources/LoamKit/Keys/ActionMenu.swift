@@ -14,9 +14,9 @@ public struct ActionItem: Equatable, Sendable, Identifiable {
     public var id: AppCommand { command }
 }
 
-/// A section of the actions menu: the focused pane, a move to a plot, the active plot, or Home.
+/// A section of the actions menu: the focused pane, its worktree, a move to a plot, the active plot, or Home.
 public struct ActionSection: Equatable, Sendable, Identifiable {
-    /// "pane", "move", "plot", or "home". Not the title: a pane and its plot can have the same name.
+    /// "pane", "worktree", "move", "plot", or "home". Not the title: a pane and its plot can have the same name.
     public var id: String
     public var title: String
     public var items: [ActionItem]
@@ -41,6 +41,12 @@ public enum ActionMenu {
         Entry(command: .closePane, title: "Close pane", symbol: "xmark"),
     ]
 
+    /// The worktree of the focused pane (ticket 109).
+    static let worktreeEntries = [
+        Entry(command: .openWorktreePullRequest, title: "Open pull request", symbol: "arrow.triangle.pull"),
+        Entry(command: .refreshWorktree, title: "Refresh", symbol: "arrow.clockwise"),
+    ]
+
     static let plotEntries = [
         Entry(command: .newPlotSession, title: "New session in plot", symbol: "play"),
         Entry(command: .editBrief, title: "Edit brief", symbol: "pencil"),
@@ -61,12 +67,24 @@ public enum ActionMenu {
             + [Entry(command: .moveTabToNewPlot, title: "Move to New Plot…", symbol: "plus.square")]
     }
 
-    /// The sections for the focused pane, a move to a plot, the active plot, and Home. `chord` gives
-    /// the key of a command as the menu bar shows it, `isEnabled` whether its menu item is enabled.
-    /// `inHome` leaves out the Home section, because its rows would repeat "New session" and ⌘⌥T,
+    /// What the actions menu needs to know about the worktree of the focused pane.
+    public struct WorktreeFacts: Equatable, Sendable {
+        /// The title of the section.
+        public var branch: String
+
+        public init(branch: String) {
+            self.branch = branch
+        }
+    }
+
+    /// The sections for the focused pane, its worktree, a move to a plot, the active plot, and Home.
+    /// `worktree` is nil for a pane that runs in no worktree, and then the menu has no worktree section.
+    /// `chord` gives the key of a command as the menu bar shows it, `isEnabled` whether its menu item is
+    /// enabled. `inHome` leaves out the Home section, because its rows would repeat "New session" and ⌘⌥T,
     /// and adds the move of the tab to a plot (ticket 100). `moveTargets` are the plots, in sidebar order.
-    public static func sections(paneTitle: String?, plotName: String?, inHome: Bool = false, moveTargets: [PlotSummary] = [],
-                                chord: (AppCommand) -> KeyChord?, isEnabled: (AppCommand) -> Bool) -> [ActionSection] {
+    public static func sections(paneTitle: String?, plotName: String?, worktree: WorktreeFacts? = nil, inHome: Bool = false,
+                                moveTargets: [PlotSummary] = [], chord: (AppCommand) -> KeyChord?,
+                                isEnabled: (AppCommand) -> Bool) -> [ActionSection] {
         func items(_ entries: [Entry]) -> [ActionItem] {
             entries.filter { isEnabled($0.command) }.map {
                 ActionItem(command: $0.command, title: $0.title, symbol: $0.symbol, keys: keycaps(chord($0.command)))
@@ -74,6 +92,7 @@ public enum ActionMenu {
         }
         return [
             ActionSection(id: "pane", title: paneTitle.flatMap { $0.isEmpty ? nil : $0 } ?? "Pane", items: items(paneEntries)),
+            ActionSection(id: "worktree", title: worktree?.branch ?? "Worktree", items: worktree == nil ? [] : items(worktreeEntries)),
             ActionSection(id: "move", title: "Move to Plot", items: inHome ? items(moveEntries(moveTargets)) : []),
             ActionSection(id: "plot", title: plotName.flatMap { $0.isEmpty ? nil : $0 } ?? "Plot", items: items(plotEntries)),
             ActionSection(id: "home", title: Space.homeName, items: inHome ? [] : items(homeEntries)),
@@ -82,13 +101,17 @@ public enum ActionMenu {
 
     /// Whether a command can run now. The menu bar validates its items with this, so the menu and
     /// the actions list agree. Tab commands need an active space (Home or a plot), pane commands a
-    /// focused pane, and plot commands an active plot. A move to a plot needs a tab in Home.
-    public static func isAvailable(_ command: AppCommand, hasSpace: Bool, hasPlot: Bool, hasPane: Bool) -> Bool {
+    /// focused pane, and plot commands an active plot. A move to a plot needs a tab in Home. The worktree
+    /// commands need a focused pane in a worktree (ticket 109), and Open pull request needs a PR as well.
+    public static func isAvailable(_ command: AppCommand, hasSpace: Bool, hasPlot: Bool, hasPane: Bool,
+                                   hasWorktree: Bool = false, hasPullRequest: Bool = false) -> Bool {
         switch command {
         case .newTab, .newShellTab: hasSpace
         case .newPlotSession, .editBrief, .addLink, .addRepo, .archivePlot, .togglePlotPanel: hasPlot
         case .newSplit, .newShellSplit, .closePane: hasSpace && hasPane
         case .moveTabToPlot, .moveTabToNewPlot: hasSpace && !hasPlot && hasPane
+        case .refreshWorktree: hasWorktree
+        case .openWorktreePullRequest: hasWorktree && hasPullRequest
         default: true
         }
     }

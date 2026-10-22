@@ -93,7 +93,7 @@ extension Scenarios {
     }
 
     /// A repo with one pushed commit, so a worktree starts from origin/main.
-    private static func makeRepo(_ rig: PanelRig, named name: String) throws -> URL {
+    static func makeRepo(_ rig: PanelRig, named name: String) throws -> URL {
         let fm = FileManager.default
         let origin = rig.root.appendingPathComponent("\(name)-origin.git")
         let repo = rig.root.appendingPathComponent(name)
@@ -112,7 +112,7 @@ extension Scenarios {
     }
 
     /// `loam worktree new` through the rig. Returns the ID and the folder.
-    private static func makeWorktree(_ rig: PanelRig, plot: String, repo: URL, name: String) throws -> (id: String, path: String) {
+    static func makeWorktree(_ rig: PanelRig, plot: String, repo: URL, name: String) throws -> (id: String, path: String) {
         let made = try rig.json(["worktree", "new", plot, repo.path, name])["worktree"] as? [String: Any]
         guard let id = made?["id"] as? String, let path = made?["path"] as? String else {
             throw DriverFailure("worktree new \(name) printed no worktree")
@@ -189,11 +189,17 @@ extension Scenarios {
         app.screenshot("marks-and-row-day")
         NSApp.appearance = nil
 
-        // 4. ⌘⇧L selects the first ready worktree, then the second in the other plot, then the first again.
+        // The app read the cache only, so the fake gh got no call after the rig's refresh. ⌘⇧L opens the PR popover
+        // (ticket 109), which asks about its worktree, so this holds up to the first ⌘⇧L.
+        try expect(try ghCalls() == callsBeforeLaunch, "the app called gh")
+
+        // 4. ⌘⇧L selects the first ready worktree, then the second in the other plot, then the first again. Each one
+        // opens the PR popover of its worktree.
         try pressExactMenuKey("l", [.command, .shift])
         try await app.waitUntil("⌘⇧L selects the first") {
             model.workspace.activePlotID == alpha && model.sidebar.selection == .worktree(fixLogin.id)
         }
+        try await app.waitUntil("⌘⇧L opens the popover of the first") { app.exists("pr-popover") && model.prPopover.worktreeID == fixLogin.id }
         // The selected row shows as selected, and its neighbour does not.
         try await app.waitUntil("the first row shows as selected") {
             AccessibilityProbe.shared.isSelected("worktree-\(fixLogin.id)")
@@ -203,6 +209,7 @@ extension Scenarios {
         try await app.waitUntil("⌘⇧L selects the second") {
             model.workspace.activePlotID == beta && model.sidebar.selection == .worktree(linkLabels.id)
         }
+        try await app.waitUntil("⌘⇧L opens the popover of the second") { app.exists("pr-popover") && model.prPopover.worktreeID == linkLabels.id }
         try await app.waitUntil("the marks of Beta plot") {
             app.text(of: "worktree-\(linkLabels.id)")?.contains("#41, Ready to merge, 1 of 1 check passed, Approved") == true
                 && app.text(of: "worktree-\(localWork.id)")?.contains("1 changed") == true
@@ -219,11 +226,9 @@ extension Scenarios {
             model.workspace.activePlotID == beta && model.sidebar.selection == .worktree(linkLabels.id)
         }
 
-        // 5. Ship state is information (ADR 0007): no stage raises Needs you or Done, unread. The app read
-        // the cache only, so the fake gh got no call after the rig's refresh.
+        // 5. Ship state is information (ADR 0007): no stage raises Needs you or Done, unread.
         try expect(model.sidebar.needsYouCount == 0 && model.sidebar.doneUnreadCount == 0, "a stage raised an alert state")
         try expect(app.text(of: "attention-needs-you") == "Needs you", "the Needs you row counts a stage")
-        try expect(try ghCalls() == callsBeforeLaunch, "the app called gh")
 
         // 6. Nothing is ready: the row stays, with no count, and does nothing.
         try ghState(ready: false).write(to: state, atomically: true, encoding: .utf8)

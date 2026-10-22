@@ -50,7 +50,7 @@ public struct SwitcherLink: Equatable, Sendable {
 /// One row of the switcher.
 public struct SwitcherItem: Equatable, Sendable, Identifiable {
     public enum Kind: String, Sendable {
-        case plot, pane, link, action
+        case plot, pane, worktree, link, action
 
         public var label: String { rawValue.uppercased() }
 
@@ -59,6 +59,7 @@ public struct SwitcherItem: Equatable, Sendable, Identifiable {
             switch self {
             case .plot: "Plots"
             case .pane: "Panes"
+            case .worktree: "Worktrees"
             case .link: "Links"
             case .action: "Actions"
             }
@@ -69,6 +70,7 @@ public struct SwitcherItem: Equatable, Sendable, Identifiable {
             switch self {
             case .plot: .plot
             case .pane: .shell
+            case .worktree: .symbol("arrow.triangle.pull")
             case .link: .symbol("link")
             case .action: .action
             }
@@ -81,6 +83,8 @@ public struct SwitcherItem: Equatable, Sendable, Identifiable {
         case plot(String)
         case pane(PaneID)
         case savedPane(SavedPane)
+        /// A worktree with a PR (ticket 109), by its ID.
+        case worktree(String)
         case link(plot: String, link: String)
         case action(String)
     }
@@ -119,11 +123,12 @@ public struct SwitcherItem: Equatable, Sendable, Identifiable {
         self.linkTarget = linkTarget
     }
 
-    /// The kind in words, on the right of the row: "Home", "Plot", "Pane", "Local link", "Action".
+    /// The kind in words, on the right of the row: "Home", "Plot", "Pane", "Worktree", "Local link", "Action".
     public var accessory: String {
         switch kind {
         case .plot: target == .home ? Space.homeName : "Plot"
         case .pane: "Pane"
+        case .worktree: "Worktree"
         case .action: "Action"
         case .link: SwitcherItem.linkKindLabel(linkKind)
         }
@@ -152,6 +157,7 @@ public struct SwitcherItem: Equatable, Sendable, Identifiable {
     }
     public static func paneKey(_ id: String) -> String { "pane:\(id)" }
     public static func linkKey(plot: String, link: String) -> String { "link:\(plot):\(link)" }
+    public static func worktreeKey(_ id: String) -> String { "worktree:\(id)" }
 }
 
 /// An item that matched, with the characters of its title to highlight.

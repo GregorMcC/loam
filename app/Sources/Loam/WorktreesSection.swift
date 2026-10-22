@@ -71,12 +71,14 @@ private struct ShipNoticeCard: View {
 
 // MARK: Rows
 
-/// One worktree: the stage mark, the branch with its PR number, and the status line. The hover menu and
-/// the context menu hold `WorktreeActions`, the same as the sidebar row.
+/// One worktree: the stage mark, the branch with its PR number, and the status line. A click opens the
+/// PR popover (ticket 109). The hover menu and the context menu hold `WorktreeActions`, the same as the
+/// sidebar row.
 private struct WorktreeRowView: View {
     let app: AppModel
     let row: WorktreeStatus
     let timeZone: TimeZone
+    @State private var probe = AnchorProbe()
 
     var body: some View {
         let line = StatusLine(of: row, timeZone: timeZone)
@@ -95,7 +97,7 @@ private struct WorktreeRowView: View {
                             Text("#\(number)").font(.system(size: 13)).foregroundStyle(LoamColor.inkMuted).fixedSize()
                         }
                     }
-                    Self.text(of: line)
+                    statusLineText(line.parts, color: LoamColor.inkMuted, separator: LoamColor.inkMuted)
                         .font(.system(size: 11.5))
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -106,23 +108,21 @@ private struct WorktreeRowView: View {
         } actions: {
             WorktreeActions(model: app, id: row.worktree.id)
         }
+        .background(AnchorReader(probe: probe))
+        .onTapGesture { showPullRequest() }
         .accessibilityLabel(label(line))
         .accessibilityIdentifier("panel-worktree-\(row.worktree.id)")
+        .accessibilityAction { showPullRequest() }
+    }
+
+    private func showPullRequest() {
+        app.openPullRequest(row.worktree.id, anchor: probe.anchor)
     }
 
     /// "native-panel #16, 2 of 3 checks failed · 3 behind main", for VoiceOver and the driver.
     private func label(_ line: StatusLine) -> String {
         let number = row.pr.map { " #\($0.number)" } ?? ""
         return "\(row.worktree.branch)\(number), \(line.text)"
-    }
-
-    /// The parts in `ink-muted`. The failing words are `rust`.
-    private static func text(of line: StatusLine) -> Text {
-        let separator = Text(" \u{00B7} ").foregroundStyle(LoamColor.inkMuted)
-        return line.parts.enumerated().reduce(Text("")) { text, entry in
-            let part = Text(entry.element.text).foregroundStyle(entry.element.failing ? LoamColor.rust : LoamColor.inkMuted)
-            return entry.offset == 0 ? part : Text("\(text)\(separator)\(part)")
-        }
     }
 }
 

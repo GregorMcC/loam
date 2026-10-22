@@ -63,6 +63,13 @@ public enum AppCommand: Hashable, Sendable {
     case addRepo
     case archivePlot
 
+    // The pull request of the focused pane's worktree (ticket 109), in the actions menu only. They have
+    // no menu bar item and no key.
+    /// Opens the PR popover of the worktree.
+    case openWorktreePullRequest
+    /// Asks GitHub about the worktree again.
+    case refreshWorktree
+
     /// A focus move between the panes of the selected tab.
     public enum PaneStep: Hashable, Sendable {
         case previous, next, up, down, left, right

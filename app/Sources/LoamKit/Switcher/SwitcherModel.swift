@@ -9,6 +9,8 @@ import Observation
 /// - Ticket 29 (restore): set `savedPanes` to the panes in `state.json` that have not resumed,
 ///   and `resumeSavedPane` to resume one.
 /// - Ticket 32 (attention): set `attention` to read a live pane's state.
+/// - Ticket 109 (PR popover): a worktree with a PR is an item. Return goes to the worktree and opens its
+///   PR popover.
 @MainActor
 @Observable
 public final class SwitcherModel {
@@ -118,7 +120,13 @@ public final class SwitcherModel {
         return SwitcherPreview.Context(
             plots: details, panes: panes, changes: changes, checkouts: app?.repoCheckouts ?? [:],
             actorText: { [weak app] in app?.review.actorLabel($0).text ?? "" },
-            clock: { ChangeRules.clock($0.at) }, home: NSHomeDirectory())
+            clock: { ChangeRules.clock($0.at) }, home: NSHomeDirectory(), worktrees: listedWorktrees)
+    }
+
+    /// The worktrees of the plots in the sidebar, in plot order.
+    private var listedWorktrees: [WorktreeStatus] {
+        guard let app else { return [] }
+        return app.plots.flatMap { app.worktrees[$0.id] ?? [] }
     }
 
     func buildItems() -> [SwitcherItem] {
@@ -130,14 +138,17 @@ public final class SwitcherModel {
             terminalTitles: app.terminalTitles,
             attention: attention,
             savedPanes: savedPanes().filter { plotNames[$0.plotID] != nil },
+            worktrees: listedWorktrees,
             links: links.filter { plotNames[$0.plotID] != nil },
             actions: actions())
     }
 
-    /// The items in source order: Home, plots, panes, saved panes, links, actions.
-    /// Plots that are not in `plots` (archived ones) have no items.
+    /// The items in source order: Home, plots, panes, saved panes, worktrees, links, actions.
+    /// Plots that are not in `plots` (archived ones) have no items. A worktree is an item when it has a
+    /// PR and its folder is there. Its match text is the PR number and the PR title, so "#142" or a word
+    /// of the title finds it, also when it has no pane.
     static func items(plots: [PlotSummary], workspace: Workspace, terminalTitles: [PaneID: String],
-                      attention: (PaneID) -> PaneAttention, savedPanes: [SavedPane],
+                      attention: (PaneID) -> PaneAttention, savedPanes: [SavedPane], worktrees: [WorktreeStatus] = [],
                       links: [SwitcherLink], actions: [SwitcherAction]) -> [SwitcherItem] {
         let names = Dictionary(plots.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
         let home = SwitcherItem(id: SwitcherItem.homeKey, kind: .plot, title: Space.homeName, target: .home, icon: .home)
@@ -160,6 +171,13 @@ public final class SwitcherModel {
             items.append(SwitcherItem(
                 id: SwitcherItem.paneKey(saved.id), kind: .pane, title: saved.title,
                 otherText: [plotName], plotName: plotName, attention: saved.attention, target: .savedPane(saved)))
+        }
+        for status in worktrees {
+            guard let pr = status.pr, !status.missing, let plotName = names[status.worktree.plotID] else { continue }
+            items.append(SwitcherItem(
+                id: SwitcherItem.worktreeKey(status.worktree.id), kind: .worktree, title: status.worktree.branch,
+                otherText: [StageMark.numberText(pr.number), pr.title, plotName], plotName: plotName,
+                target: .worktree(status.worktree.id)))
         }
         for link in links {
             guard let plotName = names[link.plotID] else { continue }
@@ -241,6 +259,11 @@ public final class SwitcherModel {
             resumeSavedPane(saved)
             useTimes?.record(item.id)
             close()
+        case .worktree(let id):
+            app.goToWorktree(id)
+            useTimes?.record(item.id)
+            close()  // The keyboard goes to the pane first, so the popover remembers it.
+            app.openPullRequest(id)
         case .link(let plot, let link):
             close()
             useTimes?.record(item.id)
