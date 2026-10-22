@@ -582,6 +582,32 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
         send("SessionStart", to: other, model, source: "startup")
         #expect(record.typed.isEmpty)
         #expect(record.notices.last == "Loam did not type a prompt into the new session, because the worktree has nothing to fix now.")
+
+        // The worktree is gone, or its status did not load.
+        #expect(model.sendToSession(failed)?.step == .start)
+        let third = try #require(model.workspace.focusedPane)
+        list.removeAll { $0.worktree.id == failed }
+        try JSONEncoder().encode(list).write(to: rows)
+        await model.reloadWorktrees()
+        send("SessionStart", to: third, model, source: "startup")
+        #expect(record.typed.isEmpty)
+        #expect(record.notices.last == "Loam did not type a prompt into the new session, because it cannot find the worktree now.")
+    }
+
+    /// Start session with prompt opens no pane when the plot of the worktree is not in the list. A notice says so.
+    @Test func aStartThatOpensNoPaneGetsANotice() async throws {
+        let (model, record, rows) = try await rigWithRows()
+        var list = try JSONDecoder().decode([WorktreeStatus].self, from: Data(contentsOf: rows))
+        let i = try #require(list.firstIndex { $0.worktree.id == review })
+        list[i].worktree.plotID = "plotzzzzzz"
+        try JSONEncoder().encode(list).write(to: rows)
+        await model.reloadWorktrees()
+        let before = model.workspace.allPaneIDs
+        #expect(model.sendToSession(review)?.step == .start)
+        #expect(model.workspace.allPaneIDs == before)
+        #expect(record.typed.isEmpty)
+        #expect(record.notices == ["Loam did not open a session in the worktree, so it did not type the prompt. "
+                                   + "Copy the prompt from the PR popover."])
     }
 
     /// The pane can still show the setup question. Loam does not open the popover over it, because Return would then

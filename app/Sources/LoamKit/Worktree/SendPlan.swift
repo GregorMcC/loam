@@ -134,6 +134,16 @@ public struct SendPlan: Equatable, Sendable {
         }
     }
 
+    /// The notice when the worktree of Start session with prompt is gone at the `SessionStart` of the new session,
+    /// or its status did not load.
+    public static let startLostWorktreeToast =
+        "Loam did not type a prompt into the new session, because it cannot find the worktree now."
+
+    /// The notice when Start session with prompt opens no pane, such as when the plot of the worktree is not in
+    /// the list.
+    public static let startNoPaneToast = "Loam did not open a session in the worktree, so it did not type the prompt. "
+        + "Copy the prompt from the PR popover."
+
     /// The notice when the new session sent no `SessionStart` in the 30 seconds of `AppModel.sessionStartWait`. It
     /// names the worktree, because you may work in another pane by then. Nil when the worktree is gone.
     public static func notStartedToast(worktree: String?) -> String {

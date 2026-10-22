@@ -1237,7 +1237,10 @@ public final class AppModel {
             closePullRequest()
             let before = Set(workspace.allPaneIDs)
             openWorktreePane(worktree)
-            guard let pane = workspace.focusedPane, !before.contains(pane) else { return plan }
+            guard let pane = workspace.focusedPane, !before.contains(pane) else {
+                onToast?(SendPlan.startNoPaneToast, .notice)
+                return plan
+            }
             let wait = sessionStartWait
             startPrompts[pane] = (id, Task { [weak self] in
                 try? await Task.sleep(for: wait)
@@ -1272,7 +1275,11 @@ public final class AppModel {
     private func typeStartPrompt(into pane: PaneID) {
         guard let start = startPrompts.removeValue(forKey: pane) else { return }
         start.wait.cancel()
-        guard let prompt = worktreeStatus(start.worktree).flatMap(FixPrompt.init) else {
+        guard let status = worktreeStatus(start.worktree) else {
+            onToast?(SendPlan.startLostWorktreeToast, .notice)
+            return
+        }
+        guard let prompt = FixPrompt(status) else {
             onToast?(SendPlan.startNotTypedToast(nil), .notice)
             return
         }
