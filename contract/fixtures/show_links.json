@@ -4,22 +4,22 @@
   "id": "plotaaaaab",
   "links": [
     {
-      "id": "linkaaaaab",
-      "kind": "url",
-      "label": "Spec v1",
-      "note": "The v1 spec",
-      "position": 1,
-      "target": "https://example.com/spec",
-      "version": 7
-    },
-    {
       "id": "linkaaaaac",
       "kind": "url",
       "label": "Board",
       "note": "",
-      "position": 2,
+      "position": 1,
       "target": "https://example.com/board",
-      "version": 16
+      "version": 17
+    },
+    {
+      "id": "linkaaaaab",
+      "kind": "url",
+      "label": "Spec v1",
+      "note": "The v1 spec",
+      "position": 2,
+      "target": "https://example.com/spec",
+      "version": 7
     },
     {
       "id": "linkaaaaad",
@@ -28,7 +28,7 @@
       "note": "",
       "position": 3,
       "target": "https://www.notion.so/Loam-0123456789abcdef",
-      "version": 18
+      "version": 19
     },
     {
       "id": "linkaaaaae",
@@ -37,7 +37,7 @@
       "note": "",
       "position": 4,
       "target": "https://linear.app/acme/issue/ENG-1/fix",
-      "version": 19
+      "version": 20
     },
     {
       "id": "linkaaaaaf",
@@ -46,7 +46,7 @@
       "note": "",
       "position": 5,
       "target": "https://github.com/GregorMcC/loam",
-      "version": 20
+      "version": 21
     },
     {
       "exists": true,
@@ -56,7 +56,7 @@
       "note": "",
       "position": 6,
       "target": "/tmp/loam-contract/repos/core",
-      "version": 21
+      "version": 22
     },
     {
       "exists": true,
@@ -66,7 +66,7 @@
       "note": "",
       "position": 7,
       "target": "/tmp/loam-contract/vault/note.md",
-      "version": 22
+      "version": 23
     },
     {
       "exists": false,
@@ -76,7 +76,7 @@
       "note": "",
       "position": 8,
       "target": "/tmp/loam-contract/vault/missing.md",
-      "version": 23
+      "version": 24
     }
   ],
   "name": "Loam",
@@ -87,23 +87,23 @@
       "main": true,
       "note": "",
       "path": "/tmp/loam-contract/repos/docs",
-      "version": 15
+      "version": 16
     }
   ],
-  "revision": 23,
+  "revision": 24,
   "versions": {
     "link:linkaaaaab": 7,
-    "link:linkaaaaac": 16,
-    "link:linkaaaaad": 18,
-    "link:linkaaaaae": 19,
-    "link:linkaaaaaf": 20,
-    "link:linkaaaaag": 21,
-    "link:linkaaaaah": 22,
-    "link:linkaaaaai": 23,
-    "links": 0,
+    "link:linkaaaaac": 17,
+    "link:linkaaaaad": 19,
+    "link:linkaaaaae": 20,
+    "link:linkaaaaaf": 21,
+    "link:linkaaaaag": 22,
+    "link:linkaaaaah": 23,
+    "link:linkaaaaai": 24,
+    "links": 8,
     "name": 1,
-    "repo:repoaaaaad": 15,
-    "what": 17,
+    "repo:repoaaaaad": 16,
+    "what": 18,
     "where": 4,
     "why": 4
   },

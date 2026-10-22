@@ -143,6 +143,19 @@
     "schema": "link-edit"
   },
   {
+    "name": "link_move",
+    "args": [
+      "link",
+      "move",
+      "plotaaaaab",
+      "linkaaaaac",
+      "1",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "link-move"
+  },
+  {
     "name": "link_rm",
     "args": [
       "link",
@@ -354,7 +367,7 @@
     "name": "undo",
     "args": [
       "undo",
-      "8",
+      "9",
       "--actor",
       "app",
       "--json"

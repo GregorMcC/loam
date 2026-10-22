@@ -25,22 +25,22 @@
       "id": "plotaaaaab",
       "links": [
         {
-          "id": "linkaaaaab",
-          "kind": "url",
-          "label": "Spec v1",
-          "note": "The v1 spec",
-          "position": 1,
-          "target": "https://example.com/spec",
-          "version": 7
-        },
-        {
           "id": "linkaaaaac",
           "kind": "url",
           "label": "Board",
           "note": "",
-          "position": 2,
+          "position": 1,
           "target": "https://example.com/board",
-          "version": 16
+          "version": 17
+        },
+        {
+          "id": "linkaaaaab",
+          "kind": "url",
+          "label": "Spec v1",
+          "note": "The v1 spec",
+          "position": 2,
+          "target": "https://example.com/spec",
+          "version": 7
         }
       ],
       "name": "Loam",
@@ -51,17 +51,17 @@
           "main": true,
           "note": "",
           "path": "/tmp/loam-contract/repos/docs",
-          "version": 15
+          "version": 16
         }
       ],
-      "revision": 17,
+      "revision": 18,
       "versions": {
         "link:linkaaaaab": 7,
-        "link:linkaaaaac": 16,
-        "links": 0,
+        "link:linkaaaaac": 17,
+        "links": 8,
         "name": 1,
-        "repo:repoaaaaad": 15,
-        "what": 17,
+        "repo:repoaaaaad": 16,
+        "what": 18,
         "where": 4,
         "why": 4
       },
