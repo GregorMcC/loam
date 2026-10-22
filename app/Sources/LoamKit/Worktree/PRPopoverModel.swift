@@ -12,13 +12,14 @@ public enum PopoverAnchor: Equatable, Sendable {
     case actionBar
 }
 
-/// The open PR popover (ticket 109): which worktree it shows, where it opens from, and what its buttons
-/// are doing. `AppModel` owns one, opens it (`openPullRequest`), and runs the buttons. The row that the
-/// popover shows is never kept here: the view reads it from `AppModel.worktreeStatus`, so a refresh of
-/// the ship state changes the open popover.
+/// The open PR popover (ticket 109): which worktree it shows, where it opens from, and what runs for
+/// it. `AppModel` owns one, opens it (`openPullRequest`), and runs the buttons. The row that the popover
+/// shows is never kept here: the view reads it from `AppModel.worktreeStatus`, so a refresh of the ship
+/// state changes the open popover.
 ///
-/// Each open has a number (`openCount`). An answer that comes after the popover closed or opened again
-/// carries the number of its own open and is dropped, so it cannot show in the wrong popover.
+/// A refresh and a button belong to their worktree, not to one open. They go on when the popover closes or
+/// shows another worktree, and a popover that opens again on the worktree shows them still running. Their
+/// answers show only while the popover shows that worktree.
 @MainActor @Observable
 public final class PRPopoverModel {
     /// The worktree that the popover shows. Nil while it is closed.
@@ -26,54 +27,46 @@ public final class PRPopoverModel {
     public private(set) var anchor: PopoverAnchor = .actionBar
     /// Counts the opens, so the view can focus itself on each one.
     public private(set) var openCount = 0
-    /// True while the refresh of this open runs (`loam worktree list --refresh --worktree`).
-    public private(set) var isRefreshing = false
-    /// When GitHub answered the refresh of this open. Nil until it does, and when the refresh failed.
-    public private(set) var answeredAt: Date?
-    /// The button that runs now.
-    public private(set) var running: PRSecondaryAction?
+    /// When the core last answered a refresh of the shown worktree in this open, with GitHub reached or not.
+    /// The offline line names it as the time of the attempt. Nil until the core answers, and after a refresh
+    /// that got no answer from the core.
+    public private(set) var attemptedAt: Date?
     /// What the last button did, or why it failed. It goes when the popover opens again.
     public private(set) var note: String?
+    /// The worktrees whose refresh runs now (`AppModel.refreshWorktree`), shown or not.
+    private var refreshing: Set<String> = []
+    /// The button that runs for each worktree. One runs at a time for a worktree.
+    private var buttons: [String: PRSecondaryAction] = [:]
     /// Called when the popover opens or closes. A new open while it is open calls nothing.
     @ObservationIgnored public var onOpenChange: ((Bool) -> Void)?
 
     public var isOpen: Bool { worktreeID != nil }
+    /// True while the shown worktree refreshes (`loam worktree list --refresh --worktree`).
+    public var isRefreshing: Bool { worktreeID.map(refreshing.contains) ?? false }
+    /// The button that runs for the shown worktree.
+    public var running: PRSecondaryAction? { worktreeID.flatMap { buttons[$0] } }
 
     public init() {}
 
-    /// Opens for `id`, or moves an open popover to `id`. Returns the number of this open.
-    func open(_ id: String, anchor: PopoverAnchor) -> Int {
+    /// Opens for `id`, or moves an open popover to `id`.
+    func open(_ id: String, anchor: PopoverAnchor) {
         let wasOpen = isOpen
         worktreeID = id
         self.anchor = anchor
         openCount += 1
-        isRefreshing = true
-        answeredAt = nil
-        running = nil
+        attemptedAt = nil
         note = nil
         if !wasOpen { onOpenChange?(true) }
-        return openCount
     }
 
-    /// Closes the popover and forgets what this open learned. Does nothing when it is closed.
+    /// Closes the popover and forgets what this open learned. A refresh or a button that runs goes on.
+    /// Does nothing when it is closed.
     public func close() {
         guard isOpen else { return }
         worktreeID = nil
-        isRefreshing = false
-        answeredAt = nil
-        running = nil
+        attemptedAt = nil
         note = nil
         onOpenChange?(false)
-    }
-
-    /// True while `open` is the open that stands.
-    func isCurrent(_ open: Int) -> Bool { isOpen && open == openCount }
-
-    /// The refresh of `open` ended. `answeredAt` is nil when it failed.
-    func endRefresh(of open: Int, answeredAt: Date?) {
-        guard isCurrent(open) else { return }
-        isRefreshing = false
-        self.answeredAt = answeredAt
     }
 
     /// Shows a line under the buttons, such as "Copied the branch name." It goes when the popover opens again.
@@ -82,26 +75,37 @@ public final class PRPopoverModel {
         note = line
     }
 
-    /// A refresh of `open` starts again, after a button changed the PR.
-    func beginRefresh(of open: Int) {
-        guard isCurrent(open) else { return }
-        isRefreshing = true
-        answeredAt = nil
+    // MARK: Refresh
+
+    func beginRefresh(of id: String) {
+        refreshing.insert(id)
     }
 
-    /// A button starts. False when the open is old or another button runs, so one command runs at a time.
-    func begin(_ action: PRSecondaryAction, in open: Int) -> Bool {
-        guard isCurrent(open), running == nil else { return false }
-        running = action
-        note = nil
+    /// The refresh of `id` ended. `answered` is false when the core gave no answer.
+    func endRefresh(of id: String, answered: Bool, at date: Date = Date()) {
+        refreshing.remove(id)
+        guard worktreeID == id else { return }
+        attemptedAt = answered ? date : nil
+    }
+
+    // MARK: Buttons
+
+    /// A button starts for `id`. False while a button runs for that worktree, so one command runs at a time.
+    func begin(_ action: PRSecondaryAction, for id: String) -> Bool {
+        guard buttons[id] == nil else { return false }
+        buttons[id] = action
+        if worktreeID == id { note = nil }
         return true
     }
 
-    /// The button ended, with a note for the person.
-    func end(_ open: Int, note: String) {
-        guard isCurrent(open) else { return }
-        running = nil
+    /// The button of `id` ended, with a note for the person. Returns false when the popover does not show
+    /// the worktree now, so nobody sees the note.
+    @discardableResult
+    func end(_ id: String, note: String) -> Bool {
+        buttons[id] = nil
+        guard worktreeID == id else { return false }
         self.note = note
+        return true
     }
 }
 

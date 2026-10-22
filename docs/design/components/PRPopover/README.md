@@ -10,7 +10,7 @@ The PR popover shows the state of the PR of one worktree and the actions that go
 ## The card
 
 - 360pt wide, radius `radius-md`, `horizon-b`, a hairline edge, `shadow-raised`. It opens below the control when it fits, else above, else on the side with more room. It keeps 8pt from each window edge and 6pt from the control.
-- Header: the stage symbol and the stage in words, in the colour of the stage. At the trailing edge, "Updated 18:14" in `ink-faint`, the time of the last answer of GitHub. While the popover asks GitHub, this reads "Updating…".
+- Header: the stage symbol and the stage in words, in the colour of the stage. At the trailing edge, "Updated 18:14" in `ink-faint`, the time of the last answer of GitHub. While the app asks GitHub about the worktree, this reads "Updating…". Each open asks once. An open, or Refresh in the ⌘J menu, while that ask runs joins it and starts no other.
 - Title: "#142 Link labels from plot brief" in 14pt semibold, then "link-labels → main · 9 commits" in mono, `ink-muted`.
 - Four rows between two hairlines: Checks, Review, Base, Conflicts. The words come from `StatusLine`, so the sidebar tooltip, the Worktrees section and the popover say the same. Only the failing words are `rust`.
 - Blocked and In merge queue add one line under the rows. A repo with no GitHub remote, and a refresh that failed, add a line under the title.
@@ -26,7 +26,8 @@ The PR popover shows the state of the PR of one worktree and the actions that go
   - Update branch: when the PR is behind its base and is not in the merge queue. It runs `loam worktree update`.
   - Open on GitHub: opens the PR, or the compare page of a pushed branch. The popover stays open.
   - Copy branch name: for a worktree with no PR. The popover says "Copied the branch name."
-- Re-run failed and Update branch run one at a time. A spinner shows in the button that runs. The popover then says what GitHub did, in one line under the buttons, and asks GitHub about the worktree again so the card shows the new state. An error shows in that line, not in the error bar of the window.
+- Re-run failed and Update branch run one at a time for a worktree. A spinner shows in the button that runs, also in a popover that closed and opened again on the worktree during the run. The popover then says what GitHub did, in one line under the buttons, and asks GitHub about the worktree again so the card shows the new state. An error shows in that line, not in the error bar of the window.
+- A command goes on when the popover closes or shows another worktree. When it ends, the app still asks GitHub about the worktree again, and an error shows in the error bar of the window.
 
 ## Keys
 

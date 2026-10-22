@@ -62,6 +62,8 @@ public final class AppModel {
     }
     /// The PR popover (ticket 109).
     @ObservationIgnored public let prPopover = PRPopoverModel()
+    /// The refresh of one worktree that runs now, for each worktree (`refreshWorktree`).
+    @ObservationIgnored private var worktreeRefreshes: [String: Task<Bool, Never>] = [:]
     /// Panes that were saved and have not resumed, as folders. Removal refuses while one lies in the
     /// worktree. The default reads the restored panes that wait for their plot to show (ticket 29).
     @ObservationIgnored private var worktreeReads = 0
@@ -345,15 +347,36 @@ public final class AppModel {
     }
 
     /// Asks GitHub about one worktree (`loam worktree list <plot> --refresh --worktree <id>`) and shows the
-    /// answer (ticket 109). The other rows of its plot stay as the core cached them. Returns false when the
+    /// answer (ticket 109). The other rows of its plot stay as the core cached them. An ask while the refresh
+    /// of the worktree runs joins it, so a burst of opens of the PR popover, or Refresh in the ⌘J menu, runs
+    /// one `loam`. `afterChange` is for a button that changed the PR: a refresh that started before the
+    /// change cannot show it, so the ask waits for that one and then asks again. Returns false when the
     /// worktree is unknown or the core gave no answer. The rows stay then.
     @discardableResult
-    public func refreshWorktree(_ id: String) async -> Bool {
-        guard let plot = worktreeStatus(id)?.worktree.plotID else { return false }
+    public func refreshWorktree(_ id: String, afterChange: Bool = false) async -> Bool {
+        if afterChange, let running = worktreeRefreshes[id] { _ = await running.value }
+        return await worktreeRefresh(id)?.value ?? false
+    }
+
+    /// The refresh of the worktree that runs now, else a new one. Nil when the worktree is unknown.
+    @discardableResult
+    private func worktreeRefresh(_ id: String) -> Task<Bool, Never>? {
+        if let running = worktreeRefreshes[id] { return running }
+        guard let plot = worktreeStatus(id)?.worktree.plotID else { return nil }
         let applied = worktreeReadsApplied
-        guard let rows = try? await client.refreshWorktree(plot: plot, worktree: id) else { return false }
-        await show(refreshed: rows, plot: plot, askedAbout: rows.filter { $0.worktree.id == id }, readsApplied: applied)
-        return true
+        prPopover.beginRefresh(of: id)
+        let refresh = Task { [weak self] () -> Bool in
+            guard let self else { return false }
+            let rows = try? await client.refreshWorktree(plot: plot, worktree: id)
+            if let rows {
+                await show(refreshed: rows, plot: plot, askedAbout: rows.filter { $0.worktree.id == id }, readsApplied: applied)
+            }
+            worktreeRefreshes[id] = nil
+            prPopover.endRefresh(of: id, answered: rows != nil)
+            return rows != nil
+        }
+        worktreeRefreshes[id] = refresh
+        return refresh
     }
 
     /// `gh` answered for a plot, so it works again. The Ready to merge row stays hidden while any plot
@@ -1071,26 +1094,18 @@ public final class AppModel {
 
     // MARK: The PR popover (ticket 109)
 
-    /// Opens the PR popover for a worktree and asks GitHub about it (`loam worktree list <plot> --refresh
-    /// --worktree <id>`), so the popover shows the state now. The popover shows the last state until the
-    /// answer comes. A popover that is open moves to the worktree. Returns false when the worktree is
-    /// unknown.
+    /// Opens the PR popover for a worktree and asks GitHub about it (`refreshWorktree`), so the popover
+    /// shows the state now. The popover shows the last state until the answer comes. A popover that is open
+    /// moves to the worktree. Returns false when the worktree is unknown.
     @discardableResult
     public func openPullRequest(_ id: String, anchor: PopoverAnchor = .actionBar) -> Bool {
         guard worktreeStatus(id) != nil else { return false }
-        let open = prPopover.open(id, anchor: anchor)
-        Task { await refreshPullRequest(of: open) }
+        prPopover.open(id, anchor: anchor)
+        worktreeRefresh(id)
         return true
     }
 
     public func closePullRequest() { prPopover.close() }
-
-    /// A refresh of the worktree of an open. The answer counts only for that open.
-    private func refreshPullRequest(of open: Int) async {
-        guard prPopover.isCurrent(open), let id = prPopover.worktreeID else { return }
-        let answered = await refreshWorktree(id)
-        prPopover.endRefresh(of: open, answeredAt: answered ? Date() : nil)
-    }
 
     /// The worktree left the list (a land removed it, or the folder and the record are gone), so the
     /// popover has nothing to show.
@@ -1099,7 +1114,8 @@ public final class AppModel {
     }
 
     /// Re-run failed: `loam worktree rerun`. The popover shows what GitHub did, then asks about the
-    /// worktree again, so the checks show as running. Does nothing when no popover is open or a button runs.
+    /// worktree again, so the checks show as running. Does nothing when no popover is open, or while a
+    /// button runs for its worktree.
     public func rerunFailedChecks() async {
         await runPullRequestAction(.rerunFailed) { plot, id in
             PRActionNote.rerun(try await self.client.worktreeRerun(plot: plot, worktree: id))
@@ -1113,20 +1129,21 @@ public final class AppModel {
         }
     }
 
+    /// Runs a button for the worktree of the popover. The command goes on when the popover closes or shows
+    /// another worktree. Its note shows only in a popover that shows the worktree when it ends.
     private func runPullRequestAction(_ action: PRSecondaryAction, _ run: (_ plot: String, _ worktree: String) async throws -> String) async {
-        let open = prPopover.openCount
         guard let id = prPopover.worktreeID, let plot = worktreeStatus(id)?.worktree.plotID,
-              prPopover.begin(action, in: open) else { return }
+              prPopover.begin(action, for: id) else { return }
         do {
-            prPopover.end(open, note: try await run(plot, id))
+            prPopover.end(id, note: try await run(plot, id))
         } catch {
-            // The popover shows the refusal where the button is. The error bar of the window is for errors
-            // that no popover explains.
-            return prPopover.end(open, note: Self.message(for: error))
+            // The popover shows the refusal where the button is. When it no longer shows the worktree, the
+            // error bar of the window says it.
+            if !prPopover.end(id, note: Self.message(for: error)) { report(error) }
+            return
         }
-        guard prPopover.isCurrent(open) else { return }
-        prPopover.beginRefresh(of: open)
-        await refreshPullRequest(of: open)
+        // GitHub changed the PR, so the app asks about it again, also when nobody sees the popover.
+        await refreshWorktree(id, afterChange: true)
     }
 
     // MARK: The PR of a pane

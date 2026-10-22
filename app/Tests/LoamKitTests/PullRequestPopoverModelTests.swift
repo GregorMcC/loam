@@ -13,10 +13,11 @@ import Testing
     let nativePanel = "wtreaaaaah"  // Checks failed, #16.
 
     /// A fake `loam` that logs its arguments and prints a fixture by command. A file named `fail-rerun` or
-    /// `fail-update` in its folder makes that command fail as `gh_unavailable`. A file named `hold` makes
-    /// every command wait until the file is gone. A file named `hold-2` does the same for the second
-    /// command that refreshes. A file named `fail-list` makes the list fail. The list leaves a file
-    /// `done-N` when the N-th refresh has printed its answer.
+    /// `fail-update` in its folder makes that command fail as `gh_unavailable` (exit 17), or as `not_ready`
+    /// when the file says 16. A file named `hold` makes every command wait until the file is gone. A file
+    /// named `hold-2` does the same for the commands that start once the second refresh has started, and
+    /// `hold-rerun` and `hold-update` for that command only. A file named `fail-list` makes the list fail.
+    /// The list leaves a file `done-N` when the N-th refresh has printed its answer.
     struct Rig {
         let dir: URL
         let model: AppModel
@@ -29,7 +30,10 @@ import Testing
 
         func refreshes() -> [String] { args().filter { $0.contains("--refresh") } }
 
-        func touch(_ name: String) throws { try Data().write(to: dir.appendingPathComponent(name)) }
+        /// The calls of `worktree rerun` or `worktree update`.
+        func calls(of command: String) -> Int { args().filter { $0.hasPrefix("worktree \(command) ") }.count }
+
+        func touch(_ name: String, _ text: String = "") throws { try Data(text.utf8).write(to: dir.appendingPathComponent(name)) }
         func remove(_ name: String) { try? FileManager.default.removeItem(at: dir.appendingPathComponent(name)) }
         func exists(_ name: String) -> Bool { FileManager.default.fileExists(atPath: dir.appendingPathComponent(name).path) }
     }
@@ -41,7 +45,7 @@ import Testing
     func rig(loaded: Bool = true) async throws -> Rig {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("popover-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        for name in ["worktree_list_stages", "worktree_rerun", "worktree_update", "error_gh_unavailable"] {
+        for name in ["worktree_list_stages", "worktree_rerun", "worktree_update", "error_gh_unavailable", "error_not_ready"] {
             try Fixtures.data(name).write(to: dir.appendingPathComponent("\(name).json"))
         }
         try FakeScript.install("""
@@ -49,11 +53,19 @@ import Testing
             echo "$@" >> '\(dir.path)/args.log'
             n=$(grep -c -e '--refresh' '\(dir.path)/args.log')
             while [ -f '\(dir.path)/hold' ] || [ -f "\(dir.path)/hold-$n" ]; do sleep 0.01; done
-            fail() { cat '\(dir.path)/error_gh_unavailable.json'; exit 17; }
+            fail() {
+              [ "$(cat "$1")" = 16 ] && { cat '\(dir.path)/error_not_ready.json'; exit 16; }
+              cat '\(dir.path)/error_gh_unavailable.json'; exit 17
+            }
             case "$1 $2" in
-              "worktree rerun") [ -f '\(dir.path)/fail-rerun' ] && fail; cat '\(dir.path)/worktree_rerun.json';;
-              "worktree update") [ -f '\(dir.path)/fail-update' ] && fail; cat '\(dir.path)/worktree_update.json';;
-              *) [ -f '\(dir.path)/fail-list' ] && fail; cat '\(dir.path)/worktree_list_stages.json'; touch "\(dir.path)/done-$n";;
+              "worktree rerun")
+                while [ -f '\(dir.path)/hold-rerun' ]; do sleep 0.01; done
+                [ -f '\(dir.path)/fail-rerun' ] && fail '\(dir.path)/fail-rerun'; cat '\(dir.path)/worktree_rerun.json';;
+              "worktree update")
+                while [ -f '\(dir.path)/hold-update' ]; do sleep 0.01; done
+                [ -f '\(dir.path)/fail-update' ] && fail '\(dir.path)/fail-update'; cat '\(dir.path)/worktree_update.json';;
+              *) [ -f '\(dir.path)/fail-list' ] && fail '\(dir.path)/fail-list'; cat '\(dir.path)/worktree_list_stages.json'
+                 touch "\(dir.path)/done-$n";;
             esac
             """, at: dir.appendingPathComponent("loam"))
         let model = AppModel(client: LoamClient(binary: dir.appendingPathComponent("loam"), environment: [:]))
@@ -85,7 +97,7 @@ import Testing
         await waitUntil("the refresh ran") { !rig.refreshes().isEmpty }
         await idle(model)
         #expect(rig.refreshes() == ["worktree list plotaaaaab --refresh --worktree \(nativePanel) --json"])
-        #expect(model.prPopover.answeredAt != nil)
+        #expect(model.prPopover.attemptedAt != nil)
         #expect(model.worktrees[plotID]?.count == 16)
     }
 
@@ -94,10 +106,10 @@ import Testing
         try rig.touch("hold")
         #expect(rig.model.openPullRequest(nativePanel))
         #expect(rig.model.prPopover.isRefreshing)
-        #expect(rig.model.prPopover.answeredAt == nil)
+        #expect(rig.model.prPopover.attemptedAt == nil)
         rig.remove("hold")
         await idle(rig.model)
-        #expect(rig.model.prPopover.answeredAt != nil)
+        #expect(rig.model.prPopover.attemptedAt != nil)
     }
 
     @Test func anUnknownWorktreeOpensNothing() async throws {
@@ -115,7 +127,7 @@ import Testing
         await idle(model)
         model.closePullRequest()
         #expect(!model.prPopover.isOpen && model.prPopover.worktreeID == nil)
-        #expect(model.prPopover.answeredAt == nil && model.prPopover.note == nil && model.prPopover.running == nil)
+        #expect(model.prPopover.attemptedAt == nil && model.prPopover.note == nil && model.prPopover.running == nil)
         model.closePullRequest()  // A second close does nothing.
         #expect(!model.prPopover.isOpen)
     }
@@ -151,7 +163,7 @@ import Testing
         await idle(rig.model)
         #expect(rig.model.prPopover.isOpen)
         #expect(rig.model.worktrees == before)
-        #expect(rig.model.prPopover.answeredAt == nil)
+        #expect(rig.model.prPopover.attemptedAt == nil)
         #expect(rig.model.lastError == nil)
     }
 
@@ -170,10 +182,58 @@ import Testing
         rig.remove("hold-\(before + 1)")
         await waitUntil("the first answer came") { rig.exists("done-\(before + 1)") }
         try await Task.sleep(for: .milliseconds(200))
-        #expect(model.prPopover.isRefreshing && model.prPopover.answeredAt == nil)
+        #expect(model.prPopover.isRefreshing && model.prPopover.attemptedAt == nil)
         rig.remove("hold-\(before + 2)")
         await idle(model)
-        #expect(model.prPopover.worktreeID == "wtreaaaaag" && model.prPopover.answeredAt != nil)
+        #expect(model.prPopover.worktreeID == "wtreaaaaag" && model.prPopover.attemptedAt != nil)
+    }
+
+    /// Holding ⌘⇧L or a click on the chip of an open popover opens it again and again. Each open joins the
+    /// refresh that runs, so one `loam` process asks GitHub.
+    @Test func twoOpensInARowRunOneRefresh() async throws {
+        let rig = try await rig()
+        let model = rig.model
+        try rig.touch("hold")
+        model.openPullRequest(nativePanel)
+        model.openPullRequest(nativePanel)
+        await waitUntil("the refresh started") { rig.refreshes().count == 1 }
+        model.closePullRequest()
+        model.openPullRequest(nativePanel)
+        #expect(model.prPopover.isRefreshing)
+        try await Task.sleep(for: .milliseconds(200))
+        rig.remove("hold")
+        await idle(model)
+        #expect(rig.refreshes().count == 1)
+        #expect(model.prPopover.attemptedAt != nil)
+    }
+
+    @Test func aRefreshFromTheMenuJoinsTheRefreshOfThePopover() async throws {
+        let rig = try await rig()
+        let model = rig.model
+        try rig.touch("hold")
+        model.openPullRequest(nativePanel)
+        await waitUntil("the refresh started") { rig.refreshes().count == 1 }
+        let menu = Task { await model.refreshWorktree(nativePanel) }
+        try await Task.sleep(for: .milliseconds(200))
+        rig.remove("hold")
+        #expect(await menu.value)
+        await idle(model)
+        #expect(rig.refreshes().count == 1)
+    }
+
+    /// Refresh in the ⌘J menu, with the popover of the worktree open: the popover says "Updating…".
+    @Test func aRefreshFromTheMenuShowsInTheOpenPopover() async throws {
+        let rig = try await rig()
+        let model = rig.model
+        model.openPullRequest(nativePanel)
+        await idle(model)
+        try rig.touch("hold")
+        let menu = Task { await model.refreshWorktree(nativePanel) }
+        await waitUntil("the popover shows the refresh") { model.prPopover.isRefreshing }
+        rig.remove("hold")
+        #expect(await menu.value)
+        #expect(!model.prPopover.isRefreshing && model.prPopover.attemptedAt != nil)
+        #expect(rig.refreshes().count == 2)
     }
 
     @Test func theWorktreeThatLeavesTheListClosesThePopover() async throws {
@@ -270,6 +330,125 @@ import Testing
         #expect(!rig.args().contains { $0.hasPrefix("worktree update") })
         rig.remove("hold")
         await first.value
+    }
+
+    @Test func aButtonThatEndsAfterThePopoverClosedStillRefreshesTheWorktree() async throws {
+        let rig = try await rig()
+        let model = rig.model
+        model.openPullRequest(nativePanel)
+        await idle(model)
+        try rig.touch("hold-rerun")
+        let rerun = Task { await model.rerunFailedChecks() }
+        await waitUntil("the re-run runs") { model.prPopover.running == .rerunFailed && rig.calls(of: "rerun") == 1 }
+        model.closePullRequest()
+        rig.remove("hold-rerun")
+        await rerun.value
+        #expect(rig.args().contains("worktree rerun plotaaaaab \(nativePanel) --json --actor app"))
+        #expect(rig.refreshes().count == 2)
+        #expect(model.prPopover.note == nil && model.lastError == nil)
+    }
+
+    /// The popover closed, or it shows another worktree now, so it cannot say why the button failed. The
+    /// error bar of the window says it.
+    @Test(arguments: [false, true])
+    func aRefusalAfterThePopoverLeftTheWorktreeGoesToTheErrorBar(showsAnother: Bool) async throws {
+        let rig = try await rig()
+        let model = rig.model
+        model.openPullRequest(nativePanel)
+        await idle(model)
+        try rig.touch("fail-rerun")
+        try rig.touch("hold-rerun")
+        let rerun = Task { await model.rerunFailedChecks() }
+        await waitUntil("the re-run runs") { model.prPopover.running == .rerunFailed && rig.calls(of: "rerun") == 1 }
+        if showsAnother { model.openPullRequest("wtreaaaaag") } else { model.closePullRequest() }
+        await idle(model)
+        let refreshes = rig.refreshes().count
+        rig.remove("hold-rerun")
+        await rerun.value
+        #expect(model.lastError == "the origin of /tmp/loam-contract/repos/web is not on GitHub")
+        #expect(model.prPopover.note == nil)
+        #expect(rig.refreshes().count == refreshes)
+    }
+
+    /// The popover closed and opened again on the worktree while Re-run failed runs. The button still runs,
+    /// so a second press does nothing, and the note of the run shows in the new popover.
+    @Test func aPopoverThatOpensAgainDuringARunShowsTheButtonRunning() async throws {
+        let rig = try await rig()
+        let model = rig.model
+        model.openPullRequest(nativePanel)
+        await idle(model)
+        try rig.touch("hold-rerun")
+        let rerun = Task { await model.rerunFailedChecks() }
+        await waitUntil("the re-run runs") { model.prPopover.running == .rerunFailed && rig.calls(of: "rerun") == 1 }
+        model.closePullRequest()
+        model.openPullRequest(nativePanel)
+        #expect(model.prPopover.running == .rerunFailed)
+        await model.rerunFailedChecks()
+        await model.updateBranch()
+        #expect(rig.calls(of: "rerun") == 1 && rig.calls(of: "update") == 0)
+        rig.remove("hold-rerun")
+        await rerun.value
+        #expect(model.prPopover.running == nil)
+        #expect(model.prPopover.note?.hasPrefix("GitHub runs the failed checks of 1 run again.") == true)
+        await idle(model)
+    }
+
+    /// The button of one worktree does not stop the button of another.
+    @Test func aButtonRunsForItsOwnWorktree() async throws {
+        let rig = try await rig()
+        let model = rig.model
+        model.openPullRequest(nativePanel)
+        await idle(model)
+        try rig.touch("hold-rerun")
+        let rerun = Task { await model.rerunFailedChecks() }
+        await waitUntil("the re-run runs") { model.prPopover.running == .rerunFailed && rig.calls(of: "rerun") == 1 }
+        model.openPullRequest("wtreaaaaak")  // Behind base, #18.
+        #expect(model.prPopover.running == nil)
+        await model.updateBranch()
+        #expect(model.prPopover.note == "GitHub brought the PR up to date with main.")
+        rig.remove("hold-rerun")
+        await rerun.value
+        #expect(model.prPopover.note == "GitHub brought the PR up to date with main.")
+        await idle(model)
+    }
+
+    /// A refresh that started before the button ended has the state from before the change. The popover
+    /// waits for it and then asks again.
+    @Test func theRefreshAfterAButtonStartsAfterTheButtonEnded() async throws {
+        let rig = try await rig()
+        let model = rig.model
+        model.openPullRequest(nativePanel)
+        await idle(model)
+        try rig.touch("hold-rerun")
+        let rerun = Task { await model.rerunFailedChecks() }
+        await waitUntil("the re-run runs") { model.prPopover.running == .rerunFailed && rig.calls(of: "rerun") == 1 }
+        try rig.touch("hold-2")
+        let menu = Task { await model.refreshWorktree(nativePanel) }
+        await waitUntil("the second refresh started") { rig.refreshes().count == 2 }
+        rig.remove("hold-rerun")
+        await waitUntil("the re-run ended") { model.prPopover.running == nil }
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(rig.refreshes().count == 2)
+        rig.remove("hold-2")
+        await rerun.value
+        _ = await menu.value
+        #expect(rig.refreshes().count == 3)
+    }
+
+    /// Exit 16 and exit 17 are refusals of the core. The open popover says them where the button is.
+    @Test func aRefusalOfTheCoreShowsInTheOpenPopover() async throws {
+        let rig = try await rig()
+        let model = rig.model
+        model.openPullRequest("wtreaaaaak")
+        await idle(model)
+        try rig.touch("fail-update", "16")
+        await model.updateBranch()
+        #expect(model.prPopover.note == "web-new-api is not ready to land: the PR has conflicts with main")
+        try rig.touch("fail-update", "17")
+        await model.updateBranch()
+        #expect(model.prPopover.note == "the origin of /tmp/loam-contract/repos/web is not on GitHub")
+        #expect(model.prPopover.running == nil && model.lastError == nil)
+        #expect(rig.refreshes().count == 1)
     }
 
     @Test func aNoteGoesWhenThePopoverOpensAgain() async throws {

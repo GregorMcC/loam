@@ -29,7 +29,7 @@ struct PRPopoverView: View {
                     .onTapGesture { app.closePullRequest() }
                 if let status = model.worktreeID.flatMap({ app.worktreeStatus($0) }) {
                     let frame = PopoverPlacement.frame(size: size, anchor: anchorRect(), in: CGRect(origin: .zero, size: proxy.size))
-                    card(PRPopoverContent(status, attemptedAt: model.answeredAt), status: status)
+                    card(PRPopoverContent(status, attemptedAt: model.attemptedAt), status: status)
                         .onGeometryChange(for: CGSize.self, of: \.size) { size = $0 }
                         // The card has no size until it is laid out once, and it would show in the wrong place.
                         .opacity(size == .zero ? 0 : 1)
@@ -211,7 +211,7 @@ struct PRPopoverView: View {
             }
         }
         .buttonStyle(PopoverButtonStyle())
-        // A command of the core runs one at a time. Open and Copy run on this Mac and never wait.
+        // A command of the core runs one at a time for a worktree. Open and Copy run on this Mac and never wait.
         .disabled(running != nil && (action == .rerunFailed || action == .updateBranch))
         .accessibilityIdentifier("pr-popover-\(action.rawValue)")
     }
