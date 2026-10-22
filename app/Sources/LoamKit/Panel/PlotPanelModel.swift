@@ -79,6 +79,7 @@ public final class PlotPanelModel {
     public private(set) var clash: EditClash?
     public private(set) var missingLink: MissingLink?
     private var openCount = 0
+    private var moving = false
     public var errorMessage: String? { didSet { linkError = nil } }
     /// `errorMessage` when a link action set it. The panel shows it by the links, which may be scrolled far from the top.
     public private(set) var linkError: String?
@@ -250,7 +251,10 @@ public final class PlotPanelModel {
 
     /// Moves a link to `position`, 1-based. The list shows the new order at once, before the write.
     public func moveLink(id: String, to position: Int) async {
-        guard var plot, let from = plot.links.firstIndex(where: { $0.id == id }) else { return }
+        // Each move expects the links version it read, so a second one before the reload would go stale.
+        guard !moving, var plot, let from = plot.links.firstIndex(where: { $0.id == id }) else { return }
+        moving = true
+        defer { moving = false }
         let expect = ["links": plot.versions["links"] ?? 0]
         let position = min(max(position, 1), plot.links.count)
         plot.links.insert(plot.links.remove(at: from), at: position - 1)
