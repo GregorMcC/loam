@@ -111,7 +111,8 @@ private func settle() async { try? await Task.sleep(for: .milliseconds(200)) }
         let fake = try FakeLoam([("worktree_list_stages", 0)])
         let model = AppModel(client: fake.client())
         await model.refreshWorktrees(plot: plotB)
-        #expect(fake.args() == ["worktree list plotaaaaab --refresh --json"])
+        // The merged row reads the setting of its repo after the refresh (ticket 113).
+        #expect(fake.args() == ["worktree list plotaaaaab --refresh --json", "show plotaaaaab --json"])
         #expect(model.worktrees[plotB]?.count == 16)
         #expect(model.worktrees[plotB]?.first?.stage == .merged)
     }

@@ -1,10 +1,11 @@
 import Foundation
 
-/// The question before ⌘W, `close_tab`, archive, quit (spec 8.2 and 8.5), a move to a plot (ticket 100), or a land
-/// (ticket 112). The app asks only when a session that the close ends is mid-turn or needs you, because a turn in
-/// progress loses its partial reply (ADR 0005), and a session that needs you waits for your answer.
+/// The question before ⌘W, `close_tab`, archive, quit (spec 8.2 and 8.5), a move to a plot (ticket 100), a land
+/// (ticket 112), or Remove worktree after a merge on GitHub (ticket 113). The app asks only when a session that the
+/// close ends is mid-turn or needs you, because a turn in progress loses its partial reply (ADR 0005), and a session
+/// that needs you waits for your answer.
 public struct ClosePrompt: Equatable, Sendable {
-    public enum Scope: Sendable { case pane, tab, quit, archive, move, land }
+    public enum Scope: Sendable { case pane, tab, quit, archive, move, land, removeWorktree }
 
     public let title: String
     public let message: String
@@ -54,6 +55,11 @@ public struct ClosePrompt: Equatable, Sendable {
                 title: "Close its panes and merge?",
                 message: "\(count(working, needs, in: " in this worktree")) If you merge, \(stops)",
                 confirm: "Close and merge")
+        case .removeWorktree:
+            return ClosePrompt(
+                title: "Close its panes and remove the worktree?",
+                message: "\(count(working, needs, in: " in this worktree")) If you remove the worktree, \(stops)",
+                confirm: "Close and remove")
         case .quit:
             let resumes = one ? "Loam resumes the session" : "Loam resumes the sessions"
             return ClosePrompt(
