@@ -313,7 +313,7 @@ struct UndoClashSection: View {
 
     /// A link order shows as labels, not IDs.
     private func value(_ entry: ChangeEntry, _ text: String?) -> String? {
-        guard entry.item == "links" else { return text }
+        guard entry.item == ChangeRules.linkOrderItem else { return text }
         let labels = ChangeRules.linkOrderText(text, linkLabels: linkLabels)
         return labels.isEmpty ? nil : labels
     }

@@ -21,9 +21,12 @@ const (
 	ItemWhat  = "what"
 	ItemWhy   = "why"
 	ItemWhere = "where"
-	// ItemLinkOrder is the order of the links. Its one field is "order".
+	// ItemLinkOrder is the order of the links. Its one field is FieldLinkOrder.
 	ItemLinkOrder = "links"
 )
+
+// FieldLinkOrder is the field of [ItemLinkOrder]: the link IDs in order, joined with commas.
+const FieldLinkOrder = "order"
 
 // LinkItem returns the item name of a link, for example "link:k3v9q2mxa7".
 func LinkItem(id string) string { return "link:" + id }

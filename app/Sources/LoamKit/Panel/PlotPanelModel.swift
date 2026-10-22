@@ -225,7 +225,7 @@ public final class PlotPanelModel {
         let target = target.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !target.isEmpty else {
             errorMessage = "A link needs a target."
-            linkError = errorMessage
+            showErrorNearLinks()
             return
         }
         do {
@@ -234,7 +234,7 @@ public final class PlotPanelModel {
             await load(plotID: plot.id)
         } catch {
             report(error)
-            linkError = errorMessage
+            showErrorNearLinks()
         }
     }
 
@@ -255,7 +255,7 @@ public final class PlotPanelModel {
         guard !moving, var plot, let from = plot.links.firstIndex(where: { $0.id == id }) else { return }
         moving = true
         defer { moving = false }
-        let expect = ["links": plot.versions["links"] ?? 0]
+        let expect = [ChangeRules.linkOrderItem: plot.versions[ChangeRules.linkOrderItem] ?? 0]
         let position = min(max(position, 1), plot.links.count)
         plot.links.insert(plot.links.remove(at: from), at: position - 1)
         for i in plot.links.indices { plot.links[i].position = i + 1 }
@@ -432,7 +432,7 @@ public final class PlotPanelModel {
             // A move reordered the rows before the write, so put back what the store holds.
             if case .linkMove = write { await load(plotID: plotID) }
         }
-        if write.isLink { linkError = errorMessage }
+        if write.isLink { showErrorNearLinks() }
     }
 
     private func makeClash(_ write: PendingWrite, details: StaleDetails?) -> EditClash? {
@@ -456,6 +456,11 @@ public final class PlotPanelModel {
             return EditClash(item: item.item, title: "Repo", yours: "Remove the repo",
                              current: item.repo?.path, pending: write)
         }
+    }
+
+    /// Call after setting `errorMessage`: setting it clears `linkError`.
+    private func showErrorNearLinks() {
+        linkError = errorMessage
     }
 
     private func report(_ error: Error) {
