@@ -377,10 +377,11 @@ private struct PassedChecksView: View {
                 Text(title)
                     .font(.system(size: 13))
                     .frame(maxWidth: .infinity, alignment: .leading)
+                // Only the turn is animated. The card grows when the list opens, and an animated position would make
+                // the chevron fly from the old place of the row to the new one.
                 Image(systemName: "chevron.right")
                     .font(.system(size: 10, weight: .semibold))
-                    .rotationEffect(.degrees(isOpen ? 90 : 0))
-                    .animation(LoamAnimation.settle, value: isOpen)
+                    .animation(LoamAnimation.settle) { $0.rotationEffect(.degrees(isOpen ? 90 : 0)) }
             }
             .foregroundStyle(LoamColor.inkMuted)
             .padding(.horizontal, 8)

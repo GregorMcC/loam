@@ -215,6 +215,8 @@ extension Scenarios {
         let list = try passedList(host)
         try check((list.documentView?.frame.height ?? 0) > list.contentView.bounds.height + 1,
                   "the list does not scroll: \(list.documentView?.frame.height ?? 0) in \(list.contentView.bounds.height)")
+        // The chevron turns with `duration-base`. The shot waits for the turn, so it shows the chevron down.
+        try await Task.sleep(for: .seconds(LoamTheme.durationBase * 2))
         app.screenshot("pr-popover-passed")
         try app.click(toggle)
         try await app.waitUntil("the passed checks close") { !app.exists("pr-popover-passed-check-0") && !app.exists("pr-popover-passed-list") }
