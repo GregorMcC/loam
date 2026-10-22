@@ -19,7 +19,7 @@ public struct SendPlan: Equatable, Sendable {
         case busy
         /// The session has not sent its `SessionStart`, such as while the setup command runs.
         case starting
-        /// You typed in the session since its last `Stop`.
+        /// You put text into the session since Claude Code last took its input.
         case typed
         /// Loam typed another prompt into the session, and you have not sent it.
         case prompted
@@ -60,8 +60,8 @@ public struct SendPlan: Equatable, Sendable {
     }
 
     /// The rule for when Loam may type into a session. The session must be idle, and its input must be empty
-    /// of your text: you typed no key since its last `Stop`. The prompt that Loam typed before is in the input
-    /// already, so the same prompt types nothing new, and another prompt does not go on top of it.
+    /// of your text: you put no text into it since Claude Code last took the input. The prompt that Loam typed
+    /// is in the input already, so the same prompt types nothing new, and another prompt does not go on top of it.
     public static func step(for pane: PaneID, session: PaneSession, prompt: String) -> Step {
         switch session.state {
         case .idle: break
@@ -70,7 +70,7 @@ public struct SendPlan: Equatable, Sendable {
         // `target` never gives an ended session. A session that ends after the plan was made gets a new one.
         case .ended: return .start
         }
-        if session.typedSinceStop { return .copy(.typed) }
+        if session.typedSinceSubmit { return .copy(.typed) }
         if let typed = session.loamPrompt, typed != prompt { return .copy(.prompted) }
         return .type(pane)
     }

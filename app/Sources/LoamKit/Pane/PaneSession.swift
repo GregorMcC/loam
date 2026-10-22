@@ -8,8 +8,9 @@ import Foundation
 /// - `PermissionRequest`, `StopFailure`, and a `Notification` of a question type mean needs you.
 ///   The session moving on clears it, and so does a key in the pane (`typed()`).
 /// - `SessionEnd` means ended. A `SessionStart` after it (the `/clear` case) makes the pane idle again.
-/// - `Stop` and a new session (a `SessionStart` that is not a compact) forget the keys that you typed and
-///   the prompt that Loam typed (ticket 110), because the input of Claude Code is empty then.
+/// - `UserPromptSubmit` and a new session (a `SessionStart` that is not a compact) forget the keys that you
+///   typed and the prompt that Loam typed (ticket 110), because Claude Code took the input. `Stop` keeps them,
+///   because Claude Code keeps the text that you typed during the turn and did not send.
 /// - The process exit means ended for good: later events change nothing.
 /// - An event for another session ID changes nothing. Only `SessionStart` takes a new ID.
 /// - Unknown events change nothing (docs/contract.md, "Pane socket").
@@ -34,12 +35,12 @@ public struct PaneSession: Codable, Equatable, Sendable {
     /// What the session waits on while the pane needs you. Nil in every other state. Restore does
     /// not bring it back, because the prompt is gone after a quit.
     public var waitsOn: NeedsYouReason?
-    /// True when you typed a key, pasted or dropped in the pane since the last `Stop` (ticket 110). Loam cannot
-    /// see the input of Claude Code, so this means that the input can hold your text, and Send to session does
-    /// not type.
-    public var typedSinceStop = false
-    /// The prompt that Send to session typed into the input since the last `Stop` (ticket 110). It waits there
-    /// until you press Return. Nil when Loam typed nothing.
+    /// True when you put text into the pane since the last submit or new session (ticket 110): a key, a paste,
+    /// or a drop. Loam cannot see the input of Claude Code, so this means that the input can hold your text, and
+    /// Send to session does not type.
+    public var typedSinceSubmit = false
+    /// The prompt that Send to session typed into the input since the last submit or new session (ticket 110).
+    /// It waits there until you press Return. Nil when Loam typed nothing.
     public var loamPrompt: String?
 
     public init(sessionID: String? = nil, state: PaneState = .running, started: Bool = false,
@@ -72,11 +73,13 @@ public struct PaneSession: Codable, Equatable, Sendable {
         }
         guard sessionID == nil || event.sessionID == sessionID else { return false }
         switch event.event {
-        case "UserPromptSubmit", "PostToolUse": set(.working)
+        case "UserPromptSubmit":
+            set(.working)
+            emptyInput()
+        case "PostToolUse": set(.working)
         case "Stop":
             set(.idle)
             doneUnread = true
-            emptyInput()
         case "StopFailure": needsYou(.apiError)
         case "PermissionRequest": needsYou(.permission)
         case "Notification":
@@ -95,13 +98,11 @@ public struct PaneSession: Codable, Equatable, Sendable {
         return self != before
     }
 
-    /// You typed in the pane. Send to session does not type until the next `Stop` (ticket 110). Needs you
-    /// clears (spec 8.4), because a denied permission prompt sends no hook at all. A permission prompt or a
-    /// question comes mid-turn, so the pane is working again. After an API error the turn is over, so the
-    /// pane is idle. Returns true when needs you cleared.
+    /// You typed in the pane. Needs you clears (spec 8.4), because a denied permission prompt sends
+    /// no hook at all. A permission prompt or a question comes mid-turn, so the pane is working
+    /// again. After an API error the turn is over, so the pane is idle. Returns true when needs you cleared.
     @discardableResult
     public mutating func typed() -> Bool {
-        typedSinceStop = true
         guard state == .needsYou else { return false }
         set(waitsOn == .apiError ? .idle : .working)
         return true
@@ -114,15 +115,15 @@ public struct PaneSession: Codable, Equatable, Sendable {
     }
 
     /// You put something into the input of the pane: any key, a paste, or a drop. Send to session does not type
-    /// until the next `Stop` (ticket 110). Needs you stays, because an arrow key or Tab only picks an option of a
-    /// prompt (`typed()` clears it).
+    /// until Claude Code takes the input (ticket 110). Needs you stays, because an arrow key or Tab only picks an
+    /// option of a prompt (`typed()` clears it).
     public mutating func input() {
-        typedSinceStop = true
+        typedSinceSubmit = true
     }
 
-    /// The input of Claude Code is empty: a turn ended, or a new session started.
+    /// The input of Claude Code is empty: it took a prompt, or a new session started.
     private mutating func emptyInput() {
-        typedSinceStop = false
+        typedSinceSubmit = false
         loamPrompt = nil
     }
 

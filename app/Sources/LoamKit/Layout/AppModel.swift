@@ -825,18 +825,17 @@ public final class AppModel {
     /// The halo runs 3 cycles of `duration-halo`. After this time a mark no longer counts as arriving.
     public static let arrivalWindow = Double(LoamMotion.haloCycles) * LoamTheme.durationHalo
 
-    /// You typed in the pane. Needs you clears, because a denied prompt sends no hook. Send to session does not
-    /// type into the pane until its next `Stop` (ticket 110). The workspace changes on the first key only.
+    /// You typed in the pane. Needs you clears, because a denied prompt sends no hook.
     public func typed(in pane: PaneID) {
-        guard let session = workspace.session(of: pane), session.state == .needsYou || !session.typedSinceStop else { return }
+        guard workspace.state(of: pane) == .needsYou else { return }
         workspace.typed(in: pane)
     }
 
     /// You put something into the input of the pane: any key, a paste, or a drop. An arrow key can recall a
-    /// prompt and Tab can complete one, so they count too. Send to session does not type into the pane until its
-    /// next `Stop` (ticket 110). The workspace changes on the first input only.
+    /// prompt and Tab can complete one, so they count too. Send to session does not type into the pane until Claude
+    /// Code takes the input (ticket 110). The workspace changes on the first input only.
     public func input(in pane: PaneID) {
-        guard workspace.session(of: pane)?.typedSinceStop == false else { return }
+        guard workspace.session(of: pane)?.typedSinceSubmit == false else { return }
         workspace.input(in: pane)
     }
 

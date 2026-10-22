@@ -242,7 +242,7 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
             #expect(SendPlan.step(for: pane, session: PaneSession(state: state), prompt: "Fix it.") == expected[state], "\(state)")
         }
         var typed = PaneSession(state: .idle)
-        typed.typedSinceStop = true
+        typed.typedSinceSubmit = true
         #expect(SendPlan.step(for: pane, session: typed, prompt: "Fix it.") == .copy(.typed))
         var prompted = PaneSession(state: .idle)
         prompted.loamPrompt = "Fix it."
@@ -250,20 +250,38 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
         #expect(SendPlan.step(for: pane, session: prompted, prompt: "Fix the other thing.") == .copy(.prompted))
     }
 
-    /// The keys before a Stop do not count after it, and a Stop for another session changes nothing.
-    @Test func theSessionCountsTheKeysUntilTheStop() {
+    /// A submit takes the input, so the keys before it do not count after it. An event for another session
+    /// changes nothing.
+    @Test func theSessionCountsTheKeysUntilASubmit() {
         var session = PaneSession(sessionID: "s1", state: .idle, started: true)
-        session.typed()
+        session.input()
         session.loamPrompt = "Fix it."
-        #expect(session.typedSinceStop)
-        session.apply(paneEvent("Stop", "other"))
-        #expect(session.typedSinceStop && session.loamPrompt == "Fix it.")
+        #expect(session.typedSinceSubmit)
+        session.apply(paneEvent("UserPromptSubmit", "other"))
+        #expect(session.typedSinceSubmit && session.loamPrompt == "Fix it.")
         session.apply(paneEvent("UserPromptSubmit", "s1"))
-        #expect(session.typedSinceStop)
+        #expect(!session.typedSinceSubmit && session.loamPrompt == nil)
+    }
+
+    /// Claude Code keeps a draft that you type during a turn and do not send. So the keys between a submit and
+    /// the Stop still count after the Stop.
+    @Test func theKeysOfATurnStillCountAfterItsStop() {
+        var session = PaneSession(sessionID: "s1", state: .idle, started: true)
+        session.apply(paneEvent("UserPromptSubmit", "s1"))
+        session.input()
         session.apply(paneEvent("Stop", "s1"))
-        #expect(!session.typedSinceStop && session.loamPrompt == nil)
-        session.typed()
-        #expect(session.typedSinceStop)
+        #expect(session.state == .idle && session.typedSinceSubmit)
+    }
+
+    /// A turn that Claude Code starts by itself sends no `UserPromptSubmit`. Its Stop keeps the input as it is.
+    @Test func aTurnWithNoSubmitKeepsTheInput() {
+        var session = PaneSession(sessionID: "s1", state: .idle, started: true)
+        session.input()
+        session.loamPrompt = "Fix it."
+        session.apply(paneEvent("PostToolUse", "s1"))
+        session.apply(paneEvent("Stop", "s1"))
+        #expect(session.state == .idle)
+        #expect(session.typedSinceSubmit && session.loamPrompt == "Fix it.")
     }
 
     @Test func loamTypesOnlyIntoAnIdleSession() async throws {
@@ -285,39 +303,37 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
         #expect(model.sendPlan(for: failed)?.step == .type(pane))
     }
 
-    @Test func aKeyAfterTheStopMeansYouTyped() async throws {
-        let (model, _) = try await rig()
-        let pane = try open(in: failed, model)
-        model.typed(in: pane)
-        #expect(model.sendPlan(for: failed)?.step == .copy(.typed))
-        // The keys of a prompt that you sent count until the turn ends.
-        send("UserPromptSubmit", to: pane, model)
-        send("Stop", to: pane, model)
-        #expect(model.sendPlan(for: failed)?.step == .type(pane))
-        model.typed(in: pane)
-        #expect(model.sendPlan(for: failed)?.step == .copy(.typed))
-    }
-
-    /// An arrow key can recall a prompt and Tab can complete one. A paste or a drop puts text in. Each counts as
-    /// input until the Stop, and none of them answers a session that needs you.
-    @Test func aPasteOrAnArrowKeyCountsUntilTheStop() async throws {
+    @Test func aKeyInTheTurnBlocksAfterTheStop() async throws {
         let (model, _) = try await rig()
         let pane = try open(in: failed, model)
         model.input(in: pane)
         #expect(model.sendPlan(for: failed)?.step == .copy(.typed))
+        send("UserPromptSubmit", to: pane, model)
+        model.input(in: pane)
+        send("Stop", to: pane, model)
+        #expect(model.sendPlan(for: failed)?.step == .copy(.typed))
+        send("UserPromptSubmit", to: pane, model)
         send("Stop", to: pane, model)
         #expect(model.sendPlan(for: failed)?.step == .type(pane))
+    }
+
+    /// An arrow key can recall a prompt and Tab can complete one. A paste or a drop puts text in. Each counts as
+    /// input until a submit, and none of them answers a session that needs you.
+    @Test func anInputDoesNotAnswerASessionThatNeedsYou() async throws {
+        let (model, _) = try await rig()
+        let pane = try open(in: failed, model)
         send("UserPromptSubmit", to: pane, model)
         model.apply(paneEvent("Notification", model.workspace.session(of: pane)!.sessionID!, notification: "elicitation_dialog"), to: pane)
         model.input(in: pane)
         #expect(model.workspace.state(of: pane) == .needsYou)
+        #expect(model.workspace.session(of: pane)?.typedSinceSubmit == true)
     }
 
     /// `/clear` and a resume start with an empty input. A compact can come in the middle of a turn, while you type.
     @Test func aNewSessionInThePaneForgetsTheKeysAndACompactKeepsThem() async throws {
         let (model, _) = try await rig()
         let pane = try open(in: failed, model)
-        model.typed(in: pane)
+        model.input(in: pane)
         send("SessionStart", to: pane, model, source: "compact")
         #expect(model.sendPlan(for: failed)?.step == .copy(.typed))
         send("SessionEnd", to: pane, model)
@@ -340,7 +356,7 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
         #expect(busy.typeTarget == nil && busy.toast == nil)
         #expect(busy.footnote == "The session is busy. Copy the prompt and send it when the turn ends.")
         send("Stop", to: pane, model)
-        model.typed(in: pane)
+        model.input(in: pane)
         #expect(model.sendPlan(for: failed)?.footnote == "You have typed in this session. Loam does not type over your text.")
         let start = try #require(model.sendPlan(for: review))
         #expect(start.buttonTitle == "Start session with prompt")
@@ -380,8 +396,8 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
         #expect(record.typed.count == 1)
         #expect(model.workspace.focusedPane == pane)
         #expect(record.toasts.count == 2)
-        // Your Return sends it: the turn starts, and its Stop ends what Loam typed.
-        model.typed(in: pane)
+        // Your Return sends it. The submit takes the input, so Loam can type again after the turn.
+        model.input(in: pane)
         send("UserPromptSubmit", to: pane, model)
         send("Stop", to: pane, model)
         model.sendToSession(failed)
@@ -431,7 +447,7 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
         #expect(spec.kind == .session && spec.worktree?.id == review && spec.space == .plot(plotID))
         #expect(record.typed.isEmpty)
         // The session runs the setup question first, and you answer it. Those keys are not in the input of Claude Code.
-        model.typed(in: pane)
+        model.input(in: pane)
         send("SessionStart", to: pane, model, source: "startup")
         #expect(record.typed.map(\.pane) == [pane])
         #expect(record.typed.map(\.text) == [try prompt(review, model)])
@@ -481,7 +497,7 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
         let pane = try open(in: failed, model)
         model.sendFromMenu(failed)
         #expect(record.typed.count == 1)
-        model.typed(in: pane)
+        model.input(in: pane)
         model.sendFromMenu(failed)
         #expect(model.prPopover.worktreeID == failed)
         #expect(record.copied.isEmpty && record.typed.count == 1)

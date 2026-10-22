@@ -199,7 +199,7 @@ extension Scenarios {
         try await app.waitUntil("the turn ends", timeout: turnSeconds + 5) { model.workspace.state(of: session) == .idle }
         try await app.waitUntil("the session has the keys after the turn") { hasTheKeys(session) }
         try app.type("x")
-        try await app.waitUntil("the key counts") { model.workspace.session(of: session)?.typedSinceStop == true }
+        try await app.waitUntil("the key counts") { model.workspace.session(of: session)?.typedSinceSubmit == true }
         try await openPopover()
         try expectSend(primary()?.title == "Copy prompt", "the button after a key reads \(String(describing: primary()))")
         try expectSend(app.text(of: "pr-popover-send-note") == "You have typed in this session. Loam does not type over your text.",
