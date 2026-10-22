@@ -154,6 +154,20 @@ import Testing
                                        hasPullRequest: true))
     }
 
+    /// Ticket 110: Send failures to session leads the section when the checks of the PR failed.
+    @Test func failedChecksAddSendFailuresToSession() {
+        let all = ActionMenu.sections(
+            paneTitle: "claude", plotName: "Loam", worktree: ActionMenu.WorktreeFacts(branch: "native-panel"), chord: menuChord,
+            isEnabled: { ActionMenu.isAvailable($0, hasSpace: true, hasPlot: true, hasPane: true, hasWorktree: true,
+                                                hasPullRequest: true, checksFailed: true) })
+        #expect(all.first { $0.id == "worktree" }?.items.map(\.title) == ["Send failures to session", "Show pull request", "Refresh"])
+        #expect(ActionMenu.filter(all, query: "send").flatMap(\.items).map(\.command) == [.sendFailuresToSession])
+        #expect(!ActionMenu.isAvailable(.sendFailuresToSession, hasSpace: true, hasPlot: true, hasPane: true, hasWorktree: true,
+                                        hasPullRequest: true))
+        #expect(!ActionMenu.isAvailable(.sendFailuresToSession, hasSpace: true, hasPlot: true, hasPane: true, hasWorktree: false,
+                                        hasPullRequest: true, checksFailed: true))
+    }
+
     @Test func theFilterFindsTheWorktreeRows() {
         let all = sections(worktree: ActionMenu.WorktreeFacts(branch: "native-panel"))
         #expect(ActionMenu.filter(all, query: "refresh").map(\.id) == ["worktree"])

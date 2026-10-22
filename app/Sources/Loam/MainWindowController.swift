@@ -590,13 +590,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         // ⌘⇧L is a Loam key too: with no ready worktree, it does nothing, and the terminal does not get it.
         case .nextReadyWorktree: model.goToNextReadyWorktree()
         case .actionsMenu: toggleActionsMenu()
-        // The Worktree section of the actions menu (ticket 109). With no worktree pane, they do nothing.
+        // The Worktree section of the actions menu (tickets 109 and 110). With no worktree pane, they do nothing.
         case .showWorktreePullRequest:
             guard let id = model.focusedWorktree?.id else { return false }
             return model.openPullRequest(id)
         case .refreshWorktree:
             guard let id = model.focusedWorktree?.id else { return false }
             Task { await model.refreshWorktree(id, afterChange: true) }
+        case .sendFailuresToSession:
+            guard let id = model.focusedWorktree?.id, model.canSendFailures(id) else { return false }
+            model.sendFromMenu(id)
         case .newPlotSession:
             guard let plot = model.workspace.activePlotID else { return false }
             model.openPlotSession(plot)
