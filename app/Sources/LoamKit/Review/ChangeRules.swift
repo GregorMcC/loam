@@ -162,11 +162,20 @@ public enum ChangeRules {
         return best.map { ($0.id, $0.position) }
     }
 
+    private static func linkIDs(_ text: String?) -> [String] {
+        text.map { $0.split(separator: ",").map(String.init) } ?? []
+    }
+
     /// "Spec moved to 1" for a links order entry. `linkLabels` maps a link ID to its label.
-    private static func linkOrderText(_ entry: ChangeEntry, linkLabels: [String: String]) -> String {
-        let ids = { (text: String?) in text.map { $0.split(separator: ",").map(String.init) } ?? [] }
-        guard let moved = movedLink(old: ids(entry.old), new: ids(entry.new)) else { return "Link order changed" }
+    private static func movedLinkText(_ entry: ChangeEntry, linkLabels: [String: String]) -> String {
+        guard let moved = movedLink(old: linkIDs(entry.old), new: linkIDs(entry.new)) else { return "Link order changed" }
         return "\(linkLabels[moved.id] ?? "a removed link") moved to \(moved.position)"
+    }
+
+    /// A link order, comma-joined link IDs, as "Spec, Board" from `linkLabels`. An ID it does not
+    /// name is "a removed link". Empty for no order.
+    public static func linkOrderText(_ ids: String?, linkLabels: [String: String]) -> String {
+        linkIDs(ids).map { linkLabels[$0] ?? "a removed link" }.joined(separator: ", ")
     }
 
     /// The worktree ID of an item such as "worktree:k3v9q2mxa7", or nil for any other item.
@@ -182,7 +191,7 @@ public enum ChangeRules {
         change.entries.compactMap { entry in
             guard entry.field != "position" else { return nil }
             if entry.item == linkOrderItem {
-                return EntryView(title: itemTitle(entry.item), body: .text(linkOrderText(entry, linkLabels: linkLabels)))
+                return EntryView(title: itemTitle(entry.item), body: .text(movedLinkText(entry, linkLabels: linkLabels)))
             }
             let base = itemTitle(entry.item)
             let title = entry.field == "value" ? base : "\(base) \(entry.field)"
