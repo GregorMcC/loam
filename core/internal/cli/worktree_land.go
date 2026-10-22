@@ -22,10 +22,10 @@ func newWorktreeLandCmd() *cobra.Command {
 		Short: "Merge the PR of a worktree, then delete its branches and remove it",
 		Long: "Merge the pull request (PR) of a worktree on GitHub, through the GitHub CLI (gh). <worktree> is an ID, a folder name, or a name.\n" +
 			"The command asks GitHub for the PR first, and stops when GitHub does not answer. It reads the merge methods that the repo allows, the default method, and the merge queue of the base branch.\n" +
-			"Then it runs the checks: checks, review, behind_base, conflicts, github, local_changes, and unpushed_commits. It exits with code 16 when a check blocks: a failed check, changes requested, conflicts, uncommitted changes, or commits that are not pushed. Behind base blocks when the base branch needs the PR up to date. When GitHub blocks the merge for another reason, the github check blocks a merge now, but not --auto.\n" +
+			"Then it runs the checks: checks, review, behind_base, conflicts, github, local_changes, and unpushed_commits. It exits with code 16 when a check blocks: a failed check, changes requested, conflicts, a draft, uncommitted changes, or commits that are not pushed. Behind base blocks when the base branch needs the PR up to date. When GitHub blocks the merge for another reason, the github check blocks a merge now, but not --auto.\n" +
 			"The merge names the PR head that Loam checked, so GitHub refuses it when the PR has a new commit. After the merge, the command deletes the branch on GitHub, then removes the worktree as loam worktree rm does. It refuses while a pane is open in the worktree.\n" +
-			"With --auto, or a merge queue, GitHub merges later. The command records the land on the worktree and keeps the worktree.\n" +
-			"For a PR that is merged, the command skips the merge and does what comes after it.\n" +
+			"With --auto, or a merge queue, GitHub merges later. The command records the land on the worktree and keeps the worktree. A later land keeps what the recorded land keeps.\n" +
+			"For a PR that is merged, the command skips the merge and does what comes after it. It exits with code 16 when the worktree has work that is not in the PR.\n" +
 			"--dry-run changes nothing. It prints the plan and each check. It exits with code 0 when a check blocks.\n" +
 			"It exits with code 17 when gh is missing or signed out, or the origin of the repo is not on GitHub.",
 		Args: cobra.ExactArgs(2),
@@ -71,13 +71,14 @@ func newWorktreeLandCmd() *cobra.Command {
 // printLandPlan prints the plan of a dry run.
 func printLandPlan(out io.Writer, res *worktree.LandResult) {
 	fmt.Fprintf(out, "PR #%d %s: %s\n", res.PR.Number, res.PR.Title, stageWord(res.Stage))
-	if res.Merged {
+	switch {
+	case res.Merged:
 		fmt.Fprintln(out, "The PR is merged. Land does what comes after the merge.")
-		return
-	}
-	fmt.Fprintf(out, "Methods: %s (default %s)\n", joinStrings(res.Methods), res.DefaultMethod)
-	if res.MergeQueue {
-		fmt.Fprintf(out, "The base branch %s has a merge queue.\n", res.PR.Base)
+	default:
+		fmt.Fprintf(out, "Methods: %s (default %s)\n", joinStrings(res.Methods), res.DefaultMethod)
+		if res.MergeQueue {
+			fmt.Fprintf(out, "The base branch %s has a merge queue.\n", res.PR.Base)
+		}
 	}
 	for _, c := range res.Checks {
 		line := fmt.Sprintf("  %s: %s", c.Name, c.State)
@@ -89,6 +90,8 @@ func printLandPlan(out io.Writer, res *worktree.LandResult) {
 	switch {
 	case !res.Ready:
 		fmt.Fprintln(out, "Not ready to land.")
+	case res.Merged:
+		fmt.Fprintln(out, "Ready to land.")
 	case res.MergeQueue:
 		fmt.Fprintln(out, "Ready to land: Loam adds the PR to the merge queue.")
 	default:
@@ -152,6 +155,7 @@ func newWorktreeRerunCmd() *cobra.Command {
 		Short: "Run the failed checks of the PR of a worktree again",
 		Long: "Run the failed jobs of the pull request (PR) of a worktree again, through the GitHub CLI (gh): one gh run rerun --failed for each GitHub Actions run with a failed check.\n" +
 			"The command asks GitHub for the PR first. The PR must be open. A failed check that is not a job of GitHub Actions stays as it is. The result lists it.\n" +
+			"The command tries each run, and says why GitHub did not start a run. It exits with code 1 when no run started.\n" +
 			"It exits with code 17 when gh is missing or signed out, or the origin of the repo is not on GitHub.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -174,10 +178,21 @@ func newWorktreeRerunCmd() *cobra.Command {
 				return printJSON(cmd, res)
 			}
 			out := cmd.OutOrStdout()
+			started := 0
+			for _, r := range res.Runs {
+				if r.Started {
+					started++
+				}
+			}
 			if len(res.Runs) == 0 {
 				fmt.Fprintf(out, "PR #%d has no failed GitHub Actions run.\n", res.PR.Number)
 			} else {
-				fmt.Fprintf(out, "Started the failed jobs of %d run(s) again for PR #%d.\n", len(res.Runs), res.PR.Number)
+				fmt.Fprintf(out, "Started the failed jobs of %d run(s) again for PR #%d.\n", started, res.PR.Number)
+			}
+			for _, r := range res.Runs {
+				if !r.Started {
+					fmt.Fprintln(out, r.Note)
+				}
 			}
 			if len(res.SkippedChecks) > 0 {
 				fmt.Fprintf(out, "Loam cannot run these failed checks again: %s. Run them again where they ran.\n", strings.Join(res.SkippedChecks, ", "))

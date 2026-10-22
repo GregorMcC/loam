@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/GregorMcC/loam/core/internal/github"
 	"github.com/GregorMcC/loam/core/internal/store"
@@ -32,6 +33,11 @@ func landState(head string) string {
   "repository": {"mergeCommitAllowed": true, "squashMergeAllowed": true, "rebaseMergeAllowed": false,
     "viewerDefaultMergeMethod": "SQUASH"}
 }`, head)
+}
+
+// mergedState is landState with PR #15 merged on GitHub.
+func mergedState(head string) string {
+	return strings.Replace(landState(head), `"state": "OPEN"`, `"state": "MERGED", "mergedAt": "2026-01-01T09:00:00Z"`, 1)
 }
 
 // landing makes the worktree fix-login with one commit, and points origin
@@ -85,6 +91,17 @@ const (
 	deleteRef = "api --hostname github.com --method DELETE repos/example/widgets/git/refs/heads/fix-login"
 )
 
+// openChecks are the checks of a land of an open PR, in their order.
+var openChecks = []worktree.CheckName{worktree.CheckChecks, worktree.CheckReview, worktree.CheckBehindBase,
+	worktree.CheckConflicts, worktree.CheckGitHub, worktree.CheckLocalChanges, worktree.CheckUnpushedCommits}
+
+// onlyQueries reports whether each gh call was a GraphQL query: Loam read
+// from GitHub, and changed nothing there.
+func onlyQueries(t *testing.T) bool {
+	t.Helper()
+	return !slices.ContainsFunc(ghCommands(t), func(c string) bool { return c != "graphql" })
+}
+
 // Land refreshes the PR, reads the merge settings, merges with the head that
 // it checked, and asks GitHub again. Then it deletes the branch on GitHub,
 // removes the worktree, and deletes the local branch: its tip is the head of
@@ -110,7 +127,7 @@ func TestLandMergesDeletesTheRemoteBranchAndRemovesTheWorktree(t *testing.T) {
 		!slices.Equal(res.Methods, []github.MergeMethod{github.MethodMerge, github.MethodSquash}) || res.MergeQueue {
 		t.Fatalf("%+v", res)
 	}
-	if len(res.Checks) != len(worktree.LandCheckNames) || slices.ContainsFunc(res.Checks, func(c worktree.LandCheck) bool { return c.Blocks }) {
+	if len(res.Checks) != len(openChecks) || slices.ContainsFunc(res.Checks, func(c worktree.LandCheck) bool { return c.Blocks }) {
 		t.Fatalf("checks %+v", res.Checks)
 	}
 	if _, err := os.Stat(w.Path); !os.IsNotExist(err) {
@@ -257,6 +274,42 @@ func TestLandChecksFollowTheKeptStage(t *testing.T) {
 	}
 }
 
+// GitHub does not merge a draft, so the github check blocks it, also with an
+// auto merge and a merge queue. GitHub gives the merge state DRAFT.
+func TestLandBlocksADraft(t *testing.T) {
+	for name, c := range map[string]struct {
+		queue string // added to the state
+		o     worktree.LandOptions
+	}{
+		"merge now":   {},
+		"auto merge":  {o: worktree.LandOptions{Auto: true}},
+		"merge queue": {queue: `"merge_queue": true, `},
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := setup(t)
+			e.landing(func(head string) string {
+				s := strings.Replace(landState(head), `"isDraft": false, "isCrossRepository": false, "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN"`,
+					`"isDraft": true, "isCrossRepository": false, "mergeable": "MERGEABLE", "mergeStateStatus": "DRAFT"`, 1)
+				return strings.Replace(s, `"refs": [`, c.queue+`"refs": [`, 1)
+			})
+			want := worktree.LandCheck{Name: worktree.CheckGitHub, State: worktree.StateDraft, Blocks: true}
+			res, err := e.land(worktree.LandOptions{Auto: c.o.Auto, DryRun: true})
+			if err != nil || res.Ready || res.Stage != worktree.StageDraft || !slices.Contains(res.Checks, want) {
+				t.Fatalf("dry run: %+v %v", res, err)
+			}
+			_, err = e.land(c.o)
+			var nr *worktree.NotReadyError
+			if !errors.As(err, &nr) || !slices.Equal(nr.Checks, []worktree.LandCheck{want}) ||
+				!strings.Contains(err.Error(), "Mark the PR ready for review on GitHub") {
+				t.Fatalf("%v", err)
+			}
+			if !onlyQueries(t) {
+				t.Fatalf("%q", ghCommands(t))
+			}
+		})
+	}
+}
+
 // The Blocked stage blocks a direct merge, not an auto merge: GitHub waits
 // until it can merge. The land records its options and keeps the worktree.
 func TestLandAutoRecordsTheOptionsAndKeepsTheWorktree(t *testing.T) {
@@ -331,7 +384,7 @@ func TestLandDryRunChangesNothing(t *testing.T) {
 	for _, c := range res.Checks {
 		names = append(names, c.Name)
 	}
-	if !slices.Equal(names, worktree.LandCheckNames) {
+	if !slices.Equal(names, openChecks) {
 		t.Fatalf("%v", names)
 	}
 	got, err := e.s.GetWorktree(w.ID)
@@ -440,60 +493,224 @@ func TestLandRefusesWhilePanesAreOpen(t *testing.T) {
 }
 
 // After a merge on GitHub, land does what comes after the merge: it deletes
-// the branch on GitHub and removes the worktree. It clears a land that
-// waited for GitHub.
+// the branch on GitHub and removes the worktree. A land with no flags applies
+// the keep options of the land that waited for GitHub, then clears that land.
 func TestLandAfterAMergeOnGitHub(t *testing.T) {
 	e := setup(t)
-	w, _ := e.landing(func(head string) string {
-		return strings.Replace(landState(head), `"state": "OPEN"`, `"state": "MERGED", "mergedAt": "2026-01-01T09:00:00Z"`, 1)
-	})
+	w, _ := e.landing(mergedState)
 	if err := e.s.SetPendingLand(w.ID, &store.PendingLand{PR: 15, Method: "squash", Auto: true, KeepWorktree: true}); err != nil {
-		t.Fatal(err)
-	}
-	res, err := e.land(worktree.LandOptions{KeepWorktree: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := ghCommands(t); !slices.Equal(got, []string{"graphql", getRef, deleteRef}) {
-		t.Fatalf("%q", got)
-	}
-	if !res.Merged || res.PR.State != "MERGED" || len(res.Checks) != 0 || !res.Ready || !res.RemoteBranchDeleted || res.WorktreeRemoved {
-		t.Fatalf("%+v", res)
-	}
-	if got, _ := e.s.GetWorktree(w.ID); got.Land != nil || res.Worktree.Land != nil {
-		t.Fatalf("the pending land stays: %+v", got.Land)
-	}
-
-	res, err = e.land(worktree.LandOptions{})
-	if err != nil || !res.WorktreeRemoved || !res.BranchDeleted {
-		t.Fatalf("%+v %v", res, err)
-	}
-}
-
-// After a merge, a land waits for GitHub no more. It clears the land that the
-// worktree records, also when the worktree stays because it has work that
-// is not in the PR. The note says what to do, in words that fit a land.
-func TestLandAfterAMergeClearsThePendingLandWhenTheWorktreeStays(t *testing.T) {
-	e := setup(t)
-	w, _ := e.landing(func(head string) string {
-		return strings.Replace(landState(head), `"state": "OPEN"`, `"state": "MERGED", "mergedAt": "2026-01-01T09:00:00Z"`, 1)
-	})
-	if err := e.s.SetPendingLand(w.ID, &store.PendingLand{PR: 15, Method: "squash", Auto: true}); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(w.Path, "notes.txt"), []byte("n\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	res, err := e.land(worktree.LandOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "Kept the worktree app-fix-login: it has 1 file(s) with uncommitted changes. Save the work, then remove the worktree with loam worktree rm."
+	if got := ghCommands(t); !slices.Equal(got, []string{"graphql", getRef, deleteRef}) {
+		t.Fatalf("%q", got)
+	}
+	inPR := []worktree.LandCheck{{Name: worktree.CheckWorkAfterPR, State: worktree.StateNone}}
+	if !res.Merged || res.PR.State != "MERGED" || !slices.Equal(res.Checks, inPR) || !res.Ready || !res.RemoteBranchDeleted || res.WorktreeRemoved {
+		t.Fatalf("%+v", res)
+	}
+	if _, err := os.Stat(w.Path); err != nil {
+		t.Fatal("the recorded keep did not keep the worktree")
+	}
+	if got, _ := e.s.GetWorktree(w.ID); got.Land != nil || res.Worktree.Land != nil {
+		t.Fatalf("the pending land stays: %+v", got.Land)
+	}
+
+	// No land records a keep now.
+	res, err = e.land(worktree.LandOptions{})
+	if err != nil || !res.WorktreeRemoved || !res.BranchDeleted {
+		t.Fatalf("%+v %v", res, err)
+	}
+}
+
+// A recorded keep stays a keep, and the flags of a later land can only add
+// keeps. After the removal, the result has no land.
+func TestLandAppliesTheRecordedKeeps(t *testing.T) {
+	for name, c := range map[string]struct {
+		recorded     store.PendingLand
+		o            worktree.LandOptions
+		keepWorktree bool
+	}{
+		"the recorded keep": {recorded: store.PendingLand{PR: 15, Auto: true, KeepRemoteBranch: true}},
+		"a flag adds a keep": {recorded: store.PendingLand{PR: 15, Auto: true, KeepRemoteBranch: true},
+			o: worktree.LandOptions{KeepWorktree: true}, keepWorktree: true},
+		"no flag drops a keep": {recorded: store.PendingLand{PR: 15, Auto: true, KeepRemoteBranch: true, KeepWorktree: true},
+			keepWorktree: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := setup(t)
+			w, _ := e.landing(mergedState)
+			if err := e.s.SetPendingLand(w.ID, &c.recorded); err != nil {
+				t.Fatal(err)
+			}
+			res, err := e.land(c.o)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if slices.Contains(ghCommands(t), getRef) || res.RemoteBranchDeleted || res.WorktreeRemoved == c.keepWorktree || res.Worktree.Land != nil {
+				t.Fatalf("%+v", res)
+			}
+		})
+	}
+}
+
+// cancelAtCall returns a context that ends when gh gets call n.
+func cancelAtCall(t *testing.T, n int) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	log := os.Getenv("LOAM_FAKE_GH_LOG")
+	go func() {
+		for ctx.Err() == nil {
+			if b, _ := os.ReadFile(log); strings.Count(string(b), "\n") >= n {
+				cancel()
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}()
+	return ctx
+}
+
+// gh stops before GitHub answers the merge, so GitHub may have it. The land
+// records its options, so a land again with no flags applies them.
+func TestLandRecordsItsOptionsWhenGHStopsInTheMerge(t *testing.T) {
+	e := setup(t)
+	w, head := e.landing(landState)
+	t.Setenv("LOAM_FAKE_GH_FAIL", "hang")
+	t.Setenv("LOAM_FAKE_GH_FAIL_CALL", "4") // two refresh queries, the settings, then the merge
+	_, err := worktree.Land(cancelAtCall(t, 4), e.s, e.plot.ID, "fix-login", worktree.LandOptions{KeepWorktree: true})
+	if !errors.Is(err, context.Canceled) || !strings.Contains(err.Error(), "Run loam worktree land again to finish it") {
+		t.Fatalf("%v", err)
+	}
+	got, err := e.s.GetWorktree(w.ID)
+	if want := (store.PendingLand{PR: 15, Method: "squash", KeepWorktree: true}); err != nil || got.Land == nil || *got.Land != want {
+		t.Fatalf("%+v %v", got.Land, err)
+	}
+
+	// GitHub had the merge.
+	t.Setenv("LOAM_FAKE_GH_FAIL", "")
+	if err := os.WriteFile(os.Getenv("LOAM_FAKE_GH_STATE"), []byte(mergedState(head)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err := e.land(worktree.LandOptions{})
+	if err != nil || !res.Merged || res.WorktreeRemoved || !res.RemoteBranchDeleted {
+		t.Fatalf("%+v %v", res, err)
+	}
+}
+
+// A reviewer merges the PR, then the worktree gets more work. That work is
+// not in the PR, so a land removes nothing and deletes nothing. It fails with
+// ErrNotReady. It clears the land that waited for GitHub, because GitHub
+// merged the PR.
+func TestLandOfAMergedPRWithWorkAfterItsHead(t *testing.T) {
+	for name, work := range map[string]func(t *testing.T, w store.Worktree){
+		"a pushed commit": func(t *testing.T, w store.Worktree) {
+			commit(t, w.Path, "more.txt", "m\n")
+			testutil.Git(t, w.Path, "push", "origin", "fix-login")
+		},
+		"a changed file": func(t *testing.T, w store.Worktree) {
+			if err := os.WriteFile(filepath.Join(w.Path, "notes.txt"), []byte("n\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := setup(t)
+			w, _ := e.landing(mergedState)
+			if err := e.s.SetPendingLand(w.ID, &store.PendingLand{PR: 15, Method: "squash", Auto: true}); err != nil {
+				t.Fatal(err)
+			}
+			work(t, w)
+			want := []worktree.LandCheck{{Name: worktree.CheckWorkAfterPR, State: worktree.StateFound, Blocks: true}}
+			res, err := e.land(worktree.LandOptions{DryRun: true})
+			if err != nil || res.Ready || !res.Merged || !slices.Equal(res.Checks, want) || res.Worktree.Land == nil {
+				t.Fatalf("dry run: %+v %v", res, err)
+			}
+			_, err = e.land(worktree.LandOptions{})
+			var nr *worktree.NotReadyError
+			if !errors.As(err, &nr) || !slices.Equal(nr.Checks, want) || !strings.Contains(err.Error(), "work that is not in the merged PR #15") ||
+				!strings.Contains(err.Error(), "Loam cleared the land that waited for GitHub") {
+				t.Fatalf("%v", err)
+			}
+			if !onlyQueries(t) {
+				t.Fatalf("%q", ghCommands(t))
+			}
+			got, err := e.s.GetWorktree(w.ID)
+			if err != nil || got.Land != nil {
+				t.Fatalf("%+v %v", got.Land, err)
+			}
+			if _, err := os.Stat(w.Path); err != nil || !e.branchExists("fix-login") {
+				t.Fatal("the worktree is gone")
+			}
+		})
+	}
+}
+
+// After a merge, a land waits for GitHub no more. It clears the land that the
+// worktree records, also when the worktree stays. Here GitHub added a commit
+// to the PR, the PR merged, and GitHub deleted the branch. The worktree has an
+// earlier commit of the PR checked out, and no remote branch holds it. The
+// note says what to do, in words that fit a land.
+func TestLandAfterAMergeClearsThePendingLandWhenTheWorktreeStays(t *testing.T) {
+	e := setup(t)
+	w, _ := e.landing(landState)
+	other := filepath.Join(t.TempDir(), "other")
+	testutil.Git(t, filepath.Dir(other), "clone", "--branch", "fix-login", e.remote, other)
+	commit(t, other, "update.txt", "u\n")
+	testutil.Git(t, other, "push", "origin", "fix-login")
+	prHead := testutil.Git(t, other, "rev-parse", "HEAD")
+	testutil.Git(t, e.repo, "fetch", "origin")
+	testutil.Git(t, other, "push", "origin", "--delete", "fix-login")
+	testutil.Git(t, e.repo, "fetch", "--prune", "origin")
+	state := strings.Replace(mergedState(prHead), `"refs": ["fix-login"]`, `"refs": []`, 1)
+	if err := os.WriteFile(os.Getenv("LOAM_FAKE_GH_STATE"), []byte(state), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.s.SetPendingLand(w.ID, &store.PendingLand{PR: 15, Method: "squash", Auto: true}); err != nil {
+		t.Fatal(err)
+	}
+	res, err := e.land(worktree.LandOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "Kept the worktree app-fix-login: it has 1 commit(s) that are not pushed. Save the work, then remove the worktree with loam worktree rm."
 	if res.WorktreeRemoved || res.WorktreeNote != want || !res.RemoteBranchDeleted {
 		t.Fatalf("%+v", res)
 	}
 	if got, _ := e.s.GetWorktree(w.ID); got.Land != nil || res.Worktree.Land != nil {
 		t.Fatalf("the pending land stays: %+v", got.Land)
+	}
+}
+
+// A closed PR does not land. The land clears the land that waited for
+// GitHub, and says so. A dry run changes nothing.
+func TestLandOfAClosedPRClearsThePendingLand(t *testing.T) {
+	e := setup(t)
+	w, _ := e.landing(func(head string) string {
+		return strings.Replace(landState(head), `"state": "OPEN"`, `"state": "CLOSED", "closedAt": "2026-01-01T09:00:00Z"`, 1)
+	})
+	pending := store.PendingLand{PR: 15, Method: "squash", Auto: true}
+	if err := e.s.SetPendingLand(w.ID, &pending); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.land(worktree.LandOptions{DryRun: true}); err == nil {
+		t.Fatal("dry run: want an error")
+	}
+	if got, _ := e.s.GetWorktree(w.ID); got.Land == nil || *got.Land != pending {
+		t.Fatalf("the dry run changed the land: %+v", got.Land)
+	}
+	_, err := e.land(worktree.LandOptions{})
+	if err == nil || errors.Is(err, worktree.ErrNotReady) || !strings.Contains(err.Error(), "Loam cleared the land that waited for GitHub") {
+		t.Fatalf("%v", err)
+	}
+	if got, _ := e.s.GetWorktree(w.ID); got.Land != nil {
+		t.Fatalf("the pending land stays: %+v", got.Land)
+	}
+	if !onlyQueries(t) {
+		t.Fatalf("%q", ghCommands(t))
 	}
 }
 
@@ -535,20 +752,36 @@ func TestLandAfterADirectMergeThatLoamCannotSee(t *testing.T) {
 	}
 }
 
-// GitHub can refuse the delete of the branch. The land keeps going, and the
-// note says why the branch stays.
+// GitHub can refuse the delete of the branch: no access, or with HTTP 422, a
+// protected branch. The land keeps going, and the note says why the branch
+// stays.
 func TestLandNotesABranchThatGitHubDoesNotDelete(t *testing.T) {
-	e := setup(t)
-	e.landing(landState)
-	t.Setenv("LOAM_FAKE_GH_FAIL", "forbidden")
-	t.Setenv("LOAM_FAKE_GH_FAIL_CALL", "7") // the delete, after the read of the branch
-	res, err := e.land(worktree.LandOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := "Kept the branch fix-login on GitHub: could not delete the branch: Resource not accessible by personal access token (HTTP 403)"
-	if !res.Merged || res.RemoteBranchDeleted || res.RemoteBranchNote != want || !res.WorktreeRemoved {
-		t.Fatalf("%+v", res)
+	for name, c := range map[string]struct {
+		state func(head string) string
+		fail  string
+		note  string
+	}{
+		"no access": {state: landState, fail: "forbidden",
+			note: "Kept the branch fix-login on GitHub: could not delete the branch: Resource not accessible by personal access token (HTTP 403)"},
+		"a protected branch": {state: func(head string) string {
+			return strings.Replace(landState(head), `"refs": [`, `"delete_refusals": {"fix-login": "Cannot delete this protected branch"}, "refs": [`, 1)
+		}, note: "Kept the branch fix-login on GitHub: could not delete the branch: Cannot delete this protected branch (HTTP 422)"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := setup(t)
+			e.landing(c.state)
+			if c.fail != "" {
+				t.Setenv("LOAM_FAKE_GH_FAIL", c.fail)
+				t.Setenv("LOAM_FAKE_GH_FAIL_CALL", "7") // the delete, after the read of the branch
+			}
+			res, err := e.land(worktree.LandOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !res.Merged || res.RemoteBranchDeleted || res.RemoteBranchNote != c.note || !res.WorktreeRemoved {
+				t.Fatalf("%+v", res)
+			}
+		})
 	}
 }
 
@@ -667,6 +900,59 @@ func TestRemoveKeepsTheBranchWithANewCommitAfterAMerge(t *testing.T) {
 	}
 }
 
+// pruneBranch deletes fix-login on the remote, and prunes origin/fix-login,
+// as GitHub and a fetch do after a squash merge. Then no remote branch holds
+// the commits of the PR.
+func (e *env) pruneBranch(w store.Worktree) {
+	e.t.Helper()
+	testutil.Git(e.t, w.Path, "push", "origin", "--delete", "fix-login")
+	testutil.Git(e.t, e.repo, "fetch", "--prune", "origin")
+}
+
+// When the PR cache says MERGED, and HEAD and the branch tip are the PR head,
+// the commits of the branch are in the merged PR. Remove does not count them
+// as unpushed after GitHub deleted the branch. A commit after the PR head
+// still counts.
+func TestRemoveAfterASquashMergeWithAPrunedBranch(t *testing.T) {
+	for name, more := range map[string]bool{"at the PR head": false, "a commit after the PR head": true} {
+		t.Run(name, func(t *testing.T) {
+			e := setup(t)
+			w, _ := e.landing(mergedState)
+			if err := worktree.RefreshPRs(context.Background(), e.s, []store.Worktree{w}); err != nil {
+				t.Fatal(err)
+			}
+			e.pruneBranch(w)
+			if more {
+				commit(t, w.Path, "more.txt", "m\n")
+			}
+			res, err := worktree.Remove(e.s, e.plot.ID, "fix-login", worktree.RemoveOptions{})
+			if more {
+				if !errors.Is(err, worktree.ErrUnsafe) || !strings.Contains(err.Error(), "2 commit(s) that are not pushed") {
+					t.Fatalf("%+v %v", res, err)
+				}
+				return
+			}
+			if err != nil || !res.BranchDeleted || e.branchExists("fix-login") {
+				t.Fatalf("%+v %v", res, err)
+			}
+		})
+	}
+}
+
+// A land after a squash merge, when GitHub deleted the branch, and a fetch
+// pruned origin/fix-login, removes the worktree.
+func TestLandAfterASquashMergeWithAPrunedBranch(t *testing.T) {
+	e := setup(t)
+	w, _ := e.landing(func(head string) string {
+		return strings.Replace(mergedState(head), `"refs": ["fix-login"]`, `"refs": []`, 1)
+	})
+	e.pruneBranch(w)
+	res, err := e.land(worktree.LandOptions{})
+	if err != nil || !res.RemoteBranchDeleted || !res.WorktreeRemoved || !res.BranchDeleted || res.WorktreeNote != "" {
+		t.Fatalf("%+v %v", res, err)
+	}
+}
+
 // failedRuns is landState with failed checks: two jobs of run 101, one job
 // of run 102, and a status from another CI, which has no run.
 func failedRuns(head string) string {
@@ -688,13 +974,59 @@ func TestRerunRunsEachFailedRunAgain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(res.Runs, []int64{101, 102}) || res.PR.Number != 15 {
+	if want := []worktree.FailedRun{{ID: 101, Started: true}, {ID: 102, Started: true}}; !slices.Equal(res.Runs, want) || res.PR.Number != 15 {
 		t.Fatalf("%+v", res)
+	}
+	if !slices.Equal(res.SkippedChecks, []string{"ci/legacy"}) {
+		t.Fatalf("%+v", res.SkippedChecks)
 	}
 	want := []string{"graphql", "graphql",
 		"run rerun 101 --failed --repo github.com/example/widgets", "run rerun 102 --failed --repo github.com/example/widgets"}
 	if got := ghCommands(t); !slices.Equal(got, want) {
 		t.Fatalf("gh calls\n got %q\nwant %q", got, want)
+	}
+}
+
+// refuseReruns is failedRuns, where GitHub refuses to run the runs in ids
+// again.
+func refuseReruns(ids ...string) func(head string) string {
+	return func(head string) string {
+		refusals := make([]string, len(ids))
+		for i, id := range ids {
+			refusals[i] = fmt.Sprintf(`%q: "Unable to retry this workflow run because it was created over a month ago"`, id)
+		}
+		return strings.Replace(failedRuns(head), `"refs": [`, `"rerun_refusals": {`+strings.Join(refusals, ", ")+`}, "refs": [`, 1)
+	}
+}
+
+// GitHub can refuse a run. The rerun tries every run, and the result says
+// which started, and why GitHub refused the others.
+func TestRerunTriesEveryRun(t *testing.T) {
+	e := setup(t)
+	e.landing(refuseReruns("101"))
+	res, err := worktree.Rerun(context.Background(), e.s, e.plot.ID, "", "fix-login")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []worktree.FailedRun{{ID: 101, Note: "could not re-run the run 101: failed to rerun: HTTP 403: " +
+		"Unable to retry this workflow run because it was created over a month ago " +
+		"(https://api.github.com/repos/example/widgets/actions/runs/101/rerun-failed-jobs)"}, {ID: 102, Started: true}}
+	if !slices.Equal(res.Runs, want) {
+		t.Fatalf("got %+v\nwant %+v", res.Runs, want)
+	}
+}
+
+// When no run starts, the rerun fails with the reason of each run.
+func TestRerunFailsWhenNoRunStarts(t *testing.T) {
+	e := setup(t)
+	e.landing(refuseReruns("101", "102"))
+	_, err := worktree.Rerun(context.Background(), e.s, e.plot.ID, "", "fix-login")
+	if err == nil || !strings.Contains(err.Error(), "could not re-run the run 101") || !strings.Contains(err.Error(), "could not re-run the run 102") ||
+		errors.Is(err, worktree.ErrGHUnavailable) {
+		t.Fatalf("%v", err)
+	}
+	if got := ghCommands(t); len(got) != 4 {
+		t.Fatalf("%q", got)
 	}
 }
 

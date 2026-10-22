@@ -233,10 +233,13 @@
       "additionalProperties": false,
       "required": ["name", "state", "blocks"],
       "properties": {
-        "name": { "enum": ["checks", "review", "behind_base", "conflicts", "github", "local_changes", "unpushed_commits"] },
+        "name": {
+          "description": "A land of an open PR has the checks from checks to unpushed_commits. A land of a merged PR has work_after_pr only.",
+          "enum": ["checks", "review", "behind_base", "conflicts", "github", "local_changes", "unpushed_commits", "work_after_pr"]
+        },
         "state": {
           "enum": ["none", "passed", "failed", "running", "waiting", "approved", "changes_requested", "required", "up_to_date",
-            "behind", "conflicting", "checking", "clear", "blocked", "changed", "unpushed", "unknown"]
+            "behind", "conflicting", "checking", "clear", "blocked", "draft", "changed", "unpushed", "found", "unknown"]
         },
         "blocks": { "type": "boolean" }
       }

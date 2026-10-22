@@ -141,9 +141,11 @@ type WorktreeLink struct {
 }
 
 // PendingLand is a land that GitHub finishes later: `loam worktree land`
-// turned on auto merge, or added the PR to a merge queue. It keeps the
-// options of the land, so Loam can tidy up as they say when GitHub merges
-// the PR.
+// turned on auto merge, or added the PR to a merge queue. It is also a land
+// that GitHub may have when Loam cannot see the merge. It keeps the options
+// of the land, so Loam can tidy up as they say when GitHub merges the PR. A
+// later land keeps what these options keep: its own options can only add
+// keeps. A land of a merged or closed PR clears it.
 type PendingLand struct {
 	// PR is the number of the PR.
 	PR int `json:"pr"`

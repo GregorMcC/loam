@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "loam worktree rerun --json",
-  "description": "runs lists the GitHub Actions runs whose failed jobs run again. skipped_checks lists the failed checks that are not jobs of GitHub Actions. Each is [] when none.",
+  "description": "runs lists each GitHub Actions run with a failed check: whether its failed jobs run again, or why GitHub did not start them. skipped_checks lists the failed checks that are not jobs of GitHub Actions. Each is [] when none.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -20,8 +20,25 @@
     "runs": {
       "type": "array",
       "items": {
-        "type": "integer",
-        "minimum": 1
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "started"],
+        "properties": {
+          "id": {
+            "description": "The ID of the GitHub Actions run.",
+            "type": "integer",
+            "minimum": 1
+          },
+          "started": {
+            "description": "True when GitHub runs the failed jobs of the run again.",
+            "type": "boolean"
+          },
+          "note": {
+            "description": "Why GitHub did not start the run. It is left out when the run started.",
+            "type": "string",
+            "minLength": 1
+          }
+        }
       }
     },
     "skipped_checks": {

@@ -43,11 +43,17 @@ const (
 	CheckLocalChanges CheckName = "local_changes"
 	// CheckUnpushedCommits is the commits of the worktree that are not pushed.
 	CheckUnpushedCommits CheckName = "unpushed_commits"
+	// CheckWorkAfterPR is whether the worktree has work after the head of a
+	// merged PR, which the PR does not have.
+	CheckWorkAfterPR CheckName = "work_after_pr"
 )
 
-// LandCheckNames lists the checks of a land, in the order of a land result.
+// LandCheckNames lists the checks of a land. A land of an open PR has the
+// checks from [CheckChecks] to [CheckUnpushedCommits], in this order. A land
+// of a merged PR has [CheckWorkAfterPR] only.
 var LandCheckNames = []CheckName{
 	CheckChecks, CheckReview, CheckBehindBase, CheckConflicts, CheckGitHub, CheckLocalChanges, CheckUnpushedCommits,
+	CheckWorkAfterPR,
 }
 
 // CheckState is the state of one check of a land.
@@ -70,15 +76,18 @@ const (
 	StateChecking         CheckState = "checking"
 	StateClear            CheckState = "clear"
 	StateBlocked          CheckState = "blocked"
+	StateDraft            CheckState = "draft"
 	StateChanged          CheckState = "changed"
 	StateUnpushed         CheckState = "unpushed"
+	StateFound            CheckState = "found"
 	StateUnknown          CheckState = "unknown"
 )
 
 // CheckStates lists every state of a check.
 var CheckStates = []CheckState{
 	StateNone, StatePassed, StateFailed, StateRunning, StateWaiting, StateApproved, StateChangesRequested, StateRequired,
-	StateUpToDate, StateBehind, StateConflicting, StateChecking, StateClear, StateBlocked, StateChanged, StateUnpushed, StateUnknown,
+	StateUpToDate, StateBehind, StateConflicting, StateChecking, StateClear, StateBlocked, StateDraft, StateChanged,
+	StateUnpushed, StateFound, StateUnknown,
 }
 
 // LandCheck is one check of a land: its state, and whether it blocks the land.
@@ -95,10 +104,17 @@ type NotReadyError struct {
 	// reasons say why each check blocks, for a person to read.
 	reasons []string
 	folder  string
+	// cleared says that the land cleared the land that the worktree
+	// recorded. It is empty when the land changed nothing.
+	cleared string
 }
 
 func (e *NotReadyError) Error() string {
-	return fmt.Sprintf("%s is not ready to land: %s", e.folder, strings.Join(e.reasons, "; "))
+	msg := fmt.Sprintf("%s is not ready to land: %s", e.folder, strings.Join(e.reasons, "; "))
+	if e.cleared != "" {
+		msg += ". " + e.cleared
+	}
+	return msg
 }
 
 // Is makes the error match [ErrNotReady].
@@ -134,9 +150,11 @@ type LandOptions struct {
 	Method github.MergeMethod
 	// Auto turns on auto merge: GitHub merges the PR when its checks pass.
 	Auto bool
-	// KeepWorktree keeps the worktree after the merge.
+	// KeepWorktree keeps the worktree after the merge. A keep that the
+	// worktree records (see [store.PendingLand]) applies too.
 	KeepWorktree bool
-	// KeepRemoteBranch keeps the branch on GitHub after the merge.
+	// KeepRemoteBranch keeps the branch on GitHub after the merge. A keep
+	// that the worktree records applies too.
 	KeepRemoteBranch bool
 	// DryRun changes nothing. The result is the plan.
 	DryRun bool
@@ -169,8 +187,8 @@ type LandResult struct {
 	// adds the PR to the queue.
 	MergeQueue bool `json:"merge_queue"`
 	Auto       bool `json:"auto"`
-	// Checks are the checks in the order of [LandCheckNames]. They are empty
-	// for a PR that is merged.
+	// Checks are the checks in the order of [LandCheckNames]. A PR that is
+	// merged has [CheckWorkAfterPR] only.
 	Checks []LandCheck `json:"checks"`
 	// Ready is true when no check blocks.
 	Ready  bool `json:"ready"`
@@ -203,8 +221,11 @@ type LandResult struct {
 // Land checked, so GitHub refuses it when the PR has a new commit.
 //
 // With an auto merge or a merge queue, GitHub merges later. Land records its
-// options on the worktree and keeps the worktree. For a PR that is merged,
-// Land skips the merge and does what comes after it.
+// options on the worktree and keeps the worktree. A later land keeps what the
+// recorded options keep: its own options can only add keeps. For a PR that is
+// merged, Land skips the merge and does what comes after it, unless the
+// worktree has work after the PR head (see [CheckWorkAfterPR]). For a merged
+// or closed PR, it clears the land that the worktree records.
 //
 // It fails with [ErrGHUnavailable] when gh is missing or signed out, or the
 // origin of the repo is not on GitHub.
@@ -216,6 +237,10 @@ func Land(ctx context.Context, s *store.Store, plotID, arg string, o LandOptions
 	if err != nil {
 		return nil, err
 	}
+	if w.Land != nil {
+		o.KeepWorktree = o.KeepWorktree || w.Land.KeepWorktree
+		o.KeepRemoteBranch = o.KeepRemoteBranch || w.Land.KeepRemoteBranch
+	}
 	t, err := openTarget(ctx, s, w)
 	if err != nil {
 		return nil, err
@@ -224,9 +249,20 @@ func Land(ctx context.Context, s *store.Store, plotID, arg string, o LandOptions
 		Auto: o.Auto, DryRun: o.DryRun}
 	switch t.pr.State {
 	case "MERGED":
-		res.Ready, res.Merged = true, true
+		res.Merged = true
+		st := Inspect(w)
+		res.Changed, res.Unpushed = st.Changed, st.Unpushed
+		res.Checks = []LandCheck{workAfterPR(t.pr, st)}
+		res.Ready = !res.Checks[0].Blocks
 		if o.DryRun {
 			return res, nil
+		}
+		if !res.Ready {
+			e := notReady(w, t.pr, st, res.Checks)
+			if e.cleared, err = clearPendingLand(s, w); err != nil {
+				return nil, err
+			}
+			return nil, e
 		}
 		if !o.KeepWorktree {
 			if err := refuseOpenPanes(w, o.OpenPanes); err != nil {
@@ -238,7 +274,17 @@ func Land(ctx context.Context, s *store.Store, plotID, arg string, o LandOptions
 		}
 		return res, nil
 	case "CLOSED":
-		return nil, fmt.Errorf("PR #%d of %s is closed without a merge. Reopen it on GitHub to land it", t.pr.Number, w.Branch)
+		msg := fmt.Sprintf("PR #%d of %s is closed without a merge", t.pr.Number, w.Branch)
+		if !o.DryRun {
+			cleared, err := clearPendingLand(s, w)
+			if err != nil {
+				return nil, err
+			}
+			if cleared != "" {
+				msg += ". " + cleared
+			}
+		}
+		return nil, errors.New(msg + ". Reopen the PR on GitHub to land it")
 	}
 	switch {
 	case t.pr.InMergeQueue:
@@ -281,10 +327,17 @@ func Land(ctx context.Context, s *store.Store, plotID, arg string, o LandOptions
 		}
 	}
 
+	pending := &store.PendingLand{PR: t.pr.Number, Method: string(res.Method), Auto: o.Auto, MergeQueue: settings.Queue,
+		KeepWorktree: o.KeepWorktree, KeepRemoteBranch: o.KeepRemoteBranch}
 	err = t.client.Merge(ctx, t.repo, t.pr.Number, github.MergeOptions{Method: res.Method, Auto: o.Auto, HeadOID: t.pr.HeadOID})
 	switch {
 	case errors.Is(err, github.ErrOffline) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded):
-		// gh stopped before GitHub answered. A land again checks first.
+		// gh stopped before GitHub answered, so GitHub may have the land.
+		// Record it, so a land again applies its options. A land again
+		// checks first.
+		if err := s.SetPendingLand(w.ID, pending); err != nil {
+			return nil, fmt.Errorf("gh stopped before GitHub answered, so GitHub may have the land of PR #%d, and Loam could not record the land: %w", t.pr.Number, err)
+		}
 		return nil, fmt.Errorf("gh stopped before GitHub answered, so GitHub may have the land of PR #%d (%w). Run loam worktree land again to finish it", t.pr.Number, err)
 	case err != nil:
 		return nil, ghUnavailable(err)
@@ -307,8 +360,6 @@ func Land(ctx context.Context, s *store.Store, plotID, arg string, o LandOptions
 		res.MergeNote = fmt.Sprintf("GitHub merged PR #%d, but the PR does not show the merge yet. Run loam worktree land again to finish it.", t.pr.Number)
 	}
 	res.MergeLater = true
-	pending := &store.PendingLand{PR: t.pr.Number, Method: string(res.Method), Auto: o.Auto, MergeQueue: settings.Queue,
-		KeepWorktree: o.KeepWorktree, KeepRemoteBranch: o.KeepRemoteBranch}
 	if err := s.SetPendingLand(w.ID, pending); err != nil {
 		return nil, err
 	}
@@ -318,8 +369,8 @@ func Land(ctx context.Context, s *store.Store, plotID, arg string, o LandOptions
 
 // tidy does what comes after a merge: it deletes the branch on GitHub and
 // removes the worktree, unless the options keep them. A step that fails is a
-// note. When the worktree stays, tidy clears the land that it records: the
-// land waits for GitHub no more.
+// note. The land waits for GitHub no more, so tidy clears the land that the
+// worktree records. A removal deletes the record with its land.
 func (res *LandResult) tidy(ctx context.Context, s *store.Store, t *target, o LandOptions) error {
 	if !o.KeepRemoteBranch {
 		err := t.client.DeleteBranch(ctx, t.repo, t.pr.Head, t.pr.HeadOID)
@@ -332,6 +383,7 @@ func (res *LandResult) tidy(ctx context.Context, s *store.Store, t *target, o La
 			res.RemoteBranchNote = fmt.Sprintf("Kept the branch %s on GitHub: %v", t.pr.Head, err)
 		}
 	}
+	res.Worktree.Land = nil
 	if !o.KeepWorktree {
 		rm, err := Remove(s, t.w.PlotID, t.w.ID, RemoveOptions{OpenPanes: o.OpenPanes})
 		var unsafe *unsafeError
@@ -347,11 +399,38 @@ func (res *LandResult) tidy(ctx context.Context, s *store.Store, t *target, o La
 			res.WorktreeNote = fmt.Sprintf("Kept the worktree %s: %v", filepath.Base(t.w.Path), err)
 		}
 	}
-	if t.w.Land == nil {
-		return nil
+	_, err := clearPendingLand(s, t.w)
+	return err
+}
+
+// clearPendingLand clears the land that the worktree records: GitHub merged
+// or closed the PR, so no land waits for it. It returns the words that say so,
+// or "" when the worktree records no land.
+func clearPendingLand(s *store.Store, w store.Worktree) (string, error) {
+	if w.Land == nil {
+		return "", nil
 	}
-	res.Worktree.Land = nil
-	return s.SetPendingLand(t.w.ID, nil)
+	if err := s.SetPendingLand(w.ID, nil); err != nil {
+		return "", err
+	}
+	return "Loam cleared the land that waited for GitHub", nil
+}
+
+// workAfterPR runs the check of a land of a merged PR: whether the worktree
+// has work after the PR head, which the PR does not have. It is the rule of
+// the stage Merged (see [StageInput.UsesPR]): the HEAD of the worktree is in
+// the PR (see [headInPR]), and no file has changes. When the local repo does
+// not have the PR head, Loam cannot tell, and the check blocks.
+func workAfterPR(pr *github.PR, st Status) LandCheck {
+	c := LandCheck{Name: CheckWorkAfterPR, State: StateNone}
+	switch {
+	case st.localFailed:
+		c.State = StateUnknown
+	case st.Changed > 0 || !headInPR(st.Worktree.Path, pr.HeadOID):
+		c.State = StateFound
+	}
+	c.Blocks = c.State != StateNone
+	return c
 }
 
 // landChecks runs the checks of a land on an open PR with its stage, and on
@@ -379,6 +458,8 @@ func landChecks(pr *github.PR, stage Stage, st Status, direct bool) []LandCheck 
 	}
 	gh := StateClear
 	switch {
+	case pr.Draft:
+		gh = StateDraft
 	case stage == StageBlocked:
 		gh = StateBlocked
 	case !mergeChecked(pr):
@@ -402,8 +483,9 @@ func landChecks(pr *github.PR, stage Stage, st Status, direct bool) []LandCheck 
 		// Behind base blocks only when the base branch needs the PR up to date.
 		{Name: CheckBehindBase, State: behind, Blocks: behindBlocks},
 		{Name: CheckConflicts, State: conflicts, Blocks: conflicts == StateConflicting},
-		// An auto merge and a merge queue wait until GitHub can merge.
-		{Name: CheckGitHub, State: gh, Blocks: gh == StateBlocked && direct},
+		// GitHub does not merge a draft, also not with an auto merge or a
+		// merge queue. They wait until GitHub can merge for another reason.
+		{Name: CheckGitHub, State: gh, Blocks: gh == StateDraft || gh == StateBlocked && direct},
 		{Name: CheckLocalChanges, State: changed, Blocks: changed != StateNone},
 		{Name: CheckUnpushedCommits, State: unpushed, Blocks: unpushed != StateNone},
 	}
@@ -426,7 +508,7 @@ func checksState(pr *github.PR) CheckState {
 }
 
 // notReady returns the error of a land that the checks block.
-func notReady(w store.Worktree, pr *github.PR, st Status, checks []LandCheck) error {
+func notReady(w store.Worktree, pr *github.PR, st Status, checks []LandCheck) *NotReadyError {
 	e := &NotReadyError{folder: filepath.Base(w.Path)}
 	for _, c := range checks {
 		if !c.Blocks {
@@ -450,6 +532,9 @@ func blockReason(c LandCheck, pr *github.PR, st Status) string {
 	case CheckConflicts:
 		return "the PR has conflicts with " + pr.Base
 	case CheckGitHub:
+		if c.State == StateDraft {
+			return "the PR is a draft. Mark the PR ready for review on GitHub"
+		}
 		return "GitHub blocks the merge. Open the PR on GitHub to see why, or land with --auto"
 	case CheckLocalChanges:
 		if c.State == StateUnknown {
@@ -461,6 +546,11 @@ func blockReason(c LandCheck, pr *github.PR, st Status) string {
 			return "git could not count the commits that are not pushed: " + st.Error
 		}
 		return fmt.Sprintf("%d commit(s) are not pushed", st.Unpushed)
+	case CheckWorkAfterPR:
+		if c.State == StateUnknown {
+			return "git could not check the worktree: " + st.Error
+		}
+		return fmt.Sprintf("the worktree has work that is not in the merged PR #%d. Open a new PR for that work, or remove the worktree with loam worktree rm", pr.Number)
 	}
 	return string(c.Name)
 }
@@ -562,12 +652,22 @@ func openPR(ctx context.Context, s *store.Store, plotID, repoArg, arg string) (*
 	return t, nil
 }
 
+// FailedRun is a GitHub Actions run with a failed check, which a rerun runs
+// again.
+type FailedRun struct {
+	ID int64 `json:"id"`
+	// Started is true when GitHub runs the failed jobs of the run again.
+	Started bool `json:"started"`
+	// Note says why GitHub did not run them again.
+	Note string `json:"note,omitempty"`
+}
+
 // RerunResult says which runs a rerun started again.
 type RerunResult struct {
 	Worktree store.Worktree `json:"worktree"`
 	PR       *github.PR     `json:"pr"`
 	// Runs are the GitHub Actions runs whose failed jobs run again.
-	Runs []int64 `json:"runs"`
+	Runs []FailedRun `json:"runs"`
 	// SkippedChecks are the failed checks that are not jobs of GitHub
 	// Actions. Loam cannot run them again.
 	SkippedChecks []string `json:"skipped_checks"`
@@ -575,13 +675,14 @@ type RerunResult struct {
 
 // Rerun runs the failed jobs of the PR of a worktree again: one gh run rerun
 // --failed for each GitHub Actions run with a failed check. It refreshes the
-// PR first. The PR must be open.
+// PR first. The PR must be open. It tries each run, and the result says why
+// GitHub did not start a run. It fails only when no run started.
 func Rerun(ctx context.Context, s *store.Store, plotID, repoArg, arg string) (*RerunResult, error) {
 	t, err := openPR(ctx, s, plotID, repoArg, arg)
 	if err != nil {
 		return nil, err
 	}
-	res := &RerunResult{Worktree: t.w, PR: t.pr, Runs: []int64{}, SkippedChecks: []string{}}
+	res := &RerunResult{Worktree: t.w, PR: t.pr, Runs: []FailedRun{}, SkippedChecks: []string{}}
 	var runs []int64
 	for _, c := range t.pr.FailedChecks {
 		switch {
@@ -591,14 +692,34 @@ func Rerun(ctx context.Context, s *store.Store, plotID, repoArg, arg string) (*R
 			runs = append(runs, c.RunID)
 		}
 	}
-	for i, id := range runs {
+	var errs runErrors
+	for _, id := range runs {
+		run := FailedRun{ID: id, Started: true}
 		if err := t.client.RerunFailed(ctx, t.repo, id); err != nil {
-			return nil, fmt.Errorf("started %d of %d runs again: %w", i, len(runs), ghUnavailable(err))
+			run.Started, run.Note = false, err.Error()
+			errs = append(errs, err)
 		}
-		res.Runs = append(res.Runs, id)
+		res.Runs = append(res.Runs, run)
+	}
+	if len(runs) > 0 && len(errs) == len(runs) {
+		return nil, ghUnavailable(fmt.Errorf("none of the %d failed runs started again: %w", len(runs), errs))
 	}
 	return res, nil
 }
+
+// runErrors are the errors of the runs that did not start again. The message
+// joins them with "; ".
+type runErrors []error
+
+func (e runErrors) Error() string {
+	msgs := make([]string, len(e))
+	for i, err := range e {
+		msgs[i] = err.Error()
+	}
+	return strings.Join(msgs, "; ")
+}
+
+func (e runErrors) Unwrap() []error { return e }
 
 // UpdateResult says what an update did.
 type UpdateResult struct {

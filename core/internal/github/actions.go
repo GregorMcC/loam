@@ -124,11 +124,20 @@ func (c *Client) UpdateBranch(ctx context.Context, repo Repo, number int) error 
 	return c.act(ctx, "update PR #"+n, "pr", "update-branch", n, "--repo", repo.flag())
 }
 
+// refMissingText is the message of GitHub for a delete of a branch that is
+// not there. GitHub gives it with HTTP 422.
+const refMissingText = "Reference does not exist"
+
 // DeleteBranch deletes a branch on GitHub when its head is headOID, the head
 // of a merged PR. It reads the head first, then deletes the branch. It fails
 // with [ErrBranchMoved] when the head is another commit. A branch that is not
 // on GitHub, or that GitHub deletes between the read and the delete, is no
 // error: GitHub can delete the branch of a merged PR first.
+//
+// GitHub also gives HTTP 422 when it refuses the delete, such as for a
+// protected branch or a ruleset. A 422 means that the branch is gone only
+// when GitHub says that the reference does not exist, or a read after it
+// gives 404. Else the error has the message of GitHub.
 func (c *Client) DeleteBranch(ctx context.Context, repo Repo, branch, headOID string) error {
 	out, err := c.run(ctx, ghTimeout, nil, "api", "--hostname", host, repo.refPath("ref", branch))
 	if gone(err, "HTTP 404") {
@@ -149,14 +158,19 @@ func (c *Client) DeleteBranch(ctx context.Context, repo Repo, branch, headOID st
 		return fmt.Errorf("%w: %s is at %s, and the PR head is %s", ErrBranchMoved, branch, ref.Object.SHA, headOID)
 	}
 	_, err = c.run(ctx, ghActionTimeout, nil, "api", "--hostname", host, "--method", "DELETE", repo.refPath("refs", branch))
-	if gone(err, "HTTP 404", "HTTP 422") {
+	switch {
+	case gone(err, "HTTP 404", refMissingText):
 		return nil
+	case gone(err, "HTTP 422"):
+		if _, readErr := c.run(ctx, ghTimeout, nil, "api", "--hostname", host, repo.refPath("ref", branch)); gone(readErr, "HTTP 404") {
+			return nil
+		}
 	}
 	return actionError(err, "delete the branch")
 }
 
-// gone reports whether a gh api call failed with one of the HTTP statuses
-// that GitHub gives for a branch that is not there.
+// gone reports whether a gh api call failed with one of the texts that GitHub
+// gives for a branch that is not there: an HTTP status, or a message.
 func gone(err error, statuses ...string) bool {
 	var f *ghFailure
 	return errors.As(err, &f) && f.says(statuses...)

@@ -245,6 +245,44 @@ func TestDeleteBranchThatIsGone(t *testing.T) {
 	if err := client(t).DeleteBranch(context.Background(), widgets, "fix-login", prHead); err != nil {
 		t.Fatal(err)
 	}
+	// GitHub said that the reference does not exist, so no read follows.
+	if n := len(testutil.FakeGHCalls(t)); n != 3 {
+		t.Fatalf("%d calls", n)
+	}
+}
+
+// protectedState is landState where GitHub refuses the delete of fix-login
+// with HTTP 422, as for a protected branch or a ruleset.
+var protectedState = strings.Replace(landState, `"refs": [`, `"delete_refusals": {"fix-login": "Cannot delete this protected branch"}, "refs": [`, 1)
+
+// A 422 can be a refusal. When GitHub does not say that the reference does
+// not exist, Loam reads the branch again. The branch is still there, so the
+// delete fails with the reason of GitHub.
+func TestDeleteBranchRefusedWith422(t *testing.T) {
+	testutil.Home(t)
+	file := testutil.FakeGH(t, protectedState)
+	err := client(t).DeleteBranch(context.Background(), widgets, "fix-login", prHead)
+	if err == nil || errors.Is(err, github.ErrBranchMoved) || err.Error() != "could not delete the branch: Cannot delete this protected branch (HTTP 422)" {
+		t.Fatalf("%v", err)
+	}
+	calls := testutil.FakeGHCalls(t)
+	if len(calls) != 3 || !slices.Equal(calls[2].Args, calls[0].Args) {
+		t.Fatalf("%+v", calls)
+	}
+	if !slices.Contains(refs(t, file), "fix-login") {
+		t.Fatal("the branch is gone")
+	}
+}
+
+// A 422 after which the read gives 404: the branch is gone.
+func TestDeleteBranchWith422AndNoBranchAfter(t *testing.T) {
+	testutil.Home(t)
+	testutil.FakeGH(t, protectedState)
+	t.Setenv("LOAM_FAKE_GH_FAIL", "not_found")
+	t.Setenv("LOAM_FAKE_GH_FAIL_CALL", "3") // the read after the delete
+	if err := client(t).DeleteBranch(context.Background(), widgets, "fix-login", prHead); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // A branch name is escaped for the path, and keeps its slashes.

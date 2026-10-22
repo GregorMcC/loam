@@ -516,9 +516,10 @@ public enum MergeMethod: String, Codable, Equatable, Sendable, CaseIterable {
 
 /// One check of a land (docs/contract.md, "Land, rerun, and update").
 public struct LandCheck: Codable, Equatable, Sendable {
-    /// checks, review, behind_base, conflicts, github, local_changes, or unpushed_commits.
+    /// checks, review, behind_base, conflicts, github, local_changes, or unpushed_commits for an open PR.
+    /// work_after_pr for a merged PR.
     public var name: String
-    /// The state of the check, such as passed, failed, changes_requested, behind, or conflicting.
+    /// The state of the check, such as passed, failed, changes_requested, behind, conflicting, or draft.
     public var state: String
     /// True when the check stops the land.
     public var blocks: Bool
@@ -542,7 +543,7 @@ public struct LandResult: Codable, Equatable, Sendable {
     /// True when the base branch has a merge queue. The land adds the PR to the queue.
     public var mergeQueue: Bool
     public var auto: Bool
-    /// Every check, in the order of the core. Empty for a PR that is merged.
+    /// Every check, in the order of the core. For a PR that is merged, work_after_pr only.
     public var checks: [LandCheck]
     /// True when no check blocks.
     public var ready: Bool
@@ -569,12 +570,21 @@ public struct LandResult: Codable, Equatable, Sendable {
     }
 }
 
+/// A GitHub Actions run with a failed check, which `loam worktree rerun` runs again.
+public struct FailedRun: Codable, Equatable, Sendable {
+    public var id: Int
+    /// True when GitHub runs the failed jobs of the run again.
+    public var started: Bool
+    /// Why GitHub did not start the run. Nil when it started.
+    public var note: String?
+}
+
 /// What `loam worktree rerun` started again.
 public struct RerunResult: Codable, Equatable, Sendable {
     public var worktree: Worktree
     public var pr: PullRequest
-    /// The GitHub Actions runs whose failed jobs run again.
-    public var runs: [Int]
+    /// Each GitHub Actions run with a failed check: whether it started again, or why not.
+    public var runs: [FailedRun]
     /// The failed checks that are not jobs of GitHub Actions. The core cannot run them again.
     public var skippedChecks: [String]
     enum CodingKeys: String, CodingKey { case worktree, pr, runs, skippedChecks = "skipped_checks" }

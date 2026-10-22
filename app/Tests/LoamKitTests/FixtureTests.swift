@@ -205,7 +205,9 @@ func decodeFixture(schema: String, data: Data) throws {
         #expect(auto.worktree.land == PendingLand(pr: 23, method: "squash", auto: true, mergeQueue: false,
                                                   keepWorktree: false, keepRemoteBranch: false))
         let rerun = try d.decode(RerunResult.self, from: Fixtures.data("worktree_rerun"))
-        #expect(rerun.runs == [301, 302] && rerun.skippedChecks.isEmpty)
+        #expect(rerun.runs.map(\.id) == [301, 302] && rerun.runs.map(\.started) == [true, false])
+        #expect(rerun.runs[0].note == nil && rerun.runs[1].note?.contains("could not re-run the run 302") == true)
+        #expect(rerun.skippedChecks.isEmpty)
         let update = try d.decode(UpdateResult.self, from: Fixtures.data("worktree_update"))
         #expect(update.fetched && update.fetchNote == nil)
         let list = try d.decode([WorktreeStatus].self, from: Fixtures.data("worktree_list_stages"))
@@ -221,6 +223,16 @@ func decodeFixture(schema: String, data: Data) throws {
             return
         }
         #expect(details?.checks == [LandCheck(name: "conflicts", state: "conflicting", blocks: true)])
+    }
+
+    @Test func aDraftBlocksTheLand() throws {
+        let env = try JSONDecoder().decode(ErrorEnvelope.self, from: Fixtures.data("error_not_ready_draft"))
+        let error = LoamError.from(exitCode: 16, message: env.error.message, details: env.error.details?.data)
+        guard case .notReady(let details, _) = error else {
+            Issue.record("wrong case: \(error)")
+            return
+        }
+        #expect(details?.checks == [LandCheck(name: "github", state: "draft", blocks: true)])
     }
 
     @Test func theNewStageAndNoteDecode() throws {

@@ -675,6 +675,19 @@
     "schema": "error"
   },
   {
+    "name": "error_not_ready_draft",
+    "args": [
+      "worktree",
+      "land",
+      "plotaaaaab",
+      "try-dark-mode",
+      "--auto",
+      "--json"
+    ],
+    "exit_code": 16,
+    "schema": "error"
+  },
+  {
     "name": "worktree_land",
     "args": [
       "worktree",

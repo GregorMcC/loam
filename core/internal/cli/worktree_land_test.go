@@ -172,6 +172,18 @@ func TestWorktreeLandNotReadyExits16(t *testing.T) {
 	}
 }
 
+// A dry run prints the one check of a merged PR.
+func TestWorktreeLandDryRunOfAMergedPR(t *testing.T) {
+	_, w, _ := landCLI(t, func(head string) string {
+		return strings.Replace(landState(head), `"state": "OPEN"`, `"state": "MERGED"`, 1)
+	})
+	testutil.Git(t, w.Path, "commit", "--allow-empty", "-m", "more")
+	out, code := loam(t, "worktree", "land", "alpha", "fix-login", "--dry-run")
+	if code != 0 || !strings.Contains(out, "work_after_pr: found (blocks)") || !strings.Contains(out, "Not ready to land.") {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+}
+
 func TestWorktreeLandWithNoGitHubExits17(t *testing.T) {
 	landCLI(t, landState)
 	t.Setenv("LOAM_GH", filepath.Join(t.TempDir(), "gh"))
@@ -220,7 +232,7 @@ func TestWorktreeRerun(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &res); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(res.Runs, []int64{101}) || res.PR.Number != 15 {
+	if !slices.Equal(res.Runs, []worktree.FailedRun{{ID: 101, Started: true}}) || res.PR.Number != 15 {
 		t.Fatalf("%s", out)
 	}
 	if got := ghArgs(t); !slices.Equal(got, []string{"run rerun 101 --failed --repo github.com/example/widgets"}) {
@@ -228,6 +240,18 @@ func TestWorktreeRerun(t *testing.T) {
 	}
 	out, code = loam(t, "worktree", "rerun", "alpha", "fix-login")
 	if code != 0 || !strings.Contains(out, "Started the failed jobs of 1 run(s) again for PR #15.") {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+}
+
+// A run that GitHub does not start again: the text says why. When no run
+// starts, the exit code is 1.
+func TestWorktreeRerunRefused(t *testing.T) {
+	landCLI(t, func(head string) string {
+		return strings.Replace(landState(head), `"refs": [`, `"rerun_refusals": {"101": "Unable to retry this workflow run"}, "refs": [`, 1)
+	})
+	out, code := loam(t, "worktree", "rerun", "alpha", "fix-login")
+	if code != 1 || !strings.Contains(out, "could not re-run the run 101: failed to rerun: HTTP 403: Unable to retry this workflow run") {
 		t.Fatalf("exit %d: %s", code, out)
 	}
 }

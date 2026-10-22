@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "loam worktree land --json",
-  "description": "What a land did, or with --dry-run, the plan. pr is the PR before the merge. methods, default_method, and checks are empty for a PR that is merged. The notes are left out when they do not apply.",
+  "description": "What a land did, or with --dry-run, the plan. pr is the PR before the merge. methods and default_method are empty for a PR that is merged, and checks has work_after_pr only. The notes are left out when they do not apply.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -66,6 +66,7 @@
       "type": "boolean"
     },
     "checks": {
+      "description": "Each check, in the order of the land. A PR that is merged has work_after_pr only.",
       "type": "array",
       "items": {
         "$ref": "defs.json#/$defs/landCheck"

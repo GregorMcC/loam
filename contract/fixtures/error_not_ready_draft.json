@@ -1,0 +1,16 @@
+{
+  "error": {
+    "details": {
+      "checks": [
+        {
+          "blocks": true,
+          "name": "github",
+          "state": "draft"
+        }
+      ]
+    },
+    "exit_code": 16,
+    "kind": "not_ready",
+    "message": "web-try-dark-mode is not ready to land: the PR is a draft. Mark the PR ready for review on GitHub"
+  }
+}

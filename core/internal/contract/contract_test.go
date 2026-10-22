@@ -498,10 +498,13 @@ func scenario(t *testing.T) *harness {
 
 	// Land, rerun, and update. The fake gh merges the PR and deletes the
 	// branch in its state. link-labels is ready to merge, rename-users has
-	// changes requested, new-api has conflicts, and sign-commits is blocked.
+	// changes requested, new-api has conflicts, try-dark-mode is a draft,
+	// and sign-commits is blocked. GitHub does not run run 302 of
+	// native-panel again.
 	h.run("worktree_land_dry_run", "worktree-land", 0, "worktree", "land", loam, "link-labels", "--dry-run")
 	h.run("worktree_land_dry_run_blocked", "worktree-land", 0, "worktree", "land", loam, "rename-users", "--dry-run")
 	h.run("error_not_ready", "error", 16, "worktree", "land", loam, "new-api")
+	h.run("error_not_ready_draft", "error", 16, "worktree", "land", loam, "try-dark-mode", "--auto")
 	h.run("worktree_land", "worktree-land", 0, "worktree", "land", loam, "link-labels", "--method", "rebase")
 	h.run("worktree_land_auto", "worktree-land", 0, "worktree", "land", loam, "sign-commits", "--auto")
 	h.run("worktree_rerun", "worktree-rerun", 0, "worktree", "rerun", loam, "native-panel")

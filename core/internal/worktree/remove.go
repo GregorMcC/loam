@@ -124,10 +124,12 @@ type RemoveResult struct {
 // in [Find].
 //
 // It refuses while a pane is open in the worktree. Without Force, it also
-// refuses a worktree with uncommitted changes or unpushed commits. It deletes
-// the branch with `git branch -d`. When the PR cache says that the PR of the
-// branch is merged, and the branch tip is the PR head, it uses -D. It never
-// touches a remote branch.
+// refuses a worktree with uncommitted changes or unpushed commits. When the
+// PR cache says that the PR of the branch is merged, and HEAD and the branch
+// tip are the PR head, the commits are in the PR, and none counts as
+// unpushed. It deletes the branch with `git branch -d`. When the PR is merged
+// and the branch tip is the PR head, it uses -D. It never touches a remote
+// branch.
 func Remove(s *store.Store, plotID, arg string, o RemoveOptions) (*RemoveResult, error) {
 	w, err := Find(s, plotID, o.Repo, arg)
 	if err != nil {
@@ -142,12 +144,19 @@ func Remove(s *store.Store, plotID, arg string, o RemoveOptions) (*RemoveResult,
 	}
 
 	st := Inspect(w)
+	// Read the branch tip and the PR before the removal: a failure here
+	// leaves the worktree as it was.
+	tip, _ := git(w.Repo, "rev-parse", "--verify", "--quiet", "refs/heads/"+w.Branch)
+	head, err := mergedHead(s, w)
+	if err != nil {
+		return nil, err
+	}
 	if !o.Force {
 		var why []string
 		if st.Changed > 0 {
 			why = append(why, fmt.Sprintf("%d file(s) with uncommitted changes", st.Changed))
 		}
-		if st.Unpushed > 0 {
+		if st.Unpushed > 0 && !inMergedPR(w, st, tip, head) {
 			why = append(why, fmt.Sprintf("%d commit(s) that are not pushed", st.Unpushed))
 		}
 		if st.Error != "" {
@@ -158,13 +167,6 @@ func Remove(s *store.Store, plotID, arg string, o RemoveOptions) (*RemoveResult,
 		}
 	}
 
-	// Read the branch tip and the PR before the removal: a failure here
-	// leaves the worktree as it was.
-	tip, _ := git(w.Repo, "rev-parse", "--verify", "--quiet", "refs/heads/"+w.Branch)
-	head, err := mergedHead(s, w)
-	if err != nil {
-		return nil, err
-	}
 	if st.Missing {
 		git(w.Repo, "worktree", "prune")
 	} else {
@@ -236,6 +238,23 @@ func panesIn(w store.Worktree, extra []string) (int, error) {
 		}
 	}
 	return n, nil
+}
+
+// inMergedPR reports whether the commits of the worktree are in the merged PR
+// with the head: no file has changes, and HEAD and the branch tip are the
+// head. A worktree whose folder is gone has no HEAD, so its branch tip
+// decides. After a squash or rebase merge, GitHub can delete the branch, and
+// a fetch prunes it. Then no remote branch holds the commits of the PR, but
+// GitHub has them in the PR.
+func inMergedPR(w store.Worktree, st Status, tip, head string) bool {
+	if head == "" || tip != head || st.Changed > 0 || st.localFailed {
+		return false
+	}
+	if st.Missing {
+		return true
+	}
+	h, err := git(w.Path, "rev-parse", "HEAD")
+	return err == nil && h == head
 }
 
 // mergedHead returns the head of the merged PR of the branch of the worktree

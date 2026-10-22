@@ -45,8 +45,15 @@
     "url": "https://github.com/example/widgets/pull/16"
   },
   "runs": [
-    301,
-    302
+    {
+      "id": 301,
+      "started": true
+    },
+    {
+      "id": 302,
+      "note": "could not re-run the run 302: failed to rerun: HTTP 403: Unable to retry this workflow run because it was created over a month ago (https://api.github.com/repos/example/widgets/actions/runs/302/rerun-failed-jobs)",
+      "started": false
+    }
   ],
   "skipped_checks": [],
   "worktree": {

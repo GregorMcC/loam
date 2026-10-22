@@ -14,6 +14,11 @@
 //   - "merge_queue": true when the base branch of each PR has a merge queue.
 //   - "merge_lag": true when GitHub merges a PR, and the queries do not show
 //     the merge yet.
+//   - "delete_refusals": the message of GitHub for a delete of a branch that
+//     GitHub refuses with HTTP 422, such as for a protected branch or a
+//     ruleset, by branch. The branch stays.
+//   - "rerun_refusals": the message of GitHub for a run that GitHub does not
+//     run again, by run ID.
 //
 // The fake answers these commands:
 //
@@ -23,12 +28,15 @@
 //     settings.
 //   - gh api repos/<owner>/<repo>/git/ref/heads/<branch>: the head of a branch.
 //   - gh api --method DELETE repos/<owner>/<repo>/git/refs/heads/<branch>:
-//     removes the branch from "refs".
+//     removes the branch from "refs". GitHub gives HTTP 422 in two cases: the
+//     reference does not exist, or GitHub refuses the delete
+//     ("delete_refusals").
 //   - gh pr merge <number>: merges the PR. With a merge queue, it puts the PR
 //     in the queue. With --auto, the PR stays open. --match-head-commit must
 //     be the PR head.
 //   - gh pr update-branch <number>: a PR that is behind its base is clean.
-//   - gh run rerun <id> --failed: does nothing.
+//   - gh run rerun <id> --failed: does nothing, or fails as "rerun_refusals"
+//     says.
 //
 // LOAM_FAKE_GH_FAIL makes each call fail as gh does, with the exit code and
 // the text that gh prints (see [failures]). "hang" waits for a minute, as a
@@ -49,13 +57,15 @@ import (
 )
 
 type state struct {
-	Refs       []string                   `json:"refs"`
-	Heads      map[string]string          `json:"heads,omitempty"`
-	Pulls      []map[string]any           `json:"pulls"`
-	Details    map[string]json.RawMessage `json:"details"`
-	Repository map[string]any             `json:"repository,omitempty"`
-	MergeQueue bool                       `json:"merge_queue,omitempty"`
-	MergeLag   bool                       `json:"merge_lag,omitempty"`
+	Refs           []string                   `json:"refs"`
+	Heads          map[string]string          `json:"heads,omitempty"`
+	Pulls          []map[string]any           `json:"pulls"`
+	Details        map[string]json.RawMessage `json:"details"`
+	Repository     map[string]any             `json:"repository,omitempty"`
+	MergeQueue     bool                       `json:"merge_queue,omitempty"`
+	MergeLag       bool                       `json:"merge_lag,omitempty"`
+	DeleteRefusals map[string]string          `json:"delete_refusals,omitempty"`
+	RerunRefusals  map[string]string          `json:"rerun_refusals,omitempty"`
 }
 
 func main() {
@@ -99,6 +109,7 @@ func main() {
 	case len(args) > 2 && args[0] == "pr" && args[1] == "update-branch":
 		updateBranch(st, args[2])
 	case len(args) > 2 && args[0] == "run" && args[1] == "rerun":
+		rerun(st, args[2])
 	default:
 		fail(2, "fakegh: unknown command "+strings.Join(args, " "))
 	}
@@ -191,6 +202,9 @@ func rest(st *state, args []string) {
 		}
 		fail(1, "gh: Not Found (HTTP 404)")
 	}
+	if msg, ok := st.DeleteRefusals[branch]; ok && method == "DELETE" {
+		fail(1, "gh: "+msg+" (HTTP 422)")
+	}
 	if method == "DELETE" {
 		st.Refs = slices.DeleteFunc(st.Refs, func(r string) bool { return r == branch })
 		st.write()
@@ -259,6 +273,14 @@ func merge(st *state, args []string) {
 		fmt.Printf("✓ Merged pull request example/widgets#%s\n", args[0])
 	}
 	st.write()
+}
+
+// rerun runs the failed jobs of a run again, as gh run rerun --failed does.
+// gh prints the HTTP error of GitHub with the URL of the request.
+func rerun(st *state, id string) {
+	if msg, ok := st.RerunRefusals[id]; ok {
+		fail(1, fmt.Sprintf("failed to rerun: HTTP 403: %s (https://api.github.com/repos/example/widgets/actions/runs/%s/rerun-failed-jobs)", msg, id))
+	}
 }
 
 // updateBranch brings a PR up to date with its base, as gh pr update-branch does.
