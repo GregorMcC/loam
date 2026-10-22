@@ -23,10 +23,14 @@ public enum AfterMergeRule {
         case follow
     }
 
-    /// The merge of a row, or nil. Only a row at the Merged stage whose PR state is MERGED counts, and only while its
-    /// folder is there. The core gives the Merged stage only when the worktree has no work after the PR head.
+    /// The merge of a row, or nil. Only a row at the Merged stage whose PR state is MERGED counts, only while its
+    /// folder is there, and only when the last refresh got an answer from GitHub. A refresh with no answer (offline,
+    /// rate limited, no access) gives the PR from the cache, with a note. The core checks for work after the PR head
+    /// before it gives the Merged stage, but a cache row from before Loam kept the PR head gets the Merged stage with no
+    /// such check. So the app checks the work of the row itself (`holdsNoWork`).
     public static func merge(of row: WorktreeStatus) -> MergedPR? {
-        guard row.stage == .merged, !row.missing, let pr = row.pr, pr.state == "MERGED" else { return nil }
+        guard row.stage == .merged, !row.missing, (row.prNote ?? .noNote) == .noNote, let pr = row.pr, pr.state == "MERGED"
+        else { return nil }
         return MergedPR(worktree: row.worktree.id, number: pr.number)
     }
 
@@ -37,11 +41,22 @@ public enum AfterMergeRule {
         return .tidy(land)
     }
 
-    /// True when Loam can remove the worktree with no question: git found no changed files and no commit that no
-    /// remote branch holds, no check failed, and no session in it is mid-turn or needs you.
-    public static func canRemove(_ row: WorktreeStatus, panes: [PaneID], in workspace: Workspace) -> Bool {
+    /// True when the app knows of no work in the worktree that is not on GitHub: git found no changed files and no
+    /// commit that no remote branch holds, and no check failed.
+    public static func holdsNoWork(_ row: WorktreeStatus) -> Bool {
         row.changed == 0 && row.unpushed == 0 && row.error == nil && !row.missing
-            && !panes.contains { ClosePrompt.asks(for: $0, in: workspace) }
+    }
+
+    /// True when Loam can close the pane with no question and stop nothing: a session that is not mid-turn and does
+    /// not need you, or a shell that runs no process, such as a dev server. `runsAProcess` reads the terminal.
+    public static func closesQuietly(_ pane: PaneID, in workspace: Workspace, runsAProcess: (PaneID) -> Bool) -> Bool {
+        workspace.spec(of: pane)?.kind == .shell ? !runsAProcess(pane) : !ClosePrompt.asks(for: pane, in: workspace)
+    }
+
+    /// True when Loam can remove the worktree with no question: it holds no work, and each of its panes closes quietly.
+    public static func canRemove(_ row: WorktreeStatus, panes: [PaneID], in workspace: Workspace,
+                                 runsAProcess: (PaneID) -> Bool) -> Bool {
+        holdsNoWork(row) && panes.allSatisfy { closesQuietly($0, in: workspace, runsAProcess: runsAProcess) }
     }
 
     // MARK: Words

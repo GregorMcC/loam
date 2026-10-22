@@ -78,6 +78,12 @@ public final class AppModel {
     @ObservationIgnored public internal(set) var keptMerges = KeptMerges()
     /// The worktrees whose removal after a merge runs now.
     @ObservationIgnored var mergeRemovals: Set<String> = []
+    /// The actions after merges that run now, one after the other.
+    @ObservationIgnored var mergeActions: Task<Void, Never>?
+    /// True when a shell pane runs a process, such as a dev server, so that Loam does not close it with no question
+    /// after a merge (ticket 113). The window reads the terminal. The default says yes, so with no terminal to read,
+    /// Loam asks.
+    @ObservationIgnored public var paneRunsAProcess: (PaneID) -> Bool = { _ in true }
     /// Asks the question of a close that ends a session in a turn, and returns true on the confirm button. The window
     /// shows it as a sheet. The default says no, so a land with no window never stops a session.
     @ObservationIgnored public var confirmClose: (ClosePrompt) async -> Bool = { _ in false }
@@ -388,7 +394,7 @@ public final class AppModel {
         if !askedAbout.contains(where: \.holdsGitHubNote), askedAbout.contains(where: \.githubAnswered) {
             recheckGitHubNotes(except: plot)
         }
-        await followMerges(of: askedAbout.map(\.worktree.id))
+        followMerges(of: askedAbout.map(\.worktree.id))
     }
 
     /// Asks GitHub about one worktree (`loam worktree list <plot> --refresh --worktree <id>`) and shows the

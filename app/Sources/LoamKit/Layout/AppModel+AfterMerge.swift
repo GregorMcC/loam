@@ -7,25 +7,63 @@ import Foundation
 /// 2. Else the repo setting decides. Ask shows a callout at the top of the plot panel. Remove the worktree removes it
 ///    when that is safe, and asks when it is not. Do nothing leaves the faded Merged row with its Remove… pill.
 ///
-/// Removing a worktree can lose work, so Loam acts only on a PR whose state is MERGED, and removes a worktree only
-/// when git found no changed files and no unpushed commits, and no session in it is mid-turn or needs you. A merge is
-/// not Needs you, and Loam does not notify.
+/// Removing a worktree can lose work, so Loam acts only on a PR whose state is MERGED, and removes a worktree with no
+/// question only when git found no changed files and no unpushed commits, no session in it is mid-turn or needs you,
+/// and no shell in it runs a process. Each check runs before a pane closes. A merge is not Needs you, and Loam does not
+/// notify.
 extension AppModel {
     // MARK: The refresh
 
-    /// Acts on the merges that a refresh found in these worktrees. A merge acts once in a run of the app. A kept merge
-    /// and a merge that a land of the Land sheet runs for now do nothing.
-    func followMerges(of ids: [String]) async {
+    /// Decides on the merges that a refresh found in these worktrees, and acts on them after the refresh ended, so the
+    /// spinner of the refresh does not wait for `gh`. A merge is decided here, before any wait, so it acts once in a run
+    /// of the app, also when two refreshes find it. A kept merge, and a merge that a land of the Land sheet runs for
+    /// now, do nothing. The actions run one after the other.
+    func followMerges(of ids: [String]) {
+        var found: [MergedPR] = []
         for id in ids {
-            guard let row = worktreeStatus(id), let merge = AfterMergeRule.merge(of: row),
-                  !mergesDecided.contains(merge), !keptMerges.contains(merge) else { continue }
-            // The land of the Land sheet tidies up itself. A later refresh decides when it did not.
-            if landSheet.isMerging, landSheet.worktreeID == id { continue }
+            guard let row = worktreeStatus(id), let merge = AfterMergeRule.merge(of: row), !mergesDecided.contains(merge),
+                  !keptMerges.contains(merge), !landSheetMerges(id) else { continue }
             mergesDecided.insert(merge)
-            switch AfterMergeRule.action(for: merge, land: row.worktree.land) {
-            case .tidy(let land): await tidyUp(merge, as: land)
-            case .follow: await follow(merge, setting: await afterMergeSetting(of: row.worktree))
-            }
+            found.append(merge)
+        }
+        guard !found.isEmpty else { return }
+        let before = mergeActions
+        mergeActions = Task { [weak self] in
+            await before?.value
+            for merge in found { await self?.act(on: merge) }
+        }
+    }
+
+    /// Returns when the actions after merges that run now have ended.
+    func mergesSettled() async {
+        var waited: Task<Void, Never>?
+        while let running = mergeActions, running != waited {
+            waited = running
+            await running.value
+        }
+    }
+
+    /// True when the Land sheet merges the worktree now. The land of the sheet tidies up itself.
+    private func landSheetMerges(_ worktree: String) -> Bool {
+        landSheet.isMerging && landSheet.worktreeID == worktree
+    }
+
+    /// False when the Land sheet began to merge the worktree during a wait. Then the merge is not decided, and a later
+    /// refresh decides it. An action asks after each wait, before any pane closes and before any land or removal.
+    private func stillDecided(_ merge: MergedPR) -> Bool {
+        guard landSheetMerges(merge.worktree) else { return true }
+        mergesDecided.remove(merge)
+        return false
+    }
+
+    private func act(on merge: MergedPR) async {
+        guard stillDecided(merge), let row = currentRow(merge) else { return }
+        switch AfterMergeRule.action(for: merge, land: row.worktree.land) {
+        case .tidy(let land): await tidyUp(merge, as: land)
+        case .follow:
+            let setting = await afterMergeSetting(of: row.worktree)
+            guard stillDecided(merge) else { return }
+            await follow(merge, setting: setting)
         }
     }
 
@@ -53,7 +91,7 @@ extension AppModel {
 
     /// True when the worktree can go with no question (`AfterMergeRule.canRemove`).
     private func canRemove(_ row: WorktreeStatus) -> Bool {
-        AfterMergeRule.canRemove(row, panes: landPanes(of: row.worktree), in: workspace)
+        AfterMergeRule.canRemove(row, panes: landPanes(of: row.worktree), in: workspace, runsAProcess: paneRunsAProcess)
     }
 
     /// Closes the panes of the worktree, and writes `state.json`, so the core counts none of them.
@@ -65,56 +103,71 @@ extension AppModel {
 
     // MARK: Remove the worktree
 
-    /// The setting Remove the worktree: closes the panes, then `loam worktree rm` with no `--force`, so the core also
-    /// refuses work that is not on GitHub. Asks when it is not safe, and when the core refuses.
+    /// The setting Remove the worktree. Asks when it is not safe, and when the core refuses.
     private func removeAfterMerge(_ merge: MergedPR) async {
         guard let row = currentRow(merge), canRemove(row) else { return ask(merge) }
-        let worktree = row.worktree
-        await closePanes(of: worktree)
-        do {
-            _ = try await client.worktreeRemove(plot: worktree.plotID, worktree: worktree.id,
-                                                openPanes: openPaneFolders + savedPaneFolders())
-        } catch {
-            return ask(merge)
-        }
+        guard await removeWorktree(of: row) else { return ask(merge) }
         await reloadWorktrees()
-        onToast?(AfterMergeRule.removed(merge, name: worktree.name), .done)
+        onToast?(AfterMergeRule.removed(merge, name: row.worktree.name), .done)
+    }
+
+    /// Closes the panes of the worktree, then runs `loam worktree rm` with no `--force`, so the core checks the work
+    /// again. The core refuses a pane that is open in the worktree, so the panes close first. Returns false when the
+    /// core refuses.
+    private func removeWorktree(of row: WorktreeStatus) async -> Bool {
+        await closePanes(of: row.worktree)
+        do {
+            _ = try await client.worktreeRemove(plot: row.worktree.plotID, worktree: row.worktree.id,
+                                                openPanes: openPaneFolders + savedPaneFolders())
+            return true
+        } catch {
+            return false
+        }
     }
 
     // MARK: A recorded land
 
-    /// Finishes a land that waited for GitHub (`--auto`, or a merge queue) as its options say: `loam worktree land` with
-    /// no flags applies the keeps that the worktree records. A land of a PR that is not merged would merge it, so a
-    /// dry run must say first that the PR is merged, with the same number, and that the record is for that PR. A
-    /// merged PR stays merged, so the land after it finds the same. Asks when it is not safe, and when a step fails.
+    /// Finishes a land that waited for GitHub (`--auto`, or a merge queue) as its options say. A land of a PR that is
+    /// not merged would merge it, so a dry run must say first that the PR is merged, with the same number, and that the
+    /// record is for that PR. A merged PR stays merged, so the land after it finds the same.
+    ///
+    /// No pane closes before the land: the land keeps the worktree (`--keep-worktree`), so the core needs no closed
+    /// pane. It deletes the branch on GitHub unless the record keeps it, and clears the record. Then, unless the record
+    /// keeps the worktree, the panes close and `loam worktree rm` removes it, as the land would. Asks when it is not
+    /// safe, and when a step fails.
     private func tidyUp(_ merge: MergedPR, as land: PendingLand) async {
-        guard let first = currentRow(merge), land.keepWorktree || canRemove(first) else { return ask(merge) }
-        let plot = first.worktree.plotID
+        let removes = !land.keepWorktree
+        guard let first = currentRow(merge), !removes || canRemove(first) else { return ask(merge) }
         let plan: LandResult
         do {
-            plan = try await client.worktreeLand(plot: plot, worktree: merge.worktree, dryRun: true)
+            plan = try await client.worktreeLand(plot: first.worktree.plotID, worktree: merge.worktree, dryRun: true)
         } catch {
             return ask(merge)
         }
+        guard stillDecided(merge) else { return }
         guard plan.merged, plan.pr.state == "MERGED", plan.pr.number == merge.number, plan.worktree.land?.pr == merge.number,
-              let row = currentRow(merge) else { return ask(merge) }
-        if !land.keepWorktree {
-            guard canRemove(row) else { return ask(merge) }
-            await closePanes(of: row.worktree)
-        }
-        let result: LandResult
+              let row = currentRow(merge), !removes || canRemove(row) else { return ask(merge) }
+        var result: LandResult
         do {
-            result = try await client.worktreeLand(plot: plot, worktree: merge.worktree, head: plan.pr.headOID,
-                                                   openPanes: openPaneFolders + savedPaneFolders())
+            result = try await client.worktreeLand(plot: row.worktree.plotID, worktree: merge.worktree, keepWorktree: true,
+                                                   head: plan.pr.headOID)
         } catch {
             return ask(merge)
         }
-        let asked = LandSheetContent.Request(keepWorktree: land.keepWorktree, keepRemoteBranch: land.keepRemoteBranch)
-        if !result.worktreeRemoved {
-            // A keep that you chose stays quiet. A worktree that the core could not remove asks.
-            if land.keepWorktree { keptMerges.keep(merge) } else { ask(merge) }
+        if removes {
+            // The land of the Land sheet tidies up the rest.
+            guard stillDecided(merge) else { return }
+            if let now = currentRow(merge), canRemove(now), await removeWorktree(of: now) {
+                result.worktreeRemoved = true
+            } else {
+                ask(merge)
+            }
+        } else {
+            // A keep that you chose stays quiet.
+            keptMerges.keep(merge)
         }
         await reloadWorktrees()
+        let asked = LandSheetContent.Request(keepWorktree: land.keepWorktree, keepRemoteBranch: land.keepRemoteBranch)
         let toast = LandSheetContent.toast(for: result, asked: asked)
         onToast?(toast.text, toast.kind)
     }
@@ -149,24 +202,25 @@ extension AppModel {
         keptMerges.keep(MergedPR(worktree: worktree, number: number))
     }
 
-    /// Remove worktree in a callout: the steps of the Land sheet with no merge. The panes of the worktree close, and a
-    /// session in a turn asks first. Then `loam worktree rm`, which deletes the local branch. Then the Where it stands
-    /// card takes the keys, with "Merged #142 Link labels." before its text and selected. A refusal of the core shows in
-    /// the panel, and the callout stays.
+    /// Remove worktree in a callout: the steps of the Land sheet with no merge. Work that the app knows is not on
+    /// GitHub refuses first, with no question and no pane closed. Then the panes of the worktree close, and a session in
+    /// a turn asks first. Then `loam worktree rm`, which deletes the local branch. Then the Where it stands card takes
+    /// the keys, with "Merged #142 Link labels." before its text and selected. A refusal shows in the panel, and the
+    /// callout stays.
     public func removeMergedWorktree(_ worktree: String) async {
         guard let merge = mergeAsks.first(where: { $0.worktree == worktree }), !mergeRemovals.contains(worktree),
-              let row = currentRow(merge) else { return }
+              let first = currentRow(merge), passesWorkCheck(first) else { return }
         mergeRemovals.insert(worktree)
         defer { mergeRemovals.remove(worktree) }
-        if let prompt = ClosePrompt.make(.removeWorktree, closing: landPanes(of: row.worktree), in: workspace),
+        if let prompt = ClosePrompt.make(.removeWorktree, closing: landPanes(of: first.worktree), in: workspace),
            !(await confirmClose(prompt)) { return }
-        guard let row = currentRow(merge) else { return }
+        guard let row = currentRow(merge), passesWorkCheck(row) else { return }
         await closePanes(of: row.worktree)
         do {
             _ = try await client.worktreeRemove(plot: row.worktree.plotID, worktree: worktree,
                                                 openPanes: openPaneFolders + savedPaneFolders())
         } catch {
-            panel.errorMessage = Self.message(for: error)
+            showRefusal(Self.message(for: error), plot: row.worktree.plotID)
             return
         }
         mergeAsks.removeAll { $0 == merge }
@@ -175,5 +229,19 @@ extension AppModel {
             panel.errorMessage = nil
             panel.prefillMerged(merge.number, title: row.pr?.title ?? "")
         }
+    }
+
+    /// True when the row holds no work that the app knows of. Else the panel shows why the core would refuse, with
+    /// the words of the Remove worktree dialog.
+    private func passesWorkCheck(_ row: WorktreeStatus) -> Bool {
+        if AfterMergeRule.holdsNoWork(row) { return true }
+        let plan = WorktreeRemovalPlan.needsForce(changed: row.changed, unpushed: row.unpushed, checkError: row.error)
+        showRefusal(plan.message(for: row.worktree), plot: row.worktree.plotID)
+        return false
+    }
+
+    /// The panel shows a refusal only while it shows the plot of the worktree.
+    private func showRefusal(_ message: String, plot: String) {
+        if panel.plot?.id == plot { panel.errorMessage = message }
     }
 }
