@@ -34,8 +34,9 @@ public struct PaneSession: Codable, Equatable, Sendable {
     /// What the session waits on while the pane needs you. Nil in every other state. Restore does
     /// not bring it back, because the prompt is gone after a quit.
     public var waitsOn: NeedsYouReason?
-    /// True when you typed a key in the pane since the last `Stop` (ticket 110). Loam cannot see the input of
-    /// Claude Code, so a key means that the input can hold your text, and Send to session does not type.
+    /// True when you typed a key, pasted or dropped in the pane since the last `Stop` (ticket 110). Loam cannot
+    /// see the input of Claude Code, so this means that the input can hold your text, and Send to session does
+    /// not type.
     public var typedSinceStop = false
     /// The prompt that Send to session typed into the input since the last `Stop` (ticket 110). It waits there
     /// until you press Return. Nil when Loam typed nothing.
@@ -112,8 +113,9 @@ public struct PaneSession: Codable, Equatable, Sendable {
         set(.ended)
     }
 
-    /// You put something into the input of the pane that is not a typing key: an arrow key, Tab, a paste, or a
-    /// drop. Send to session does not type until the next `Stop` (ticket 110). Needs you stays.
+    /// You put something into the input of the pane: any key, a paste, or a drop. Send to session does not type
+    /// until the next `Stop` (ticket 110). Needs you stays, because an arrow key or Tab only picks an option of a
+    /// prompt (`typed()` clears it).
     public mutating func input() {
         typedSinceStop = true
     }
