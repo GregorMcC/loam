@@ -89,11 +89,11 @@ public struct StageMark: Equatable, Sendable {
     public var number: Int?
     /// The words for a tooltip: the PR number, the stage in words, then the status line of the Worktrees
     /// section, such as "#16 · Checks failed · 2 of 14 checks failed". `StatusLine` writes the line, so the
-    /// two say the same. A part of the line that repeats the stage words is left out. Nil for the ✎ mark,
-    /// which has none.
-    public var tooltip: String?
+    /// two say the same. A part of the line that repeats the stage words is left out. The ✎ mark has no
+    /// number or stage words, so its tooltip is the status line alone, such as "2 changed".
+    public var tooltip: String
     /// The same words for VoiceOver and the driver, with commas. The symbol is hidden from VoiceOver, so
-    /// the stage words are the only place that says the stage.
+    /// these words are the only place that says the stage.
     public var spoken: String
 
     /// The number as the row shows it, such as "#16". Nil for the ✎ mark.
@@ -111,13 +111,15 @@ public struct StageMark: Equatable, Sendable {
             self.init(stage: stage, number: pr.number, tooltip: words.joined(separator: StatusLine.separator),
                       spoken: words.joined(separator: ", "))
         } else if status.changed > 0 || status.unpushed > 0 {
-            self.init(stage: .notPushed, number: nil, tooltip: nil, spoken: WorktreeStage.notPushed.words)
+            let words = StatusLine(of: status, now: now, timeZone: timeZone).parts.map(\.text)
+            self.init(stage: .notPushed, number: nil, tooltip: words.joined(separator: StatusLine.separator),
+                      spoken: words.joined(separator: ", "))
         } else {
             return nil
         }
     }
 
-    private init(stage: WorktreeStage, number: Int?, tooltip: String?, spoken: String) {
+    private init(stage: WorktreeStage, number: Int?, tooltip: String, spoken: String) {
         self.stage = stage
         self.number = number
         self.tooltip = tooltip

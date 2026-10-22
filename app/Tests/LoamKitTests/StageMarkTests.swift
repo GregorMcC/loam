@@ -137,7 +137,7 @@ import Testing
             let words = ["#\(number)", stage.words] + line.parts.map(\.text).filter { $0 != stage.words }
             #expect(mark.tooltip == words.joined(separator: " \u{00B7} "), "\(stage)")
             #expect(mark.spoken == words.joined(separator: ", "), "\(stage)")
-            #expect(mark.tooltip?.hasPrefix("#\(number) \u{00B7} \(stage.words)") == true, "\(stage)")
+            #expect(mark.tooltip.hasPrefix("#\(number) \u{00B7} \(stage.words)"), "\(stage)")
         }
     }
 
@@ -285,7 +285,16 @@ import Testing
         let mark = try #require(shown(local(changed: 2)))
         #expect(mark.stage == .notPushed && mark.number == nil && mark.label == nil)
         #expect(mark.symbol == nil && mark.tone == .inkMuted)
-        #expect(mark.tooltip == nil && mark.spoken == "Not pushed")
+        #expect(mark.tooltip == "2 changed" && mark.spoken == "2 changed")
+    }
+
+    /// The ✎ mark has no PR number or stage words. Its tooltip is the status line of the Worktrees section.
+    @Test func thePencilTooltipIsTheStatusLine() throws {
+        #expect(try shown(local(unpushed: 1))?.tooltip == "1 commit not pushed")
+        #expect(try shown(local(changed: 2, unpushed: 4))?.tooltip == "2 changed · 4 commits not pushed")
+        let pushed = try #require(shown(local(changed: 2, stage: .pushedNoPR)))
+        #expect(pushed.tooltip == "Pushed, no PR · 2 changed")
+        #expect(pushed.spoken == "Pushed, no PR, 2 changed")
     }
 
     @Test func withNoPRAnUnpushedCommitKeepsThePencil() throws {

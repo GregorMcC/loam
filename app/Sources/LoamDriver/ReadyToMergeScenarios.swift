@@ -205,7 +205,7 @@ extension Scenarios {
         }
         try await app.waitUntil("the marks of Beta plot") {
             app.text(of: "worktree-\(linkLabels.id)")?.contains("#41, Ready to merge, 1 of 1 check passed, Approved") == true
-                && app.text(of: "worktree-\(localWork.id)")?.contains("Not pushed") == true
+                && app.text(of: "worktree-\(localWork.id)")?.contains("1 changed") == true
         }
         app.screenshot("second-ready-worktree")
         try pressExactMenuKey("l", [.command, .shift])
