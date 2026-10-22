@@ -175,6 +175,23 @@
       "at": "2026-01-01T00:00:00Z",
       "entries": [
         {
+          "field": "order",
+          "item": "links",
+          "new": "linkaaaaac,linkaaaaab",
+          "old": "linkaaaaab,linkaaaaac"
+        }
+      ],
+      "id": 8,
+      "plot_id": "plotaaaaab",
+      "undo_of": null
+    },
+    {
+      "actor": {
+        "kind": "cli"
+      },
+      "at": "2026-01-01T00:00:00Z",
+      "entries": [
+        {
           "field": "label",
           "item": "link:linkaaaaac",
           "new": null,
@@ -196,10 +213,10 @@
           "field": "position",
           "item": "link:linkaaaaac",
           "new": null,
-          "old": "2"
+          "old": "1"
         }
       ],
-      "id": 8,
+      "id": 9,
       "plot_id": "plotaaaaab",
       "undo_of": null
     },
@@ -228,7 +245,7 @@
           "old": null
         }
       ],
-      "id": 9,
+      "id": 10,
       "plot_id": "plotaaaaab",
       "undo_of": null
     },
@@ -257,7 +274,7 @@
           "old": null
         }
       ],
-      "id": 10,
+      "id": 11,
       "plot_id": "plotaaaaab",
       "undo_of": null
     },
@@ -274,7 +291,7 @@
           "old": ""
         }
       ],
-      "id": 11,
+      "id": 12,
       "plot_id": "plotaaaaab",
       "undo_of": null
     },
@@ -297,7 +314,7 @@
           "old": "0"
         }
       ],
-      "id": 12,
+      "id": 13,
       "plot_id": "plotaaaaab",
       "undo_of": null
     },
@@ -326,7 +343,7 @@
           "old": "0"
         }
       ],
-      "id": 13,
+      "id": 14,
       "plot_id": "plotaaaaab",
       "undo_of": null
     },
@@ -355,7 +372,7 @@
           "old": null
         }
       ],
-      "id": 14,
+      "id": 15,
       "plot_id": "plotaaaaab",
       "undo_of": null
     },
@@ -390,7 +407,7 @@
           "old": "0"
         }
       ],
-      "id": 15,
+      "id": 16,
       "plot_id": "plotaaaaab",
       "undo_of": null
     },
@@ -421,13 +438,13 @@
         {
           "field": "position",
           "item": "link:linkaaaaac",
-          "new": "2",
+          "new": "1",
           "old": null
         }
       ],
-      "id": 16,
+      "id": 17,
       "plot_id": "plotaaaaab",
-      "undo_of": 8
+      "undo_of": 9
     },
     {
       "actor": {
@@ -442,7 +459,7 @@
           "old": "A personal tool."
         }
       ],
-      "id": 17,
+      "id": 18,
       "plot_id": "plotaaaaab",
       "undo_of": 3
     }

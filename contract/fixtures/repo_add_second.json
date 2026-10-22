@@ -1,5 +1,5 @@
 {
-  "change_id": 10,
+  "change_id": 11,
   "plot": "plotaaaaab",
   "repo": {
     "after_merge": "ask",
@@ -7,6 +7,6 @@
     "main": false,
     "note": "",
     "path": "/tmp/loam-contract/repos/app",
-    "version": 10
+    "version": 11
   }
 }

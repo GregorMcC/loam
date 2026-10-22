@@ -3,7 +3,7 @@
     "details": {
       "items": [
         {
-          "current": 27,
+          "current": 28,
           "exists": true,
           "expected": 0,
           "item": "worktree:wtreaaaaae",
@@ -19,7 +19,7 @@
             "plot_id": "plotaaaaab",
             "repo": "/tmp/loam-contract/repos/web",
             "setup_done": false,
-            "version": 27
+            "version": 28
           }
         }
       ],
@@ -27,6 +27,6 @@
     },
     "exit_code": 10,
     "kind": "stale",
-    "message": "stale write: worktree:wtreaaaaae changed since you read it; worktree:wtreaaaaae is now at version 27"
+    "message": "stale write: worktree:wtreaaaaae changed since you read it; worktree:wtreaaaaae is now at version 28"
   }
 }

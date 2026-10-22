@@ -8,7 +8,7 @@
       "kind": "url",
       "label": "Spec v1",
       "note": "The v1 spec",
-      "position": 1,
+      "position": 2,
       "target": "https://example.com/spec",
       "version": 7
     }
@@ -21,15 +21,15 @@
       "main": true,
       "note": "",
       "path": "/tmp/loam-contract/repos/docs",
-      "version": 15
+      "version": 16
     }
   ],
-  "revision": 15,
+  "revision": 16,
   "versions": {
     "link:linkaaaaab": 7,
-    "links": 0,
+    "links": 8,
     "name": 1,
-    "repo:repoaaaaad": 15,
+    "repo:repoaaaaad": 16,
     "what": 4,
     "where": 4,
     "why": 4
