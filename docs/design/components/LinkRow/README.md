@@ -5,7 +5,7 @@ One link of a plot, in the plot panel.
 - A local link whose path is gone takes `is-missing`: the label is struck through in `rust`, and opening it shows "This folder is gone. Edit the link or remove it."
 - A right-click offers Copy target and, for local links, Reveal in Finder. In the app, it also offers Edit link and Remove link.
 - In the app (ticket 87), the row is 32pt, with no box around the section. The icon is 16pt in `ink-muted`. The kind is at the right in `ink-faint`: Local, Vault, GitHub, Web, Notion, or Linear. Hover gives the row the ink at 5% as a fill, and an `ellipsis` menu replaces the kind. The menu has the same actions as the right-click. The note sits under the label in `ink-faint`.
-- In the app, drag a row to reorder the links. The dragged row dims, and a 2pt `accent` line marks the gap where it will drop. VoiceOver offers Move up and Move down.
+- In the app, drag a row to reorder the links. The dragged row lifts with a shadow, and the other rows part to open a gap where it will drop. With Reduce Motion on, the dragged row dims to half opacity and a 2pt `moss` line marks the gap. VoiceOver offers Move up and Move down.
 - In the app, opening a missing link shows a banner at the top of the panel with the path, Dismiss, and Edit link. Edit link opens an inline editor in place of the row: Label, Target, Note, Cancel, and Save.
 
 The consumer provides the kind, icon, label, note, target and whether the path exists.
