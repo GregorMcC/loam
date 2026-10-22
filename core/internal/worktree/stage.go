@@ -49,6 +49,9 @@ type StageInput struct {
 	// the PR head or an earlier commit of the PR. The rule reads it only for
 	// a merged or closed PR.
 	HeadInPR bool
+	// LocalFailed is true when git could not read the changed files or the
+	// unpushed commits. Then the worktree can have work after the PR head.
+	LocalFailed bool
 	// Last is the stage of the last refresh of the same PR.
 	Last Stage
 }
@@ -78,7 +81,7 @@ func StageOf(in StageInput) Stage {
 // Loam never offers to tidy away work that is not in the PR.
 //
 // The worktree has no work after the PR head when its HEAD is in the PR (see
-// [StageInput.HeadInPR]) and it has no changed files. A cache row from before
+// [StageInput.HeadInPR]) and git found no changed files. A cache row from before
 // Loam stored the PR head has no head to compare, and its PR stage stays.
 func (in StageInput) UsesPR() bool {
 	pr := in.PR
@@ -88,7 +91,7 @@ func (in StageInput) UsesPR() bool {
 	if !isDone(pr) || pr.HeadOID == "" {
 		return true
 	}
-	return in.HeadInPR && in.Changed == 0
+	return in.HeadInPR && in.Changed == 0 && !in.LocalFailed
 }
 
 // isDone reports whether a PR is merged or closed.

@@ -106,6 +106,7 @@ func TestStageRule(t *testing.T) {
 		{"squash merged, and GitHub deleted the branch", worktree.StageInput{PR: done("MERGED"), HeadInPR: true, Pushed: false, Unpushed: 2}, worktree.StageMerged},
 		{"merged, then new commits that are on GitHub", worktree.StageInput{PR: done("MERGED"), Pushed: true, Unpushed: 1}, worktree.StagePushedNoPR},
 		{"merged, then new commits", worktree.StageInput{PR: done("MERGED"), Unpushed: 1}, worktree.StageNotPushed},
+		{"merged, and git could not read the local checks", worktree.StageInput{PR: done("MERGED"), HeadInPR: true, LocalFailed: true}, worktree.StageNone},
 		{"merged, then changed files", worktree.StageInput{PR: done("MERGED"), HeadInPR: true, Changed: 1}, worktree.StageNotPushed},
 		{"closed, then new commits", worktree.StageInput{PR: done("CLOSED"), Unpushed: 1}, worktree.StageNotPushed},
 		{"merged, and the local head is not known", worktree.StageInput{PR: done("MERGED"), Unpushed: 1}, worktree.StageNotPushed},

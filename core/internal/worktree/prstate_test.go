@@ -151,8 +151,9 @@ func TestListShowsMergedOnlyWithNoWorkAfterThePRHead(t *testing.T) {
 
 // GitHub can add commits to a PR, such as with Update branch. A worktree
 // whose HEAD is an earlier commit of the PR has no work after it, so it
-// shows Merged. When the local repo never fetched the PR head, a worktree
-// shows Merged only when no remote branch is missing one of its commits.
+// shows Merged. When the local repo does not have the PR head, Loam cannot
+// read the history of the PR, and the worktree gets its local stage. A new
+// worktree on the branch name of an old PR must not show that PR.
 func TestListShowsMergedWhenGitHubAddedCommitsToThePR(t *testing.T) {
 	e := setup(t)
 	updated := e.create("updated", "").Worktree
@@ -178,7 +179,7 @@ func TestListShowsMergedWhenGitHubAddedCommitsToThePR(t *testing.T) {
 	got := e.listed()
 	for name, want := range map[string]worktree.Stage{
 		"updated":            worktree.StageMerged,
-		"unfetched":          worktree.StageMerged,
+		"unfetched":          worktree.StageNone,
 		"unfetched-new-work": worktree.StageNotPushed,
 	} {
 		if st := got[name]; st.Stage != want {

@@ -303,6 +303,9 @@ type Status struct {
 	// CompareURL is the GitHub page that compares the branch with its base.
 	// It is set only for [StagePushedNoPR].
 	CompareURL string `json:"compare_url,omitempty"`
+
+	// localFailed is true when git could not read Changed or Unpushed.
+	localFailed bool
 }
 
 // Inspect runs the checks on a worktree. It reads the last fetched state and
@@ -312,7 +315,7 @@ func Inspect(w store.Worktree) Status {
 	if fi, err := os.Stat(w.Path); err != nil || !fi.IsDir() {
 		st.Missing = true
 	} else if out, err := git(w.Path, "status", "--porcelain"); err != nil {
-		st.Error = err.Error()
+		st.Error, st.localFailed = err.Error(), true
 	} else if out != "" {
 		st.Changed = len(strings.Split(out, "\n"))
 	}
@@ -333,7 +336,7 @@ func Inspect(w store.Worktree) Status {
 	}
 	if args != nil {
 		if out, err := git(dir, args...); err != nil {
-			st.Error = err.Error()
+			st.Error, st.localFailed = err.Error(), true
 		} else if n, err := strconv.Atoi(out); err == nil {
 			st.Unpushed = n
 		}

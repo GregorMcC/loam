@@ -9,8 +9,10 @@ import (
 )
 
 // prsPerHead is how many PRs the first query reads for each branch, newest
-// first. It is enough to find the open one among old PRs on the same head.
-const prsPerHead = 10
+// first. GitHub matches the head name in forks too, and [pick] skips those
+// PRs. On a large public repo, many forks can use a common name such as
+// patch-1, so Loam reads a full page to find the PR of the repo itself.
+const prsPerHead = maxNodes
 
 // maxNodes is the largest page that GitHub gives. Loam reads one page, to
 // keep to two queries for each repo. For a PR with more checks, reviews, or

@@ -76,9 +76,10 @@ func decodeCached(row store.PRState) cachedPR {
 // from the local checks (see [StageInput.UsesPR]), the worktree shows no PR.
 func (st *Status) addPRState(row store.PRState) {
 	c := decodeCached(row)
-	in := StageInput{PR: c.PR, Pushed: c.Pushed, Missing: st.Missing, Changed: st.Changed, Unpushed: st.Unpushed, Last: c.Stage}
+	in := StageInput{PR: c.PR, Pushed: c.Pushed, Missing: st.Missing, Changed: st.Changed, Unpushed: st.Unpushed,
+		LocalFailed: st.localFailed, Last: c.Stage}
 	if c.PR != nil && isDone(c.PR) && !st.Missing {
-		in.HeadInPR = headInPR(st.Worktree.Path, c.PR.HeadOID, st.Unpushed)
+		in.HeadInPR = headInPR(st.Worktree.Path, c.PR.HeadOID)
 	}
 	st.Stage = StageOf(in)
 	if st.Missing {
@@ -101,9 +102,9 @@ func (st *Status) addPRState(row store.PRState) {
 // out is prHead or an earlier commit of it. GitHub can add commits to a PR,
 // such as with Update branch, so the local HEAD can be behind the PR head.
 // When the local repo does not have prHead, Loam cannot read the history of
-// the PR. Then the HEAD counts as in the PR when every local commit is on a
-// remote branch (unpushed is 0). When git fails, the HEAD is not in the PR.
-func headInPR(dir, prHead string, unpushed int) bool {
+// the PR, and the HEAD is not in the PR: a new worktree on the branch name of
+// an old PR must not show that PR. When git fails, the HEAD is not in the PR.
+func headInPR(dir, prHead string) bool {
 	if !oidPattern.MatchString(prHead) {
 		return false
 	}
@@ -115,7 +116,7 @@ func headInPR(dir, prHead string, unpushed int) bool {
 		return true
 	}
 	if _, err := git(dir, "cat-file", "-e", prHead+"^{commit}"); err != nil {
-		return unpushed == 0
+		return false
 	}
 	_, err = git(dir, "merge-base", "--is-ancestor", head, prHead)
 	return err == nil
