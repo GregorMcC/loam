@@ -1367,33 +1367,6 @@ public final class AppModel {
         workspace.livePaneIDs.compactMap(workspace.folder(of:))
     }
 
-    /// `loam worktree new`, then a seeded session in the new worktree. `repo` nil means the main repo.
-    /// Returns the worktree, or nil with `lastError` set.
-    @discardableResult
-    public func newWorktree(in plot: String, named name: String, repo: String? = nil, base: String? = nil) async -> Worktree? {
-        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return nil }
-        do {
-            let repoPath: String
-            if let repo {
-                repoPath = repo
-            } else if let main = try await client.show(plot: plot).repos.first(where: \.main) {
-                repoPath = main.path
-            } else {
-                lastError = "The plot has no repo. Add a repo first."
-                return nil
-            }
-            let made = try await client.worktreeNew(plot: plot, repo: repoPath, name: name, base: base)
-            lastError = nil
-            await reloadWorktrees()
-            openWorktreePane(made.worktree)
-            return made.worktree
-        } catch {
-            report(error)
-            return nil
-        }
-    }
-
     /// Opens a tab in the worktree with a seeded session. `loam start --worktree` runs the setup
     /// command first, and asks on the terminal when the command is new or changed.
     public func openWorktreePane(_ worktree: Worktree, kind: PaneSpec.Kind = .session) {

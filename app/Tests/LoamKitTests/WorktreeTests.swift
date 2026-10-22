@@ -216,14 +216,4 @@ private func status(changed: Int = 0, unpushed: Int = 0, merged: Bool = true, me
         let ended = after.workspace.selectedTab(of: "plotaaaaab")!.focused
         #expect(after.endedNote(of: ended)?.contains("is gone") == true)
     }
-
-    @Test func aNewWorktreeUsesTheMainRepoAndOpensASession() async throws {
-        let fake = try FakeLoam([("show_links", 0), ("worktree_new", 0), ("worktree_list", 0)])
-        let model = AppModel(client: fake.client())
-        model.apply([plot("plotaaaaab")])
-        let made = await model.newWorktree(in: "plotaaaaab", named: " fix-login ")
-        #expect(made?.branch == "fix-login")
-        #expect(fake.args().contains { $0.hasPrefix("worktree new plotaaaaab") && $0.contains(" fix-login --json --actor app") })
-        #expect(model.workspace.paneCount(of: "plotaaaaab") == 1)
-    }
 }

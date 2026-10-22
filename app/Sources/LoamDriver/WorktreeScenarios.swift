@@ -115,8 +115,16 @@ extension Scenarios {
             return view
         }
 
-        // 1. A new worktree opens a seeded pane in it. The sidebar lists it under the plot.
-        guard let made = await model.newWorktree(in: plot, named: "fix-login") else {
+        // 1. A new worktree opens a seeded pane in it. The sidebar lists it under the plot. The New worktree sheet asks for
+        // the branch (ticket 115), and Start session makes the worktree.
+        let sheet = model.newWorktreeSheet
+        model.openNewWorktree(plot: plot)
+        try await app.waitUntil("the New worktree sheet") { sheet.isOpen && sheet.phase == .ready && app.exists("new-worktree-branch") }
+        try app.fill("new-worktree-branch", with: "fix-login")
+        try await app.waitUntil("the branch is good") { sheet.branchState == .new }
+        try app.click("new-worktree-start")
+        try await app.waitUntil("the sheet closes", timeout: 20) { !sheet.isOpen }
+        guard let made = model.worktrees[plot]?.first(where: { $0.worktree.branch == "fix-login" })?.worktree else {
             throw DriverFailure("no worktree: \(model.lastError ?? "no error")")
         }
         Log.line("RESULT worktree: \(made.path) branch \(made.branch)")
