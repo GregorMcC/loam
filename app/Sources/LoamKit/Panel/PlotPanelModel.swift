@@ -33,6 +33,13 @@ public enum PendingWrite: Equatable, Sendable {
     case linkMove(id: String, position: Int)
     case repoNote(id: String, note: String)
     case repoRemove(id: String)
+
+    var isLink: Bool {
+        switch self {
+        case .linkEdit, .linkRemove, .linkMove: true
+        case .text, .repoNote, .repoRemove: false
+        }
+    }
 }
 
 /// A stale write. It holds what the person tried to save and what is in the plot now.
@@ -72,7 +79,9 @@ public final class PlotPanelModel {
     public private(set) var clash: EditClash?
     public private(set) var missingLink: MissingLink?
     private var openCount = 0
-    public var errorMessage: String?
+    public var errorMessage: String? { didSet { linkError = nil } }
+    /// `errorMessage` when a link action set it. The panel shows it by the links, which may be scrolled far from the top.
+    public private(set) var linkError: String?
     /// The warnings of the last repo add, such as a checkout that kept its branch (ticket 91).
     public var notice: String?
     /// Set by the window when the panel shows. The app model loads the plot only while it shows.
@@ -215,6 +224,7 @@ public final class PlotPanelModel {
         let target = target.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !target.isEmpty else {
             errorMessage = "A link needs a target."
+            linkError = errorMessage
             return
         }
         do {
@@ -223,6 +233,7 @@ public final class PlotPanelModel {
             await load(plotID: plot.id)
         } catch {
             report(error)
+            linkError = errorMessage
         }
     }
 
@@ -417,6 +428,7 @@ public final class PlotPanelModel {
             // A move reordered the rows before the write, so put back what the store holds.
             if case .linkMove = write { await load(plotID: plotID) }
         }
+        if write.isLink { linkError = errorMessage }
     }
 
     private func makeClash(_ write: PendingWrite, details: StaleDetails?) -> EditClash? {

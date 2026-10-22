@@ -333,5 +333,36 @@ import Testing
         #expect(m.clash == nil)
         #expect(m.errorMessage != nil)
         #expect(m.isDirty(.why))
+        #expect(m.linkError == nil)
+    }
+
+    @Test func failedLinkActionsShowTheirErrorByTheLinks() async throws {
+        let (m, _) = try model([("show_links", 0), ("error_generic", 1), ("show_links", 0), ("error_generic", 1)])
+        await m.load(plotID: "plotaaaaab")
+        await m.moveLink(id: "linkaaaaad", to: 1)
+        #expect(m.linkError != nil)
+        #expect(m.linkError == m.errorMessage)
+        await m.removeLink(id: "linkaaaaab")
+        #expect(m.linkError == m.errorMessage)
+    }
+
+    @Test func emptyLinkTargetShowsByTheLinks() async throws {
+        let (m, _) = try model([("show_links", 0)])
+        await m.load(plotID: "plotaaaaab")
+        await m.addLink(label: "", target: " ")
+        #expect(m.linkError == "A link needs a target.")
+    }
+
+    @Test func aLaterErrorOrSuccessClearsTheLinkError() async throws {
+        let (m, _) = try model([("show_links", 0), ("error_generic", 1), ("show_links", 0), ("error_generic", 1)])
+        await m.load(plotID: "plotaaaaab")
+        await m.moveLink(id: "linkaaaaad", to: 1)
+        #expect(m.linkError != nil)
+        m.edit(.why, to: "x")
+        await m.save(.why)
+        #expect(m.errorMessage != nil)
+        #expect(m.linkError == nil)
+        m.errorMessage = nil
+        #expect(m.linkError == nil)
     }
 }
