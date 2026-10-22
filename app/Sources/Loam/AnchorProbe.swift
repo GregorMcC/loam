@@ -23,16 +23,23 @@ final class AnchorProbe: PopoverAnchorControl {
 
 /// Fills its place behind a SwiftUI view and tells the `AnchorProbe` which view that is. It takes no clicks.
 /// SwiftUI can build more than one copy of a view (`ViewThatFits` does), so the probe follows the copy that is
-/// in the window.
+/// in the window. SwiftUI can also give a copy to another view, such as a reused row of the sidebar, so the
+/// copy follows the probe of the view it serves now.
 struct AnchorReader: NSViewRepresentable {
     let probe: AnchorProbe
 
-    func makeNSView(context: Context) -> NSView { ProbeView(probe: probe) }
+    func makeNSView(context: Context) -> ProbeView { ProbeView(probe: probe) }
 
-    func updateNSView(_ view: NSView, context: Context) {}
+    func updateNSView(_ view: ProbeView, context: Context) { view.probe = probe }
 
-    private final class ProbeView: NSView {
-        private weak var probe: AnchorProbe?
+    final class ProbeView: NSView {
+        fileprivate(set) weak var probe: AnchorProbe? {
+            didSet {
+                guard probe !== oldValue, window != nil else { return }
+                if oldValue?.view === self { oldValue?.view = nil }
+                probe?.view = self
+            }
+        }
 
         init(probe: AnchorProbe) {
             self.probe = probe

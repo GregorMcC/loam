@@ -69,7 +69,22 @@ import Testing
     @Test func aLongTitleLeavesRoomForTheNumber() {
         let widths = PaneHeaderLayout.widths(title: 500, branch: 80, number: 24, room: 200)
         #expect(widths.number == 24 && widths.branch == 0)
-        #expect(widths.title == 200 - 24 - PaneHeaderLayout.numberGap)
+        #expect(widths.title == 200 - PaneHeaderLayout.gap - 24 - PaneHeaderLayout.numberGap)
+    }
+
+    @Test func theNumberNeverEndsPastTheRoom() {
+        let number: CGFloat = 24
+        let least = PaneHeaderLayout.gap + number + PaneHeaderLayout.numberGap
+        for room in stride(from: least, through: 600, by: 7) {
+            for title in [0, 40, 168, 500] as [CGFloat] {
+                for branch in [0, 80, 300] as [CGFloat] {
+                    let widths = PaneHeaderLayout.widths(title: title, branch: branch, number: number, room: room)
+                    let end = widths.title + PaneHeaderLayout.gap + widths.branch + PaneHeaderLayout.numberGap + widths.number
+                    #expect(end <= room, "title \(title), branch \(branch), room \(room): the number ends at \(end)")
+                    #expect(widths.number == number)
+                }
+            }
+        }
     }
 
     @Test func aWorktreeWithNoPRGivesTheBranchTheRoomOfTheNumber() {

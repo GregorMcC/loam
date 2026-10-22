@@ -357,6 +357,24 @@ extension Scenarios {
         try app.pressMenuKey("i")
         try await app.waitUntil("a hidden panel closes the popover of its row") { !app.exists("pr-popover") && !model.prPopover.isOpen }
         try await app.waitUntil("the terminal has the keys after the panel hid") { terminalHasTheKeys() }
+
+        // 15. A field of the panel holds the keys when the popover opens, and the panel hides while the popover
+        // shows. The popover opens from the action bar, so it outlives the panel. When it closes, the hidden field
+        // gets no keys back and the terminal has them.
+        try await app.openPanel(host)
+        try app.fill("panel-whereItStands", with: "held")
+        try check(AccessibilityProbe.shared.isFocused("panel-whereItStands"), "the field has no focus")
+        model.openPullRequest(panel.id)
+        try await app.waitUntil("the popover opens over the field") { app.exists("pr-popover") && model.prPopover.worktreeID == panel.id }
+        try check(!(host.window.firstResponder is TerminalSurfaceView), "the popover gave the keys to the terminal")
+        try app.pressMenuKey("i")
+        try await app.waitUntil("the panel hides") { !model.panel.visible && !app.exists("panel-whereItStands") }
+        try check(app.exists("pr-popover"), "a hidden panel closed a popover that does not point at it")
+        app.press(.escape)
+        try await app.waitUntil("Escape closes the popover over the hidden panel") { !app.exists("pr-popover") && !model.prPopover.isOpen }
+        try await app.waitUntil("the terminal has the keys, not the hidden field") { terminalHasTheKeys() }
+        await app.sleep(0.3)
+        try check(terminalHasTheKeys(), "the hidden field took the keys back")
     }
 
     private static func openPopoverSwitcher(_ app: DriverApp) async throws {

@@ -11,7 +11,7 @@ The PR popover shows the state of the PR of one worktree and the actions that go
 ## The card
 
 - 360pt wide, radius `radius-md`, `horizon-b`, a hairline edge, `shadow-raised`. It opens below the control when it fits, else above, else on the side with more room. It keeps 8pt from each window edge and 6pt from the control.
-- Header: the stage symbol and the stage in words, in the colour of the stage. At the trailing edge, "Updated 18:14" in `ink-faint`, the time of the last answer of GitHub. While the app asks GitHub about the worktree, this reads "Updating…". Each open asks once. An open, or Refresh in the ⌘J menu, while that ask runs joins it and starts no other.
+- Header: the stage symbol and the stage in words, in the colour of the stage. At the trailing edge, "Updated 18:14" in `ink-faint`, the time of the last answer of GitHub. While the app asks GitHub about the worktree, this reads "Updating…". Each open asks once. An open while that ask runs joins it and starts no other. Refresh in the ⌘J menu waits for it and then asks again, so it shows a push made a moment ago.
 - Title: "#142 Link labels from plot brief" in 14pt semibold, then "link-labels → main · 9 commits" in mono, `ink-muted`.
 - Four rows between two hairlines: Checks, Review, Base, Conflicts. The words come from `StatusLine`, so the sidebar tooltip, the Worktrees section and the popover say the same. Only the failing words are `rust`.
 - Blocked and In merge queue add one line under the rows. A repo with no GitHub remote, and a refresh that failed, add a line under the title.

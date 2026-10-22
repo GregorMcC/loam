@@ -220,18 +220,21 @@ import Testing
         #expect(model.prPopover.attemptedAt != nil)
     }
 
-    @Test func aRefreshFromTheMenuJoinsTheRefreshOfThePopover() async throws {
+    /// Refresh in the ⌘J menu is an explicit ask: a push made a moment ago is not in a refresh that started
+    /// before it, so the menu asks again after the one that runs. An open of the popover joins it instead.
+    @Test func aRefreshFromTheMenuAsksAgainAfterTheRefreshThatRuns() async throws {
         let rig = try await rig()
         let model = rig.model
         try rig.touch("hold")
         model.openPullRequest(nativePanel)
         await waitUntil("the refresh started") { rig.refreshes().count == 1 }
-        let menu = Task { await model.refreshWorktree(nativePanel) }
+        let menu = Task { await model.refreshWorktree(nativePanel, afterChange: true) }
         try await Task.sleep(for: .milliseconds(200))
+        #expect(rig.refreshes().count == 1)
         rig.remove("hold")
         #expect(await menu.value)
         await idle(model)
-        #expect(rig.refreshes().count == 1)
+        #expect(rig.refreshes().count == 2)
     }
 
     /// Refresh in the ⌘J menu, with the popover of the worktree open: the popover says "Updating…".
@@ -241,7 +244,7 @@ import Testing
         model.openPullRequest(nativePanel)
         await idle(model)
         try rig.touch("hold")
-        let menu = Task { await model.refreshWorktree(nativePanel) }
+        let menu = Task { await model.refreshWorktree(nativePanel, afterChange: true) }
         await waitUntil("the popover shows the refresh") { model.prPopover.isRefreshing }
         rig.remove("hold")
         #expect(await menu.value)

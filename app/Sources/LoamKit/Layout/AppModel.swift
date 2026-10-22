@@ -348,10 +348,11 @@ public final class AppModel {
 
     /// Asks GitHub about one worktree (`loam worktree list <plot> --refresh --worktree <id>`) and shows the
     /// answer (ticket 109). The other rows of its plot stay as the core cached them. An ask while the refresh
-    /// of the worktree runs joins it, so a burst of opens of the PR popover, or Refresh in the ⌘J menu, runs
-    /// one `loam`. `afterChange` is for a button that changed the PR: a refresh that started before the
-    /// change cannot show it, so the ask waits for that one and then asks again. Returns false when the
-    /// worktree is unknown or the core gave no answer. The rows stay then.
+    /// of the worktree runs joins it, so a burst of opens of the PR popover runs one `loam`. `afterChange`
+    /// is for a button that changed the PR, and for Refresh in the ⌘J menu, where a push may have come a
+    /// moment ago: a refresh that started before the change cannot show it, so the ask waits for that one and
+    /// then asks again. Returns false when the worktree is unknown or the core gave no answer. The rows stay
+    /// then.
     @discardableResult
     public func refreshWorktree(_ id: String, afterChange: Bool = false) async -> Bool {
         if afterChange, let running = worktreeRefreshes[id] { _ = await running.value }

@@ -159,7 +159,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
         // The split view lays out its columns first and their content after it, so the control of the popover
         // has its new place only once the pass is over.
-        split?.onLayout = { DispatchQueue.main.async { [weak self] in self?.placePullRequestPopover() } }
+        split?.onLayout = { [weak self] in DispatchQueue.main.async { self?.placePullRequestPopover() } }
         split?.install(bar: bar, overlay: menu, popover: popover, switcher: switcherHost, barHeight: ActionBarView.height)
     }
 
@@ -596,7 +596,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             return model.openPullRequest(id)
         case .refreshWorktree:
             guard let id = model.focusedWorktree?.id else { return false }
-            Task { await model.refreshWorktree(id) }
+            Task { await model.refreshWorktree(id, afterChange: true) }
         case .newPlotSession:
             guard let plot = model.workspace.activePlotID else { return false }
             model.openPlotSession(plot)

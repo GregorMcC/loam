@@ -23,11 +23,12 @@ public enum PaneHeaderLayout {
     public static let numberGap: CGFloat = 0
 
     /// The width of each label in `room`, from the width that each one needs (0 for no PR number). The PR
-    /// number is never cut. The title keeps its width in the room that is left, and the branch takes the
-    /// rest, so a long branch is cut first.
+    /// number is never cut, and it ends inside `room` when `room` holds the gap and the number. The title
+    /// keeps its width in the room that is left, and the branch takes the rest, so a long branch is cut
+    /// first.
     public static func widths(title: CGFloat, branch: CGFloat, number: CGFloat, room: CGFloat) -> Widths {
         let numberRoom = number > 0 ? number + numberGap : 0
-        let titleWidth = min(title, max(0, room - numberRoom))
+        let titleWidth = min(title, max(0, room - gap - numberRoom))
         let branchWidth = min(branch, max(0, room - titleWidth - gap - numberRoom))
         return Widths(title: titleWidth, branch: branchWidth, number: number)
     }
