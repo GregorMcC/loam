@@ -46,7 +46,7 @@ struct PlotPanelView: View {
                         WorktreesSection(app: app, plot: plot.id, timeZone: review.timeZone)
                         repos(plot)
                         links(plot)
-                        ChangeLogSection(review: review, plot: plot.id)
+                        ChangeLogSection(review: review, plot: plot.id, linkLabels: plot.linkLabels)
                     }
                     .padding(.horizontal, 12)
                     .padding(.top, 8)
@@ -114,9 +114,9 @@ struct PlotPanelView: View {
             }
         }
         if let clash = model.clash { clashSection(clash) }
-        if let prompt = review.clash { UndoClashSection(review: review, prompt: prompt) }
+        if let prompt = review.clash { UndoClashSection(review: review, prompt: prompt, linkLabels: plot.linkLabels) }
         if let missing = model.missingLink { missingSection(missing) }
-        NewSinceSection(review: review, plot: plot.id)
+        NewSinceSection(review: review, plot: plot.id, linkLabels: plot.linkLabels)
     }
 
     /// A merge on GitHub that the repo setting asks about (ticket 113, board 4.1).

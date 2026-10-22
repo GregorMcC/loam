@@ -60,7 +60,7 @@ import Testing
         #expect(clash.current != nil)
         // The draft stays, so nothing the person typed is lost.
         #expect(m.shownText(of: .what) == "My text")
-        #expect(fake.args()[1].contains("--expect what=17"))
+        #expect(fake.args()[1].contains("--expect what=18"))
     }
 
     @Test func keepMineWritesAgainWithTheNewVersion() async throws {
@@ -70,7 +70,7 @@ import Testing
         await m.save(.what)
         await m.keepMine()
         #expect(m.clash == nil)
-        #expect(fake.args().last?.hasPrefix("set plotaaaaab what - --expect what=17") == true)
+        #expect(fake.args().last?.hasPrefix("set plotaaaaab what - --expect what=18") == true)
         #expect(!m.isDirty(.what))
     }
 
@@ -85,12 +85,12 @@ import Testing
     }
 
     @Test func draftKeepsItsBaseVersionAcrossAReload() async throws {
-        // The draft began at version 17. A reload must not move the base.
+        // The draft began at version 18. A reload must not move the base.
         let (m, _) = try model([("show_links", 0), ("show", 0)])
         await m.load(plotID: "plotaaaaab")
         m.edit(.what, to: "Draft")
         await m.load(plotID: "plotaaaaab")
-        #expect(m.drafts[.what]?.base == 17)
+        #expect(m.drafts[.what]?.base == 18)
         #expect(m.shownText(of: .what) == "Draft")
     }
 
@@ -261,7 +261,7 @@ import Testing
         let (m, fake) = try model([("show_links", 0), ("link_edit", 0), ("show_links", 0)])
         await m.load(plotID: "plotaaaaab")
         await m.editLink(id: "linkaaaaai", label: "Missing", target: "/new/path", note: "")
-        #expect(fake.args()[1].contains("--expect link:linkaaaaai=23"))
+        #expect(fake.args()[1].contains("--expect link:linkaaaaai=24"))
         #expect(fake.args()[1].contains("--target /new/path"))
     }
 
@@ -270,6 +270,24 @@ import Testing
         await m.load(plotID: "plotaaaaab")
         await m.removeLink(id: "linkaaaaab")
         #expect(fake.args()[1] == "link rm plotaaaaab linkaaaaab --expect link:linkaaaaab=7 --json --actor app")
+    }
+
+    @Test func moveLinkExpectsTheLinkOrderVersion() async throws {
+        let (m, fake) = try model([("show_links", 0), ("link_move", 0), ("show_links", 0)])
+        await m.load(plotID: "plotaaaaab")
+        await m.moveLink(id: "linkaaaaad", to: 1)
+        #expect(fake.args()[1] == "link move plotaaaaab linkaaaaad 1 --expect links=8 --json --actor app")
+        #expect(fake.args().count == 3)
+    }
+
+    @Test func moveLinkReordersTheLinksBeforeTheReload() async throws {
+        // The reload fails, so the plot keeps the order the move set locally.
+        let (m, _) = try model([("show_links", 0), ("link_move", 0), ("error_generic", 1)])
+        await m.load(plotID: "plotaaaaab")
+        await m.moveLink(id: "linkaaaaad", to: 1)
+        let links = try #require(m.plot?.links)
+        #expect(links.prefix(3).map(\.id) == ["linkaaaaad", "linkaaaaac", "linkaaaaab"])
+        #expect(links.map(\.position) == Array(1...links.count))
     }
 
     @Test func staleLinkEditShowsClash() async throws {
