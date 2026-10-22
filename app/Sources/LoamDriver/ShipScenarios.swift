@@ -129,7 +129,7 @@ extension Scenarios {
         let (labels, panel, local) = (made[0], made[1], made[2])
         try "unsaved\n".write(to: URL(fileURLWithPath: local.path).appendingPathComponent("notes.txt"), atomically: true, encoding: .utf8)
 
-        let client = LoamClient(binary: rig.binary, environment: rig.environment.merging([
+        let client = LoamClient(binary: rig.binary, environment: rig.environment.merging(try rig.neutralPrompt()) { $1 }.merging([
             "PATH": bin.path + ":" + (environment["PATH"] ?? "/usr/bin:/bin"),
             "LOAM_FAKE_CLAUDE_OUT": invocationFile.path, "LOAM_FAKE_CLAUDE_HOOKS": "1", "LOAM_FAKE_CLAUDE_TURN": "1s",
             "LOAM_GH": ghWrapper.path, "LOAM_FAKE_GH_STATE": ghStateFile.path, "LOAM_FAKE_GH_LOG": ghLog.path,

@@ -99,12 +99,10 @@ extension Scenarios {
         let local = try makeWorktree(rig, plot: plot, repo: widgets, name: "local-work")
         try git(widgets, ["remote", "set-url", "origin", "https://github.com/example/widgets.git"])
 
-        // The client's environment is the pane's environment. The shells read an empty `.zshrc` of the fake HOME, so
+        // The client's environment is the pane's environment. The shells read the `.zshrc` of the fake HOME, so
         // the real startup files of the Mac do not set their prompt or their title.
-        try "".write(to: rig.fakeHome.appendingPathComponent(".zshrc"), atomically: true, encoding: .utf8)
-        let client = LoamClient(binary: rig.binary, environment: rig.environment.merging([
+        let client = LoamClient(binary: rig.binary, environment: rig.environment.merging(try rig.neutralPrompt()) { $1 }.merging([
             "LOAM_GH": fakeGH, "LOAM_FAKE_GH_STATE": ghState.path, "LOAM_FAKE_GH_LOG": ghLog.path,
-            "ZDOTDIR": rig.fakeHome.path,
         ]) { $1 })
         // The timers are far away, so only the launch and the popover make a refresh.
         let host = try await app.launchApp(client: client, state: rig.stateFile, terminals: true) { host in

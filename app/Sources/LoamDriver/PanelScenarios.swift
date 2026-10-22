@@ -99,6 +99,17 @@ struct PanelRig {
 
     func show(_ plot: String) throws -> [String: Any] { try json(["show", plot]) }
 
+    /// A neutral prompt for the zsh of the panes, as the environment entry that gives it to them. macOS
+    /// `/etc/zshrc` sets a prompt with the user name and the host name, so a screenshot of a shell would show
+    /// them. The `.zshrc` of the fake HOME runs after it and sets a prompt with only the folder. A pane gets
+    /// `HOME` from the user record, so `ZDOTDIR` points zsh at the fake HOME. The file also keeps the zsh
+    /// "new user" questions away.
+    func neutralPrompt() throws -> [String: String] {
+        try FileManager.default.createDirectory(at: fakeHome, withIntermediateDirectories: true)
+        try "PROMPT='%1~ %# '\nRPROMPT=''\n".write(to: fakeHome.appendingPathComponent(".zshrc"), atomically: true, encoding: .utf8)
+        return ["ZDOTDIR": fakeHome.path]
+    }
+
     func changes(_ plot: String) throws -> [[String: Any]] {
         try json(["changes", plot])["changes"] as? [[String: Any]] ?? []
     }

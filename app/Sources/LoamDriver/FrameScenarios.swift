@@ -109,7 +109,7 @@ extension Scenarios {
         try fm.createDirectory(at: rig.fakeHome, withIntermediateDirectories: true)
         try "{\"projects\": {\(trusted)}}".write(to: rig.fakeHome.appendingPathComponent(".claude.json"),
                                                   atomically: true, encoding: .utf8)
-        let environment = rig.environment.merging([
+        let environment = rig.environment.merging(try rig.neutralPrompt()) { $1 }.merging([
             "PATH": bin.path + ":" + (ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"),
         ]) { $1 }
         return (rig, environment, config)

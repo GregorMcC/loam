@@ -73,7 +73,6 @@ extension Scenarios {
         let bin = rig.root.appendingPathComponent("bin")
         try fm.createDirectory(at: bin, withIntermediateDirectories: true)
         try fm.copyItem(atPath: fake, toPath: bin.appendingPathComponent("claude").path)
-        try "".write(to: rig.fakeHome.appendingPathComponent(".zshrc"), atomically: true, encoding: .utf8)
         let invocationFile = rig.root.appendingPathComponent("claude-invocation.json")
         func invocation() -> Invocation? {
             (try? Data(contentsOf: invocationFile)).flatMap { try? JSONDecoder().decode(Invocation.self, from: $0) }
@@ -101,7 +100,7 @@ extension Scenarios {
         // A setup command that Claude sets is new, so the pane asks before it runs.
         try await mcpCall(rig, "update_repo", ["plot": plot, "repo_id": repoID, "setup": "echo ran > setup-marker"])
 
-        let environment = rig.environment.merging([
+        let environment = rig.environment.merging(try rig.neutralPrompt()) { $1 }.merging([
             "PATH": bin.path + ":" + (ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"),
             "LOAM_FAKE_CLAUDE_OUT": invocationFile.path,
             "LOAM_FAKE_CLAUDE_HOOKS": "1",
