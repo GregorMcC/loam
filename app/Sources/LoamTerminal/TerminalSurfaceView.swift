@@ -60,9 +60,11 @@ public final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClien
     /// You typed in the terminal: a key with no command key that `TypingKey` counts as typing.
     /// Loam clears "needs you" on it, because a denied permission prompt sends no hook (spec 8.4).
     public var onKeyInput: (() -> Void)?
-    /// You put something into the line that the program edits: any key with no command key (an arrow key
-    /// recalls a line, Tab completes one), a paste, or a drop. Send to session does not type over it
-    /// (ticket 110). Text that `pasteWithoutReturn` types is not yours, so it does not count.
+    /// You put something into the line that the program edits, and Send to session does not type over it
+    /// (ticket 110). Each of these counts: a key that reaches the terminal, with or without the command key (an
+    /// arrow key recalls a line, Tab completes one, ⌘⌫ clears one), a read of the clipboard (⌘V, ⌘⇧V, a middle
+    /// click), text from an input method or dictation, and a drop. Text that `pasteWithoutReturn` types is not
+    /// yours, so it does not count.
     public var onInput: (() -> Void)?
     public var onDesktopNotification: ((_ title: String, _ body: String) -> Void)?
     /// Called when a clipboard request shows its prompt. The driver uses it.
@@ -76,6 +78,10 @@ public final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClien
     private var markedText = NSMutableAttributedString()
     /// Non-nil only inside keyDown: the text the input method committed.
     private var keyTextAccumulator: [String]?
+    /// True from the time the view takes the keys until its first key down that is not a repeat. A key that you
+    /// hold down in another view, such as Return in the PR popover that gives the keys to this view, then does
+    /// not repeat into the terminal (ticket 110).
+    private var dropsRepeats = false
     private var lastPerformKeyEvent: TimeInterval?
     private var observers: [NSObjectProtocol] = []
 
@@ -370,7 +376,7 @@ public final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClien
 
     public override func becomeFirstResponder() -> Bool {
         let result = super.becomeFirstResponder()
-        if result { focused = true; syncFocus() }
+        if result { focused = true; dropsRepeats = true; syncFocus() }
         return result
     }
 
@@ -497,10 +503,11 @@ public final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClien
     // MARK: Keys
 
     public override func keyDown(with event: NSEvent) {
-        if !event.modifierFlags.contains(.command) {
-            if TypingKey.clearsNeedsYou(event.characters) { onKeyInput?() }
-            onInput?()
-        }
+        // A held key that started in another view. A key held here started with a key down that is not a repeat.
+        if event.isARepeat, dropsRepeats { return }
+        dropsRepeats = false
+        if !event.modifierFlags.contains(.command), TypingKey.clearsNeedsYou(event.characters) { onKeyInput?() }
+        onInput?()
         guard let surface else {
             interpretKeyEvents([event])
             return
@@ -565,6 +572,8 @@ public final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClien
     }
 
     public override func keyUp(with event: NSEvent) {
+        // The key went down in another view, so the terminal did not see it go down.
+        if dropsRepeats { return }
         _ = keyAction(GHOSTTY_ACTION_RELEASE, event: event)
     }
 
@@ -724,14 +733,8 @@ public final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClien
     // MARK: Edit menu
 
     @objc public func copy(_ sender: Any?) { perform(action: "copy_to_clipboard") }
-    @objc public func paste(_ sender: Any?) {
-        onInput?()
-        perform(action: "paste_from_clipboard")
-    }
-    @objc public func pasteAsPlainText(_ sender: Any?) {
-        onInput?()
-        perform(action: "paste_from_clipboard")
-    }
+    @objc public func paste(_ sender: Any?) { perform(action: "paste_from_clipboard") }
+    @objc public func pasteAsPlainText(_ sender: Any?) { perform(action: "paste_from_clipboard") }
     @objc public override func selectAll(_ sender: Any?) { perform(action: "select_all") }
 
     public func validateMenuItem(_ item: NSMenuItem) -> Bool {
@@ -814,8 +817,12 @@ public final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClien
             keyTextAccumulator?.append(text)
             return
         }
-        // Committed text (input method, dictation) goes as typed keys, never as a paste.
-        if !text.isEmpty { _ = committedText(GHOSTTY_ACTION_PRESS, text) }
+        // Committed text (input method, dictation) goes as typed keys, never as a paste. Outside keyDown, it
+        // comes from dictation, the emoji and character viewer, the accent popup, or a candidate picked with the
+        // mouse, so it counts as input here.
+        guard !text.isEmpty else { return }
+        onInput?()
+        _ = committedText(GHOSTTY_ACTION_PRESS, text)
     }
 
     /// Stops the beep for commands that the view does not handle. A command

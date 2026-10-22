@@ -3,8 +3,8 @@ import LoamKit
 import LoamTerminal
 
 /// Driver scenario for ticket 110: Send to session. The PR popover types a fix prompt into the session of a
-/// worktree, and you press Return. It offers Copy prompt while the session is busy and after a key since the last
-/// Stop, and it starts a session when the worktree has none. The sessions are the core's fake `claude` in hook mode
+/// worktree, and you press Return. It offers Copy prompt while the session is busy and after a paste or a key that
+/// the session did not take, and it starts a session when the worktree has none. The sessions are the core's fake `claude` in hook mode
 /// (`LOAM_DRIVER_FAKE_CLAUDE`), which writes each prompt that it gets to a file. GitHub is the core's fake `gh`
 /// (`LOAM_DRIVER_FAKE_GH`) with a made-up repo. It uses a temp `LOAM_HOME` and never touches `~/.loam`, a real
 /// repo, GitHub, or your clipboard.
@@ -16,6 +16,11 @@ extension Scenarios {
 
     static func sendToSession(_ app: DriverApp) async throws {
         do { try await sendSteps(app) } catch { app.dumpAccessibility(); throw error }
+    }
+
+    /// How many times the input hook of a terminal ran.
+    private final class InputCount {
+        var value = 0
     }
 
     /// The prompts of the two PRs, as the ticket words them.
@@ -162,15 +167,20 @@ extension Scenarios {
                        "the footnote reads \(app.text(of: "pr-popover-send-note") ?? "nothing")")
         try await settledShot("send-popover-failed")
 
-        // 3. The button types the prompt into the input and gives the session the keys. Nothing is sent: the fake
+        // 3. Return in the popover types the prompt into the input and gives the session the keys. You hold Return
+        // a little: its repeats reach the terminal, which drops them until a new key down. Nothing is sent: the fake
         // `claude` got no prompt.
-        try app.click("pr-popover-primary")
+        try await app.waitUntil("the popover has the keys") { !hasTheKeys(session) }
+        await app.sleep(0.3)
+        app.keyDown(.returnKey)
+        try await app.waitUntil("the session has the keys") { hasTheKeys(session) }
+        for _ in 0..<3 { app.keyDown(.returnKey, isARepeat: true) }
+        app.keyUp(.returnKey)
         try await app.waitUntil("the popover closes") { !model.prPopover.isOpen }
         try await app.waitUntil("the prompt is in the input") { screen(session).contains("Checks failed on #139") }
         try await app.waitUntil("the toast") {
             app.text(of: "action-bar-toast")?.contains("Loam typed the failures into \u{2733} Native panel spacing. Press Return to send.") == true
         }
-        try await app.waitUntil("the session has the keys") { hasTheKeys(session) }
         try await settledShot("send-prompt-typed")
         await app.sleep(1)
         try expectSend(sent().isEmpty && model.workspace.state(of: session) == .idle, "the prompt went to the session: \(sent())")
@@ -194,12 +204,32 @@ extension Scenarios {
         try expectSend(model.workspace.state(of: session) == .working, "the turn ended before the busy steps were done")
         try await closePopover()
 
-        // 5. After the Stop, a key in the session means the input can hold your text. The button copies again, and
-        // the ⌘J row opens the popover, so you see why.
+        // 5. During the turn, you paste the prompt with Edit > Paste, press ⌘⌫, and dictate a word. Each puts text into
+        // the input, so each reaches the input hook of the terminal. The driver app is not frontmost, so its window
+        // is not key and ⌘V finds no target. The Paste item sends its action to the terminal, as in the key window.
+        try await app.waitUntil("the session has the keys in the turn") { hasTheKeys(session) }
+        try expectSend(model.workspace.session(of: session)?.typedSinceSubmit == false, "the submit did not empty the input")
+        let view = try terminal(session)
+        let hook = view.onInput
+        let inputs = InputCount()
+        view.onInput = { inputs.value += 1; hook?() }
+        let editItems = (NSApp.mainMenu?.items ?? []).flatMap { $0.submenu?.items ?? [] }
+        guard let paste = editItems.first(where: { $0.action == #selector(NSText.paste(_:)) }), let action = paste.action else {
+            throw DriverFailure("the menu has no Paste item")
+        }
+        NSApp.sendAction(action, to: host.window.firstResponder, from: paste)
+        try await app.waitUntil("the paste counts") { inputs.value == 1 && model.workspace.session(of: session)?.typedSinceSubmit == true }
+        app.press(.delete, flags: .command)
+        try await app.waitUntil("command-delete counts") { inputs.value == 2 }
+        view.insertText("\u{E9}", replacementRange: NSRange(location: NSNotFound, length: 0))
+        try await app.waitUntil("the dictated word counts") { inputs.value == 3 }
+        view.onInput = hook
+        try expectSend(model.workspace.state(of: session) == .working, "the turn ended before the keys of the turn")
+
+        // 6. Claude Code keeps the text that you typed during the turn, so after the Stop the input can still hold
+        // your text. The button copies again, and the ⌘J row opens the popover, so you see why.
         try await app.waitUntil("the turn ends", timeout: turnSeconds + 5) { model.workspace.state(of: session) == .idle }
-        try await app.waitUntil("the session has the keys after the turn") { hasTheKeys(session) }
-        try app.type("x")
-        try await app.waitUntil("the key counts") { model.workspace.session(of: session)?.typedSinceSubmit == true }
+        try expectSend(model.workspace.session(of: session)?.typedSinceSubmit == true, "the Stop emptied the input")
         try await openPopover()
         try expectSend(primary()?.title == "Copy prompt", "the button after a key reads \(String(describing: primary()))")
         try expectSend(app.text(of: "pr-popover-send-note") == "You have typed in this session. Loam does not type over your text.",
@@ -216,7 +246,7 @@ extension Scenarios {
         try expectSend(sent() == failuresPrompt + "\n", "the menu sent a prompt: \(sent())")
         try await closePopover()
 
-        // 6. switcher-width has no session. The button starts one, and types the review prompt after its SessionStart.
+        // 7. switcher-width has no session. The button starts one, and types the review prompt after its SessionStart.
         try expectSend(model.openPullRequest(switcher.id), "the popover of switcher-width did not open")
         try await app.waitUntil("the popover of switcher-width") { app.exists("pr-popover-primary") && !model.prPopover.isRefreshing }
         try expectSend(primary()?.title == "Start session with prompt", "the button without a session reads \(String(describing: primary()))")
