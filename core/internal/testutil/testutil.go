@@ -1,5 +1,6 @@
 // Package testutil holds the test harness: a temp LOAM_HOME, a built loam
-// binary, and a fake claude that records how it was started.
+// binary, a fake claude that records how it was started, and a fake gh that
+// answers from a made-up GitHub state.
 package testutil
 
 import (
@@ -13,12 +14,14 @@ import (
 
 // Home sets LOAM_HOME to a new temp folder for the test and returns it. It
 // also points LOAM_APP_STATE_DIR at an empty folder, so no test reads the real
-// app's state.json.
+// app's state.json, and LOAM_GH at a missing file, so no test runs the real
+// gh. [FakeGH] replaces the missing file with a fake.
 func Home(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("LOAM_HOME", dir)
 	t.Setenv("LOAM_APP_STATE_DIR", filepath.Join(dir, "app-state"))
+	t.Setenv("LOAM_GH", filepath.Join(dir, "no-gh"))
 	return dir
 }
 
@@ -89,4 +92,51 @@ func FakeClaudeInvocation(t *testing.T) Invocation {
 		t.Fatal(err)
 	}
 	return inv
+}
+
+// FakeGH builds a fake `gh` and points LOAM_GH at it for the test. The fake
+// answers each GraphQL query from the GitHub state in state (JSON, see
+// internal/testutil/fakegh) and logs each call for [FakeGHCalls]. It returns
+// the state file, so a test can write a new state. Set LOAM_FAKE_GH_FAIL to
+// make each call fail. Call it after [Home].
+func FakeGH(t *testing.T, state string) string {
+	t.Helper()
+	dir := t.TempDir()
+	gh := filepath.Join(dir, "gh")
+	build(t, "github.com/GregorMcC/loam/core/internal/testutil/fakegh", gh)
+	file := filepath.Join(dir, "state.json")
+	if err := os.WriteFile(file, []byte(state), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LOAM_GH", gh)
+	t.Setenv("LOAM_FAKE_GH_STATE", file)
+	t.Setenv("LOAM_FAKE_GH_LOG", filepath.Join(dir, "calls.jsonl"))
+	return file
+}
+
+// GHCall is one call that the fake gh logged.
+type GHCall struct {
+	Args      []string       `json:"args"`
+	Variables map[string]any `json:"variables"`
+}
+
+// FakeGHCalls returns the calls that the fake gh logged, oldest first.
+func FakeGHCalls(t *testing.T) []GHCall {
+	t.Helper()
+	b, err := os.ReadFile(os.Getenv("LOAM_FAKE_GH_LOG"))
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls []GHCall
+	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		var c GHCall
+		if err := json.Unmarshal([]byte(line), &c); err != nil {
+			t.Fatal(err)
+		}
+		calls = append(calls, c)
+	}
+	return calls
 }

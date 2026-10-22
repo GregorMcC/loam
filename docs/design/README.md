@@ -38,7 +38,7 @@ Use the product's own nouns exactly, and never their synonyms:
 | land | finish, complete |
 | seeded session | agent, plot session |
 | pane | split, surface |
-| Needs you | blocked, waiting |
+| Needs you | blocked, waiting (Blocked is only the stage where GitHub blocks a merge) |
 | Done, unread | idle, finished |
 | archive, unarchive, delete | close, hide |
 
@@ -73,7 +73,7 @@ With a Ghostty theme, the chrome follows the terminal background (`ChromePalette
 - **Brand.** `moss` marks where you are: the active plot's dot, the primary button (with `on-moss` text), and the cursor. A selected row or tab is neutral, and a link label is `ink`. Use it sparingly. One screen should show it in at most three places.
 - **Attention.** `needs-you` with `needs-you-wash`, and `done-unread` with `done-unread-wash`. Never use either hue for decoration or for a brand moment.
 - **Calm structure.** Structure is felt, not seen, as in Raycast and Linear (the polish prototype, tickets 86 to 90). Hairlines, hover fills, selected fills and keycaps mix from the derived `ink` (`LoamColor.inkHairline` 8%, `inkFill` 5%, `inkSelected` 9%, `inkKey` 10%), so they follow every terminal theme. No view sets a fixed colour. Inactive rows are `ink-muted`; the selected or focused row is `ink`.
-- **Ship state.** These colours are for the stage symbol. A stage symbol is `ink-muted`. Merged, Closed, Draft and "Pushed, no PR" are `ink-faint`, which is enough for a symbol (3:1), and Ready to merge is `ink`. Only Conflicts and Checks failed take `rust`. No stage takes a state hue or a new hue. The words of a stage are `ink-muted` text, and only the failing words take `rust` ([ADR 0007](../adr/0007-ship-state-is-information.md)).
+- **Ship state.** These colours are for the stage symbol. A stage symbol is `ink-muted`. Merged, Closed, Draft and "Pushed, no PR" are `ink-faint`, which is enough for a symbol (3:1), and Ready to merge is `ink`. Blocked, a merge that GitHub blocks for a reason that no other stage covers, is the SF Symbol `lock` in `ink-muted`. Only Conflicts and Checks failed take `rust`. No stage takes a state hue or a new hue. The words of a stage are `ink-muted` text, and only the failing words take `rust` ([ADR 0007](../adr/0007-ship-state-is-information.md)).
 - **Errors and destruction.** `rust` with `rust-wash`. In the app, a destructive button or menu item takes the native destructive role, and a button shows its label in `rust`. In the web bundle, a destructive button is outlined in `rust` until you confirm it.
 - **Focus.** Native controls draw the system focus ring. A control that Loam draws itself takes a 2px solid `focus` ring at 2px offset. It never relies on a glow.
 - **The terminal theme.** `ansi-*` and `ansi-bright-*` are the Ghostty palette, with `bedrock` as background, `ink` as foreground, `cursor` and `selection`. `ansi-black` and `ansi-white` are low-contrast on purpose, as in every terminal theme.

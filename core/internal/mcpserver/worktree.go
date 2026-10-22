@@ -9,7 +9,10 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-type listWorktreesIn struct{ plotArg }
+type listWorktreesIn struct {
+	plotArg
+	Refresh bool `json:"refresh,omitempty" jsonschema:"set to true to ask GitHub for the pull request of each worktree first, through the gh CLI. It takes a few seconds. The default reads the state of the last refresh."`
+}
 
 type createWorktreeIn struct {
 	plotArg
@@ -29,18 +32,32 @@ type createWorktreeOut struct {
 }
 
 func (s *Server) registerWorktrees(srv *mcp.Server) {
+	open := true
+	// list_worktrees stays read-only with refresh: the refresh writes only
+	// Loam's internal PR cache, and the plot does not change.
 	mcp.AddTool(srv, &mcp.Tool{
 		Name: "list_worktrees",
 		Description: "List the git worktrees of the plot. Each has its name, branch, folder, and repo, and three checks: " +
-			"changed files, commits that are not pushed, and whether the branch is merged." + plotNote,
-		Annotations: readOnly("List worktrees"),
-	}, func(_ context.Context, _ *mcp.CallToolRequest, in listWorktreesIn) (*mcp.CallToolResult, any, error) {
+			"changed files, commits that are not pushed, and whether the branch is merged. " +
+			"Each also has its pull request on GitHub (pr, or null), its stage (such as checks_failed or ready_to_merge), " +
+			"pr_note (why the ship state is missing or old), and pr_checked_at (when it came from GitHub)." + plotNote,
+		Annotations: &mcp.ToolAnnotations{Title: "List worktrees", ReadOnlyHint: true, OpenWorldHint: &open},
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in listWorktreesIn) (*mcp.CallToolResult, any, error) {
 		plotID, err := s.resolvePlot(in.Plot)
 		if err != nil {
 			return fail(err)
 		}
 		if _, err := s.loadPlot(plotID); err != nil {
 			return fail(err)
+		}
+		if in.Refresh {
+			ws, err := s.st.ListWorktrees(plotID)
+			if err != nil {
+				return fail(err)
+			}
+			if err := worktree.RefreshPRs(ctx, s.st, ws); err != nil { // a cancelled call stops gh
+				return fail(err)
+			}
 		}
 		list, err := worktree.List(s.st, plotID)
 		if err != nil {
@@ -49,7 +66,6 @@ func (s *Server) registerWorktrees(srv *mcp.Server) {
 		return reply(listWorktreesOut{Worktrees: list})
 	})
 
-	open := true
 	no := false
 	mcp.AddTool(srv, &mcp.Tool{
 		Name: "create_worktree",

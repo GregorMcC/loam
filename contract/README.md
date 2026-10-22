@@ -16,7 +16,7 @@ This folder holds the output of the real `loam` binary for every command that ha
 
 The test is `core/internal/contract/`. It does these steps:
 
-1. It builds `loam` and sets `LOAM_HOME`, `HOME`, and `CLAUDE_CONFIG_DIR` to temp folders. It puts a fake `claude` first on `PATH`. It never reads `~/.loam`.
+1. It builds `loam` and sets `LOAM_HOME`, `HOME`, and `CLAUDE_CONFIG_DIR` to temp folders. It puts a fake `claude` first on `PATH`. It points `LOAM_GH` at a fake `gh` that answers from the made-up GitHub repo in `core/internal/contract/testdata/github.json`. It never reads `~/.loam` and never calls GitHub.
 2. It runs one scenario of commands. Each command has `--json`. The scenario covers all commands in `docs/contract.md` and each exit code that the core returns today (1, 2, 10, 11, 14, 15).
 3. It normalizes each output. Random IDs become fixed IDs, such as `plotaaaaab`, `linkaaaaab`, and `repoaaaaab`. Every time becomes `2026-01-01T00:00:00Z`. Temp paths become `/tmp/loam-contract/...`. Change IDs are not random, so they stay.
 4. It checks the output and the fixture against the schema in the manifest.

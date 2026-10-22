@@ -48,6 +48,20 @@ func (s *Store) beginWrite() (*writeTx, error) {
 	return w, nil
 }
 
+// beginUnmarkedWrite is [Store.beginWrite] for a write that does not rewrite
+// the changed marker on commit. Use it only for data that the app gets from
+// the command that it runs, such as the PR cache. The app's change feed
+// watches only the marker. A marked cache write would make the app list
+// again, and a list that refreshes would then write again, with no end.
+func (s *Store) beginUnmarkedWrite() (*writeTx, error) {
+	w, err := s.beginWrite()
+	if err != nil {
+		return nil, err
+	}
+	w.committed = nil
+	return w, nil
+}
+
 func (w *writeTx) commit() error {
 	w.done = true
 	defer w.conn.Close()

@@ -207,17 +207,27 @@ func (s *Store) MarkWorktreeSetup(id string) error {
 	return s.writeWorktree(id, `UPDATE worktrees SET setup_done = 1 WHERE id = ?`)
 }
 
-// RemoveWorktree deletes the record of a worktree. It does not touch git.
+// RemoveWorktree deletes the record of a worktree and the PR cache row of its
+// branch. It does not touch git.
 func (s *Store) RemoveWorktree(id string) error {
-	return s.writeWorktree(id, `DELETE FROM worktrees WHERE id = ?`)
+	return s.writeWorktree(id, `DELETE FROM worktrees WHERE id = ?`,
+		`DELETE FROM pr_cache WHERE (repo_path, branch) IN (SELECT repo_path, branch FROM worktrees WHERE id = ?)`)
 }
 
-func (s *Store) writeWorktree(id, query string) error {
+// writeWorktree runs query on the record of a worktree in one write, after
+// the queries in before. Each query takes the worktree ID. When query changes
+// no row, the write fails with [ErrNotFound].
+func (s *Store) writeWorktree(id, query string, before ...string) error {
 	tx, err := s.beginWrite()
 	if err != nil {
 		return err
 	}
 	defer tx.rollback()
+	for _, q := range before {
+		if err := tx.exec(q, id); err != nil {
+			return err
+		}
+	}
 	res, err := tx.conn.ExecContext(context.Background(), query, id)
 	if err != nil {
 		return err

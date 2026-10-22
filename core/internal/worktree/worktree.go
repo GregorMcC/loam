@@ -6,7 +6,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/GregorMcC/loam/core/internal/github"
 	"github.com/GregorMcC/loam/core/internal/store"
 )
 
@@ -271,7 +273,8 @@ func Find(s *store.Store, plotID, repoArg, arg string) (store.Worktree, error) {
 	return store.Worktree{}, fmt.Errorf("no worktree %q in this plot: %w", arg, store.ErrNotFound)
 }
 
-// Status is the state of a worktree: what a removal would lose.
+// Status is the state of a worktree: the local checks, which say what a
+// removal would lose, and the ship state from the PR cache.
 type Status struct {
 	Worktree store.Worktree `json:"worktree"`
 	// Missing is true when the worktree folder is gone.
@@ -285,6 +288,24 @@ type Status struct {
 	MergedInto string `json:"merged_into,omitempty"`
 	// Error says why a check failed. A failed check counts as unsafe.
 	Error string `json:"error,omitempty"`
+
+	// Stage is the one stage of the worktree (see [StageOf]).
+	Stage Stage `json:"stage"`
+	// PR is the pull request of the branch from the last refresh, or nil. It
+	// is nil too when the stage comes from the local checks after new work on
+	// a merged or closed PR (see [StageInput.UsesPR]).
+	PR *github.PR `json:"pr"`
+	// PRNote says why the ship state is missing or old.
+	PRNote PRNote `json:"pr_note"`
+	// PRCheckedAt is when the ship state came from GitHub. It is nil when
+	// GitHub never answered for the branch.
+	PRCheckedAt *time.Time `json:"pr_checked_at,omitempty"`
+	// CompareURL is the GitHub page that compares the branch with its base.
+	// It is set only for [StagePushedNoPR].
+	CompareURL string `json:"compare_url,omitempty"`
+
+	// localFailed is true when git could not read Changed or Unpushed.
+	localFailed bool
 }
 
 // Inspect runs the checks on a worktree. It reads the last fetched state and
@@ -294,7 +315,7 @@ func Inspect(w store.Worktree) Status {
 	if fi, err := os.Stat(w.Path); err != nil || !fi.IsDir() {
 		st.Missing = true
 	} else if out, err := git(w.Path, "status", "--porcelain"); err != nil {
-		st.Error = err.Error()
+		st.Error, st.localFailed = err.Error(), true
 	} else if out != "" {
 		st.Changed = len(strings.Split(out, "\n"))
 	}
@@ -315,7 +336,7 @@ func Inspect(w store.Worktree) Status {
 	}
 	if args != nil {
 		if out, err := git(dir, args...); err != nil {
-			st.Error = err.Error()
+			st.Error, st.localFailed = err.Error(), true
 		} else if n, err := strconv.Atoi(out); err == nil {
 			st.Unpushed = n
 		}
@@ -338,15 +359,22 @@ func Inspect(w store.Worktree) Status {
 	return st
 }
 
-// List inspects the worktrees of a plot, oldest first. An empty plotID lists every plot.
+// List inspects the worktrees of a plot, oldest first, and adds the ship state
+// from the PR cache. It does not use the network. An empty plotID lists
+// every plot.
 func List(s *store.Store, plotID string) ([]Status, error) {
 	ws, err := s.ListWorktrees(plotID)
+	if err != nil {
+		return nil, err
+	}
+	cache, err := s.PRStates()
 	if err != nil {
 		return nil, err
 	}
 	out := make([]Status, len(ws))
 	for i, w := range ws {
 		out[i] = Inspect(w)
+		out[i].addPRState(cache[store.PRKey{Repo: w.Repo, Branch: w.Branch}])
 	}
 	return out, nil
 }

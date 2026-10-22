@@ -237,7 +237,7 @@ A worktree is a separate checkout of one repo of a plot, on its own branch. It l
 | Command | Output |
 | :- | :- |
 | `loam worktree new <plot> <repo> <name> [--base <branch>]` | `{ "worktree": {...}, "copied": ["relative/path"] }` |
-| `loam worktree list [<plot>]` | An array of worktree states, oldest first. It is `[]` when none exists. |
+| `loam worktree list [<plot>] [--refresh [--worktree <worktree>] [--repo <repo>]]` | An array of worktree states, oldest first. It is `[]` when none exists. |
 | `loam worktree rm <plot> <worktree> [--repo <repo>] [--force] [--open-pane <folder>]` | `{ "worktree": {...}, "branch_deleted": false, "branch_note": "..." }` |
 
 `new` uses the branch if it exists. Otherwise it fetches from `origin` and starts a new branch, with no upstream, from `--base` or from the default branch of `origin`. A `--base` that names a local branch uses the local branch; `--base origin/<branch>` uses the remote branch. A failed fetch is a warning on stderr. It copies the files of the repo setting `copy` and of `.worktreeinclude` in the repo root (one path or glob for each line, relative to the repo root). It never overwrites a file and never runs the setup command. `<repo>` is a repo ID or a path.
@@ -245,11 +245,13 @@ A worktree is a separate checkout of one repo of a plot, on its own branch. It l
 A worktree state, an item of `list`:
 
 ```json
-{ "worktree": {...}, "missing": false, "changed": 0, "unpushed": 0, "merged": true, "merged_into": "origin/main" }
+{ "worktree": {...}, "missing": false, "changed": 0, "unpushed": 0, "merged": true, "merged_into": "origin/main",
+  "stage": "ready_to_merge", "pr": {...}, "pr_note": "", "pr_checked_at": "2026-10-02T09:00:00Z" }
 ```
 
 - `changed` counts the files with uncommitted changes, untracked files included. `unpushed` counts the commits that no remote branch holds. `merged` is true when the branch holds nothing that `merged_into` lacks. `merged_into` is left out when no branch to check against is known.
 - The checks read the last fetched state. `error` is present when a check failed. `missing` is true when the folder is gone.
+- `stage`, `pr`, `pr_note`, `pr_checked_at`, and `compare_url` are the ship state. See [Ship state of worktrees](#ship-state-of-worktrees).
 
 `rm` takes a worktree ID, a folder name such as `web-fix-login`, or a name. It exits with code 1 and removes nothing in these cases:
 
@@ -265,6 +267,77 @@ It deletes the local branch with `git branch -d`, so `branch_deleted` is false a
 ```
 
 A pane in Home (see [Home sessions](#home-sessions)) has `"home": true` and an empty `plot_id`, so it matches no plot.
+
+### Ship state of worktrees
+
+`loam worktree list` shows the pull request (PR) of the branch of each worktree, from GitHub only. Without `--refresh`, it reads the PR cache in the store and does not use the network. `--refresh` asks GitHub first and writes the cache. `--worktree <worktree>` refreshes only that worktree (an ID, a folder name, or a name); the output still lists every worktree. `--worktree` needs a plot and `--refresh`, and `--repo` needs `--worktree`. Each other use exits with code 2. MCP `list_worktrees` takes `refresh` (a boolean) and does the same as `--refresh`.
+
+A refresh runs `gh api graphql`, so gh holds the sign-in and Loam holds no credentials. Loam finds gh on `PATH`, else in `/opt/homebrew/bin`, `/usr/local/bin`, or `/opt/local/bin` (`LOAM_GH` replaces the search in tests). Each repo gets at most two queries for each refresh: one for the PRs and the branches on GitHub, and one for the checks and reviews of the open PRs. Each gh call stops after 15 seconds. Ctrl-C, or a cancelled MCP call, stops gh. Then the refresh writes nothing, and the command fails. The owner and the name come from the `origin` remote. A repo whose `origin` is not on github.com gets no query. A worktree whose folder is gone gets no query and shows no ship state.
+
+The cache writes do not rewrite `loam.changed`, so a refresh does not wake the app's change feed. The app gets the ship state from the command that it runs. A cache write skips a worktree that `loam worktree rm` removed while the refresh ran.
+
+The ship state of a worktree:
+
+- `stage` is one stage from the table below, or empty when there is nothing to show.
+- `pr` is the PR object, or null when no PR has the branch as its head. A PR from a fork does not count. When two PRs share the head, the open one wins; else the newest wins. `pr` is also null when the stage comes from the local checks after a merged or closed PR (see below).
+- `pr_note` says why the ship state is missing or old. It is the result of the last refresh, and it stays until a refresh gets an answer. It is one of these values:
+  - empty: the last refresh got an answer, or no refresh ran.
+  - `gh_missing`: gh is not installed.
+  - `gh_signed_out`: gh exits with code 4, or GitHub gives HTTP 401.
+  - `rate_limited`: GitHub refused the request for its rate limit (a "rate limit" message, or HTTP 429).
+  - `no_access`: gh cannot read the repo. gh prints HTTP 403, HTTP 404, "Could not resolve to a Repository", or a SAML or SSO message. A rate limit with HTTP 403 is `rate_limited`.
+  - `no_github_remote`: `origin` is not on github.com. `pr` is null.
+  - `offline`: no network, a timeout, or another failed call.
+- A failed refresh keeps the last ship state and its `pr_checked_at`. When only the second query fails, a worktree with no PR, or with a merged or closed PR, still gets its new state, because it needs nothing from that query. A worktree with an open PR keeps its last state. Each worktree of the repo gets the note.
+- `pr_checked_at` is when the ship state came from GitHub. It is left out when GitHub never answered for the branch.
+- `compare_url` is the GitHub page where you can open a PR for the branch. It is present only for `pushed_no_pr`. When the base of the worktree is a branch of `origin` (`origin/<base>`), the page compares the branch with that base. Else GitHub compares the branch with the default branch of the repo.
+
+Loam checks the stages in this order. The first match wins.
+
+| Stage | When |
+| :- | :- |
+| `merged` | `state` is `MERGED`, and the worktree has no work after the PR head |
+| `closed` | `state` is `CLOSED`, and the worktree has no work after the PR head |
+| `in_merge_queue` | `in_merge_queue` is true |
+| `conflicts` | `mergeable` is `CONFLICTING`, or `merge_state` is `DIRTY` |
+| `changes_requested` | `review_decision` is `CHANGES_REQUESTED` |
+| `checks_failed` | a required check is `FAILURE`, `ERROR`, `TIMED_OUT`, or `STARTUP_FAILURE`. When no check is required (`checks.required` is 0), any failed check counts. |
+| `approval_needed` | a check is `WAITING` or `ACTION_REQUIRED` (`checks.waiting` is not 0) |
+| `draft` | `draft` is true |
+| `behind_base` | `merge_state` is `BEHIND` |
+| `checks_running` | `checks.state` is `PENDING` or `EXPECTED`, or a check still runs |
+| `waiting_for_review` | `review_decision` is `REVIEW_REQUIRED` |
+| `blocked` | `merge_state` is `BLOCKED` |
+| `ready_to_merge` | `merge_state` is `CLEAN`, `HAS_HOOKS`, or `UNSTABLE` (only optional checks failed) |
+| `pushed_no_pr` | the branch is on GitHub, and no PR has it as its head |
+| `not_pushed` | `changed` or `unpushed` is not 0 |
+
+- "No work after the PR head" means that the worktree has no changed files, and its HEAD is the PR's `head_oid` or an earlier commit of the PR. GitHub can add commits to a PR, such as with Update branch. When the local repo does not have `head_oid`, Loam cannot read the history of the PR, and the worktree gets its local stage. When git cannot read the changed files or the unpushed commits, the worktree gets its local stage too. A squash merge leaves commits that no remote branch holds, and GitHub can delete the branch, but the worktree is still `merged`. New work after a merged or closed PR gets `pushed_no_pr`, `not_pushed`, or no stage from the local checks, as if there were no PR, and `pr` is null. A cache row from before Loam stored `head_oid` keeps `merged` or `closed`.
+- `mergeable` is `UNKNOWN` while GitHub checks whether an open PR can merge. Only `conflicts`, `behind_base`, `blocked`, and `ready_to_merge` need that check, so Loam skips them and still checks the other stages. When no other stage matches, the stage of the last refresh of the same PR stays if it is one of those four. Else the stage is `checks_running`. A `merge_state` that Loam does not know is handled in the same way.
+- An open PR always gets a PR stage. It never gets `pushed_no_pr`, `not_pushed`, or no stage.
+- GitHub gives `BLOCKED` for each rule that stops a merge, such as unresolved conversations or required signatures. That includes a failed required check after the first 100 checks, which Loam does not read. So that PR shows `blocked`, never `ready_to_merge`.
+
+The PR object:
+
+```json
+{
+  "number": 12, "title": "Fix the login form", "url": "https://github.com/example/widgets/pull/12",
+  "state": "OPEN", "draft": false, "mergeable": "MERGEABLE", "merge_state": "BLOCKED", "review_decision": "REVIEW_REQUIRED",
+  "in_merge_queue": false, "queue_position": 0, "base": "main", "head": "fix-login", "head_oid": "1f0c...",
+  "commits": 3, "behind_base": 2, "approvals": 1, "comments": 3,
+  "checks": { "state": "FAILURE", "total": 14, "passed": 12, "failed": 2, "running": 0, "waiting": 0, "required": 14, "required_passed": 12 },
+  "failed_checks": [{ "name": "lint / swiftformat", "url": "https://github.com/...", "duration": 42, "required": true }]
+}
+```
+
+- `state` is `OPEN`, `CLOSED`, or `MERGED`. `mergeable`, `merge_state` (GitHub's `mergeStateStatus`), and `review_decision` are the values of GitHub. `review_decision` is empty when the base branch needs no review.
+- `merged_at` and `closed_at` are present when the PR is merged or closed.
+- `queue_position` counts from 1. It is 0 when the PR is not in the merge queue.
+- `behind_base` counts the commits of the base branch that the head does not have. `approvals` counts the reviewers with write access whose last review approves. `comments` counts the review threads that are not resolved.
+- `checks` counts the checks of the head commit. `checks.state` is GitHub's summary, empty when the head has no checks. A cancelled or stale check counts only in `total`. `required` counts the checks that the base branch needs to pass before a merge, and `required_passed` counts those that passed. For an `UNSTABLE` PR, the app can write "14 of 14 required checks passed · 2 optional failed".
+- `failed_checks` lists each failed check. A GitHub Actions job has its workflow name first. `duration` is in seconds, 0 when GitHub gives no start or end. `required` is true for a required check.
+- Loam reads one page of 100 checks and 100 review threads, to keep to two queries for each repo. `checks.total` counts every check. The other check counts, `failed_checks`, and `comments` cover the first 100.
+- `behind_base`, `approvals`, `comments`, `checks`, and `failed_checks` are for an open PR. They are 0 or empty for a merged or closed PR.
 
 ### Sessions
 

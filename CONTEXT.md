@@ -89,7 +89,7 @@ A Claude Code session that Loam started in Home. It gets no seed and belongs to 
 
 **Needs you**:
 The alert state of a pane whose session waits on your answer in the middle of a turn, such as a permission prompt or a question. It clears only when the session moves on.
-_Avoid_: blocked, waiting, pending
+_Avoid_: blocked, waiting, pending (Blocked is a stage: GitHub blocks the merge)
 
 **Done, unread**:
 The alert state of a pane whose session finished a turn that you have not seen. It clears when you look at the pane.

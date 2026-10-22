@@ -4,6 +4,9 @@
     "merged": true,
     "merged_into": "origin/main",
     "missing": false,
+    "pr": null,
+    "pr_note": "",
+    "stage": "",
     "unpushed": 0,
     "worktree": {
       "base": "origin/main",
