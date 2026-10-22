@@ -147,6 +147,58 @@ func TestRepoSettingsThroughAddAndUpdateRepo(t *testing.T) {
 	e.fail("update_repo", map[string]any{"repo_id": "nope", "setup": "x"})
 }
 
+// after_merge in update_repo and add_repo sets what the app does after a
+// merge on GitHub. It is a setting of the repo path, not a change.
+func TestAfterMergeThroughAddAndUpdateRepo(t *testing.T) {
+	e := setup(t, opts{plotEnv: "ALPHA"})
+	e.ok("get_plot", nil)
+	id := idOut(t, e.ok("add_repo", map[string]any{"path": t.TempDir()}), "repo_id")
+	if got := e.plotNow(e.plot.ID).Repos[0].AfterMerge; got != store.AfterMergeAsk {
+		t.Fatalf("default %q", got)
+	}
+	// get_plot shows the setting.
+	if out := e.ok("get_plot", nil); !strings.Contains(out, `"after_merge": "ask"`) {
+		t.Fatalf("%s", out)
+	}
+
+	before := e.lastChange().ID
+	e.ok("update_repo", map[string]any{"repo_id": id, "after_merge": "remove"})
+	if r := e.plotNow(e.plot.ID).Repos[0]; r.AfterMerge != store.AfterMergeRemove || r.Note != "" {
+		t.Fatalf("%+v", r)
+	}
+	if e.lastChange().ID != before {
+		t.Fatal("a settings update made a change")
+	}
+	// A value that is not ask, remove, or keep fails and changes nothing.
+	out := e.fail("update_repo", map[string]any{"repo_id": id, "after_merge": "never"})
+	if !strings.Contains(out, "ask, remove, or keep") {
+		t.Fatalf("%s", out)
+	}
+	if r := e.plotNow(e.plot.ID).Repos[0]; r.AfterMerge != store.AfterMergeRemove {
+		t.Fatalf("%+v", r)
+	}
+	// A bad value with a note changes neither.
+	e.ok("get_plot", nil)
+	e.fail("update_repo", map[string]any{"repo_id": id, "note": "n", "after_merge": "later"})
+	if r := e.plotNow(e.plot.ID).Repos[0]; r.Note != "" || r.AfterMerge != store.AfterMergeRemove {
+		t.Fatalf("%+v", r)
+	}
+
+	// add_repo takes it too, and a bad value adds no repo.
+	e.ok("get_plot", nil)
+	other := idOut(t, e.ok("add_repo", map[string]any{"path": t.TempDir(), "after_merge": "keep"}), "repo_id")
+	for _, r := range e.plotNow(e.plot.ID).Repos {
+		if r.ID == other && r.AfterMerge != store.AfterMergeKeep {
+			t.Fatalf("%+v", r)
+		}
+	}
+	e.ok("get_plot", nil)
+	e.fail("add_repo", map[string]any{"path": t.TempDir(), "after_merge": "sometimes"})
+	if n := len(e.plotNow(e.plot.ID).Repos); n != 2 {
+		t.Fatalf("%d repos after a bad add", n)
+	}
+}
+
 func TestRemoveRepoRefusedWhileWorktreesExist(t *testing.T) {
 	testutil.GitEnv(t)
 	e := setup(t, opts{plotEnv: "ALPHA"})

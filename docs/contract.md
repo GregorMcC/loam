@@ -129,13 +129,13 @@ An array in the stored plot order. It is `[]` when no plot exists. Archived plot
   "created_at": "2026-10-02T09:00:00Z",
   "archived": false,
   "links": [{ "id": "...", "label": "...", "target": "...", "note": "", "position": 0, "version": 12, "kind": "url" }],
-  "repos": [{ "id": "...", "path": "/abs/path", "note": "", "main": true, "version": 12, "setup": "npm ci", "copy": [".env"] }],
+  "repos": [{ "id": "...", "path": "/abs/path", "note": "", "main": true, "version": 12, "setup": "npm ci", "copy": [".env"], "after_merge": "ask" }],
   "versions": { "name": 12, "what": 12, "why": 12, "where": 40, "link:<id>": 12, "repo:<id>": 12 },
   "revision": 40
 }
 ```
 
-- `setup` and `copy` in a repo are the worktree settings of the repo path. They are left out when empty. See "Worktrees".
+- `setup`, `copy`, and `after_merge` in a repo are the worktree settings of the repo path. `setup` and `copy` are left out when empty. `after_merge` is always present: `ask` (the default), `remove`, or `keep`. See "Worktrees".
 - `versions` maps each item to the ID of the change that last set it. Pass these as `--expect`. Each worktree of the plot is an item, `worktree:<id>`. Its version is 0 until a change sets its goal.
 - `revision` is the highest change ID of the plot.
 - `archived` is always present. It is not a versioned item, so it is not in `versions`.
@@ -211,8 +211,8 @@ These commands print the change ID, the plot ID, and the link or repo that the c
 | `loam link add <plot> [<label>] <target> [--note]` | `change_id`, `plot`, `link` |
 | `loam link edit <plot> <link> [--label] [--target] [--note]` | `change_id`, `plot`, `link` |
 | `loam link rm <plot> <link>` | `change_id`, `plot` |
-| `loam repo add <plot> <path> [--note] [--setup] [--copy]` | `change_id`, `plot`, `repo` |
-| `loam repo edit <plot> <repo> [--note] [--setup] [--copy]` | `change_id`, `plot`, `repo` |
+| `loam repo add <plot> <path> [--note] [--setup] [--copy] [--after-merge]` | `change_id`, `plot`, `repo` |
+| `loam repo edit <plot> <repo> [--note] [--setup] [--copy] [--after-merge]` | `change_id`, `plot`, `repo` |
 | `loam repo main <plot> <repo>` | `change_id`, `plot`, `repo` |
 | `loam repo rm <plot> <repo> [--main <repo>]` | `change_id`, `plot` |
 
@@ -228,7 +228,9 @@ After the add, `loam repo add` puts the checkout on the default branch of `origi
 
 `loam repo rm` fails with exit code 1 while the plot has worktrees of the repo. The same holds for MCP `remove_repo`.
 
-`--setup` and `--copy` set the worktree settings of the repo path. `--copy` is repeatable. An empty value clears the setting. The settings are not a change: they have no change log entry and no undo, so `change_id` is 0 when only they changed. Every plot that holds the path shows the same settings.
+`--setup`, `--copy`, and `--after-merge` set the worktree settings of the repo path. `--copy` is repeatable. An empty value of `--setup` or `--copy` clears the setting. The settings are not a change: they have no change log entry and no undo, so `change_id` is 0 when only they changed. Every plot that holds the path shows the same settings.
+
+`--after-merge` says what the app does when a refresh finds that GitHub merged the PR of a worktree of the repo, outside Loam: `ask` (the default) shows a callout with Keep and Remove worktree, `remove` removes the worktree when it holds no work, and `keep` does nothing. Any other value exits with code 2 (`invalid`) and changes nothing. MCP `add_repo` and `update_repo` take the same values as `after_merge`. The core only keeps the setting: it removes nothing by itself.
 
 ### Worktrees
 

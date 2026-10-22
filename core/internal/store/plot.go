@@ -39,13 +39,13 @@ func loadPlot(q queryer, id string) (Plot, error) {
 	if err := scanRows(q, func(rows *sql.Rows) error {
 		var r Repo
 		var copyJSON string
-		if err := rows.Scan(&r.ID, &r.Path, &r.Note, &r.Main, &r.Setup, &copyJSON); err != nil {
+		if err := rows.Scan(&r.ID, &r.Path, &r.Note, &r.Main, &r.Setup, &copyJSON, &r.AfterMerge); err != nil {
 			return err
 		}
 		r.Copy = decodeCopy(copyJSON)
 		p.Repos = append(p.Repos, r)
 		return nil
-	}, `SELECT r.id, r.path, r.note, r.is_main, COALESCE(s.setup, ''), COALESCE(s.copy, '[]')
+	}, `SELECT r.id, r.path, r.note, r.is_main, COALESCE(s.setup, ''), COALESCE(s.copy, '[]'), COALESCE(s.after_merge, 'ask')
 FROM repos r LEFT JOIN repo_settings s ON s.path = r.path WHERE r.plot_id = ? ORDER BY r.is_main DESC, r.path`, id); err != nil {
 		return Plot{}, err
 	}

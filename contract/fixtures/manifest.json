@@ -572,6 +572,20 @@
     "schema": "repo-edit"
   },
   {
+    "name": "repo_edit_after_merge",
+    "args": [
+      "repo",
+      "edit",
+      "plotaaaaab",
+      "repoaaaaae",
+      "--after-merge",
+      "remove",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "repo-edit"
+  },
+  {
     "name": "worktree_new_dry_run",
     "args": [
       "worktree",

@@ -57,7 +57,7 @@
     "repo": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "path", "note", "main", "version"],
+      "required": ["id", "path", "note", "main", "version", "after_merge"],
       "properties": {
         "id": { "$ref": "#/$defs/id" },
         "path": { "type": "string" },
@@ -70,6 +70,10 @@
           "type": "array",
           "minItems": 1,
           "items": { "type": "string", "minLength": 1 }
+        },
+        "after_merge": {
+          "description": "What the app does when a refresh finds that GitHub merged the PR of a worktree of the repo path: ask (the default), remove the worktree, or keep it.",
+          "enum": ["ask", "remove", "keep"]
         }
       }
     },

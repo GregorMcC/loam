@@ -38,20 +38,25 @@ type renamePlotIn struct {
 	Name string `json:"name" jsonschema:"new name of the plot"`
 }
 
+// afterMergeNote describes after_merge for add_repo and update_repo.
+const afterMergeNote = "what the Loam app does when GitHub merged the pull request of a worktree of the repo: ask (the default), remove (remove the worktree when it holds no work), or keep (do nothing). Every plot that holds the repo shares it."
+
 type addRepoIn struct {
 	plotArg
-	Path  string   `json:"path" jsonschema:"absolute path of the repo folder"`
-	Note  string   `json:"note,omitempty" jsonschema:"one line about the repo"`
-	Setup *string  `json:"setup,omitempty" jsonschema:"command that runs in each new worktree of the repo, for example npm ci. Every plot that holds the repo shares it. The person approves it before it first runs."`
-	Copy  []string `json:"copy,omitempty" jsonschema:"files or globs, relative to the repo, to copy into each new worktree, for example .env"`
+	Path       string   `json:"path" jsonschema:"absolute path of the repo folder"`
+	Note       string   `json:"note,omitempty" jsonschema:"one line about the repo"`
+	Setup      *string  `json:"setup,omitempty" jsonschema:"command that runs in each new worktree of the repo, for example npm ci. Every plot that holds the repo shares it. The person approves it before it first runs."`
+	Copy       []string `json:"copy,omitempty" jsonschema:"files or globs, relative to the repo, to copy into each new worktree, for example .env"`
+	AfterMerge *string  `json:"after_merge,omitempty" jsonschema:"ask, remove, or keep: what the Loam app does when GitHub merged the pull request of a worktree of the repo"`
 }
 
 type updateRepoIn struct {
 	plotArg
-	RepoID string    `json:"repo_id" jsonschema:"ID of the repo, from get_plot"`
-	Note   *string   `json:"note,omitempty" jsonschema:"new note"`
-	Setup  *string   `json:"setup,omitempty" jsonschema:"new setup command for worktrees of the repo. An empty string clears it. The person approves a new or changed command before it runs."`
-	Copy   *[]string `json:"copy,omitempty" jsonschema:"new list of files or globs to copy into each new worktree. An empty list clears it."`
+	RepoID     string    `json:"repo_id" jsonschema:"ID of the repo, from get_plot"`
+	Note       *string   `json:"note,omitempty" jsonschema:"new note"`
+	Setup      *string   `json:"setup,omitempty" jsonschema:"new setup command for worktrees of the repo. An empty string clears it. The person approves a new or changed command before it runs."`
+	Copy       *[]string `json:"copy,omitempty" jsonschema:"new list of files or globs to copy into each new worktree. An empty list clears it."`
+	AfterMerge *string   `json:"after_merge,omitempty" jsonschema:"ask, remove, or keep: what the Loam app does when GitHub merged the pull request of a worktree of the repo"`
 }
 
 type removeRepoIn struct {
@@ -69,6 +74,18 @@ type createOut struct {
 	PlotID   string   `json:"plot_id"`
 	ChangeID int64    `json:"change_id"`
 	Warnings []string `json:"warnings,omitempty"`
+}
+
+// parseAfterMerge reads after_merge. Nil stays nil.
+func parseAfterMerge(v *string) (*store.AfterMerge, error) {
+	if v == nil {
+		return nil, nil
+	}
+	m, err := store.ParseAfterMerge(*v)
+	if err != nil {
+		return nil, err
+	}
+	return &m, nil
 }
 
 // switchNote says what a repo add does to the checkout (ticket 91).
@@ -127,11 +144,15 @@ func (s *Server) registerPlotRepo(srv *mcp.Server) {
 		Name: "add_repo",
 		Description: "Add a repo to the plot. The path must be absolute. The first repo of a plot is the main repo. " +
 			"The repo's git remote is added as a link in the same change, unless the plot has it. " + switchNote + " " +
-			"You can also set the setup command and the files to copy for worktrees of the repo. Call get_plot first." + plotNote,
+			"You can also set the setup command, the files to copy for worktrees of the repo, and after_merge: " + afterMergeNote + " Call get_plot first." + plotNote,
 		Annotations: addOnly("Add a repo"),
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in addRepoIn) (*mcp.CallToolResult, any, error) {
 		in.Path = linkkind.Expand(in.Path) // A leading ~ is the home folder.
 		if err := checkRepoFolder(in.Path); err != nil {
+			return fail(err)
+		}
+		afterMerge, err := parseAfterMerge(in.AfterMerge)
+		if err != nil {
 			return fail(err)
 		}
 		edits := []store.Edit{{Op: store.OpAddRepo, Path: store.S(in.Path), Note: store.S(in.Note)}}
@@ -153,12 +174,12 @@ func (s *Server) registerPlotRepo(srv *mcp.Server) {
 		if res.ChangeID != 0 {
 			warnings = append(warnings, worktree.SwitchToDefault(in.Path)...)
 		}
-		if in.Setup != nil || len(in.Copy) > 0 {
+		if in.Setup != nil || len(in.Copy) > 0 || afterMerge != nil {
 			var files *[]string
 			if len(in.Copy) > 0 {
 				files = &in.Copy
 			}
-			if err := s.saveSettings(res.Plot, id, in.Setup, files); err != nil {
+			if err := s.saveSettings(res.Plot, id, in.Setup, files, afterMerge); err != nil {
 				return fail(err)
 			}
 		}
@@ -167,15 +188,20 @@ func (s *Server) registerPlotRepo(srv *mcp.Server) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name: "update_repo",
-		Description: "Change the note of a repo, or its worktree settings: the setup command and the files to copy. " +
+		Description: "Change the note of a repo, or its worktree settings: the setup command, the files to copy, and after_merge: " + afterMergeNote + " " +
 			"Call get_plot first to change the note." + plotNote,
 		Annotations: changes("Update a repo"),
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in updateRepoIn) (*mcp.CallToolResult, any, error) {
 		if in.RepoID == "" {
 			return fail(errors.New("repo_id is required"))
 		}
-		if in.Note == nil && in.Setup == nil && in.Copy == nil {
-			return fail(errors.New("give note, setup, or copy"))
+		if in.Note == nil && in.Setup == nil && in.Copy == nil && in.AfterMerge == nil {
+			return fail(errors.New("give note, setup, copy, or after_merge"))
+		}
+		// A bad value fails before any write, so a note in the same call does not save either.
+		afterMerge, err := parseAfterMerge(in.AfterMerge)
+		if err != nil {
+			return fail(err)
 		}
 		item := store.RepoItem(in.RepoID)
 		out := writeOut{}
@@ -186,7 +212,7 @@ func (s *Server) registerPlotRepo(srv *mcp.Server) {
 			}
 			out = writeOut{ChangeID: res.ChangeID, Warnings: res.Warnings}
 		}
-		if in.Setup != nil || in.Copy != nil {
+		if in.Setup != nil || in.Copy != nil || afterMerge != nil {
 			plotID, err := s.resolvePlot(in.Plot)
 			if err != nil {
 				return fail(err)
@@ -195,7 +221,7 @@ func (s *Server) registerPlotRepo(srv *mcp.Server) {
 			if err != nil {
 				return fail(err)
 			}
-			if err := s.saveSettings(plot, in.RepoID, in.Setup, in.Copy); err != nil {
+			if err := s.saveSettings(plot, in.RepoID, in.Setup, in.Copy, afterMerge); err != nil {
 				return fail(err)
 			}
 		}

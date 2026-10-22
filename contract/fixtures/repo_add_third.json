@@ -2,6 +2,7 @@
   "change_id": 14,
   "plot": "plotaaaaab",
   "repo": {
+    "after_merge": "ask",
     "id": "repoaaaaad",
     "main": false,
     "note": "",

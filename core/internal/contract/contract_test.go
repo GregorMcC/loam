@@ -457,6 +457,7 @@ func scenario(t *testing.T) *harness {
 	}
 	parse(h.run("repo_add_git", "repo-add", 0, "repo", "add", loam, gitRepo, "--setup", "make setup", "--copy", ".env"), &c)
 	h.run("repo_edit_setup", "repo-edit", 0, "repo", "edit", loam, c.Repo.ID, "--setup", "npm ci")
+	h.run("repo_edit_after_merge", "repo-edit", 0, "repo", "edit", loam, c.Repo.ID, "--after-merge", "remove")
 	h.run("worktree_new_dry_run", "worktree-new-dry-run", 0, "worktree", "new", loam, gitRepo, "fix-login", "--dry-run")
 	h.run("worktree_new", "worktree-new", 0, "worktree", "new", loam, gitRepo, "fix-login",
 		"--goal", "Fix the login form", "--link", "https://github.com/example/widgets/issues/57")
