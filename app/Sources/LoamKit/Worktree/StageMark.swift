@@ -93,7 +93,7 @@ public struct StageMark: Equatable, Sendable {
     /// number or stage words, so its tooltip is the status line alone, such as "2 changed".
     public var tooltip: String
     /// The same words for VoiceOver and the driver, with commas. The symbol is hidden from VoiceOver, so
-    /// these words are the only place that says the stage.
+    /// these words are the only place that says the stage, or for the ✎ mark, the local work.
     public var spoken: String
 
     /// The number as the row shows it, such as "#16". Nil for the ✎ mark.
