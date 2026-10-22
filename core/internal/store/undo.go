@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -84,6 +85,15 @@ func fieldValue(p Plot, item, field string) *string {
 		return S(p.Why)
 	case ItemWhere:
 		return S(p.Where)
+	case ItemLinkOrder:
+		if field != "order" {
+			return nil
+		}
+		ids := make([]string, len(p.Links))
+		for i, l := range p.Links {
+			ids[i] = l.ID
+		}
+		return S(strings.Join(ids, ","))
 	}
 	for _, l := range p.Links {
 		if LinkItem(l.ID) != item {
@@ -233,6 +243,9 @@ func (a *applier) undoItem(cur Plot, item string, es []Entry) error {
 	if IsWorktreeItem(item) {
 		return a.setGoal(Edit{Op: OpSetGoal, Item: item, Value: *es[0].Old})
 	}
+	if item == ItemLinkOrder {
+		return a.undoLinkOrder(*es[0].Old)
+	}
 	added := true   // the change made the item
 	removed := true // the change removed the item
 	old := map[string]*string{}
@@ -270,6 +283,30 @@ func (a *applier) undoItem(cur Plot, item string, es []Entry) error {
 		return a.undoRepoFields(item, old)
 	}
 	return a.restoreRepo(item, old)
+}
+
+// undoLinkOrder puts the links back in the order old. Links added since keep
+// their order after it, and links removed since are skipped.
+func (a *applier) undoLinkOrder(old string) error {
+	cur, err := a.linkIDs()
+	if err != nil {
+		return err
+	}
+	var ids []string
+	for _, id := range strings.Split(old, ",") {
+		if slices.Contains(cur, id) {
+			ids = append(ids, id)
+		}
+	}
+	for _, id := range cur {
+		if !slices.Contains(ids, id) {
+			ids = append(ids, id)
+		}
+	}
+	if slices.Equal(ids, cur) {
+		return nil
+	}
+	return a.writeLinkOrder(cur, ids)
 }
 
 func val(m map[string]*string, k string) string {
