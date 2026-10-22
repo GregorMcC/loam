@@ -290,7 +290,7 @@ The ship state of a worktree:
   - `offline`: no network, a timeout, or another failed call.
 - With `gh_missing` or `gh_signed_out`, Loam cannot ask GitHub until you fix gh, so the last state can stay old for a long time. The list then shows the local stage of each worktree: `pr` is null, and `pr_checked_at` and `compare_url` are left out. The cache keeps the last state, and the next refresh that gets an answer replaces it.
 - Any other failed refresh keeps the last ship state and its `pr_checked_at`. When only the second query fails, a worktree with no PR, or with a merged or closed PR, still gets its new state, because it needs nothing from that query. A worktree with an open PR keeps its last state. Each worktree of the repo gets the note.
-- `pr_checked_at` is when the ship state came from GitHub. It is left out when GitHub never answered for the branch.
+- `pr_checked_at` is when the ship state came from GitHub. It is left out when GitHub never answered for the branch, and with `gh_missing` or `gh_signed_out`.
 - `compare_url` is the GitHub page where you can open a PR for the branch. It is present only for `pushed_no_pr`. When the base of the worktree is a branch of `origin` (`origin/<base>`), the page compares the branch with that base. Else GitHub compares the branch with the default branch of the repo.
 
 Loam checks the stages in this order. The first match wins.

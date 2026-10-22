@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/GregorMcC/loam/core/internal/store"
@@ -212,6 +213,7 @@ func TestListShowsLocalStateWhenGHIsMissingOrSignedOut(t *testing.T) {
 		t.Fatalf("before: %+v", st)
 	}
 
+	gh := os.Getenv("LOAM_GH")
 	for _, c := range []struct {
 		name string
 		fail func()
@@ -231,5 +233,23 @@ func TestListShowsLocalStateWhenGHIsMissingOrSignedOut(t *testing.T) {
 		if local := c.want == worktree.StageNotPushed; local && (st.PR != nil || st.PRCheckedAt != nil || st.CompareURL != "") {
 			t.Errorf("%s: shows ship state: %+v", c.name, st)
 		}
+	}
+
+	// gh works again while GitHub checks the PR. Only the last stage in the
+	// cache can give Ready to merge now, so the cache kept it.
+	t.Setenv("LOAM_GH", gh)
+	t.Setenv("LOAM_FAKE_GH_FAIL", "")
+	file := os.Getenv("LOAM_FAKE_GH_STATE")
+	b, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checking := strings.Replace(string(b), `"mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN"`, `"mergeable": "UNKNOWN", "mergeStateStatus": "UNKNOWN"`, 1)
+	if err := os.WriteFile(file, []byte(checking), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	refresh()
+	if st := e.listed()["fix-login"]; st.PRNote != "" || st.Stage != worktree.StageReadyToMerge || st.PR == nil || st.PRCheckedAt == nil {
+		t.Fatalf("after gh works again: %+v", st)
 	}
 }
