@@ -170,6 +170,8 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
     var typed: [(pane: PaneID, text: String)] = []
     var copied: [String] = []
     var toasts: [String] = []
+    /// The toasts of the notice kind.
+    var notices: [String] = []
     var keys: [PaneID] = []
 }
 
@@ -209,7 +211,10 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
         let record = SendRecord()
         model.typeIntoPane = { pane, text in record.typed.append((pane, text)); return true }
         model.copyText = { record.copied.append($0) }
-        model.onToast = { record.toasts.append($0) }
+        model.onToast = { text, kind in
+            record.toasts.append(text)
+            if kind == .notice { record.notices.append(text) }
+        }
         model.onPromptTyped = { record.keys.append($0) }
         return (model, record, rows)
     }
@@ -581,6 +586,7 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
         #expect(record.typed.map(\.pane) == [pane])
         #expect(record.typed.map(\.text) == [try prompt(review, model)])
         #expect(record.toasts == ["Loam typed the review into the new session. Press Return to send."])
+        #expect(record.notices.isEmpty)
         // A later SessionStart, such as /clear, types nothing more.
         send("SessionEnd", to: pane, model)
         model.apply(paneEvent("SessionStart", "next-session", source: "clear"), to: pane)
@@ -595,7 +601,9 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
         #expect(model.sendToSession(review)?.step == .start)
         let pane = try #require(model.workspace.focusedPane)
         await waitUntil("the toast shows") { !record.toasts.isEmpty }
-        #expect(record.toasts == ["The session did not start in 30 seconds. Loam did not type the prompt."])
+        let name = try worktree(review, in: model).name
+        #expect(record.notices == ["The session in \(name) did not start in 30 seconds. Loam did not type the prompt."])
+        #expect(record.toasts == record.notices)
         #expect(!model.prPopover.isOpen)
         #expect(model.workspace.focusedPane == pane)
         #expect(model.sendPlan(for: review)?.step == .copy(.starting))
@@ -664,6 +672,16 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
         #expect(bar.toast != nil, "the timer of the first toast does not clear the second")
         bar.clearToast(id: bar.toastID)
         #expect(bar.toast == nil)
+    }
+
+    /// A toast that says something did not happen is a notice, so it does not show the check of a success.
+    @Test func aNoticeIsAToastOfItsOwnKind() {
+        let bar = ActionBarModel()
+        #expect(bar.toastKind == .done)
+        bar.show("The session in switcher-width did not start in 30 seconds. Loam did not type the prompt.", kind: .notice)
+        #expect(bar.toastKind == .notice)
+        bar.show("Loam typed the review into the new session. Press Return to send.")
+        #expect(bar.toastKind == .done)
     }
 }
 

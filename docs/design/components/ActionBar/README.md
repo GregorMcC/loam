@@ -9,7 +9,7 @@ The action bar is the 40pt strip at the bottom of the window (ticket 89). It sit
   - the label of the focused pane in `ink-muted`, the same label as its tab
   - the toast: a small `moss` check and the newest change of the active plot in `ink-faint`, for example "Claude set Where it stands"
   - the PR chip, for a pane that runs in a worktree with a PR (see below)
-- Send to session (ticket 110) shows its own line as the toast, such as "Loam typed the failures into ✳ Native panel spacing. Press Return to send." When a session that Loam started sends no SessionStart in 30 seconds, the line is "The session did not start in 30 seconds. Loam did not type the prompt."
+- Send to session (ticket 110) shows its own line as the toast, such as "Loam typed the failures into ✳ Native panel spacing. Press Return to send." When a session that Loam started sends no SessionStart in 30 seconds, the toast is a notice: "The session in native-panel did not start in 30 seconds. Loam did not type the prompt." A notice shows `exclamationmark.circle` (11pt) in `ink-muted` in place of the `moss` check, because nothing went through (`ActionBarModel.ToastKind`).
 - The toast shows for 6 seconds after a change, then fades. A change that was in the log when the app started does not show. The toast hides when the bar is too narrow for it. The toast and the chip share one place, and the toast wins while it shows.
 - Right side: "New session" with its keycaps, a 16pt vertical rule (the ink at 13%), then "Actions" with its keycaps.
 - The two buttons are text buttons: 28pt high, radius 7, `ink` text. They take the ink at 9% as a fill on hover. Actions keeps that fill while its menu is open.

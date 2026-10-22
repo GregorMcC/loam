@@ -70,7 +70,7 @@ public final class AppModel {
     /// private one.
     @ObservationIgnored public var copyText: (String) -> Void = { _ in }
     /// Shows a line in the toast of the action bar (ticket 110). The window sets it.
-    @ObservationIgnored public var onToast: ((String) -> Void)?
+    @ObservationIgnored public var onToast: ((String, ActionBarModel.ToastKind) -> Void)?
     /// Send to session typed a prompt into the pane and focused it. The window gives the keys to its terminal.
     @ObservationIgnored public var onPromptTyped: ((PaneID) -> Void)?
     /// How long Start session with prompt waits for the `SessionStart` of the new session (ticket 110). The toast
@@ -1236,7 +1236,7 @@ public final class AppModel {
                 guard typePrompt(plan.prompt.text, into: pane) else { return plan }
             }
             onPromptTyped?(pane)
-            if let toast = plan.toast { onToast?(toast) }
+            if let toast = plan.toast { onToast?(toast, .done) }
         case .copy:
             copyText(plan.prompt.text)
             prPopover.say("Copied the prompt.")
@@ -1281,15 +1281,15 @@ public final class AppModel {
         guard let prompt = worktreeStatus(start.worktree).flatMap(FixPrompt.init), let session = workspace.session(of: pane),
               SendPlan.step(for: pane, session: session, prompt: prompt.text) == .type(pane),
               typePrompt(prompt.text, into: pane) else { return }
-        onToast?(SendPlan.toastForNewSession(prompt.kind))
+        onToast?(SendPlan.toastForNewSession(prompt.kind), .done)
     }
 
     /// No `SessionStart` came in `sessionStartWait`, such as when the setup command waits for an answer. Loam
     /// types nothing into the session, and a toast says so. The PR popover does not open, because the pane can
     /// still show the setup question, and Return would then run Copy prompt.
     private func sessionDidNotStart(_ pane: PaneID) {
-        guard startPrompts.removeValue(forKey: pane) != nil else { return }
-        onToast?(SendPlan.notStartedToast)
+        guard let id = startPrompts.removeValue(forKey: pane)?.worktree else { return }
+        onToast?(SendPlan.notStartedToast(worktree: worktreeStatus(id)?.worktree.name), .notice)
     }
 
     // MARK: The PR of a pane

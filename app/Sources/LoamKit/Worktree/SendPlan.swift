@@ -122,6 +122,10 @@ public struct SendPlan: Equatable, Sendable {
         toast(kind, into: "the new session")
     }
 
-    /// The toast when the new session sent no `SessionStart` in the 30 seconds of `AppModel.sessionStartWait`.
-    public static let notStartedToast = "The session did not start in 30 seconds. Loam did not type the prompt."
+    /// The notice when the new session sent no `SessionStart` in the 30 seconds of `AppModel.sessionStartWait`. It
+    /// names the worktree, because you may work in another pane by then. Nil when the worktree is gone.
+    public static func notStartedToast(worktree: String?) -> String {
+        let session = worktree.map { "The session in \($0)" } ?? "The session"
+        return "\(session) did not start in 30 seconds. Loam did not type the prompt."
+    }
 }

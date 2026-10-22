@@ -21,9 +21,18 @@ public final class ActionBarModel {
     /// The last change of the active plot, such as "Claude set Where it stands", or a line from the app
     /// (`show`). Nil when none shows.
     public private(set) var toast: String?
+    /// What the toast says about itself. The bar shows its glyph.
+    public private(set) var toastKind = ToastKind.done
     /// Counts the toasts, so a fade-out timer clears only its own toast.
     public private(set) var toastID = 0
     public let menu = ActionMenuModel()
+
+    /// A change or an action that went through shows a check in `moss`. A notice says that something did not
+    /// happen, such as a session that did not start, and shows `exclamationmark.circle` in `ink-muted`.
+    public enum ToastKind: Equatable, Sendable {
+        case done
+        case notice
+    }
 
     /// What the bar shows after the pane label. The toast and the chip share the place, and the toast wins
     /// while it shows.
@@ -53,13 +62,15 @@ public final class ActionBarModel {
         guard let seen = lastChangeID else { return }
         guard let change = changes.filter({ $0.id > seen && $0.plotID == activePlot }).max(by: { $0.id < $1.id }) else { return }
         toast = ChangeRules.actorName(change.actor) + " " + ChangeRules.sentence(change)
+        toastKind = .done
         toastID += 1
     }
 
     /// Shows a line from the app as the toast, such as "Loam typed the failures into ✳ Native panel spacing.
     /// Press Return to send." (ticket 110). It fades as the toast of a change does.
-    public func show(_ line: String) {
+    public func show(_ line: String, kind: ToastKind = .done) {
         toast = line
+        toastKind = kind
         toastID += 1
     }
 

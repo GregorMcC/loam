@@ -27,7 +27,7 @@ extension MainWindowController: NSMenuItemValidation {
         model.prPopover.onOpenChange = { [weak self] open in self?.pullRequestPopoverChanged(open: open) }
         model.prPopover.onOpen = { [weak self] in self?.placePullRequestPopover() }
         // Send to session (ticket 110): the toast after Loam typed a prompt, and the keys for the session.
-        model.onToast = { [weak self] in self?.actionBar.show($0) }
+        model.onToast = { [weak self] in self?.actionBar.show($0, kind: $1) }
         model.onPromptTyped = { [weak self] _ in self?.focusActivePane() }
         model.copyText = SystemActions.copy
         columnBottomInset(ActionBarView.height)

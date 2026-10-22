@@ -78,9 +78,10 @@ struct ActionBarView: View {
             switch trailing {
             case .toast(let toast):
                 HStack(spacing: 6) {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(LoamColor.moss)
+                    let notice = bar.toastKind == .notice
+                    Image(systemName: notice ? "exclamationmark.circle" : "checkmark")
+                        .font(.system(size: notice ? 11 : 10, weight: .semibold))
+                        .foregroundStyle(notice ? LoamColor.inkMuted : LoamColor.moss)
                     Text(toast).font(.system(size: 12.5)).foregroundStyle(LoamColor.inkFaint)
                 }
                 .padding(.leading, 14)
