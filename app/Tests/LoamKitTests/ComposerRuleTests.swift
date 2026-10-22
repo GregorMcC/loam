@@ -385,9 +385,10 @@ import Testing
     let escapeKey: UInt16 = 0x35
     let oneKey: UInt16 = 0x12  // "1" on a US layout, "&" on AZERTY.
 
-    func key(_ code: UInt16, _ characters: String? = nil, _ mods: KeyChord.Mods = [], isARepeat: Bool = false,
-             composing: Bool = false) -> PaneInput {
-        PaneInput(keyCode: code, characters: characters, mods: mods, isARepeat: isARepeat, composing: composing)
+    func key(_ code: UInt16, _ characters: String? = nil, _ mods: KeyChord.Mods = [], unshifted: String? = nil,
+             isARepeat: Bool = false, composing: Bool = false) -> PaneInput {
+        PaneInput(keyCode: code, characters: characters, unshifted: unshifted, mods: mods, isARepeat: isARepeat,
+                  composing: composing)
     }
 
     @Test func aPlainReturnSendsTheInput() {
@@ -434,9 +435,20 @@ import Testing
         #expect(key(oneKey, "1\u{20E3}") == .key)
     }
 
-    /// ⌃S stashes the draft of Claude Code. Loam reads the control character, so the key of S on any layout works.
+    /// ⌃S stashes the draft of Claude Code. libghostty sends ctrl+s for the S character of the layout, or for the
+    /// physical S key when that character is not ASCII. Loam follows the same rule.
     @Test func controlSIsTheStash() {
         #expect(key(0x01, "\u{13}", [.control]) == .stash)
+        #expect(key(0x29, "\u{13}", [.control], unshifted: "s") == .stash)  // Dvorak.
+        #expect(key(0x01, "s", [.control], unshifted: "s") == .stash)  // Lithuanian, Tongan.
+        #expect(key(0x01, "s", [.control], unshifted: "\u{5E1}") == .stash)  // Yiddish QWERTY.
+        #expect(key(0x29, "s", [.control], unshifted: "\u{5E1}") == .stash)  // The character wins over the key.
+        #expect(key(0x29, "\u{13}", [.control], unshifted: "o") == .key)  // libghostty sends ctrl+o.
+        #expect(key(0x01, "\u{1}", [.control], unshifted: "\u{5D3}") == .stash)  // Hebrew PC.
+        #expect(key(0x01, "\u{13}", [.control], unshifted: "\u{44B}") == .stash)  // Russian.
+        #expect(key(0x01, "\u{F}", [.control], unshifted: "o") == .key)  // The S key on Dvorak.
+        #expect(key(0x00, "\u{1}", [.control], unshifted: "a") == .key)
+        #expect(key(0x00, "\u{1}", [.control], unshifted: "\u{5E9}") == .key)  // Not the S key.
         #expect(key(0x01, "\u{13}", [.control], isARepeat: true) == .stash)
         #expect(key(0x01, "\u{13}", [.control, .shift]) == .key)
         #expect(key(0x01, "\u{13}", [.control], composing: true) == .key)

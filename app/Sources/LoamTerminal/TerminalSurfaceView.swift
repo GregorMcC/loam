@@ -507,7 +507,8 @@ public final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClien
         // A held key that started in another view. A key held here started with a key down that is not a repeat.
         if event.isARepeat, dropsRepeats { return }
         dropsRepeats = false
-        let input = PaneInput(keyCode: event.keyCode, characters: event.characters, mods: KeyChord.Mods(event.modifierFlags),
+        let input = PaneInput(keyCode: event.keyCode, characters: event.characters,
+                              unshifted: event.characters(byApplyingModifiers: []), mods: KeyChord.Mods(event.modifierFlags),
                               isARepeat: event.isARepeat, composing: markedText.length > 0)
         if input != .none { onInput?(input) }
         if !event.modifierFlags.contains(.command), TypingKey.clearsNeedsYou(event.characters) { onKeyInput?() }
