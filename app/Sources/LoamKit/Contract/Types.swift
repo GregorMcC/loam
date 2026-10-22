@@ -381,7 +381,7 @@ public enum PRNote: String, Codable, Equatable, Sendable, CaseIterable {
     }
 }
 
-/// A pull request on GitHub. The fields from `behindBase` to `failedChecks`
+/// A pull request on GitHub. The fields from `behindBase` to `passedChecks`
 /// are for an open PR. They are 0 or empty for a merged or closed PR.
 public struct PullRequest: Codable, Equatable, Sendable {
     public var number: Int
@@ -416,12 +416,15 @@ public struct PullRequest: Codable, Equatable, Sendable {
     /// The review threads that are not resolved.
     public var comments: Int
     public var checks: PRCheckCounts
-    public var failedChecks: [FailedCheck]
+    public var failedChecks: [PRCheck]
+    /// The checks that passed, in the order of GitHub. A skipped or neutral check passed too, so the list is as
+    /// long as `checks.passed`. Nil from a core older than ticket 116. A cache row from before it gives an empty list.
+    public var passedChecks: [PRCheck]?
     enum CodingKeys: String, CodingKey {
         case number, title, url, state, draft, mergeable, base, head, commits, approvals, comments, checks
         case mergeState = "merge_state", reviewDecision = "review_decision", inMergeQueue = "in_merge_queue"
         case queuePosition = "queue_position", headOID = "head_oid", mergedAt = "merged_at", closedAt = "closed_at"
-        case behindBase = "behind_base", failedChecks = "failed_checks"
+        case behindBase = "behind_base", failedChecks = "failed_checks", passedChecks = "passed_checks"
     }
 }
 
@@ -446,8 +449,8 @@ public struct PRCheckCounts: Codable, Equatable, Sendable {
     }
 }
 
-/// A check of a PR that failed.
-public struct FailedCheck: Codable, Equatable, Sendable {
+/// A check of a PR, one that failed or one that passed.
+public struct PRCheck: Codable, Equatable, Sendable {
     /// A GitHub Actions job has its workflow name first, such as "lint / swiftformat".
     public var name: String
     /// The page of the check, with its log.

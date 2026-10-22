@@ -2,13 +2,17 @@ package worktree_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/GregorMcC/loam/core/internal/github"
 	"github.com/GregorMcC/loam/core/internal/store"
 	"github.com/GregorMcC/loam/core/internal/testutil"
 	"github.com/GregorMcC/loam/core/internal/worktree"
@@ -251,5 +255,70 @@ func TestListShowsLocalStateWhenGHIsMissingOrSignedOut(t *testing.T) {
 	refresh()
 	if st := e.listed()["fix-login"]; st.PRNote != "" || st.Stage != worktree.StageReadyToMerge || st.PR == nil || st.PRCheckedAt == nil {
 		t.Fatalf("after gh works again: %+v", st)
+	}
+}
+
+// The cache keeps the passed checks of an open PR, in the order of GitHub, with the fields of a failed check.
+func TestListShowsThePassedChecksOfAnOpenPR(t *testing.T) {
+	e := setup(t)
+	e.create("fix-login", "")
+	e.onGitHub(`{"refs": ["fix-login"], "pulls": [
+	  {"number": 14, "title": "Fix login", "url": "https://github.com/example/widgets/pull/14", "state": "OPEN",
+	   "mergeable": "MERGEABLE", "mergeStateStatus": "UNSTABLE", "baseRefName": "main", "headRefName": "fix-login",
+	   "headRefOid": "1111111111111111111111111111111111111111", "commits": {"totalCount": 1}}
+	], "details": {"14": {"commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "FAILURE", "contexts": {"totalCount": 3, "nodes": [
+	  {"__typename": "CheckRun", "name": "build", "status": "COMPLETED", "conclusion": "SUCCESS",
+	   "detailsUrl": "https://github.com/example/widgets/actions/runs/7/job/1", "isRequired": true,
+	   "startedAt": "2026-01-01T10:00:00Z", "completedAt": "2026-01-01T10:01:30Z"},
+	  {"__typename": "CheckRun", "name": "docs", "status": "COMPLETED", "conclusion": "FAILURE", "isRequired": false},
+	  {"__typename": "StatusContext", "context": "ci/legacy", "state": "SUCCESS", "targetUrl": "https://ci.example.com/1", "isRequired": false}
+	]}}}}]}}}}`)
+	if err := worktree.RefreshPRs(context.Background(), e.s, e.worktrees()); err != nil {
+		t.Fatal(err)
+	}
+	pr := e.listed()["fix-login"].PR
+	if pr == nil {
+		t.Fatal("no PR")
+	}
+	want := []github.Check{
+		{Name: "build", URL: "https://github.com/example/widgets/actions/runs/7/job/1", Duration: 90, Required: true},
+		{Name: "ci/legacy", URL: "https://ci.example.com/1"},
+	}
+	if !slices.Equal(pr.PassedChecks, want) || len(pr.PassedChecks) != pr.Checks.Passed {
+		t.Fatalf("passed checks %+v", pr.PassedChecks)
+	}
+	if len(pr.FailedChecks) != 1 || pr.FailedChecks[0].Name != "docs" {
+		t.Fatalf("failed checks %+v", pr.FailedChecks)
+	}
+}
+
+// A row of the cache from before Loam stored the passed checks has no passed_checks. It lists as an empty
+// list, never null, so the app reads one shape. The next refresh fills it.
+func TestListGivesACachedPRFromBeforePassedChecksAnEmptyList(t *testing.T) {
+	e := setup(t)
+	e.create("fix-login", "")
+	w := e.worktrees()[0]
+	const before = `{"pr": {"number": 14, "title": "Fix login", "url": "https://github.com/example/widgets/pull/14", "state": "OPEN",
+	  "draft": false, "mergeable": "MERGEABLE", "merge_state": "CLEAN", "review_decision": "", "in_merge_queue": false, "queue_position": 0,
+	  "base": "main", "head": "fix-login", "head_oid": "1111111111111111111111111111111111111111", "commits": 1, "behind_base": 0,
+	  "approvals": 0, "comments": 0, "checks": {"state": "SUCCESS", "total": 2, "passed": 2, "failed": 0, "running": 0, "waiting": 0,
+	  "required": 0, "required_passed": 0}, "failed_checks": []}, "pushed": true, "stage": "ready_to_merge"}`
+	row := store.PRState{PRKey: store.PRKey{Repo: w.Repo, Branch: w.Branch}, Data: before, CheckedAt: time.Now()}
+	if err := e.s.SavePRStates([]store.PRState{row}); err != nil {
+		t.Fatal(err)
+	}
+	st := e.listed()["fix-login"]
+	if st.Stage != worktree.StageReadyToMerge || st.PR == nil || st.PR.Checks.Passed != 2 {
+		t.Fatalf("%+v", st)
+	}
+	if st.PR.PassedChecks == nil || len(st.PR.PassedChecks) != 0 {
+		t.Fatalf("passed checks %#v", st.PR.PassedChecks)
+	}
+	b, err := json.Marshal(st.PR)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"passed_checks":[]`) {
+		t.Fatalf("%s", b)
 	}
 }

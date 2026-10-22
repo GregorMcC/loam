@@ -324,7 +324,7 @@ A pane in Home (see [Home sessions](#home-sessions)) has `"home": true` and an e
 
 ### Ship state of worktrees
 
-`loam worktree list` shows the pull request (PR) of the branch of each worktree, from GitHub only. Without `--refresh`, it reads the PR cache in the store and does not use the network. `--refresh` asks GitHub first and writes the cache. `--worktree <worktree>` refreshes only that worktree (an ID, a folder name, or a name); the output still lists every worktree. `--worktree` needs a plot and `--refresh`, and `--repo` needs `--worktree`. Each other use exits with code 2. MCP `list_worktrees` takes `refresh` (a boolean) and does the same as `--refresh`.
+`loam worktree list` shows the pull request (PR) of the branch of each worktree, from GitHub only. Without `--refresh`, it reads the PR cache in the store and does not use the network. `--refresh` asks GitHub first and writes the cache. `--worktree <worktree>` refreshes only that worktree (an ID, a folder name, or a name); the output still lists every worktree. `--worktree` needs a plot and `--refresh`, and `--repo` needs `--worktree`. Each other use exits with code 2. MCP `list_worktrees` takes `refresh` (a boolean) and does the same as `--refresh`. Its result is the same JSON as `loam worktree list --json`, except that the `pr` of a worktree leaves out `passed_checks`. A session reads the passed checks through gh, and up to 100 rows for each worktree would fill its context. `checks.passed` still counts them.
 
 A refresh runs `gh api graphql`, so gh holds the sign-in and Loam holds no credentials. Loam finds gh on `PATH`, else in `/opt/homebrew/bin`, `/usr/local/bin`, or `/opt/local/bin` (`LOAM_GH` replaces the search in tests). Each repo gets at most two queries for each refresh: one for the PRs and the branches on GitHub, and one for the checks and reviews of the open PRs. Each gh call stops after 15 seconds. Ctrl-C, or a cancelled MCP call, stops gh. Then the refresh writes nothing, and the command fails. The owner and the name come from the `origin` remote. A repo whose `origin` is not on github.com gets no query. A worktree whose folder is gone gets no query and shows no ship state.
 
@@ -381,7 +381,8 @@ The PR object:
   "in_merge_queue": false, "queue_position": 0, "base": "main", "head": "fix-login", "head_oid": "1f0c...",
   "commits": 3, "behind_base": 2, "approvals": 1, "comments": 3,
   "checks": { "state": "FAILURE", "total": 14, "passed": 12, "failed": 2, "running": 0, "waiting": 0, "required": 14, "required_passed": 12 },
-  "failed_checks": [{ "name": "lint / swiftformat", "url": "https://github.com/...", "duration": 42, "required": true, "run_id": 1234 }]
+  "failed_checks": [{ "name": "lint / swiftformat", "url": "https://github.com/...", "duration": 42, "required": true, "run_id": 1234 }],
+  "passed_checks": [{ "name": "test / macos-26", "url": "https://github.com/...", "duration": 190, "required": true, "run_id": 1235 }]
 }
 ```
 
@@ -391,8 +392,9 @@ The PR object:
 - `behind_base` counts the commits of the base branch that the head does not have. `approvals` counts the reviewers with write access whose last review approves. `comments` counts the review threads that are not resolved.
 - `checks` counts the checks of the head commit. `checks.state` is GitHub's summary, empty when the head has no checks. A cancelled or stale check counts only in `total`. `required` counts the checks that the base branch needs to pass before a merge, and `required_passed` counts those that passed. For an `UNSTABLE` PR, the app can write "14 of 14 required checks passed · 2 optional failed".
 - `failed_checks` lists each failed check. A GitHub Actions job has its workflow name first. `duration` is in seconds, 0 when GitHub gives no start or end. `required` is true for a required check. `run_id` is the GitHub Actions run of the check, which `loam worktree rerun` runs again. It is left out for a check that is not a job of GitHub Actions.
-- Loam reads one page of 100 checks and 100 review threads, to keep to two queries for each repo. `checks.total` counts every check. The other check counts, `failed_checks`, and `comments` cover the first 100.
-- `behind_base`, `approvals`, `comments`, `checks`, and `failed_checks` are for an open PR. They are 0 or empty for a merged or closed PR.
+- `passed_checks` lists each passed check, with the same fields as a failed check. A skipped or neutral check counts as passed, as in `checks.passed`, so the list is as long as `checks.passed`. The order is the order of GitHub. A cache row from before Loam stored the passed checks gives an empty list until the next refresh. MCP `list_worktrees` leaves the field out.
+- Loam reads one page of 100 checks and 100 review threads, to keep to two queries for each repo. `checks.total` counts every check. The other check counts, `failed_checks`, `passed_checks`, and `comments` cover the first 100.
+- `behind_base`, `approvals`, `comments`, `checks`, `failed_checks`, and `passed_checks` are for an open PR. They are 0 or empty for a merged or closed PR. `failed_checks` and `passed_checks` are always lists, never null.
 
 ### Land, rerun, and update
 

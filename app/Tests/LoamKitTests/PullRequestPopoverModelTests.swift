@@ -494,6 +494,65 @@ import Testing
         await idle(model)
     }
 
+    /// The passed checks show in the card only on a click of their row (ticket 116), and each open is a new card, so
+    /// the list is closed on each open and when the popover closes.
+    @Test func thePassedChecksOpenOnARequestAndCloseWithTheOpen() async throws {
+        let rig = try await rig()
+        let model = rig.model
+        model.togglePassedChecks()
+        #expect(!model.prPopover.showsPassedChecks)  // No popover is open.
+        model.openPullRequest(nativePanel)
+        await idle(model)
+        #expect(!model.prPopover.showsPassedChecks)
+        model.togglePassedChecks()
+        #expect(model.prPopover.showsPassedChecks)
+        await model.rerunFailedChecks()
+        #expect(model.prPopover.showsPassedChecks)  // A button and its refresh leave the list open.
+        model.togglePassedChecks()
+        #expect(!model.prPopover.showsPassedChecks)
+        model.togglePassedChecks()
+        model.openPullRequest("wtreaaaaag")
+        #expect(!model.prPopover.showsPassedChecks)
+        model.togglePassedChecks()
+        model.closePullRequest()
+        model.openPullRequest(nativePanel)
+        #expect(!model.prPopover.showsPassedChecks)
+        await idle(model)
+    }
+
+    /// A refresh can take the row of the passed checks away, such as after Update branch when no check has
+    /// failed yet. The list goes with its row, so a row that comes back later shows it closed.
+    @Test func theListClosesWhenItsRowGoesAway() async throws {
+        let rig = try await rig()
+        let model = rig.model
+        let stages = rig.dir.appendingPathComponent("worktree_list_stages.json")
+        let failed = try Data(contentsOf: stages)
+        model.openPullRequest(nativePanel)
+        await idle(model)
+        model.togglePassedChecks()
+        #expect(model.prPopover.showsPassedChecks)
+        // The checks run again, so the core lists no failed check on Native panel.
+        var list = try #require(JSONSerialization.jsonObject(with: failed) as? [[String: Any]])
+        let row = try #require(list.firstIndex { ($0["worktree"] as? [String: Any])?["id"] as? String == nativePanel })
+        var pr = try #require(list[row]["pr"] as? [String: Any])
+        pr["failed_checks"] = []
+        list[row]["pr"] = pr
+        try JSONSerialization.data(withJSONObject: list).write(to: stages)
+        await model.refreshWorktree(nativePanel)
+        #expect(model.prPopover.isOpen)
+        #expect(!model.prPopover.showsPassedChecks)
+        // A click that comes after the refresh, on the row that went away, opens nothing.
+        model.togglePassedChecks()
+        #expect(!model.prPopover.showsPassedChecks)
+        // The checks fail again. The row comes back, and its list is closed.
+        try failed.write(to: stages)
+        await model.reloadWorktrees()
+        let status = try #require(model.worktreeStatus(nativePanel))
+        #expect(!PRPopoverContent(status).passedChecks.isEmpty)
+        #expect(!model.prPopover.showsPassedChecks)
+        model.closePullRequest()
+    }
+
     // MARK: The chip and the pane header
 
     func workspaceRef(_ id: String, in model: AppModel) throws -> WorktreeRef {

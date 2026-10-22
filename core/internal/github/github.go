@@ -89,8 +89,8 @@ type Branch struct {
 }
 
 // PR is a pull request, with the counts that a status line needs. The
-// counts from BehindBase to FailedChecks are for an open PR only. They are
-// zero for a merged or closed PR.
+// counts from BehindBase to PassedChecks are for an open PR only. They are
+// zero or empty for a merged or closed PR.
 type PR struct {
 	Number int    `json:"number"`
 	Title  string `json:"title"`
@@ -126,6 +126,12 @@ type PR struct {
 	Checks   Checks `json:"checks"`
 	// FailedChecks are the checks that failed, in the order of GitHub.
 	FailedChecks []Check `json:"failed_checks"`
+	// PassedChecks are the checks that passed, in the order of GitHub. A
+	// skipped or neutral check passed too, so the list is as long as
+	// Checks.Passed. A cache row from before Loam stored the passed checks
+	// gives an empty list until the next refresh. Like FailedChecks, it is a
+	// list and never null.
+	PassedChecks []Check `json:"passed_checks"`
 }
 
 // Checks counts the checks of the head commit of a PR.
@@ -146,7 +152,7 @@ type Checks struct {
 	RequiredPassed int `json:"required_passed"`
 }
 
-// Check is one failed check.
+// Check is one check of the head commit of a PR, a failed one or a passed one.
 type Check struct {
 	// Name is the check name. A GitHub Actions job has its workflow name
 	// first, such as "lint / swiftformat".

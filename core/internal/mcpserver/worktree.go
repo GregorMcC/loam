@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/GregorMcC/loam/core/internal/github"
 	"github.com/GregorMcC/loam/core/internal/store"
 	"github.com/GregorMcC/loam/core/internal/worktree"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -30,7 +31,37 @@ type setWorktreeGoalIn struct {
 }
 
 type listWorktreesOut struct {
-	Worktrees []worktree.Status `json:"worktrees"`
+	Worktrees []listedWorktree `json:"worktrees"`
+}
+
+// listedWorktree is a [worktree.Status] as list_worktrees gives it: the JSON of `loam worktree list --json`,
+// but with the PR of [listedPR].
+type listedWorktree struct {
+	worktree.Status
+	// PR hides the PR of the Status, which has the same JSON name one level deeper.
+	PR *listedPR `json:"pr"`
+}
+
+// listedPR is a pull request without the list of its passed checks. A session reads the passed checks
+// through gh (ADR 0007), and up to 100 rows for each worktree would fill its context. The counts and the
+// failed checks stay.
+type listedPR struct {
+	github.PR
+	// PassedChecks hides the list of the PR, which has the same JSON name one level deeper. It is always
+	// nil, and omitempty leaves it out.
+	PassedChecks *[]github.Check `json:"passed_checks,omitempty"`
+}
+
+// listedWorktrees returns the worktrees as list_worktrees shows them.
+func listedWorktrees(list []worktree.Status) []listedWorktree {
+	out := make([]listedWorktree, len(list))
+	for i, st := range list {
+		out[i] = listedWorktree{Status: st}
+		if st.PR != nil {
+			out[i].PR = &listedPR{PR: *st.PR}
+		}
+	}
+	return out
 }
 
 type createWorktreeOut struct {
@@ -48,7 +79,8 @@ func (s *Server) registerWorktrees(srv *mcp.Server) {
 		Description: "List the git worktrees of the plot. Each has its name, branch, folder, repo, goal, and link (or null), and three checks: " +
 			"changed files, commits that are not pushed, and whether the branch is merged. " +
 			"Each also has its pull request on GitHub (pr, or null), its stage (such as checks_failed or ready_to_merge), " +
-			"pr_note (why the ship state is missing or old), and pr_checked_at (when it came from GitHub)." + plotNote,
+			"pr_note (why the ship state is missing or old), and pr_checked_at (when it came from GitHub). " +
+			"The pr lists the failed checks and counts the passed ones. It does not list the passed checks: read them with gh." + plotNote,
 		Annotations: &mcp.ToolAnnotations{Title: "List worktrees", ReadOnlyHint: true, OpenWorldHint: &open},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in listWorktreesIn) (*mcp.CallToolResult, any, error) {
 		plotID, err := s.resolvePlot(in.Plot)
@@ -76,7 +108,7 @@ func (s *Server) registerWorktrees(srv *mcp.Server) {
 			ws[i] = st.Worktree
 		}
 		s.rememberGoals(plotID, ws...)
-		return reply(listWorktreesOut{Worktrees: list})
+		return reply(listWorktreesOut{Worktrees: listedWorktrees(list)})
 	})
 
 	no := false

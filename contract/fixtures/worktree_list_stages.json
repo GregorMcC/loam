@@ -30,6 +30,7 @@
       "mergeable": "UNKNOWN",
       "merged_at": "2026-01-01T00:00:00Z",
       "number": 11,
+      "passed_checks": [],
       "queue_position": 0,
       "review_decision": "APPROVED",
       "state": "MERGED",
@@ -85,6 +86,7 @@
       "merge_state": "UNKNOWN",
       "mergeable": "UNKNOWN",
       "number": 12,
+      "passed_checks": [],
       "queue_position": 0,
       "review_decision": "REVIEW_REQUIRED",
       "state": "CLOSED",
@@ -139,6 +141,14 @@
       "merge_state": "CLEAN",
       "mergeable": "MERGEABLE",
       "number": 13,
+      "passed_checks": [
+        {
+          "duration": 0,
+          "name": "build",
+          "required": true,
+          "url": ""
+        }
+      ],
       "queue_position": 2,
       "review_decision": "APPROVED",
       "state": "OPEN",
@@ -193,6 +203,14 @@
       "merge_state": "DIRTY",
       "mergeable": "CONFLICTING",
       "number": 14,
+      "passed_checks": [
+        {
+          "duration": 0,
+          "name": "build",
+          "required": true,
+          "url": ""
+        }
+      ],
       "queue_position": 0,
       "review_decision": "REVIEW_REQUIRED",
       "state": "OPEN",
@@ -247,6 +265,14 @@
       "merge_state": "BLOCKED",
       "mergeable": "MERGEABLE",
       "number": 15,
+      "passed_checks": [
+        {
+          "duration": 0,
+          "name": "build",
+          "required": true,
+          "url": ""
+        }
+      ],
       "queue_position": 0,
       "review_decision": "CHANGES_REQUESTED",
       "state": "OPEN",
@@ -316,6 +342,14 @@
       "merge_state": "BLOCKED",
       "mergeable": "MERGEABLE",
       "number": 16,
+      "passed_checks": [
+        {
+          "duration": 80,
+          "name": "build",
+          "required": true,
+          "url": "https://github.com/example/widgets/actions/runs/300/job/0"
+        }
+      ],
       "queue_position": 0,
       "review_decision": "REVIEW_REQUIRED",
       "state": "OPEN",
@@ -370,6 +404,14 @@
       "merge_state": "BLOCKED",
       "mergeable": "MERGEABLE",
       "number": 17,
+      "passed_checks": [
+        {
+          "duration": 0,
+          "name": "build",
+          "required": true,
+          "url": ""
+        }
+      ],
       "queue_position": 0,
       "review_decision": "REVIEW_REQUIRED",
       "state": "OPEN",
@@ -424,6 +466,14 @@
       "merge_state": "CLEAN",
       "mergeable": "MERGEABLE",
       "number": 21,
+      "passed_checks": [
+        {
+          "duration": 0,
+          "name": "build",
+          "required": true,
+          "url": ""
+        }
+      ],
       "queue_position": 0,
       "review_decision": "",
       "state": "OPEN",
@@ -478,6 +528,14 @@
       "merge_state": "BEHIND",
       "mergeable": "MERGEABLE",
       "number": 18,
+      "passed_checks": [
+        {
+          "duration": 0,
+          "name": "build",
+          "required": true,
+          "url": ""
+        }
+      ],
       "queue_position": 0,
       "review_decision": "APPROVED",
       "state": "OPEN",
@@ -532,6 +590,14 @@
       "merge_state": "BLOCKED",
       "mergeable": "MERGEABLE",
       "number": 19,
+      "passed_checks": [
+        {
+          "duration": 0,
+          "name": "build",
+          "required": true,
+          "url": ""
+        }
+      ],
       "queue_position": 0,
       "review_decision": "REVIEW_REQUIRED",
       "state": "OPEN",
@@ -586,6 +652,14 @@
       "merge_state": "BLOCKED",
       "mergeable": "MERGEABLE",
       "number": 20,
+      "passed_checks": [
+        {
+          "duration": 0,
+          "name": "build",
+          "required": true,
+          "url": ""
+        }
+      ],
       "queue_position": 0,
       "review_decision": "REVIEW_REQUIRED",
       "state": "OPEN",
@@ -640,6 +714,14 @@
       "merge_state": "BLOCKED",
       "mergeable": "MERGEABLE",
       "number": 23,
+      "passed_checks": [
+        {
+          "duration": 0,
+          "name": "build",
+          "required": true,
+          "url": ""
+        }
+      ],
       "queue_position": 0,
       "review_decision": "APPROVED",
       "state": "OPEN",
@@ -694,6 +776,14 @@
       "merge_state": "CLEAN",
       "mergeable": "MERGEABLE",
       "number": 22,
+      "passed_checks": [
+        {
+          "duration": 0,
+          "name": "build",
+          "required": true,
+          "url": ""
+        }
+      ],
       "queue_position": 0,
       "review_decision": "APPROVED",
       "state": "OPEN",
@@ -814,6 +904,20 @@
       "merge_state": "UNSTABLE",
       "mergeable": "MERGEABLE",
       "number": 24,
+      "passed_checks": [
+        {
+          "duration": 80,
+          "name": "build",
+          "required": true,
+          "url": "https://github.com/example/widgets/actions/runs/306/job/6"
+        },
+        {
+          "duration": 125,
+          "name": "test",
+          "required": true,
+          "url": "https://github.com/example/widgets/actions/runs/305/job/5"
+        }
+      ],
       "queue_position": 0,
       "review_decision": "APPROVED",
       "state": "OPEN",

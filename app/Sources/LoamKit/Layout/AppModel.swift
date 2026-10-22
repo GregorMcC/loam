@@ -56,7 +56,7 @@ public final class AppModel {
     public private(set) var worktrees: [String: [WorktreeStatus]] = [:] {
         didSet {
             guard worktrees != oldValue else { return }
-            closePullRequestIfGone()
+            followPullRequestRow()
             onWorkspaceChange?()
         }
     }
@@ -1108,10 +1108,21 @@ public final class AppModel {
 
     public func closePullRequest() { prPopover.close() }
 
-    /// The worktree left the list (a land removed it, or the folder and the record are gone), so the
-    /// popover has nothing to show.
-    private func closePullRequestIfGone() {
-        if let id = prPopover.worktreeID, worktreeStatus(id) == nil { prPopover.close() }
+    /// Opens the passed checks in the open popover, or closes them (ticket 116). A click that comes after a refresh
+    /// took the row away opens nothing, so a row that comes back later shows the list closed.
+    public func togglePassedChecks() {
+        guard let id = prPopover.worktreeID, let status = worktreeStatus(id),
+              !PRPopoverContent(status).passedChecks.isEmpty else { return }
+        prPopover.togglePassedChecks()
+    }
+
+    /// Keeps the popover in step with the row of its worktree. A worktree that left the list (a land removed it,
+    /// or the folder and the record are gone) closes the popover, because it has nothing to show. A row that has
+    /// no passed checks to show now (a refresh found no failed check) closes the passed list (ticket 116).
+    private func followPullRequestRow() {
+        guard let id = prPopover.worktreeID else { return }
+        guard let status = worktreeStatus(id) else { return prPopover.close() }
+        if PRPopoverContent(status).passedChecks.isEmpty { prPopover.hidePassedChecks() }
     }
 
     /// Re-run failed: `loam worktree rerun`. The popover shows what GitHub did, then asks about the

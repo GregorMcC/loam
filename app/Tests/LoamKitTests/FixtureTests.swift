@@ -175,6 +175,11 @@ func decodeFixture(schema: String, data: Data) throws {
         #expect(failed.failedChecks.map(\.name) == ["lint / swiftformat", "test / macos"])
         #expect(failed.failedChecks[0].duration == 42 && failed.failedChecks[0].required)
         #expect(failed.checks.required == 3 && failed.checks.requiredPassed == 1)
+        // The passed checks have the fields of a failed check, in the order of GitHub (ticket 116).
+        #expect(failed.passedChecks?.map(\.name) == ["build"])
+        #expect(failed.passedChecks?.first?.duration == 80 && failed.passedChecks?.first?.required == true)
+        #expect(failed.passedChecks?.first?.url == "https://github.com/example/widgets/actions/runs/300/job/0")
+        #expect(list.first { $0.stage == .merged }?.pr?.passedChecks == [])
         #expect(list.first { $0.stage == .blocked }?.pr?.mergeState == "BLOCKED")
         // "2 of 2 required checks passed · 2 optional failed"
         let unstable = try #require(list.last)
@@ -183,9 +188,24 @@ func decodeFixture(schema: String, data: Data) throws {
         #expect(optional.mergeState == "UNSTABLE")
         #expect(optional.checks.required == 2 && optional.checks.requiredPassed == 2)
         #expect(optional.checks.failed == 2 && optional.failedChecks.allSatisfy { !$0.required })
+        #expect(optional.passedChecks?.map(\.name) == ["build", "test"])
+        #expect(optional.passedChecks?.count == optional.checks.passed)
         let pushed = try #require(list.first { $0.stage == .pushedNoPR })
         #expect(pushed.pr == nil)
         #expect(pushed.compareURL == "https://github.com/example/widgets/compare/main...pushed-only")
+    }
+
+    /// A core from before ticket 116 sends no `passed_checks`. The list still decodes, as it did before.
+    @Test func aPRFromAnOlderCoreHasNoPassedChecks() throws {
+        var list = try #require(JSONSerialization.jsonObject(with: Fixtures.data("worktree_list_stages")) as? [[String: Any]])
+        for index in list.indices {
+            guard var pr = list[index]["pr"] as? [String: Any] else { continue }
+            pr["passed_checks"] = nil
+            list[index]["pr"] = pr
+        }
+        let decoded = try JSONDecoder().decode([WorktreeStatus].self, from: JSONSerialization.data(withJSONObject: list))
+        let prs = decoded.compactMap(\.pr)
+        #expect(!prs.isEmpty && prs.allSatisfy { $0.passedChecks == nil })
     }
 
     @Test func landRerunAndUpdateDecode() throws {

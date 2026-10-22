@@ -164,7 +164,7 @@ extension StatusLine {
             // A check that the merge needs fails the row. With no required check, any failed check counts.
             let needed = pr.failedChecks.contains(where: \.required) || (checks.required ?? 0) == 0
             parts.append(Part(text: needed ? "\(checks.failed) failed" : "\(checks.failed) optional failed", failing: needed))
-            if checks.passed > 0 { parts.append(plain("\(checks.passed) passed")) }
+            if checks.passed > 0 { parts.append(plain(passed(checks.passed))) }
             if checks.running > 0 { parts.append(plain("\(checks.running) running")) }
         } else if unfinished {
             parts.append(plain("\(done(checks)) of \(checks.total) done"))
@@ -174,6 +174,9 @@ extension StatusLine {
         if checks.waiting > 0 { parts.append(plain(waitingText(checks.waiting))) }
         return parts
     }
+
+    /// "12 passed". The Checks row and the row that opens the passed checks say it the same way.
+    public static func passed(_ count: Int) -> String { "\(count) passed" }
 
     /// "Approved · 1 approval", "Changes requested · 3 comments", "Review required", or "No review
     /// required". GitHub gives no count of the approvals that a merge needs, so the phrase counts the

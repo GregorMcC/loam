@@ -51,6 +51,9 @@ public final class PRPopoverModel {
     public private(set) var attemptedAt: Date?
     /// What the last button did, or why it failed. It goes when the popover opens again.
     public private(set) var note: String?
+    /// True while the passed checks show in the card (ticket 116). The list is closed on each open, because each
+    /// open is a new card. A refresh and a button leave it as it is, unless the refresh takes its row away.
+    public private(set) var showsPassedChecks = false
     /// The worktrees whose refresh runs now (`AppModel.refreshWorktree`), shown or not.
     private var refreshing: Set<String> = []
     /// The button that runs for each worktree. One runs at a time for a worktree.
@@ -77,6 +80,7 @@ public final class PRPopoverModel {
         openCount += 1
         attemptedAt = nil
         note = nil
+        showsPassedChecks = false
         if !wasOpen { onOpenChange?(true) }
         onOpen?()
     }
@@ -88,6 +92,7 @@ public final class PRPopoverModel {
         worktreeID = nil
         attemptedAt = nil
         note = nil
+        showsPassedChecks = false
         onOpenChange?(false)
     }
 
@@ -95,6 +100,19 @@ public final class PRPopoverModel {
     public func say(_ line: String) {
         guard isOpen else { return }
         note = line
+    }
+
+    /// Opens the passed checks in the card, or closes them. Does nothing when the popover is closed.
+    /// `AppModel.togglePassedChecks()` checks first that the row is there.
+    func togglePassedChecks() {
+        guard isOpen else { return }
+        showsPassedChecks.toggle()
+    }
+
+    /// Closes the passed checks because their row went away: a refresh found no failed check. A row that comes
+    /// back later shows the list closed.
+    func hidePassedChecks() {
+        showsPassedChecks = false
     }
 
     // MARK: Refresh
@@ -139,18 +157,59 @@ public enum PopoverPlacement {
     /// The room that the popover keeps to each edge of the container.
     public static let margin: CGFloat = 8
 
+    /// The side of the anchor that a popover stands on.
+    public enum Side: Equatable, Sendable {
+        case below
+        case above
+    }
+
+    /// The tallest popover that fits the container: it keeps its margin at the top and at the bottom.
+    public static func maxHeight(in container: CGRect) -> CGFloat {
+        max(0, container.height - 2 * margin)
+    }
+
     /// Below the anchor when it fits, else above. When it fits on neither side, on the side with more room.
-    /// It stays inside the container, and at the top and the left edge when the container is too small.
-    public static func frame(size: CGSize, anchor: CGRect, in container: CGRect) -> CGRect {
+    public static func side(size: CGSize, anchor: CGRect, in container: CGRect) -> Side {
         let below = container.maxY - margin - anchor.maxY - gap
         let above = anchor.minY - gap - margin - container.minY
-        let opensBelow = size.height <= below || (size.height > above && below >= above)
-        let y = opensBelow ? anchor.maxY + gap : anchor.minY - gap - size.height
+        return size.height <= below || (size.height > above && below >= above) ? .below : .above
+    }
+
+    /// The frame on `side` of the anchor. It stays inside the container, and at the top and the left edge
+    /// when the container is too small. A popover that is too tall for its side stays on it and moves only as far
+    /// as it needs to stay inside, so it does not jump to the other side.
+    public static func frame(size: CGSize, anchor: CGRect, side: Side, in container: CGRect) -> CGRect {
+        let y = side == .below ? anchor.maxY + gap : anchor.minY - gap - size.height
         return CGRect(origin: CGPoint(x: clamp(anchor.minX, size.width, container.minX, container.maxX),
                                       y: clamp(y, size.height, container.minY, container.maxY)), size: size)
     }
 
+    /// The frame on the side that `side(size:anchor:in:)` picks for a new popover.
+    public static func frame(size: CGSize, anchor: CGRect, in container: CGRect) -> CGRect {
+        frame(size: size, anchor: anchor, side: side(size: size, anchor: anchor, in: container), in: container)
+    }
+
     private static func clamp(_ start: CGFloat, _ length: CGFloat, _ low: CGFloat, _ high: CGFloat) -> CGFloat {
         max(low + margin, min(start, high - margin - length))
+    }
+}
+
+/// What the window knows of the card of the open PR popover: the side of its control that it stands on (ticket 116).
+/// With its passed list closed, the card takes the side that `PopoverPlacement.side(size:anchor:in:)` picks on each
+/// layout, as in ticket 109. A list that opens makes the card taller, and the card keeps the side it had while the
+/// list is open, so it does not jump over its control to the other side.
+public struct PopoverMeasure: Equatable, Sendable {
+    private var open = 0
+    private var side = PopoverPlacement.Side.below
+
+    public init() {}
+
+    /// The side for the card of open number `open`, when the card is `size` and its control is at `anchor`. With the
+    /// list closed, the side is the one that the rule picks for this size. With the list open, it is the side from
+    /// the last layout with the list closed. A new open picks again, because each open is a new card.
+    public mutating func measure(_ size: CGSize, open: Int, listOpen: Bool, anchor: CGRect, in container: CGRect) -> PopoverPlacement.Side {
+        if self.open != open || !listOpen { side = PopoverPlacement.side(size: size, anchor: anchor, in: container) }
+        self.open = open
+        return side
     }
 }

@@ -17,9 +17,14 @@ extension Scenarios {
         do { try await prPopoverSteps(app) } catch { app.dumpAccessibility(); throw error }
     }
 
+    /// The checks of PR 16 that passed: `build` and then `job-1` and on. There are more than a window shows, so
+    /// the list of the passed checks has to scroll.
+    private static let passedCheckCount = 40
+
     /// The GitHub that the fake `gh` answers from, for the repo `example/widgets`: PR 16 of the branch
-    /// `native-panel` has 2 failed checks of 3 (the runs 301 and 302) and is 3 commits behind main. PR 22
-    /// of the branch `link-labels` passes its check and has an approval, so it is ready to merge.
+    /// `native-panel` has 2 failed checks (the runs 301 and 302) and `passedCheckCount` passed checks, and is
+    /// 3 commits behind main. PR 22 of the branch `link-labels` passes its check and has an approval, so it is
+    /// ready to merge.
     private static func popoverGitHub() throws -> Data {
         func pull(_ number: Int, _ branch: String, title: String, mergeState: String, review: String) -> [String: Any] {
             ["number": number, "title": title, "url": "https://github.com/example/widgets/pull/\(number)",
@@ -39,6 +44,7 @@ extension Scenarios {
                 "state": state, "contexts": ["totalCount": checks.count, "nodes": checks]]]]]],
              "latestOpinionatedReviews": ["nodes": reviews], "reviewThreads": ["nodes": [Any]()]]
         }
+        let passed = (0..<passedCheckCount).map { check($0 == 0 ? "build" : "job-\($0)", "SUCCESS", run: 400 + $0) }
         let state: [String: Any] = [
             "refs": ["link-labels", "native-panel"],
             "pulls": [
@@ -46,8 +52,8 @@ extension Scenarios {
                 pull(22, "link-labels", title: "Link labels", mergeState: "CLEAN", review: "APPROVED"),
             ],
             "details": [
-                "16": detail(state: "FAILURE", checks: [check("build", "SUCCESS", run: 300), check("lint", "FAILURE", run: 301),
-                                                        check("test", "FAILURE", run: 302)], behind: 3, reviews: []),
+                "16": detail(state: "FAILURE", checks: passed + [check("lint", "FAILURE", run: 301), check("test", "FAILURE", run: 302)],
+                             behind: 3, reviews: []),
                 "22": detail(state: "SUCCESS", checks: [check("build", "SUCCESS", run: 303)], behind: 0, reviews: [["state": "APPROVED"]]),
             ],
         ]
@@ -176,6 +182,51 @@ extension Scenarios {
         try check(abs(firstButton.minX - chipFrame.minX) <= cardPadding, "the popover does not start at the chip: \(chipFrame) \(firstButton)")
         app.screenshot("pr-popover")
 
+        // 3b. The row at the end of the failed checks opens the passed checks in place, and a second click closes
+        // them (ticket 116). Neither click moves the keys. The list is longer than the window, so the card keeps
+        // inside the window and the list scrolls.
+        let toggle = "pr-popover-passed-toggle"
+        let passedWords = "\(passedCheckCount) passed"
+        try check(AccessibilityProbe.shared.node(toggle)?.description == passedWords,
+                  "the passed row reads \(AccessibilityProbe.shared.node(toggle)?.description ?? "nothing")")
+        try check(app.text(of: "pr-popover-row-checks")?.contains("2 failed \u{00B7} \(passedWords)") == true,
+                  "the Checks row does not say \(passedWords): \(app.text(of: "pr-popover-row-checks") ?? "nothing")")
+        try check(!app.exists("pr-popover-passed-list") && !app.exists("pr-popover-passed-check-0"), "the passed checks show before a click")
+        let responder = host.window.firstResponder
+        let closedButton = lastButton
+        /// The window in the space of the accessibility frames: the origin is the top left corner of the main screen.
+        func windowOnScreen() throws -> CGRect {
+            guard let screen = NSScreen.screens.first else { throw DriverFailure("no screen") }
+            let frame = host.window.frame
+            return CGRect(x: frame.minX, y: screen.frame.height - frame.maxY, width: frame.width, height: frame.height)
+        }
+        try app.click(toggle)
+        try await app.waitUntil("the passed checks open") { app.exists("pr-popover-passed-check-0") }
+        try check(AccessibilityProbe.shared.node(toggle)?.value == "Shown", "the passed row does not say that it shows the checks")
+        try check(app.text(of: "pr-popover-passed-check-0")?.contains("build") == true && app.text(of: "pr-popover-passed-check-1")?.contains("job-1") == true,
+                  "the passed checks read \(app.text(of: "pr-popover-passed-check-0") ?? "nothing") and \(app.text(of: "pr-popover-passed-check-1") ?? "nothing")")
+        try check(app.exists("pr-popover-passed-log-0") && app.exists("pr-popover-check-0") && app.exists("pr-popover-check-1"),
+                  "a passed check has no Log link, or the failed checks went")
+        try check(host.window.firstResponder === responder, "the click on the passed row moved the keys")
+        // The list is cut to the window: the card stays inside it, with its margin.
+        let (window, stage, buttonWithList) = try (windowOnScreen(), frame("pr-popover-stage"), frame("pr-popover-open-on-github"))
+        try check(stage.minY >= window.minY + PopoverPlacement.margin && buttonWithList.maxY <= window.maxY - PopoverPlacement.margin,
+                  "the card leaves the window: \(stage) \(buttonWithList) in \(window)")
+        let list = try passedList(host)
+        try check((list.documentView?.frame.height ?? 0) > list.contentView.bounds.height + 1,
+                  "the list does not scroll: \(list.documentView?.frame.height ?? 0) in \(list.contentView.bounds.height)")
+        // The chevron turns with `duration-base`. The shot waits for the turn, so it shows the chevron down.
+        try await Task.sleep(for: .seconds(LoamTheme.durationBase * 2))
+        app.screenshot("pr-popover-passed")
+        try app.click(toggle)
+        try await app.waitUntil("the passed checks close") { !app.exists("pr-popover-passed-check-0") && !app.exists("pr-popover-passed-list") }
+        try check(AccessibilityProbe.shared.node(toggle)?.value == "Hidden" && app.exists("pr-popover-check-0"), "closing the list left the row wrong")
+        try check(host.window.firstResponder === responder, "the second click on the passed row moved the keys")
+        try check(abs(try frame("pr-popover-open-on-github").maxY - closedButton.maxY) < 1, "the card did not return")
+        // The list stays open through the steps below: a refresh does not close it, and Escape closes the popover with it open.
+        try app.click(toggle)
+        try await app.waitUntil("the passed checks open again") { app.exists("pr-popover-passed-check-0") }
+
         // 4. Re-run failed goes to `gh` through `loam`: one `gh run rerun --failed` for each run. The popover
         // says what GitHub did, and then asks about the worktree again.
         try app.click("pr-popover-rerun-failed")
@@ -186,6 +237,7 @@ extension Scenarios {
             refreshed(after: ["run", "rerun", "302", "--failed"]) && !model.prPopover.isRefreshing
         }
         try check(app.exists("pr-popover"), "the re-run closed the popover")
+        try check(app.exists("pr-popover-passed-check-0"), "the refresh after the re-run closed the passed checks")
 
         // Update branch: `gh pr update-branch`, then a refresh.
         try app.click("pr-popover-update-branch")
@@ -196,7 +248,8 @@ extension Scenarios {
         }
         try check(refreshes(ofOneWorktree: false) == 1, "a button refreshed the whole plot")
 
-        // 5. Escape closes the popover, and the keys go back to the terminal.
+        // 5. Escape closes the popover, also with the passed checks open, and the keys go back to the terminal.
+        try check(app.exists("pr-popover-passed-check-0"), "the passed checks closed before Escape")
         app.press(.escape)
         try await app.waitUntil("Escape closes the popover") { !app.exists("pr-popover") && !model.prPopover.isOpen }
         try await app.waitUntil("the terminal has the keys again") { terminalHasTheKeys() }
@@ -375,6 +428,26 @@ extension Scenarios {
         try await app.waitUntil("the terminal has the keys, not the hidden field") { terminalHasTheKeys() }
         await app.sleep(0.3)
         try check(terminalHasTheKeys(), "the hidden field took the keys back")
+    }
+
+    /// The scroll view of the passed checks: the scroll view of the window that stands where the accessibility tree puts
+    /// the list.
+    private static func passedList(_ host: AppHost) throws -> NSScrollView {
+        guard let list = AccessibilityProbe.shared.node("pr-popover-passed-list")?.frame,
+              let screen = NSScreen.screens.first else { throw DriverFailure("no frame for the passed list") }
+        func onScreen(_ view: NSView) -> CGRect {
+            let inWindow = host.window.convertToScreen(view.convert(view.bounds, to: nil))
+            return CGRect(x: inWindow.minX, y: screen.frame.height - inWindow.maxY, width: inWindow.width, height: inWindow.height)
+        }
+        func near(_ a: CGRect, _ b: CGRect) -> Bool {
+            abs(a.minX - b.minX) <= 2 && abs(a.minY - b.minY) <= 2 && abs(a.width - b.width) <= 2 && abs(a.height - b.height) <= 2
+        }
+        func find(_ view: NSView) -> NSScrollView? {
+            if let scroll = view as? NSScrollView, near(onScreen(scroll), list) { return scroll }
+            return view.subviews.lazy.compactMap(find).first
+        }
+        guard let content = host.window.contentView, let scroll = find(content) else { throw DriverFailure("no scroll view at \(list)") }
+        return scroll
     }
 
     private static func openPopoverSwitcher(_ app: DriverApp) async throws {

@@ -38,6 +38,14 @@
     "merge_state": "BLOCKED",
     "mergeable": "MERGEABLE",
     "number": 16,
+    "passed_checks": [
+      {
+        "duration": 80,
+        "name": "build",
+        "required": true,
+        "url": "https://github.com/example/widgets/actions/runs/300/job/0"
+      }
+    ],
     "queue_position": 0,
     "review_decision": "REVIEW_REQUIRED",
     "state": "OPEN",

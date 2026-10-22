@@ -68,10 +68,15 @@ type cachedPR struct {
 
 // decodeCached reads the data of a cache row. A row with no data, or with
 // data that does not decode, has no ship state. The next refresh writes it again.
+// A row from before Loam stored the passed checks has none, so its PR gets an
+// empty list: the lists of checks are never null.
 func decodeCached(row store.PRState) cachedPR {
 	var c cachedPR
 	if row.Data == "" || json.Unmarshal([]byte(row.Data), &c) != nil {
 		return cachedPR{}
+	}
+	if c.PR != nil && c.PR.PassedChecks == nil {
+		c.PR.PassedChecks = []github.Check{}
 	}
 	return c
 }
