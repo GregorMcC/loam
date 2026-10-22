@@ -344,6 +344,10 @@ func (a *applier) restoreLink(item string, old map[string]*string) error {
 	if err != nil {
 		return err
 	}
+	// A move renumbers the links, so the old position may be taken: make room rather than tie.
+	if err := a.w.exec(`UPDATE links SET position = position + 1 WHERE plot_id = ? AND position >= ?`, a.plotID, val(old, "position")); err != nil {
+		return err
+	}
 	if err := a.w.exec(`INSERT INTO links(id, plot_id, position, label, target, note) VALUES (?, ?, ?, ?, ?, ?)`,
 		id, a.plotID, val(old, "position"), val(old, "label"), val(old, "target"), val(old, "note")); err != nil {
 		return err
