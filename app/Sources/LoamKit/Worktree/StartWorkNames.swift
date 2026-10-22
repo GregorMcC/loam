@@ -39,12 +39,17 @@ public enum StartWorkNames {
         text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 
-    /// Lower case; every run of characters that are not letters or digits is one hyphen; none at the ends. A letter with
-    /// a mark loses the mark when it is a Latin letter ("é" is "e"). Letters of other scripts stay as they are, since the
-    /// mark of "ペ" is part of the letter.
+    /// The compatibility form first (NFKC): a ligature, a fraction, a superscript and a Roman numeral take their plain
+    /// letters and digits. Then each invisible format character goes (joiners, the soft hyphen, direction marks), so the
+    /// name is what it looks like. Lower case; every run of characters that are not letters or digits is one hyphen; none
+    /// at the ends. A letter with a mark loses the mark when it is a Latin letter ("é" is "e"). Letters of other scripts
+    /// stay as they are, since the mark of "ペ" is part of the letter.
     private static func slug(_ text: String) -> String {
         var out = ""
-        for character in text.lowercased() {
+        let visible = String.UnicodeScalarView(text.precomposedStringWithCompatibilityMapping.unicodeScalars.filter {
+            $0.properties.generalCategory != .format
+        })
+        for character in String(visible).lowercased() {
             let folded = isLatin(character) ? String(character).folding(options: .diacriticInsensitive, locale: nil) : String(character)
             for piece in folded {
                 if piece.isLetter || piece.isNumber {

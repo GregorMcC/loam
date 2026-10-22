@@ -93,6 +93,17 @@ import Testing
         #expect(StartWorkNames.branch(label: "ENG-7 日本語 ページ", issue: linear("ENG-7")) == "eng-7-日本語-ページ")
     }
 
+    @Test func invisibleCharactersAreDroppedAndCompatibilityFormsFold() {
+        func branch(_ label: String) -> String { StartWorkNames.branch(label: label, issue: linear("ENG-7")) }
+        // A joiner, a soft hyphen and a direction mark show nothing, so they must not stay in the name.
+        #expect(branch("ENG-7 fix\u{200D}bug") == "eng-7-fixbug")
+        #expect(branch("ENG-7 fix\u{200C}bug\u{00AD}s") == "eng-7-fixbugs")
+        #expect(branch("ENG-7 \u{202E}fix \u{200B}it") == "eng-7-fix-it")
+        // A ligature, a fraction, a superscript and a Roman numeral take their plain letters and digits.
+        #expect(branch("ENG-7 o\u{FB03}ce") == "eng-7-office")
+        #expect(branch("ENG-7 \u{00BD} x\u{00B2} \u{217B}") == "eng-7-1-2-x2-xii")
+    }
+
     @Test func aLongBranchIsCutAtAWordBreakAt60Characters() {
         let label = "ENG-482 Make the link kinds for Figma and Notion work in the switcher and the panel"
         let branch = StartWorkNames.branch(label: label, issue: linear())
