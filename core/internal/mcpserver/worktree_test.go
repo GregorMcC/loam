@@ -10,6 +10,7 @@ import (
 
 	"github.com/GregorMcC/loam/core/internal/store"
 	"github.com/GregorMcC/loam/core/internal/testutil"
+	"github.com/GregorMcC/loam/core/internal/worktree"
 )
 
 // withGitRepo adds a real git repo to the first plot and returns its path.
@@ -194,5 +195,68 @@ func TestListWorktreesRefresh(t *testing.T) {
 	}
 	if n := len(testutil.FakeGHCalls(t)); n != 1 {
 		t.Fatalf("%d gh calls", n)
+	}
+}
+
+// list_worktrees gives the failed checks of a PR and counts the passed ones. It leaves out the list of the
+// passed checks: a session reads those through gh, and up to 100 rows for each worktree would fill its
+// context. The CLI list and the PR cache keep the list.
+func TestListWorktreesLeavesOutThePassedChecks(t *testing.T) {
+	testutil.GitEnv(t)
+	e := setup(t, opts{plotEnv: "ALPHA"})
+	repo := withGitRepo(t, e)
+	e.ok("create_worktree", map[string]any{"name": "fix-login"})
+	e.ok("create_worktree", map[string]any{"name": "add-search"})
+	testutil.Git(t, repo, "remote", "set-url", "origin", "https://github.com/example/widgets.git")
+	testutil.FakeGH(t, `{"refs": ["fix-login", "add-search"], "pulls": [
+	  {"number": 14, "title": "Fix login", "url": "https://github.com/example/widgets/pull/14", "state": "OPEN",
+	   "mergeable": "MERGEABLE", "mergeStateStatus": "UNSTABLE", "baseRefName": "main", "headRefName": "fix-login",
+	   "headRefOid": "1111111111111111111111111111111111111111", "commits": {"totalCount": 1}}
+	], "details": {"14": {"commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "FAILURE", "contexts": {"totalCount": 3, "nodes": [
+	  {"__typename": "CheckRun", "name": "build", "status": "COMPLETED", "conclusion": "SUCCESS", "isRequired": false},
+	  {"__typename": "CheckRun", "name": "docs", "status": "COMPLETED", "conclusion": "FAILURE", "isRequired": false},
+	  {"__typename": "StatusContext", "context": "ci/legacy", "state": "SUCCESS", "targetUrl": "", "isRequired": false}
+	]}}}}]}}}}`)
+
+	out := e.ok("list_worktrees", map[string]any{"refresh": true})
+	if strings.Contains(out, "passed_checks") {
+		t.Fatalf("the list holds the passed checks: %s", out)
+	}
+	var list struct {
+		Worktrees []struct {
+			Worktree store.Worktree `json:"worktree"`
+			PR       *struct {
+				Number       int `json:"number"`
+				Checks       struct{ Passed, Failed int }
+				FailedChecks []struct{ Name string } `json:"failed_checks"`
+			} `json:"pr"`
+		} `json:"worktrees"`
+	}
+	if err := json.Unmarshal([]byte(out), &list); err != nil || len(list.Worktrees) != 2 {
+		t.Fatalf("%v: %s", err, out)
+	}
+	for _, w := range list.Worktrees {
+		switch w.Worktree.Branch {
+		case "fix-login":
+			if w.PR == nil || w.PR.Number != 14 || w.PR.Checks.Passed != 2 || w.PR.Checks.Failed != 1 ||
+				len(w.PR.FailedChecks) != 1 || w.PR.FailedChecks[0].Name != "docs" {
+				t.Errorf("fix-login: %+v", w.PR)
+			}
+		default:
+			if w.PR != nil {
+				t.Errorf("%s: %+v", w.Worktree.Branch, w.PR)
+			}
+		}
+	}
+
+	// The PR cache still has the passed checks, for the CLI and the app.
+	cached, err := worktree.List(e.s, e.plot.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, st := range cached {
+		if st.PR != nil && len(st.PR.PassedChecks) != 2 {
+			t.Errorf("%s: cached passed checks %+v", st.Worktree.Branch, st.PR.PassedChecks)
+		}
 	}
 }

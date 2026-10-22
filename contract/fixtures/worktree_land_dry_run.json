@@ -73,6 +73,14 @@
     "merge_state": "CLEAN",
     "mergeable": "MERGEABLE",
     "number": 22,
+    "passed_checks": [
+      {
+        "duration": 0,
+        "name": "build",
+        "required": true,
+        "url": ""
+      }
+    ],
     "queue_position": 0,
     "review_decision": "APPROVED",
     "state": "OPEN",

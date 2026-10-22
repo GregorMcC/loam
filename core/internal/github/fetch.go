@@ -17,7 +17,7 @@ const prsPerHead = maxNodes
 // maxNodes is the largest page that GitHub gives. Loam reads one page, to
 // keep to two queries for each repo. For a PR with more checks, reviews, or
 // review threads than this, only the total of the checks counts them all.
-// The other counts and the failed checks are of the first page.
+// The other counts and the lists of checks are of the first page.
 const maxNodes = 100
 
 // The first query reads the PRs and the ref of each branch. A branch has the
@@ -259,7 +259,7 @@ func pick(nodes []prNode) *PR {
 		Mergeable: chosen.Mergeable, MergeState: chosen.MergeStateStatus, ReviewDecision: chosen.ReviewDecision,
 		InMergeQueue: chosen.IsInMergeQueue, Base: chosen.BaseRefName, Head: chosen.HeadRefName, HeadOID: chosen.HeadRefOid,
 		MergedAt: chosen.MergedAt, ClosedAt: chosen.ClosedAt, Commits: chosen.Commits.TotalCount,
-		FailedChecks: []Check{},
+		FailedChecks: []Check{}, PassedChecks: []Check{},
 	}
 	if chosen.MergeQueueEntry != nil {
 		pr.QueuePosition = chosen.MergeQueueEntry.Position
@@ -299,9 +299,10 @@ func addDetails(pr *PR, d detailNode) {
 		switch o {
 		case passed:
 			pr.Checks.Passed++
+			pr.PassedChecks = append(pr.PassedChecks, checkOf(n))
 		case failed:
 			pr.Checks.Failed++
-			pr.FailedChecks = append(pr.FailedChecks, failedCheck(n))
+			pr.FailedChecks = append(pr.FailedChecks, checkOf(n))
 		case running:
 			pr.Checks.Running++
 		case waiting:
@@ -354,7 +355,8 @@ func outcome(n checkNode) checkOutcome {
 	return other
 }
 
-func failedCheck(n checkNode) Check {
+// checkOf returns the check that the answer of GitHub describes.
+func checkOf(n checkNode) Check {
 	if n.Typename == "StatusContext" {
 		return Check{Name: n.Context, URL: n.TargetURL, Required: n.IsRequired}
 	}

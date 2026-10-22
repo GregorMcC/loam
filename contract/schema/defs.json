@@ -275,11 +275,11 @@
         "behind_base", "checks_running", "waiting_for_review", "blocked", "ready_to_merge", "pushed_no_pr", "not_pushed", ""]
     },
     "pullRequest": {
-      "description": "A pull request. The fields from behind_base to failed_checks are 0 or empty for a merged or closed PR.",
+      "description": "A pull request. The fields from behind_base to passed_checks are 0 or empty for a merged or closed PR.",
       "type": "object",
       "additionalProperties": false,
       "required": ["number", "title", "url", "state", "draft", "mergeable", "merge_state", "review_decision", "in_merge_queue",
-        "queue_position", "base", "head", "head_oid", "commits", "behind_base", "approvals", "comments", "checks", "failed_checks"],
+        "queue_position", "base", "head", "head_oid", "commits", "behind_base", "approvals", "comments", "checks", "failed_checks", "passed_checks"],
       "properties": {
         "number": { "type": "integer", "minimum": 1 },
         "title": { "type": "string" },
@@ -301,7 +301,12 @@
         "approvals": { "description": "The reviewers with write access whose last review approves.", "type": "integer", "minimum": 0 },
         "comments": { "description": "The review threads that are not resolved, of the first 100.", "type": "integer", "minimum": 0 },
         "checks": { "$ref": "#/$defs/checkCounts" },
-        "failed_checks": { "description": "The failed checks of the first 100 checks.", "type": "array", "items": { "$ref": "#/$defs/failedCheck" } }
+        "failed_checks": { "description": "The failed checks of the first 100 checks.", "type": "array", "items": { "$ref": "#/$defs/check" } },
+        "passed_checks": {
+          "description": "The passed checks of the first 100 checks, in the order of GitHub. A skipped or neutral check passed too, so the list is as long as checks.passed. MCP list_worktrees leaves it out.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/check" }
+        }
       }
     },
     "checkCounts": {
@@ -320,7 +325,8 @@
         "required_passed": { "description": "The required checks that passed.", "type": "integer", "minimum": 0 }
       }
     },
-    "failedCheck": {
+    "check": {
+      "description": "One check of the head commit of a PR, a failed one or a passed one.",
       "type": "object",
       "additionalProperties": false,
       "required": ["name", "url", "duration", "required"],

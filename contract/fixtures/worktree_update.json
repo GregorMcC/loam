@@ -24,6 +24,14 @@
     "merge_state": "BEHIND",
     "mergeable": "MERGEABLE",
     "number": 18,
+    "passed_checks": [
+      {
+        "duration": 0,
+        "name": "build",
+        "required": true,
+        "url": ""
+      }
+    ],
     "queue_position": 0,
     "review_decision": "APPROVED",
     "state": "OPEN",

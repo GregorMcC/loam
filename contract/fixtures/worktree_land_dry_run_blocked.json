@@ -73,6 +73,14 @@
     "merge_state": "BLOCKED",
     "mergeable": "MERGEABLE",
     "number": 15,
+    "passed_checks": [
+      {
+        "duration": 0,
+        "name": "build",
+        "required": true,
+        "url": ""
+      }
+    ],
     "queue_position": 0,
     "review_decision": "CHANGES_REQUESTED",
     "state": "OPEN",

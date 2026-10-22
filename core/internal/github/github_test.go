@@ -2,10 +2,12 @@ package github_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -104,12 +106,16 @@ const state = `{
         {"__typename": "CheckRun", "name": "docs", "status": "COMPLETED", "conclusion": "TIMED_OUT",
          "detailsUrl": "https://ci.example.com/docs", "isRequired": false,
          "startedAt": "2026-01-01T10:00:00Z", "completedAt": "2026-01-01T10:03:10Z", "checkSuite": null},
-        {"__typename": "CheckRun", "name": "test", "status": "COMPLETED", "conclusion": "SUCCESS", "isRequired": true},
+        {"__typename": "CheckRun", "name": "test", "status": "COMPLETED", "conclusion": "SUCCESS",
+         "detailsUrl": "https://github.com/example/widgets/actions/runs/2/job/2", "isRequired": true,
+         "startedAt": "2026-01-01T10:00:00Z", "completedAt": "2026-01-01T10:02:05Z",
+         "checkSuite": {"workflowRun": {"databaseId": 102, "workflow": {"name": "ci"}}}},
         {"__typename": "CheckRun", "name": "skip", "status": "COMPLETED", "conclusion": "SKIPPED", "isRequired": false},
         {"__typename": "CheckRun", "name": "deploy", "status": "WAITING", "conclusion": null, "isRequired": false},
         {"__typename": "CheckRun", "name": "e2e", "status": "IN_PROGRESS", "conclusion": null, "isRequired": false},
         {"__typename": "StatusContext", "context": "ci/legacy", "state": "ERROR", "targetUrl": "https://ci.example.com/1", "isRequired": false},
-        {"__typename": "StatusContext", "context": "ci/coverage", "state": "PENDING", "targetUrl": "", "isRequired": false}
+        {"__typename": "StatusContext", "context": "ci/coverage", "state": "PENDING", "targetUrl": "", "isRequired": false},
+        {"__typename": "StatusContext", "context": "ci/build", "state": "SUCCESS", "targetUrl": "https://ci.example.com/2", "isRequired": false}
       ]}}}}]}
     }
   }
@@ -148,7 +154,7 @@ func TestFetchReadsEachBranch(t *testing.T) {
 		t.Fatalf("behind %d, approvals %d, comments %d", pr.BehindBase, pr.Approvals, pr.Comments)
 	}
 	// The total counts every check. The other counts are of the first page.
-	want := github.Checks{State: "FAILURE", Total: 120, Passed: 2, Failed: 3, Running: 2, Waiting: 1, Required: 2, RequiredPassed: 1}
+	want := github.Checks{State: "FAILURE", Total: 120, Passed: 3, Failed: 3, Running: 2, Waiting: 1, Required: 2, RequiredPassed: 1}
 	if pr.Checks != want {
 		t.Fatalf("checks %+v, want %+v", pr.Checks, want)
 	}
@@ -160,6 +166,16 @@ func TestFetchReadsEachBranch(t *testing.T) {
 	if !slices.Equal(pr.FailedChecks, wantFailed) {
 		t.Fatalf("failed checks %+v", pr.FailedChecks)
 	}
+	// A skipped check counts as passed, so the list has as many checks as checks.passed. The order is
+	// the order of GitHub, and a status context is a check too.
+	wantPassed := []github.Check{
+		{Name: "ci / test", URL: "https://github.com/example/widgets/actions/runs/2/job/2", Duration: 125, Required: true, RunID: 102},
+		{Name: "skip"},
+		{Name: "ci/build", URL: "https://ci.example.com/2"},
+	}
+	if !slices.Equal(pr.PassedChecks, wantPassed) || len(pr.PassedChecks) != pr.Checks.Passed {
+		t.Fatalf("passed checks %+v", pr.PassedChecks)
+	}
 
 	// A PR from a fork does not count: the branch is pushed, with no PR.
 	if b := got["fork-only"]; b.PR != nil || !b.Pushed {
@@ -167,7 +183,8 @@ func TestFetchReadsEachBranch(t *testing.T) {
 	}
 	// A merged PR still shows after GitHub deletes its branch.
 	if b := got["old-work"]; b.Pushed || b.PR == nil || b.PR.Number != 9 || b.PR.State != "MERGED" ||
-		b.PR.MergedAt == nil || !b.PR.MergedAt.Equal(time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC)) || b.PR.FailedChecks == nil {
+		b.PR.MergedAt == nil || !b.PR.MergedAt.Equal(time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC)) ||
+		b.PR.FailedChecks == nil || b.PR.PassedChecks == nil {
 		t.Fatalf("old-work: %+v", b)
 	}
 	if b := got["local-only"]; b.PR != nil || b.Pushed {
@@ -199,6 +216,33 @@ func TestFetchMakesOneQueryWithNoOpenPR(t *testing.T) {
 	}
 	if n := len(testutil.FakeGHCalls(t)); n != 1 {
 		t.Fatalf("%d gh calls", n)
+	}
+}
+
+// A PR with no checks has empty lists of checks, never null, for an open PR
+// and for a merged one.
+func TestFetchGivesEmptyListsOfChecksNotNull(t *testing.T) {
+	testutil.Home(t)
+	testutil.FakeGH(t, `{"refs": ["fix-login"], "pulls": [
+	  {"number": 15, "title": "Fix the login form", "url": "https://github.com/example/widgets/pull/15",
+	   "state": "OPEN", "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN", "baseRefName": "main",
+	   "headRefName": "fix-login", "headRefOid": "2222222222222222222222222222222222222222", "commits": {"totalCount": 1}},
+	  {"number": 9, "title": "Old work", "url": "https://github.com/example/widgets/pull/9",
+	   "state": "MERGED", "mergeable": "UNKNOWN", "mergeStateStatus": "UNKNOWN", "baseRefName": "main",
+	   "headRefName": "old-work", "headRefOid": "4444444444444444444444444444444444444444", "commits": {"totalCount": 1}}
+	], "details": {"15": {}}}`)
+	got, err := client(t).Fetch(context.Background(), widgets, []string{"fix-login", "old-work"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, branch := range []string{"fix-login", "old-work"} {
+		b, err := json.Marshal(got[branch].PR)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(b), `"failed_checks":[]`) || !strings.Contains(string(b), `"passed_checks":[]`) {
+			t.Errorf("%s: %s", branch, b)
+		}
 	}
 }
 
