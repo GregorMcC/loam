@@ -99,15 +99,16 @@ public final class PRPopoverModel {
 
     // MARK: Refresh
 
+    /// A refresh of `id` starts.
     func beginRefresh(of id: String) {
         refreshing.insert(id)
     }
 
     /// The refresh of `id` ended. `answered` is false when the core gave no answer.
-    func endRefresh(of id: String, answered: Bool, at date: Date = Date()) {
+    func endRefresh(of id: String, answered: Bool) {
         refreshing.remove(id)
         guard worktreeID == id else { return }
-        attemptedAt = answered ? date : nil
+        attemptedAt = answered ? Date() : nil
     }
 
     // MARK: Buttons
