@@ -128,8 +128,8 @@ import Testing
         #expect(all.map(\.id) == ["pane", "worktree", "plot", "home"])
         let worktree = all[1]
         #expect(worktree.title == "native-panel")
-        #expect(worktree.items.map(\.title) == ["Open pull request", "Refresh"])
-        #expect(worktree.items.map(\.command) == [.openWorktreePullRequest, .refreshWorktree])
+        #expect(worktree.items.map(\.title) == ["Show pull request", "Refresh"])
+        #expect(worktree.items.map(\.command) == [.showWorktreePullRequest, .refreshWorktree])
         #expect(worktree.items.allSatisfy { !$0.symbol.isEmpty && $0.keys.isEmpty })
     }
 
@@ -143,21 +143,21 @@ import Testing
     }
 
     @Test func theWorktreeCommandsNeedAWorktree() {
-        for command in [AppCommand.openWorktreePullRequest, .refreshWorktree] {
+        for command in [AppCommand.showWorktreePullRequest, .refreshWorktree] {
             #expect(!ActionMenu.isAvailable(command, hasSpace: true, hasPlot: true, hasPane: true))
             #expect(!ActionMenu.isAvailable(command, hasSpace: true, hasPlot: true, hasPane: true, hasWorktree: false,
                                             hasPullRequest: true))
         }
         #expect(ActionMenu.isAvailable(.refreshWorktree, hasSpace: true, hasPlot: true, hasPane: true, hasWorktree: true))
-        #expect(!ActionMenu.isAvailable(.openWorktreePullRequest, hasSpace: true, hasPlot: true, hasPane: true, hasWorktree: true))
-        #expect(ActionMenu.isAvailable(.openWorktreePullRequest, hasSpace: true, hasPlot: true, hasPane: true, hasWorktree: true,
+        #expect(!ActionMenu.isAvailable(.showWorktreePullRequest, hasSpace: true, hasPlot: true, hasPane: true, hasWorktree: true))
+        #expect(ActionMenu.isAvailable(.showWorktreePullRequest, hasSpace: true, hasPlot: true, hasPane: true, hasWorktree: true,
                                        hasPullRequest: true))
     }
 
     @Test func theFilterFindsTheWorktreeRows() {
         let all = sections(worktree: ActionMenu.WorktreeFacts(branch: "native-panel"))
         #expect(ActionMenu.filter(all, query: "refresh").map(\.id) == ["worktree"])
-        #expect(ActionMenu.filter(all, query: "pull").flatMap(\.items).map(\.title) == ["Open pull request"])
+        #expect(ActionMenu.filter(all, query: "pull").flatMap(\.items).map(\.title) == ["Show pull request"])
     }
 
     @Test func aPaneAndAWorktreeWithOneNameKeepTwoSections() {

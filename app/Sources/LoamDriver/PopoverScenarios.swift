@@ -262,17 +262,17 @@ extension Scenarios {
         try await app.waitUntil("Escape closes the popover from the sidebar") { !app.exists("pr-popover") }
         try check(!AccessibilityProbe.shared.performAction("worktree-\(local.id)", named: "Show pull request"), "a worktree with no PR has the action")
 
-        // 10. The ⌘J menu of a pane in a worktree has the worktree section: Open pull request opens the popover,
+        // 10. The ⌘J menu of a pane in a worktree has the worktree section: Show pull request opens the popover,
         // and Refresh asks GitHub about the worktree without one.
         model.goToPane(panelPane)
         try await app.waitUntil("the shell of native-panel has the keys") { terminalHasTheKeys() && focusedWorktreeID() == panel.id }
         app.press(letter: "j", flags: .command)
         try await app.waitUntil("the menu opens") { app.exists("actions-menu") }
-        try await app.waitUntil("the menu has the worktree rows") { app.exists("actions-row-Open pull request") && app.exists("actions-row-Refresh") }
+        try await app.waitUntil("the menu has the worktree rows") { app.exists("actions-row-Show pull request") && app.exists("actions-row-Refresh") }
         app.screenshot("pr-actions-menu")
         try await app.waitUntil("the search field has the keys") { host.window.firstResponder is NSTextView }
         try app.type("pull request")
-        try await app.waitUntil("the filter leaves Open pull request") { app.exists("actions-row-Open pull request") && !app.exists("actions-row-Refresh") }
+        try await app.waitUntil("the filter leaves Show pull request") { app.exists("actions-row-Show pull request") && !app.exists("actions-row-Refresh") }
         app.press(.returnKey)
         try await app.waitUntil("Return opens the popover") { !app.exists("actions-menu") && app.exists("pr-popover") && model.prPopover.worktreeID == panel.id }
         try await app.waitUntil("the popover is done") { !model.prPopover.isRefreshing }
@@ -284,7 +284,7 @@ extension Scenarios {
         try await app.waitUntil("the menu opens again") { app.exists("actions-menu") }
         try await app.waitUntil("the search field has the keys again") { host.window.firstResponder is NSTextView }
         try app.type("refresh")
-        try await app.waitUntil("the filter leaves Refresh") { app.exists("actions-row-Refresh") && !app.exists("actions-row-Open pull request") }
+        try await app.waitUntil("the filter leaves Refresh") { app.exists("actions-row-Refresh") && !app.exists("actions-row-Show pull request") }
         app.press(.returnKey)
         try await app.waitUntil("Return runs the refresh") { !app.exists("actions-menu") && refreshes(ofOneWorktree: true) == narrowBeforeRefresh + 1 }
         try check(!app.exists("pr-popover"), "Refresh opened the popover")

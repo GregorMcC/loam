@@ -28,7 +28,7 @@ The action bar is the 40pt strip at the bottom of the window (ticket 89). It sit
 - The menu is a card above the Actions button: 340pt wide, radius 12, on `horizon-b`, with a hairline edge and `shadow-raised`. It sits 10pt from the right end of the bar and 6pt above it.
 - The menu has up to four sections. The heading of each section is in `ink-faint`.
   - The focused pane, with its label as the heading: New session, Split right, Split down, Close pane.
-  - The worktree of the focused pane, with its branch as the heading: Open pull request (only when the worktree has a PR) and Refresh. A pane that runs in no worktree has no such section. Open pull request opens the PR popover. Refresh asks GitHub about the worktree and shows no popover.
+  - The worktree of the focused pane, with its branch as the heading: Show pull request (only when the worktree has a PR) and Refresh. A pane that runs in no worktree has no such section. Show pull request opens the PR popover. Refresh asks GitHub about the worktree and shows no popover.
   - The active plot, with its name as the heading: Edit brief, Add link, Add repo, Archive plot.
 - Each row is 34pt high. It has a symbol in `ink-muted`, the label in `ink`, and the keycaps of the command on the right. The selected row has the ink at 9% as a fill, radius 8.
 - A search field is at the bottom, under a hairline. It has the keys when the menu opens. Each word of the query must be in the label of a row. A section with no rows left does not show.

@@ -587,7 +587,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         case .nextReadyWorktree: model.goToNextReadyWorktree()
         case .actionsMenu: toggleActionsMenu()
         // The Worktree section of the actions menu (ticket 109). With no worktree pane, they do nothing.
-        case .openWorktreePullRequest:
+        case .showWorktreePullRequest:
             guard let id = model.focusedWorktree?.id else { return false }
             return model.openPullRequest(id)
         case .refreshWorktree:

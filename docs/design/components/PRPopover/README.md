@@ -3,7 +3,7 @@ The PR popover shows the state of the PR of one worktree and the actions that go
 ## Where it opens
 
 - The chip of the action bar, the stage mark of a sidebar row, and a row of the Worktrees section open it below or above the control that was clicked.
-- ⌘⇧L, a worktree in the switcher, and Open pull request in the ⌘J menu open it at the chip of the action bar. When the chip is the PR of another worktree, or there is no chip, it opens at the left end of the bar.
+- ⌘⇧L, a worktree in the switcher, and Show pull request in the ⌘J menu open it at the chip of the action bar. When the chip is the PR of another worktree, or there is no chip, it opens at the left end of the bar.
 - The popover has a state of its own. It opens for one worktree, and it closes when the focus moves to another pane, tab or space, when the quick switcher or the actions menu opens, and when its worktree leaves the list.
 - One overlay shows at a time: the popover, the switcher and the actions menu close each other.
 

@@ -66,7 +66,7 @@ public enum AppCommand: Hashable, Sendable {
     // The pull request of the focused pane's worktree (ticket 109), in the actions menu only. They have
     // no menu bar item and no key.
     /// Opens the PR popover of the worktree.
-    case openWorktreePullRequest
+    case showWorktreePullRequest
     /// Asks GitHub about the worktree again.
     case refreshWorktree
 

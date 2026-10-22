@@ -131,7 +131,7 @@ private struct PullRequestChip: View {
         }
         .buttonStyle(.plain)
         .background(AnchorReader(probe: probe))
-        .help(mark.tooltip ?? "")
+        .help(mark.tooltip)
         .accessibilityLabel(mark.spoken)
         .accessibilityIdentifier("action-bar-pr-chip")
     }

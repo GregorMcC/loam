@@ -43,7 +43,7 @@ public enum ActionMenu {
 
     /// The worktree of the focused pane (ticket 109).
     static let worktreeEntries = [
-        Entry(command: .openWorktreePullRequest, title: "Open pull request", symbol: "arrow.triangle.pull"),
+        Entry(command: .showWorktreePullRequest, title: "Show pull request", symbol: "arrow.triangle.pull"),
         Entry(command: .refreshWorktree, title: "Refresh", symbol: "arrow.clockwise"),
     ]
 
@@ -102,7 +102,7 @@ public enum ActionMenu {
     /// Whether a command can run now. The menu bar validates its items with this, so the menu and
     /// the actions list agree. Tab commands need an active space (Home or a plot), pane commands a
     /// focused pane, and plot commands an active plot. A move to a plot needs a tab in Home. The worktree
-    /// commands need a focused pane in a worktree (ticket 109), and Open pull request needs a PR as well.
+    /// commands need a focused pane in a worktree (ticket 109), and Show pull request needs a PR as well.
     public static func isAvailable(_ command: AppCommand, hasSpace: Bool, hasPlot: Bool, hasPane: Bool,
                                    hasWorktree: Bool = false, hasPullRequest: Bool = false) -> Bool {
         switch command {
@@ -111,7 +111,7 @@ public enum ActionMenu {
         case .newSplit, .newShellSplit, .closePane: hasSpace && hasPane
         case .moveTabToPlot, .moveTabToNewPlot: hasSpace && !hasPlot && hasPane
         case .refreshWorktree: hasWorktree
-        case .openWorktreePullRequest: hasWorktree && hasPullRequest
+        case .showWorktreePullRequest: hasWorktree && hasPullRequest
         default: true
         }
     }
