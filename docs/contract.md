@@ -30,6 +30,8 @@ Every write also takes `--expect <item>=<version>`, once for each item the calle
 | 13 | `contract_mismatch` | The contract version is not the one the caller expects. The app reports it. The core does not return it today. |
 | 14 | `unknown_plot` | No plot matches the argument |
 | 15 | `ambiguous` | The argument matches more than one plot, or more than one link label |
+| 16 | `not_ready` | A check blocks the land of a worktree. `loam worktree land` returns it (ticket 111). |
+| 17 | `gh_unavailable` | gh is missing or signed out, or the origin of the repo is not on GitHub. `loam worktree land`, `rerun`, and `update` return it (ticket 111). |
 
 The table is in `core/internal/cli/exitcode.go`. A code never changes meaning.
 
@@ -88,6 +90,14 @@ Details of `undo_clash`:
 
 - `later_changes` are the later changes that touched the same items, oldest first. Each is a change object as in `loam changes`.
 - `undo_would_write` shows each field that the undo would set. `old` is the current value and `new` is the value the undo writes. A null means the item does not exist.
+
+Details of `not_ready`:
+
+```json
+{ "checks": [{ "name": "conflicts", "state": "conflicting", "blocks": true }] }
+```
+
+- `checks` lists each check that blocks the land, in the order of the land result. See [Land, rerun, and update](#land-rerun-and-update).
 
 ## Commands
 
@@ -230,7 +240,8 @@ A worktree is a separate checkout of one repo of a plot, on its own branch. It l
   "base": "origin/main", "path": "/abs/path/of/worktree", "setup_done": false, "created_at": "2026-10-02T09:00:00Z",
   "goal": "Fix the login form",
   "link": { "target": "https://github.com/example/widgets/issues/57", "label": "widgets#57", "key": "#57", "link_id": "" },
-  "version": 0
+  "version": 0,
+  "land": { "pr": 12, "method": "squash", "auto": true, "merge_queue": false, "keep_worktree": false, "keep_remote_branch": false }
 }
 ```
 
@@ -244,6 +255,7 @@ A worktree is a separate checkout of one repo of a plot, on its own branch. It l
   - A GitHub issue in another repo: `owner/repo#57`, such as `example/widgets#57`, because GitHub reads `#57` as an issue of the repo of the PR. A repo with no `origin` on github.com always gets this form.
   - Any other link: empty.
 - `version` is the ID of the change that last set the goal, or 0 when no change has set it.
+- `land` is a land that waits for GitHub to merge the PR: an auto merge, or a merge queue. It holds the options of `loam worktree land`. `method` is empty with a merge queue. `land` is left out when no land waits.
 
 | Command | Output |
 | :- | :- |
@@ -252,6 +264,9 @@ A worktree is a separate checkout of one repo of a plot, on its own branch. It l
 | `loam worktree edit <plot> <worktree> --goal <text> [--repo <repo>] [--expect worktree:<id>=<version>]` | `{ "change_id": 44, "plot": "k3v9q2mxa7", "worktree": {...} }` |
 | `loam worktree list [<plot>] [--refresh [--worktree <worktree>] [--repo <repo>]]` | An array of worktree states, oldest first. It is `[]` when none exists. |
 | `loam worktree rm <plot> <worktree> [--repo <repo>] [--force] [--open-pane <folder>]` | `{ "worktree": {...}, "branch_deleted": false, "branch_note": "..." }` |
+| `loam worktree land <plot> <worktree> [--method squash\|merge\|rebase] [--auto] [--keep-worktree] [--keep-remote-branch] [--dry-run] [--repo <repo>] [--open-pane <folder>]` | A land result. See [Land, rerun, and update](#land-rerun-and-update). |
+| `loam worktree rerun <plot> <worktree> [--repo <repo>]` | `{ "worktree": {...}, "pr": {...}, "runs": [1234], "skipped_checks": ["ci/legacy"] }` |
+| `loam worktree update <plot> <worktree> [--repo <repo>]` | `{ "worktree": {...}, "pr": {...}, "fetched": true, "fetch_note": "..." }` |
 
 `new` uses the branch if it exists. Otherwise it fetches from `origin` and starts a new branch, with no upstream, from `--base` or from the default branch of `origin`. A `--base` that names a local branch uses the local branch; `--base origin/<branch>` uses the remote branch. A failed fetch is a warning on stderr. It copies the files of the repo setting `copy` and of `.worktreeinclude` in the repo root (one path or glob for each line, relative to the repo root). It never overwrites a file and never runs the setup command. `<repo>` is a repo ID or a path.
 
@@ -290,7 +305,7 @@ A worktree state, an item of `list`:
 - A pane is open in the worktree. The app passes the folder of each open pane with `--open-pane` (repeatable). The core also reads the panes in `state.json`. `--force` does not skip this check.
 - The worktree has uncommitted changes or unpushed commits, and `--force` is missing.
 
-It deletes the local branch with `git branch -d`, so `branch_deleted` is false and `branch_note` says why when the branch is not merged. `branch_note` is left out when the branch was deleted. It never deletes a remote branch.
+It deletes the local branch with `git branch -d`, so `branch_deleted` is false and `branch_note` says why when the branch is not merged. `branch_note` is left out when the branch was deleted. A squash or rebase merge leaves the commits of the PR off the base branch, so `git branch -d` refuses. So when the PR cache says that the PR of the branch is `MERGED`, and the branch tip is the PR's `head_oid`, `rm` uses `git branch -D`. A branch with a commit after the PR head keeps `-d` and the note. `rm` never deletes a remote branch.
 
 `state.json` is in `~/Library/Application Support/Loam/`, where the app keeps its state (`LOAM_APP_STATE_DIR` replaces the folder in tests). Its minimal shape is below. A missing file means no open panes. The app writes the panes that it has open or has saved and not yet resumed. The app can add other fields; the core ignores them.
 
@@ -359,7 +374,7 @@ The PR object:
   "in_merge_queue": false, "queue_position": 0, "base": "main", "head": "fix-login", "head_oid": "1f0c...",
   "commits": 3, "behind_base": 2, "approvals": 1, "comments": 3,
   "checks": { "state": "FAILURE", "total": 14, "passed": 12, "failed": 2, "running": 0, "waiting": 0, "required": 14, "required_passed": 12 },
-  "failed_checks": [{ "name": "lint / swiftformat", "url": "https://github.com/...", "duration": 42, "required": true }]
+  "failed_checks": [{ "name": "lint / swiftformat", "url": "https://github.com/...", "duration": 42, "required": true, "run_id": 1234 }]
 }
 ```
 
@@ -368,9 +383,78 @@ The PR object:
 - `queue_position` counts from 1. It is 0 when the PR is not in the merge queue.
 - `behind_base` counts the commits of the base branch that the head does not have. `approvals` counts the reviewers with write access whose last review approves. `comments` counts the review threads that are not resolved.
 - `checks` counts the checks of the head commit. `checks.state` is GitHub's summary, empty when the head has no checks. A cancelled or stale check counts only in `total`. `required` counts the checks that the base branch needs to pass before a merge, and `required_passed` counts those that passed. For an `UNSTABLE` PR, the app can write "14 of 14 required checks passed · 2 optional failed".
-- `failed_checks` lists each failed check. A GitHub Actions job has its workflow name first. `duration` is in seconds, 0 when GitHub gives no start or end. `required` is true for a required check.
+- `failed_checks` lists each failed check. A GitHub Actions job has its workflow name first. `duration` is in seconds, 0 when GitHub gives no start or end. `required` is true for a required check. `run_id` is the GitHub Actions run of the check, which `loam worktree rerun` runs again. It is left out for a check that is not a job of GitHub Actions.
 - Loam reads one page of 100 checks and 100 review threads, to keep to two queries for each repo. `checks.total` counts every check. The other check counts, `failed_checks`, and `comments` cover the first 100.
 - `behind_base`, `approvals`, `comments`, `checks`, and `failed_checks` are for an open PR. They are 0 or empty for a merged or closed PR.
+
+### Land, rerun, and update
+
+`loam worktree land` merges the PR of a worktree on GitHub. Then it deletes the branch on GitHub and removes the worktree. `rerun` runs the failed checks of the PR again, and `update` brings the PR up to date with its base branch. Each command acts on GitHub through gh, as a refresh does (see [Ship state of worktrees](#ship-state-of-worktrees)). Each one refreshes the PR first, and fails when the refresh gets no answer, so Loam never acts on an old state:
+
+- gh is missing or signed out, or `origin` is not on github.com: exit code 17 (`gh_unavailable`).
+- GitHub gives no answer, a rate limit, or no access: exit code 1.
+- The branch has no PR, or the folder of the worktree is gone: exit code 1.
+
+A command that acts on GitHub stops after one minute. Ctrl-C stops gh, but GitHub keeps an action that it has. GitHub's message for a refused action, such as a merge, comes back as exit code 1.
+
+The land result:
+
+```json
+{
+  "worktree": {...}, "pr": {...}, "stage": "ready_to_merge", "changed": 0, "unpushed": 0,
+  "methods": ["merge", "squash"], "default_method": "squash", "method": "squash", "merge_queue": false, "auto": false,
+  "checks": [
+    { "name": "checks", "state": "passed", "blocks": false },
+    { "name": "review", "state": "approved", "blocks": false },
+    { "name": "behind_base", "state": "up_to_date", "blocks": false },
+    { "name": "conflicts", "state": "none", "blocks": false },
+    { "name": "github", "state": "clear", "blocks": false },
+    { "name": "local_changes", "state": "none", "blocks": false },
+    { "name": "unpushed_commits", "state": "none", "blocks": false }
+  ],
+  "ready": true, "dry_run": false, "merged": true, "merge_later": false,
+  "remote_branch_deleted": true, "worktree_removed": true, "branch_deleted": true
+}
+```
+
+- `pr` and `stage` are from the refresh before the merge. `changed` and `unpushed` are the local checks of the worktree.
+- `methods` lists the merge methods that the repo allows. `default_method` is the method that GitHub offers first: the method that you last used in the repo, else the default of the repo. `merge_queue` is true when the base branch has a merge queue.
+- `method` is the method of the land: `--method`, else `default_method`. It is empty with a merge queue, which merges with its own method. `--method` with a merge queue, or a method that the repo does not allow, exits with code 2.
+- `ready` is true when no check blocks. `merged` is true when GitHub says that the PR is merged. `merge_later` is true when GitHub merges later, and when Loam cannot see the merge yet (`merge_note` says why).
+- `worktree` has the `land` that the worktree records after the land.
+- The notes `merge_note`, `remote_branch_note`, `worktree_note`, and `branch_note` say why a step did not happen. Each is left out when it does not apply.
+
+The checks, in this order:
+
+| Check | States | Blocks |
+| :- | :- | :- |
+| `checks` | `passed`, `failed`, `running`, `waiting`, `none` | `failed`: a check failed, as the stage `checks_failed` counts it |
+| `review` | `approved`, `changes_requested`, `required`, `none` | `changes_requested` |
+| `behind_base` | `up_to_date`, `behind` | when `merge_state` is `BEHIND`: the base branch needs the PR up to date. A PR that is only behind (`behind_base` is not 0) does not block. |
+| `conflicts` | `none`, `conflicting`, `checking` | `conflicting`, as the stage `conflicts` counts it |
+| `github` | `clear`, `blocked`, `checking` | `blocked`, for a merge now. `blocked` is the stage `blocked`: GitHub blocks the merge for a reason that no other check covers. An auto merge and a merge queue wait for GitHub, so it does not block them. |
+| `local_changes` | `none`, `changed`, `unknown` | `changed` or `unknown` |
+| `unpushed_commits` | `none`, `unpushed`, `unknown` | `unpushed` or `unknown` |
+
+- `checking` means that GitHub still checks whether the PR can merge (`mergeable` is `UNKNOWN`). `unknown` means that git could not read the local checks.
+- While GitHub checks, the stage rule keeps the last stage of the PR when it is `conflicts`, `behind_base`, or `blocked` (see [Ship state of worktrees](#ship-state-of-worktrees)). Then the check of that stage blocks as if GitHub had answered.
+- `running`, `waiting`, `required`, and `checking` do not block. When GitHub refuses the merge for one of them, its message comes back as exit code 1.
+
+A land runs these steps:
+
+1. It refreshes the PR. A closed PR exits with code 1. For a merged PR, it skips to step 6.
+2. It reads the merge settings of the repo and of the base branch from GitHub.
+3. It runs the checks. With `--dry-run`, it stops here and prints the result, also when a check blocks (exit code 0). Else, when a check blocks, it exits with code 16 (`not_ready`).
+4. When it removes the worktree right after the merge, it refuses while a pane is open in the worktree, as `rm` does: exit code 1. The app closes the panes first, or passes `--keep-worktree`.
+5. It runs `gh pr merge` with the method and `--match-head-commit`, so GitHub refuses the merge when the PR has a commit that Loam did not check. With `--auto`, GitHub merges when the checks pass. With a merge queue, GitHub adds the PR to the queue. Then the land refreshes the PR again.
+6. When GitHub says that the PR is merged, the land deletes the branch on GitHub, unless `--keep-remote-branch`. A branch that GitHub already deleted counts as deleted. A branch with commits after the PR head stays, with `remote_branch_note`. Then the land removes the worktree as `rm` does, unless `--keep-worktree`. A step that fails is a note, and the exit code is 0.
+7. When GitHub merges later, the land records its options in `land` on the worktree and keeps the worktree. A later land of a merged PR does step 6 and clears `land`, also when the worktree stays.
+
+When the refresh after the merge fails, or the PR does not show a merge that GitHub made, `merge_note` says so, and the land records its options as in step 7.
+
+`rerun` runs `gh run rerun <run> --failed` once for each GitHub Actions run with a failed check (see `run_id`). `runs` lists those runs. `skipped_checks` lists the failed checks that are not jobs of GitHub Actions. Each is `[]` when none. A rerun that fails exits with code 1 and says how many runs started again. The PR must be open, else the command exits with code 1.
+
+`update` runs `gh pr update-branch`, so GitHub adds a merge commit of the base branch to the PR. Then it fetches the branch from `origin`, so the local repo has the new PR head, and the stage rule can see that the worktree is in the PR. It does not change the branch of the worktree. `fetched` is false when the fetch failed, and `fetch_note` says why. GitHub still has the update. The PR must be open, else the command exits with code 1.
 
 ### Sessions
 

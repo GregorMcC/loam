@@ -328,16 +328,24 @@ func TestContractPaneEvents(t *testing.T) {
 	}
 }
 
-// The stages and the PR notes in the code and in schema/defs.json are the same.
+// The stages, the PR notes, and the names and states of the land checks in
+// the code and in schema/defs.json are the same.
 func TestContractStagesAndNotes(t *testing.T) {
+	type enum struct{ Enum []string }
 	var defs struct {
 		Defs struct {
+			Stage          enum `json:"stage"`
 			WorktreeStatus struct {
 				Properties struct {
-					Stage  struct{ Enum []string } `json:"stage"`
-					PRNote struct{ Enum []string } `json:"pr_note"`
+					PRNote enum `json:"pr_note"`
 				} `json:"properties"`
 			} `json:"worktreeStatus"`
+			LandCheck struct {
+				Properties struct {
+					Name  enum `json:"name"`
+					State enum `json:"state"`
+				} `json:"properties"`
+			} `json:"landCheck"`
 		} `json:"$defs"`
 	}
 	if err := json.Unmarshal(readFile(t, "schema", "defs.json"), &defs); err != nil {
@@ -351,11 +359,23 @@ func TestContractStagesAndNotes(t *testing.T) {
 	for _, n := range worktree.PRNotes {
 		notes = append(notes, string(n))
 	}
-	props := defs.Defs.WorktreeStatus.Properties
+	var checks, states []string
+	for _, c := range worktree.LandCheckNames {
+		checks = append(checks, string(c))
+	}
+	for _, st := range worktree.CheckStates {
+		states = append(states, string(st))
+	}
+	land := defs.Defs.LandCheck.Properties
 	for _, c := range []struct {
 		field     string
 		got, want []string
-	}{{"stage", props.Stage.Enum, stages}, {"pr_note", props.PRNote.Enum, notes}} {
+	}{
+		{"stage", defs.Defs.Stage.Enum, stages},
+		{"pr_note", defs.Defs.WorktreeStatus.Properties.PRNote.Enum, notes},
+		{"land check name", land.Name.Enum, checks},
+		{"land check state", land.State.Enum, states},
+	} {
 		got := append([]string{}, c.got...)
 		sort.Strings(got)
 		sort.Strings(c.want)

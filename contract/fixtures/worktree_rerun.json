@@ -1,0 +1,63 @@
+{
+  "pr": {
+    "approvals": 0,
+    "base": "main",
+    "behind_base": 0,
+    "checks": {
+      "failed": 2,
+      "passed": 1,
+      "required": 3,
+      "required_passed": 1,
+      "running": 0,
+      "state": "FAILURE",
+      "total": 3,
+      "waiting": 0
+    },
+    "comments": 0,
+    "commits": 2,
+    "draft": false,
+    "failed_checks": [
+      {
+        "duration": 42,
+        "name": "lint / swiftformat",
+        "required": true,
+        "run_id": 301,
+        "url": "https://github.com/example/widgets/actions/runs/301/job/1"
+      },
+      {
+        "duration": 190,
+        "name": "test / macos",
+        "required": true,
+        "run_id": 302,
+        "url": "https://github.com/example/widgets/actions/runs/302/job/2"
+      }
+    ],
+    "head": "native-panel",
+    "head_oid": "6666666666666666666666666666666666666666",
+    "in_merge_queue": false,
+    "merge_state": "BLOCKED",
+    "mergeable": "MERGEABLE",
+    "number": 16,
+    "queue_position": 0,
+    "review_decision": "REVIEW_REQUIRED",
+    "state": "OPEN",
+    "title": "Native panel",
+    "url": "https://github.com/example/widgets/pull/16"
+  },
+  "runs": [
+    301,
+    302
+  ],
+  "skipped_checks": [],
+  "worktree": {
+    "base": "origin/main",
+    "branch": "native-panel",
+    "created_at": "2026-01-01T00:00:00Z",
+    "id": "wtreaaaaah",
+    "name": "native-panel",
+    "path": "/tmp/loam-contract/loamhome/worktrees/plotaaaaab/web-native-panel",
+    "plot_id": "plotaaaaab",
+    "repo": "/tmp/loam-contract/repos/web",
+    "setup_done": false
+  }
+}

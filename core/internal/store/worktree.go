@@ -120,6 +120,8 @@ type Worktree struct {
 	// Version is the ID of the change that last set the goal, or 0 when no
 	// change has set it.
 	Version int64 `json:"version"`
+	// Land is the land that waits for GitHub, or nil.
+	Land *PendingLand `json:"land,omitempty"`
 }
 
 // WorktreeLink is the link that the work of a worktree started from. It
@@ -138,8 +140,26 @@ type WorktreeLink struct {
 	LinkID string `json:"link_id"`
 }
 
+// PendingLand is a land that GitHub finishes later: `loam worktree land`
+// turned on auto merge, or added the PR to a merge queue. It keeps the
+// options of the land, so Loam can tidy up as they say when GitHub merges
+// the PR.
+type PendingLand struct {
+	// PR is the number of the PR.
+	PR int `json:"pr"`
+	// Method is the merge method: merge, squash, or rebase. It is empty for
+	// a merge queue, which merges with its own method.
+	Method string `json:"method"`
+	// Auto is true for an auto merge: GitHub merges when the checks pass.
+	Auto bool `json:"auto"`
+	// MergeQueue is true when the base branch has a merge queue.
+	MergeQueue       bool `json:"merge_queue"`
+	KeepWorktree     bool `json:"keep_worktree"`
+	KeepRemoteBranch bool `json:"keep_remote_branch"`
+}
+
 // worktreeCols are the columns of a worktree record.
-const worktreeCols = `id, plot_id, repo_path, name, branch, base, path, setup_done, created_at, goal, link_target, link_label, link_key, link_id`
+const worktreeCols = `id, plot_id, repo_path, name, branch, base, path, setup_done, created_at, goal, link_target, link_label, link_key, link_id, land`
 
 // worktreeSelect reads worktreeCols and the version of the goal. Use it with
 // FROM worktrees, with no alias.
@@ -150,13 +170,25 @@ func scanWorktree(sc interface{ Scan(...any) error }) (Worktree, error) {
 	var w Worktree
 	var created int64
 	var l WorktreeLink
+	var land string
 	err := sc.Scan(&w.ID, &w.PlotID, &w.Repo, &w.Name, &w.Branch, &w.Base, &w.Path, &w.SetupDone, &created,
-		&w.Goal, &l.Target, &l.Label, &l.Key, &l.LinkID, &w.Version)
+		&w.Goal, &l.Target, &l.Label, &l.Key, &l.LinkID, &land, &w.Version)
 	w.CreatedAt = tm(created)
 	if l.Target != "" {
 		w.Link = &l
 	}
+	w.Land = decodeLand(land)
 	return w, err
+}
+
+// decodeLand reads the land column. An empty column, or one that does not
+// decode, has no pending land.
+func decodeLand(s string) *PendingLand {
+	var l PendingLand
+	if s == "" || json.Unmarshal([]byte(s), &l) != nil {
+		return nil
+	}
+	return &l
 }
 
 // AddWorktree records a worktree and gives it an ID. The name must be new for
@@ -195,11 +227,11 @@ func (s *Store) AddWorktree(w Worktree) (Worktree, error) {
 		l = *w.Link
 	}
 	now := time.Now().UnixMilli()
-	if err := tx.exec(`INSERT INTO worktrees(`+worktreeCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`,
+	if err := tx.exec(`INSERT INTO worktrees(`+worktreeCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, '')`,
 		w.ID, w.PlotID, w.Repo, w.Name, w.Branch, w.Base, w.Path, now, w.Goal, l.Target, l.Label, l.Key, l.LinkID); err != nil {
 		return Worktree{}, err
 	}
-	w.SetupDone, w.CreatedAt, w.Link, w.Version = false, tm(now), nil, 0
+	w.SetupDone, w.CreatedAt, w.Link, w.Version, w.Land = false, tm(now), nil, 0, nil
 	if l.Target != "" {
 		w.Link = &l
 	}
@@ -248,20 +280,36 @@ func (s *Store) ListWorktrees(plotID string) ([]Worktree, error) {
 
 // MarkWorktreeSetup records that the setup command has succeeded in a worktree.
 func (s *Store) MarkWorktreeSetup(id string) error {
-	return s.writeWorktree(id, `UPDATE worktrees SET setup_done = 1 WHERE id = ?`)
+	return s.writeWorktree(id, nil, `UPDATE worktrees SET setup_done = 1 WHERE id = ?`)
+}
+
+// SetPendingLand records the land of a worktree that waits for GitHub. A
+// nil land clears it.
+func (s *Store) SetPendingLand(id string, land *PendingLand) error {
+	value := ""
+	if land != nil {
+		b, err := json.Marshal(land)
+		if err != nil {
+			return err
+		}
+		value = string(b)
+	}
+	return s.writeWorktree(id, nil, `UPDATE worktrees SET land = ? WHERE id = ?`, value)
 }
 
 // RemoveWorktree deletes the record of a worktree and the PR cache row of its
 // branch. It does not touch git.
 func (s *Store) RemoveWorktree(id string) error {
-	return s.writeWorktree(id, `DELETE FROM worktrees WHERE id = ?`,
-		`DELETE FROM pr_cache WHERE (repo_path, branch) IN (SELECT repo_path, branch FROM worktrees WHERE id = ?)`)
+	return s.writeWorktree(id,
+		[]string{`DELETE FROM pr_cache WHERE (repo_path, branch) IN (SELECT repo_path, branch FROM worktrees WHERE id = ?)`},
+		`DELETE FROM worktrees WHERE id = ?`)
 }
 
 // writeWorktree runs query on the record of a worktree in one write, after
-// the queries in before. Each query takes the worktree ID. When query changes
-// no row, the write fails with [ErrNotFound].
-func (s *Store) writeWorktree(id, query string, before ...string) error {
+// the queries in before. Each query in before takes the worktree ID. query
+// takes args, then the worktree ID. When query changes no row, the write
+// fails with [ErrNotFound].
+func (s *Store) writeWorktree(id string, before []string, query string, args ...any) error {
 	tx, err := s.beginWrite()
 	if err != nil {
 		return err
@@ -272,7 +320,7 @@ func (s *Store) writeWorktree(id, query string, before ...string) error {
 			return err
 		}
 	}
-	res, err := tx.conn.ExecContext(context.Background(), query, id)
+	res, err := tx.conn.ExecContext(context.Background(), query, append(args, id)...)
 	if err != nil {
 		return err
 	}

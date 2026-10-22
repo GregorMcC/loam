@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam worktree update --json",
+  "description": "GitHub brought the PR up to date with its base branch. fetched is true when the local repo has the new PR head. fetch_note says why the fetch failed, and is left out when it did not fail.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "worktree",
+    "pr",
+    "fetched"
+  ],
+  "properties": {
+    "worktree": {
+      "$ref": "defs.json#/$defs/worktree"
+    },
+    "pr": {
+      "$ref": "defs.json#/$defs/pullRequest"
+    },
+    "fetched": {
+      "type": "boolean"
+    },
+    "fetch_note": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

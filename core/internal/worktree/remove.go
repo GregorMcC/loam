@@ -125,21 +125,17 @@ type RemoveResult struct {
 //
 // It refuses while a pane is open in the worktree. Without Force, it also
 // refuses a worktree with uncommitted changes or unpushed commits. It deletes
-// the branch with `git branch -d` only, and it never touches a remote branch.
+// the branch with `git branch -d`. When the PR cache says that the PR of the
+// branch is merged, and the branch tip is the PR head, it uses -D. It never
+// touches a remote branch.
 func Remove(s *store.Store, plotID, arg string, o RemoveOptions) (*RemoveResult, error) {
 	w, err := Find(s, plotID, o.Repo, arg)
 	if err != nil {
 		return nil, err
 	}
-	panes, err := OpenPanes(AppStateDir(), o.OpenPanes)
+	n, err := panesIn(w, o.OpenPanes)
 	if err != nil {
 		return nil, err
-	}
-	n := 0
-	for _, p := range panes {
-		if inside(p.Folder, w.Path) {
-			n++
-		}
 	}
 	if n > 0 {
 		return nil, fmt.Errorf("%d pane(s) are open in %s. Close them, then remove the worktree: %w", n, filepath.Base(w.Path), ErrPanesOpen)
@@ -158,10 +154,17 @@ func Remove(s *store.Store, plotID, arg string, o RemoveOptions) (*RemoveResult,
 			why = append(why, "a check failed: "+st.Error)
 		}
 		if len(why) > 0 {
-			return nil, fmt.Errorf("%s has %s. Run again with --force to remove it anyway: %w", filepath.Base(w.Path), strings.Join(why, " and "), ErrUnsafe)
+			return nil, &unsafeError{folder: filepath.Base(w.Path), why: why}
 		}
 	}
 
+	// Read the branch tip and the PR before the removal: a failure here
+	// leaves the worktree as it was.
+	tip, _ := git(w.Repo, "rev-parse", "--verify", "--quiet", "refs/heads/"+w.Branch)
+	head, err := mergedHead(s, w)
+	if err != nil {
+		return nil, err
+	}
 	if st.Missing {
 		git(w.Repo, "worktree", "prune")
 	} else {
@@ -175,9 +178,21 @@ func Remove(s *store.Store, plotID, arg string, o RemoveOptions) (*RemoveResult,
 	}
 
 	res := &RemoveResult{Worktree: w}
-	if _, err := git(w.Repo, "branch", "-d", w.Branch); err == nil {
+	// A squash or rebase merge leaves the commits of the PR off the base
+	// branch, so git branch -d refuses. When the tip is the head of the merged
+	// PR, GitHub has each commit of the branch, and -D loses nothing.
+	merged := tip != "" && tip == head
+	flag := "-d"
+	if merged {
+		flag = "-D"
+	}
+	_, err = git(w.Repo, "branch", flag, w.Branch)
+	switch {
+	case err == nil:
 		res.BranchDeleted = true
-	} else {
+	case merged:
+		res.BranchNote = fmt.Sprintf("Kept the branch %s: %v", w.Branch, err)
+	default:
 		res.BranchNote = fmt.Sprintf("Kept the branch %s. Git says it is not fully merged. Delete it yourself with git branch -D if you do not need it.", w.Branch)
 	}
 	if err := s.RemoveWorktree(w.ID); err != nil {
@@ -187,4 +202,53 @@ func Remove(s *store.Store, plotID, arg string, o RemoveOptions) (*RemoveResult,
 		res.Warnings = append(res.Warnings, warning)
 	}
 	return res, nil
+}
+
+// unsafeError is the error of a removal that would lose work. It matches
+// [ErrUnsafe].
+type unsafeError struct {
+	folder string
+	// why lists the work that the removal would lose, for a person to read.
+	why []string
+}
+
+func (e *unsafeError) Error() string {
+	return fmt.Sprintf("%s has %s. Run again with --force to remove it anyway: %v", e.folder, e.work(), ErrUnsafe)
+}
+
+// Is makes the error match [ErrUnsafe].
+func (e *unsafeError) Is(target error) bool { return target == ErrUnsafe }
+
+// work says what work the removal would lose.
+func (e *unsafeError) work() string { return strings.Join(e.why, " and ") }
+
+// panesIn counts the open panes in the worktree: the panes of state.json and
+// the extra folders.
+func panesIn(w store.Worktree, extra []string) (int, error) {
+	panes, err := OpenPanes(AppStateDir(), extra)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, p := range panes {
+		if inside(p.Folder, w.Path) {
+			n++
+		}
+	}
+	return n, nil
+}
+
+// mergedHead returns the head of the merged PR of the branch of the worktree
+// from the PR cache. It is empty when the cache has no merged PR, or a head
+// that is not a commit ID.
+func mergedHead(s *store.Store, w store.Worktree) (string, error) {
+	cache, err := s.PRStates()
+	if err != nil {
+		return "", err
+	}
+	c := decodeCached(cache[store.PRKey{Repo: w.Repo, Branch: w.Branch}])
+	if c.PR == nil || c.PR.State != "MERGED" || !oidPattern.MatchString(c.PR.HeadOID) {
+		return "", nil
+	}
+	return c.PR.HeadOID, nil
 }

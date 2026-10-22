@@ -299,13 +299,15 @@
           "duration": 42,
           "name": "lint / swiftformat",
           "required": true,
-          "url": "https://github.com/example/widgets/actions/runs/1/job/1"
+          "run_id": 301,
+          "url": "https://github.com/example/widgets/actions/runs/301/job/1"
         },
         {
           "duration": 190,
           "name": "test / macos",
           "required": true,
-          "url": "https://github.com/example/widgets/actions/runs/1/job/2"
+          "run_id": 302,
+          "url": "https://github.com/example/widgets/actions/runs/302/job/2"
         }
       ],
       "head": "native-panel",
@@ -795,13 +797,15 @@
           "duration": 30,
           "name": "lint / swiftlint",
           "required": false,
-          "url": "https://github.com/example/widgets/actions/runs/1/job/3"
+          "run_id": 303,
+          "url": "https://github.com/example/widgets/actions/runs/303/job/3"
         },
         {
           "duration": 65,
           "name": "docs / links",
           "required": false,
-          "url": "https://github.com/example/widgets/actions/runs/1/job/4"
+          "run_id": 304,
+          "url": "https://github.com/example/widgets/actions/runs/304/job/4"
         }
       ],
       "head": "tidy-styles",

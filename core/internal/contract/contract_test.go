@@ -444,7 +444,7 @@ func scenario(t *testing.T) *harness {
 
 	// Worktrees. The scenario runs them last, so they keep the change IDs above.
 	// The repo has a bare remote and an ignored .env file to copy.
-	gitRepo, _ := testutil.GitRepoAt(t, filepath.Join(h.root, "remote.git"), filepath.Join(h.root, "repos", "web"))
+	gitRepo, gitRemote := testutil.GitRepoAt(t, filepath.Join(h.root, "remote.git"), filepath.Join(h.root, "repos", "web"))
 	if err := os.WriteFile(filepath.Join(gitRepo, ".env"), []byte("A=1\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -463,8 +463,9 @@ func scenario(t *testing.T) *harness {
 	// Ship state: one worktree for each stage, in the order of the rule, and
 	// then a second Ready to merge whose optional checks failed (UNSTABLE).
 	// Each worktree comes from the local remote. Then origin names a made-up
-	// GitHub repo, so no command may fetch after this. testdata/github.json
-	// holds what the fake gh answers.
+	// GitHub repo over SSH, and a fake ssh serves the local remote, so git
+	// can still fetch and push. testdata/github.json holds what the fake gh
+	// answers.
 	for _, name := range []string{"add-search", "old-theme", "fix-login", "new-api", "rename-users", "native-panel", "deploy-docs",
 		"try-dark-mode", "update-deps", "speed-up-tests", "add-billing", "sign-commits", "link-labels", "pushed-only", "local-work",
 		"tidy-styles"} {
@@ -488,8 +489,26 @@ func scenario(t *testing.T) *harness {
 		t.Fatal(err)
 	}
 	h.tokens[localHead] = fixedHead
-	testutil.Git(t, gitRepo, "remote", "set-url", "origin", "https://github.com/example/widgets.git")
+	// A land needs a repo on GitHub.
+	h.run("error_gh_unavailable", "error", 17, "worktree", "land", loam, "add-search")
+	testutil.FakeGitHub(t, gitRemote)
+	h.env = append(h.env, "GIT_SSH_COMMAND="+os.Getenv("GIT_SSH_COMMAND"), "GIT_SSH_VARIANT="+os.Getenv("GIT_SSH_VARIANT"))
+	testutil.Git(t, gitRepo, "remote", "set-url", "origin", testutil.GitHubOrigin)
 	h.run("worktree_list_stages", "worktree-list", 0, "worktree", "list", loam, "--refresh")
+
+	// Land, rerun, and update. The fake gh merges the PR and deletes the
+	// branch in its state. link-labels is ready to merge, rename-users has
+	// changes requested, new-api has conflicts, and sign-commits is blocked.
+	h.run("worktree_land_dry_run", "worktree-land", 0, "worktree", "land", loam, "link-labels", "--dry-run")
+	h.run("worktree_land_dry_run_blocked", "worktree-land", 0, "worktree", "land", loam, "rename-users", "--dry-run")
+	h.run("error_not_ready", "error", 16, "worktree", "land", loam, "new-api")
+	h.run("worktree_land", "worktree-land", 0, "worktree", "land", loam, "link-labels", "--method", "rebase")
+	h.run("worktree_land_auto", "worktree-land", 0, "worktree", "land", loam, "sign-commits", "--auto")
+	h.run("worktree_rerun", "worktree-rerun", 0, "worktree", "rerun", loam, "native-panel")
+	// GitHub adds a merge commit to update-deps. The fetch after the update
+	// needs the branch on the remote.
+	testutil.Git(t, filepath.Join(h.home, "worktrees", loam, "web-update-deps"), "push", "origin", "update-deps")
+	h.run("worktree_update", "worktree-update", 0, "worktree", "update", loam, "update-deps")
 
 	// Archive, unarchive, and delete. They run last too.
 	h.run("archive", "show", 0, "archive", "Loam Docs")

@@ -62,3 +62,23 @@ func GitRepoAt(t *testing.T, remote, repo string) (string, string) {
 	Git(t, repo, "remote", "set-head", "origin", "main")
 	return repo, remote
 }
+
+// GitHubOrigin is the origin of a made-up GitHub repo, example/widgets, over
+// SSH. [FakeGitHub] makes git reach it with no network.
+const GitHubOrigin = "git@github.com:example/widgets.git"
+
+// FakeGitHub makes git reach every repo on github.com over SSH through a fake
+// ssh that serves the local bare repo remote. A repo whose origin is
+// [GitHubOrigin] is then on GitHub for Loam, and git can still fetch from it
+// and push to it. Call it before you run a command that fetches.
+func FakeGitHub(t *testing.T, remote string) {
+	t.Helper()
+	ssh := filepath.Join(t.TempDir(), "fake-ssh")
+	// With the simple variant, git runs: <ssh> <host> "<git program> '<repo>'".
+	script := "#!/bin/sh\nprog=${2%% *}\nexec git \"${prog#git-}\" '" + remote + "'\n"
+	if err := os.WriteFile(ssh, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_SSH_COMMAND", ssh)
+	t.Setenv("GIT_SSH_VARIANT", "simple")
+}

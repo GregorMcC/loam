@@ -116,8 +116,7 @@ func prStage(pr *github.PR, last Stage) Stage {
 	switch {
 	case pr.InMergeQueue:
 		return StageInMergeQueue
-	// CONFLICTING is the answer of the merge check, so it needs no merge state.
-	case pr.Mergeable == "CONFLICTING" || checked && pr.MergeState == "DIRTY":
+	case hasConflicts(pr):
 		return StageConflicts
 	case pr.ReviewDecision == "CHANGES_REQUESTED":
 		return StageChangesRequested
@@ -127,9 +126,9 @@ func prStage(pr *github.PR, last Stage) Stage {
 		return StageApprovalNeeded
 	case pr.Draft:
 		return StageDraft
-	case checked && pr.MergeState == "BEHIND":
+	case behindRequired(pr):
 		return StageBehindBase
-	case pr.Checks.State == "PENDING" || pr.Checks.State == "EXPECTED" || pr.Checks.Running > 0:
+	case checksRunning(pr):
 		return StageChecksRunning
 	case pr.ReviewDecision == "REVIEW_REQUIRED":
 		return StageWaitingForReview
@@ -157,6 +156,24 @@ func mergeChecked(pr *github.PR) bool {
 		return true
 	}
 	return false
+}
+
+// hasConflicts reports whether the PR has conflicts with its base branch.
+// CONFLICTING is the answer of the merge check, so it needs no merge state.
+func hasConflicts(pr *github.PR) bool {
+	return pr.Mergeable == "CONFLICTING" || mergeChecked(pr) && pr.MergeState == "DIRTY"
+}
+
+// behindRequired reports whether the base branch needs the PR to be up to
+// date before a merge, and the PR is behind. GitHub gives BEHIND only when a
+// branch protection rule needs the head to be up to date.
+func behindRequired(pr *github.PR) bool {
+	return mergeChecked(pr) && pr.MergeState == "BEHIND"
+}
+
+// checksRunning reports whether a check of the PR has not finished.
+func checksRunning(pr *github.PR) bool {
+	return pr.Checks.State == "PENDING" || pr.Checks.State == "EXPECTED" || pr.Checks.Running > 0
 }
 
 // checksFailed reports whether a required check failed. When no check of the

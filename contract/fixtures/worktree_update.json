@@ -1,0 +1,44 @@
+{
+  "fetched": true,
+  "pr": {
+    "approvals": 1,
+    "base": "main",
+    "behind_base": 3,
+    "checks": {
+      "failed": 0,
+      "passed": 1,
+      "required": 1,
+      "required_passed": 1,
+      "running": 0,
+      "state": "SUCCESS",
+      "total": 1,
+      "waiting": 0
+    },
+    "comments": 0,
+    "commits": 2,
+    "draft": false,
+    "failed_checks": [],
+    "head": "update-deps",
+    "head_oid": "8888888888888888888888888888888888888888",
+    "in_merge_queue": false,
+    "merge_state": "BEHIND",
+    "mergeable": "MERGEABLE",
+    "number": 18,
+    "queue_position": 0,
+    "review_decision": "APPROVED",
+    "state": "OPEN",
+    "title": "Update deps",
+    "url": "https://github.com/example/widgets/pull/18"
+  },
+  "worktree": {
+    "base": "origin/main",
+    "branch": "update-deps",
+    "created_at": "2026-01-01T00:00:00Z",
+    "id": "wtreaaaaak",
+    "name": "update-deps",
+    "path": "/tmp/loam-contract/loamhome/worktrees/plotaaaaab/web-update-deps",
+    "plot_id": "plotaaaaab",
+    "repo": "/tmp/loam-contract/repos/web",
+    "setup_done": false
+  }
+}

@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"github.com/GregorMcC/loam/core/internal/store"
+	"github.com/GregorMcC/loam/core/internal/worktree"
 )
 
 // The exit codes of loam. They are stable: the app reads them. Add a code at
@@ -21,6 +22,8 @@ const (
 	ExitContractMismatch = 13 // the caller expects another contract version
 	ExitUnknownPlot      = 14 // no plot matches the argument
 	ExitAmbiguous        = 15 // the argument matches more than one plot or link
+	ExitNotReady         = 16 // a check blocks the land of a worktree
+	ExitGHUnavailable    = 17 // gh is missing or signed out, or the repo has no GitHub remote
 )
 
 // Errors that map to an exit code. Wrap them with %w. A later ticket that
@@ -62,7 +65,8 @@ type ErrorBody struct {
 	ExitCode int    `json:"exit_code"`
 	Message  string `json:"message"`
 	// Details depends on Kind. A stale write holds the plot ID and the stale
-	// items with their current values.
+	// items with their current values. A land that is not ready holds the
+	// checks that block.
 	Details any `json:"details,omitempty"`
 }
 
@@ -84,6 +88,10 @@ func classify(err error) ErrorBody {
 		b.Kind, b.ExitCode = "ambiguous", ExitAmbiguous
 	case errors.Is(err, ErrUnknownPlot):
 		b.Kind, b.ExitCode = "unknown_plot", ExitUnknownPlot
+	case errors.Is(err, worktree.ErrNotReady):
+		b.Kind, b.ExitCode = "not_ready", ExitNotReady
+	case errors.Is(err, worktree.ErrGHUnavailable):
+		b.Kind, b.ExitCode = "gh_unavailable", ExitGHUnavailable
 	case errors.Is(err, store.ErrInvalid):
 		b.Kind, b.ExitCode = "invalid", ExitInvalid
 	}

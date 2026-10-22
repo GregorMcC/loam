@@ -266,8 +266,10 @@ public struct Worktree: Codable, Equatable, Sendable, Identifiable {
     /// The change that last set the goal, or 0. Pass it as
     /// `--expect worktree:<id>=<version>`.
     public var version: Int?
+    /// A land that waits for GitHub to merge the PR. Nil when no land waits.
+    public var land: PendingLand?
     enum CodingKeys: String, CodingKey {
-        case id, repo, name, branch, base, path, goal, link, version
+        case id, repo, name, branch, base, path, goal, link, version, land
         case plotID = "plot_id", setupDone = "setup_done", createdAt = "created_at"
     }
 }
@@ -283,6 +285,22 @@ public struct WorktreeLink: Codable, Equatable, Sendable {
     /// The plot link it was copied from. Empty for a URL given directly.
     public var linkID: String
     enum CodingKeys: String, CodingKey { case target, label, key, linkID = "link_id" }
+}
+
+/// The options of `loam worktree land` for a land that waits for GitHub: an auto merge, or a merge queue.
+public struct PendingLand: Codable, Equatable, Sendable {
+    /// The number of the PR.
+    public var pr: Int
+    /// The merge method. Empty with a merge queue.
+    public var method: String
+    public var auto: Bool
+    public var mergeQueue: Bool
+    public var keepWorktree: Bool
+    public var keepRemoteBranch: Bool
+    enum CodingKeys: String, CodingKey {
+        case pr, method, auto
+        case mergeQueue = "merge_queue", keepWorktree = "keep_worktree", keepRemoteBranch = "keep_remote_branch"
+    }
 }
 
 public struct WorktreeStatus: Codable, Equatable, Sendable {
@@ -436,6 +454,13 @@ public struct FailedCheck: Codable, Equatable, Sendable {
     public var duration: Int
     /// True when the base branch needs the check to pass before a merge.
     public var required: Bool
+    /// The GitHub Actions run of the check, which `loam worktree rerun` runs again.
+    /// Nil for a check that is not a job of GitHub Actions.
+    public var runID: Int?
+    enum CodingKeys: String, CodingKey {
+        case name, url, duration, required
+        case runID = "run_id"
+    }
 }
 
 public struct WorktreeNewResult: Codable, Equatable, Sendable {
@@ -482,6 +507,94 @@ public struct WorktreeRmResult: Codable, Equatable, Sendable {
     enum CodingKeys: String, CodingKey {
         case worktree, branchDeleted = "branch_deleted", branchNote = "branch_note"
     }
+}
+
+/// A merge method of GitHub, for `LoamClient.worktreeLand`.
+public enum MergeMethod: String, Codable, Equatable, Sendable, CaseIterable {
+    case merge, squash, rebase
+}
+
+/// One check of a land (docs/contract.md, "Land, rerun, and update").
+public struct LandCheck: Codable, Equatable, Sendable {
+    /// checks, review, behind_base, conflicts, github, local_changes, or unpushed_commits.
+    public var name: String
+    /// The state of the check, such as passed, failed, changes_requested, behind, or conflicting.
+    public var state: String
+    /// True when the check stops the land.
+    public var blocks: Bool
+}
+
+/// What `loam worktree land` did, or with `dryRun`, the plan.
+public struct LandResult: Codable, Equatable, Sendable {
+    /// The worktree, with the land that it records after the land.
+    public var worktree: Worktree
+    /// The PR before the merge.
+    public var pr: PullRequest
+    public var stage: WorktreeStage
+    public var changed: Int
+    public var unpushed: Int
+    /// The merge methods that the repo allows. Empty for a PR that is merged.
+    public var methods: [String]
+    /// The method that GitHub offers first. Empty for a PR that is merged.
+    public var defaultMethod: String
+    /// The method of the land. Empty with a merge queue, and for a PR that is merged.
+    public var method: String
+    /// True when the base branch has a merge queue. The land adds the PR to the queue.
+    public var mergeQueue: Bool
+    public var auto: Bool
+    /// Every check, in the order of the core. Empty for a PR that is merged.
+    public var checks: [LandCheck]
+    /// True when no check blocks.
+    public var ready: Bool
+    public var dryRun: Bool
+    /// True when GitHub says that the PR is merged.
+    public var merged: Bool
+    /// True when GitHub merges later: an auto merge, or a merge queue. Also true when the core
+    /// cannot see the merge yet (`mergeNote`).
+    public var mergeLater: Bool
+    /// Why the core does not see the merge yet.
+    public var mergeNote: String?
+    public var remoteBranchDeleted: Bool
+    public var remoteBranchNote: String?
+    public var worktreeRemoved: Bool
+    public var worktreeNote: String?
+    public var branchDeleted: Bool
+    public var branchNote: String?
+    enum CodingKeys: String, CodingKey {
+        case worktree, pr, stage, changed, unpushed, methods, method, auto, checks, ready, merged
+        case defaultMethod = "default_method", mergeQueue = "merge_queue", dryRun = "dry_run", mergeLater = "merge_later"
+        case mergeNote = "merge_note", remoteBranchDeleted = "remote_branch_deleted", remoteBranchNote = "remote_branch_note"
+        case worktreeRemoved = "worktree_removed", worktreeNote = "worktree_note"
+        case branchDeleted = "branch_deleted", branchNote = "branch_note"
+    }
+}
+
+/// What `loam worktree rerun` started again.
+public struct RerunResult: Codable, Equatable, Sendable {
+    public var worktree: Worktree
+    public var pr: PullRequest
+    /// The GitHub Actions runs whose failed jobs run again.
+    public var runs: [Int]
+    /// The failed checks that are not jobs of GitHub Actions. The core cannot run them again.
+    public var skippedChecks: [String]
+    enum CodingKeys: String, CodingKey { case worktree, pr, runs, skippedChecks = "skipped_checks" }
+}
+
+/// What `loam worktree update` did.
+public struct UpdateResult: Codable, Equatable, Sendable {
+    public var worktree: Worktree
+    public var pr: PullRequest
+    /// True when the local repo has the new PR head.
+    public var fetched: Bool
+    /// Why the fetch failed. GitHub still has the update.
+    public var fetchNote: String?
+    enum CodingKeys: String, CodingKey { case worktree, pr, fetched, fetchNote = "fetch_note" }
+}
+
+/// The details of a land that a check blocks (exit 16).
+public struct NotReadyDetails: Codable, Equatable, Sendable {
+    /// The checks that block.
+    public var checks: [LandCheck]
 }
 
 public struct DeleteResult: Codable, Equatable, Sendable {

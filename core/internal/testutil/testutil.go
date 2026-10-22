@@ -96,9 +96,10 @@ func FakeClaudeInvocation(t *testing.T) Invocation {
 
 // FakeGH builds a fake `gh` and points LOAM_GH at it for the test. The fake
 // answers each GraphQL query from the GitHub state in state (JSON, see
-// internal/testutil/fakegh) and logs each call for [FakeGHCalls]. It returns
-// the state file, so a test can write a new state. Set LOAM_FAKE_GH_FAIL to
-// make each call fail. Call it after [Home].
+// internal/testutil/fakegh) and logs each call for [FakeGHCalls]. A merge, an
+// update, or a branch delete changes the state. It returns the state file, so
+// a test can write a new state. Set LOAM_FAKE_GH_FAIL to make each call fail.
+// Call it after [Home].
 func FakeGH(t *testing.T, state string) string {
 	t.Helper()
 	dir := t.TempDir()

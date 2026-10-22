@@ -125,6 +125,10 @@ ALTER TABLE worktrees ADD COLUMN link_label TEXT NOT NULL DEFAULT '';
 ALTER TABLE worktrees ADD COLUMN link_key TEXT NOT NULL DEFAULT '';
 ALTER TABLE worktrees ADD COLUMN link_id TEXT NOT NULL DEFAULT '';
 `,
+	// 8: the land of a worktree that waits for GitHub (an auto merge, or a
+	// merge queue), as JSON. It is empty when no land waits. It is not in the
+	// change log.
+	`ALTER TABLE worktrees ADD COLUMN land TEXT NOT NULL DEFAULT '';`,
 }
 
 // SchemaVersion is the schema version of this binary.

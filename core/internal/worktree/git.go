@@ -1,12 +1,16 @@
 // Package worktree makes, checks, and removes the git worktrees of a plot.
 //
 // It runs a fixed set of git commands: fetch, worktree add, worktree remove,
-// and branch -d. For a repo add, it also runs switch and merge --ff-only on
-// the normal checkout (see [SwitchToDefault]). It never deletes a remote branch and never runs the setup
-// command of a repo. `loam start` runs the setup command.
+// and branch -d. It runs branch -D only for the branch of a merged PR whose
+// tip is the PR head (see [Remove]). For a repo add, it also runs switch and
+// merge --ff-only on the normal checkout (see [SwitchToDefault]). It never
+// runs the setup command of a repo. `loam start` runs the setup command.
 //
 // It reads the pull request of each branch from GitHub through gh and keeps
-// it in the PR cache (see [RefreshPRs] and [StageOf]). It never writes to GitHub.
+// it in the PR cache (see [RefreshPRs] and [StageOf]). It acts on GitHub only
+// in [Land], [Rerun], and [Update]: Land merges a PR and deletes its branch
+// on GitHub, Rerun runs failed checks again, and Update brings a PR up to
+// date with its base branch.
 package worktree
 
 import (

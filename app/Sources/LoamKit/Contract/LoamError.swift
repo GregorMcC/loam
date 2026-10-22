@@ -18,6 +18,10 @@ public enum LoamError: Error, Equatable, Sendable {
     case unknownPlot(message: String)
     /// Exit 15.
     case ambiguous(message: String)
+    /// Exit 16: a check blocks the land of a worktree.
+    case notReady(NotReadyDetails?, message: String)
+    /// Exit 17: gh is missing or signed out, or the origin of the repo is not on GitHub.
+    case ghUnavailable(message: String)
     /// An exit code that this app does not know.
     case unknown(exitCode: Int32, message: String)
 
@@ -46,6 +50,8 @@ public enum LoamError: Error, Equatable, Sendable {
         case 13: return .contractMismatch(message: message)
         case 14: return .unknownPlot(message: message)
         case 15: return .ambiguous(message: message)
+        case 16: return .notReady(decode(NotReadyDetails.self), message: message)
+        case 17: return .ghUnavailable(message: message)
         default: return .unknown(exitCode: exitCode, message: message)
         }
     }
@@ -55,7 +61,7 @@ public enum LoamError: Error, Equatable, Sendable {
         switch self {
         case .failed(let m), .invalid(let m), .contractMismatch(let m),
              .unknownPlot(let m), .linkPathMissing(_, let m), .ambiguous(let m), .stale(_, let m), .undoClash(_, let m),
-             .unknown(_, let m):
+             .notReady(_, let m), .ghUnavailable(let m), .unknown(_, let m):
             return m
         case .binaryMissing(let path):
             return "The loam command is not at \(path). Run the install script."

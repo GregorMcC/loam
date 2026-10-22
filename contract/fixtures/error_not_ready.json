@@ -1,0 +1,16 @@
+{
+  "error": {
+    "details": {
+      "checks": [
+        {
+          "blocks": true,
+          "name": "conflicts",
+          "state": "conflicting"
+        }
+      ]
+    },
+    "exit_code": 16,
+    "kind": "not_ready",
+    "message": "web-new-api is not ready to land: the PR has conflicts with main"
+  }
+}

@@ -56,7 +56,7 @@ const detailFields = `    p%[1]d: pullRequest(number: $n%[1]d) {
       commits(last: 1) { nodes { commit { statusCheckRollup { state contexts(first: %[2]d) { totalCount nodes {
         __typename
         ... on CheckRun { name status conclusion detailsUrl startedAt completedAt isRequired(pullRequestNumber: $n%[1]d)
-          checkSuite { workflowRun { workflow { name } } } }
+          checkSuite { workflowRun { databaseId workflow { name } } } }
         ... on StatusContext { context state targetUrl isRequired(pullRequestNumber: $n%[1]d) }
       } } } } } }
     }
@@ -131,7 +131,8 @@ type checkNode struct {
 	IsRequired  bool       `json:"isRequired"`
 	CheckSuite  *struct {
 		WorkflowRun *struct {
-			Workflow struct {
+			DatabaseID int64 `json:"databaseId"`
+			Workflow   struct {
 				Name string `json:"name"`
 			} `json:"workflow"`
 		} `json:"workflowRun"`
@@ -358,8 +359,11 @@ func failedCheck(n checkNode) Check {
 		return Check{Name: n.Context, URL: n.TargetURL, Required: n.IsRequired}
 	}
 	c := Check{Name: n.Name, URL: n.DetailsURL, Required: n.IsRequired}
-	if s := n.CheckSuite; s != nil && s.WorkflowRun != nil && s.WorkflowRun.Workflow.Name != "" {
-		c.Name = s.WorkflowRun.Workflow.Name + " / " + n.Name
+	if s := n.CheckSuite; s != nil && s.WorkflowRun != nil {
+		c.RunID = s.WorkflowRun.DatabaseID
+		if s.WorkflowRun.Workflow.Name != "" {
+			c.Name = s.WorkflowRun.Workflow.Name + " / " + n.Name
+		}
 	}
 	if n.StartedAt != nil && n.CompletedAt != nil {
 		c.Duration = max(0, int(n.CompletedAt.Sub(*n.StartedAt).Seconds()))

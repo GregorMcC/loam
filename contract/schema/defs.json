@@ -181,7 +181,11 @@
           "description": "The link that the work started from, or null.",
           "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/worktreeLink" }]
         },
-        "version": { "$ref": "#/$defs/worktreeVersion" }
+        "version": { "$ref": "#/$defs/worktreeVersion" },
+        "land": {
+          "description": "A land that waits for GitHub: an auto merge, or a merge queue. It is left out when no land waits.",
+          "$ref": "#/$defs/pendingLand"
+        }
       }
     },
     "worktreeVersion": {
@@ -208,6 +212,35 @@
         }
       }
     },
+    "pendingLand": {
+      "description": "The options of a land that waits for GitHub to merge the PR.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pr", "method", "auto", "merge_queue", "keep_worktree", "keep_remote_branch"],
+      "properties": {
+        "pr": { "description": "The number of the PR.", "type": "integer", "minimum": 1 },
+        "method": { "description": "The merge method. Empty with a merge queue.", "enum": ["merge", "squash", "rebase", ""] },
+        "auto": { "type": "boolean" },
+        "merge_queue": { "type": "boolean" },
+        "keep_worktree": { "type": "boolean" },
+        "keep_remote_branch": { "type": "boolean" }
+      }
+    },
+    "mergeMethod": { "enum": ["merge", "squash", "rebase"] },
+    "landCheck": {
+      "description": "One check of a land. blocks is true when the check stops the land.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "state", "blocks"],
+      "properties": {
+        "name": { "enum": ["checks", "review", "behind_base", "conflicts", "github", "local_changes", "unpushed_commits"] },
+        "state": {
+          "enum": ["none", "passed", "failed", "running", "waiting", "approved", "changes_requested", "required", "up_to_date",
+            "behind", "conflicting", "checking", "clear", "blocked", "changed", "unpushed", "unknown"]
+        },
+        "blocks": { "type": "boolean" }
+      }
+    },
     "worktreeStatus": {
       "type": "object",
       "additionalProperties": false,
@@ -220,11 +253,7 @@
         "merged": { "description": "True when the branch holds nothing that merged_into lacks.", "type": "boolean" },
         "merged_into": { "description": "The branch that merged is checked against. It is left out when none is known.", "type": "string" },
         "error": { "description": "Why a check failed. It is left out when no check failed.", "type": "string" },
-        "stage": {
-          "description": "The one stage of the worktree, from the first rule that matches. Empty when there is nothing to show.",
-          "enum": ["merged", "closed", "in_merge_queue", "conflicts", "changes_requested", "checks_failed", "approval_needed", "draft",
-            "behind_base", "checks_running", "waiting_for_review", "blocked", "ready_to_merge", "pushed_no_pr", "not_pushed", ""]
-        },
+        "stage": { "$ref": "#/$defs/stage" },
         "pr": {
           "description": "The pull request of the branch from the last refresh, or null. It is null when the stage comes from the local checks after new work on a merged or closed PR.",
           "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/pullRequest" }]
@@ -236,6 +265,11 @@
         "pr_checked_at": { "description": "When the ship state came from GitHub. It is left out when GitHub never answered, and with the note gh_missing or gh_signed_out.", "$ref": "#/$defs/time" },
         "compare_url": { "description": "The GitHub compare page of the branch. Only for the stage pushed_no_pr.", "type": "string" }
       }
+    },
+    "stage": {
+      "description": "The one stage of a worktree, from the first rule that matches. Empty when there is nothing to show.",
+      "enum": ["merged", "closed", "in_merge_queue", "conflicts", "changes_requested", "checks_failed", "approval_needed", "draft",
+        "behind_base", "checks_running", "waiting_for_review", "blocked", "ready_to_merge", "pushed_no_pr", "not_pushed", ""]
     },
     "pullRequest": {
       "description": "A pull request. The fields from behind_base to failed_checks are 0 or empty for a merged or closed PR.",
@@ -291,7 +325,12 @@
         "name": { "description": "A GitHub Actions job has its workflow name first, such as lint / swiftformat.", "type": "string" },
         "url": { "description": "The page of the check, with its log.", "type": "string" },
         "duration": { "description": "The run time in seconds. 0 when GitHub gives no start or end.", "type": "integer", "minimum": 0 },
-        "required": { "description": "True when the base branch needs the check to pass before a merge.", "type": "boolean" }
+        "required": { "description": "True when the base branch needs the check to pass before a merge.", "type": "boolean" },
+        "run_id": {
+          "description": "The GitHub Actions run of the check, which loam worktree rerun runs again. It is left out for a check that is not a job of GitHub Actions.",
+          "type": "integer",
+          "minimum": 1
+        }
       }
     }
   }
