@@ -296,6 +296,10 @@ private struct TreeRow<Trailing: View>: View {
     /// The plot level is semibold, so the levels read apart.
     var bold = false
     var truncation: Text.TruncationMode = .tail
+    /// The key of the issue that a worktree started from (ticket 115), in `ink-faint` after the name. It shows only when
+    /// the whole name and the key fit. The name keeps its room: a long name drops the key, which the Worktrees row and
+    /// the tooltip of the row have.
+    var key: String?
     @ViewBuilder var trailing: () -> Trailing
 
     var body: some View {
@@ -303,18 +307,34 @@ private struct TreeRow<Trailing: View>: View {
             LoamIconView(icon: icon, size: 12, color: symbolColor)
                 .frame(width: 16)
                 .accessibilityHidden(true)
-            Text(title)
-                .font(Font(bold ? NSFont.systemFont(ofSize: LoamTheme.rowStyle.size, weight: .semibold)
-                                : LoamTheme.font(LoamTheme.rowStyle)))
-                .foregroundStyle(titleColor)
-                .lineLimit(1)
-                .truncationMode(truncation)
-                // The name fills the row (flex: 1 in docs/design), so the marks sit at the trailing edge.
-                .frame(maxWidth: .infinity, alignment: .leading)
+            ViewThatFits(in: .horizontal) {
+                if let key {
+                    HStack(spacing: LoamTheme.space2) {
+                        name
+                        Text(key)
+                            .font(.system(size: 11))
+                            .foregroundStyle(LoamColor.inkFaint)
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
+                }
+                name
+            }
             trailing()
         }
         .frame(minHeight: 26)  // With the list's own padding, a row is about 30 pt.
         .contentShape(Rectangle())
+    }
+
+    private var name: some View {
+        Text(title)
+            .font(Font(bold ? NSFont.systemFont(ofSize: LoamTheme.rowStyle.size, weight: .semibold)
+                            : LoamTheme.font(LoamTheme.rowStyle)))
+            .foregroundStyle(titleColor)
+            .lineLimit(1)
+            .truncationMode(truncation)
+            // The name fills the row (flex: 1 in docs/design), so the marks sit at the trailing edge.
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -462,19 +482,12 @@ private struct CheckoutRowView: View {
     var body: some View {
         TreeRow(icon: .symbol(row.kind == .worktree ? "arrow.triangle.pull" : "arrow.triangle.branch"),
                 title: row.label, titleColor: missing ? LoamColor.inkFaint : selected ? LoamColor.ink : LoamColor.inkMuted,
-                truncation: .middle) {
+                truncation: .middle, key: missing ? nil : row.worktree?.linkKey) {
             if let detail = row.detail {
                 Text(detail)
                     .loamText(LoamTheme.captionStyle, LoamColor.inkFaint)
                     .lineLimit(1)
                     .truncationMode(.middle)
-            }
-            if !missing, let key = row.worktree?.linkKey {
-                Text(key)
-                    .font(.system(size: 11))
-                    .foregroundStyle(LoamColor.inkFaint)
-                    .lineLimit(1)
-                    .fixedSize()
             }
             if missing {
                 Text("gone").loamText(LoamTheme.captionStyle, LoamColor.inkFaint)

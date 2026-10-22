@@ -115,22 +115,27 @@ extension Scenarios {
         Log.line("RESULT link menu: \(titles.joined(separator: " | "))")
         try expectStart(titles.first == "Start work\u{2026}" && titles.dropFirst().first == "-",
                         "the menu starts with \(titles.prefix(2)), not Start work\u{2026} over a divider")
-        // A menu tracks the mouse in a loop of its own, where no task runs. A timer of the common modes does run there. It takes
-        // the shot of the open menu and closes it, and the pop-up returns. A menu opens only in an active app.
-        NSApp.activate()
-        app.window.makeKeyAndOrderFront(nil)
-        try await app.waitUntil("the app is active") { NSApp.isActive }
-        let timer = Timer(timeInterval: 0.8, repeats: false) { _ in
-            MainActor.assumeIsolated {
-                let window = menuWindow(of: app)
-                Log.line("RESULT menu window: \(window.map { "\(Swift.type(of: $0)) \($0.frame)" } ?? "none")")
-                app.screenshot("start-work-link-menu", menu: window)
-                shown.menu.cancelTracking()
+        // The shot of the open menu needs the app to be active, and a menu takes the keyboard. So only a run in the foreground
+        // takes it (LOAM_DRIVER_FOREGROUND=1). Then the app you used before is active again.
+        if Driver.foreground {
+            // A menu tracks the mouse in a loop of its own, where no task runs. A timer of the common modes does run there. It
+            // takes the shot of the open menu and closes it, and the pop-up returns.
+            let previous = NSWorkspace.shared.frontmostApplication
+            NSApp.activate()
+            app.window.makeKeyAndOrderFront(nil)
+            try await app.waitUntil("the app is active") { NSApp.isActive }
+            let timer = Timer(timeInterval: 0.8, repeats: false) { _ in
+                MainActor.assumeIsolated {
+                    let window = menuWindow(of: app)
+                    Log.line("RESULT menu window: \(window.map { "\(Swift.type(of: $0)) \($0.frame)" } ?? "none")")
+                    app.screenshot("start-work-link-menu", menu: window)
+                    shown.menu.cancelTracking()
+                }
             }
+            RunLoop.main.add(timer, forMode: .common)
+            shown.menu.popUp(positioning: nil, at: shown.point, in: shown.view)
+            if let previous, previous != NSRunningApplication.current { previous.activate() }
         }
-        RunLoop.main.add(timer, forMode: .common)
-        shown.menu.popUp(positioning: nil, at: shown.point, in: shown.view)
-        NSApp.deactivate()
 
         // 3. Start work… fills the sheet from the link: the branch and the goal from the label, the link, and the base.
         try app.perform("Start work\u{2026}", on: issueRow)
@@ -199,16 +204,37 @@ extension Scenarios {
         let seed = try String(contentsOf: rig.loamHome.appendingPathComponent("plots/\(plot)/CLAUDE.md"), encoding: .utf8)
         try expectStart(seed.contains(seedLine), "the seed of the plot has no line \(seedLine)")
 
-        // 6. The issue key shows on the sidebar row, in line 2 of the Worktrees row, and the goal is the tooltip.
+        // 6. The issue key shows in line 2 of the Worktrees row. The sidebar row shows it only when it fits after the whole
+        // name. At the default width it does not fit after this name, so the row shows the name and no key.
         try await app.waitUntil("the sidebar row") { app.exists("worktree-\(made.id)") }
-        try expectStart(app.text(of: "worktree-\(made.id)")?.contains("ENG-482") == true,
+        try expectStart(app.text(of: "worktree-\(made.id)") == issueBranch,
                         "the sidebar row reads \(app.text(of: "worktree-\(made.id)") ?? "nothing")")
         try await app.waitUntil("the Worktrees row") { app.exists("panel-worktree-\(made.id)") }
         try expectStart(app.text(of: "panel-worktree-\(made.id)")?.contains("ENG-482") == true,
                         "the Worktrees row reads \(app.text(of: "panel-worktree-\(made.id)") ?? "nothing")")
-        // The sidebar is wide enough for the name and the key of the row.
-        (host.window.contentViewController as? NSSplitViewController)?.splitView.setPosition(300, ofDividerAt: 0)
         try await settledShot("start-work-rows")
+
+        // The goal of a worktree with no PR is edited in the PR popover. Escape in a composition is for the input method.
+        // The edit stays. Escape after it ends the edit, and the next Escape closes the popover.
+        try expectStart(model.openPullRequest(made.id), "the PR popover did not open for the new worktree")
+        try await app.waitUntil("the popover opens") { app.exists("pr-popover") && app.exists("pr-popover-goal") }
+        try app.click("pr-popover-goal")
+        try await app.waitUntil("the goal field shows") { app.exists("pr-popover-goal-field") }
+        _ = AccessibilityProbe.shared.focus("pr-popover-goal-field")
+        try await app.waitUntil("the goal field edits") { (app.window.firstResponder as? NSTextView)?.isFieldEditor == true }
+        guard let goalEditor = app.window.firstResponder as? NSTextView else { throw DriverFailure("the popover goal field has no editor") }
+        goalEditor.setMarkedText("\u{306B}\u{307B}\u{3093}", selectedRange: NSRange(location: 3, length: 0),
+                                 replacementRange: NSRange(location: NSNotFound, length: 0))
+        try expectStart(goalEditor.hasMarkedText(), "the popover editor took no marked text")
+        app.press(.escape)
+        await app.sleep(0.5)
+        try expectStart(model.prPopover.isOpen && model.prPopover.goalDraft != nil, "Escape in a composition ended the goal edit")
+        goalEditor.unmarkText()
+        app.press(.escape)
+        try await app.waitUntil("Escape ends the goal edit") { model.prPopover.goalDraft == nil }
+        try expectStart(model.prPopover.isOpen, "Escape ended the goal edit and closed the popover")
+        app.press(.escape)
+        try await app.waitUntil("Escape closes the popover") { !model.prPopover.isOpen && !app.exists("pr-popover") }
 
         // 7. The plus of the Worktrees section opens the sheet with no link: nothing is filled, and Start session is off.
         try app.click("panel-add-worktree")
@@ -227,6 +253,17 @@ extension Scenarios {
         try await app.waitUntil("the goal warns") {
             app.text(of: "new-worktree-goal-note") == "The goal has 24 words. The soft limit is 20 words."
         }
+        // Escape in the middle of a composition (marked text, as an input method makes it) is for the input method. The sheet stays.
+        _ = AccessibilityProbe.shared.focus("new-worktree-goal")
+        try await app.waitUntil("the goal field edits") { (app.window.firstResponder as? NSTextView)?.isFieldEditor == true }
+        guard let editor = app.window.firstResponder as? NSTextView else { throw DriverFailure("the goal field has no editor") }
+        editor.setMarkedText("\u{306B}\u{307B}\u{3093}", selectedRange: NSRange(location: 3, length: 0),
+                             replacementRange: NSRange(location: NSNotFound, length: 0))
+        try expectStart(editor.hasMarkedText(), "the editor took no marked text")
+        app.press(.escape)
+        await app.sleep(0.5)
+        try expectStart(sheet.isOpen, "Escape in a composition closed the sheet")
+        editor.unmarkText()
         app.press(.escape)
         try await app.waitUntil("Escape closes the sheet") { !sheet.isOpen && !app.exists("new-worktree-sheet") }
     }
