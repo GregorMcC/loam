@@ -27,14 +27,12 @@ struct PRPopoverView: View {
                 .onTapGesture { app.closePullRequest() }
             if let status = model.worktreeID.flatMap({ app.worktreeStatus($0) }) {
                 let content = PRPopoverContent(status, attemptedAt: model.attemptedAt)
-                // A refresh can take the row of the passed checks away. Then no list shows, and the card picks its side again.
+                // A refresh can take the row of the passed checks away. Then no list shows, and the card picks its side
+                // again. `AppModel` closes the list in the same change.
                 PopoverLayout(anchor: place.anchor, open: model.openCount,
                               listOpen: model.showsPassedChecks && !content.passedChecks.isEmpty) {
                     card(content, status: status)
                         .id(model.openCount)
-                }
-                .onChange(of: content.passedChecks.isEmpty) { _, gone in
-                    if gone { model.hidePassedChecks() }
                 }
             }
         }
@@ -176,7 +174,7 @@ struct PRPopoverView: View {
                 }
                 if !content.passedChecks.isEmpty {
                     PassedChecksView(title: content.passedTitle, checks: content.passedChecks, isOpen: app.prPopover.showsPassedChecks,
-                                     onToggle: app.prPopover.togglePassedChecks)
+                                     onToggle: app.togglePassedChecks)
                 }
             }
             .padding(.horizontal, -8)

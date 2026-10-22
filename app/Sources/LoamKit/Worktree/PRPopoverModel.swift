@@ -52,7 +52,7 @@ public final class PRPopoverModel {
     /// What the last button did, or why it failed. It goes when the popover opens again.
     public private(set) var note: String?
     /// True while the passed checks show in the card (ticket 116). The list is closed on each open, because each
-    /// open is a new card. A refresh and a button leave it as it is.
+    /// open is a new card. A refresh and a button leave it as it is, unless the refresh takes its row away.
     public private(set) var showsPassedChecks = false
     /// The worktrees whose refresh runs now (`AppModel.refreshWorktree`), shown or not.
     private var refreshing: Set<String> = []
@@ -103,14 +103,15 @@ public final class PRPopoverModel {
     }
 
     /// Opens the passed checks in the card, or closes them. Does nothing when the popover is closed.
-    public func togglePassedChecks() {
+    /// `AppModel.togglePassedChecks()` checks first that the row is there.
+    func togglePassedChecks() {
         guard isOpen else { return }
         showsPassedChecks.toggle()
     }
 
     /// Closes the passed checks because their row went away: a refresh found no failed check. A row that comes
     /// back later shows the list closed.
-    public func hidePassedChecks() {
+    func hidePassedChecks() {
         showsPassedChecks = false
     }
 
