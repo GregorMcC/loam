@@ -213,7 +213,7 @@ struct DriverTests {
 
     /// Ticket 113: after a merge on GitHub. A repo that asks shows a callout: Keep leaves the faded row, and Remove worktree
     /// removes the worktree and gives Where it stands the keys. A repo set to Remove the worktree removes a clean worktree
-    /// with a toast, and asks for one with changed files.
+    /// with a toast, and asks for one with changed files and for one with a shell that runs a process.
     @Test func actsAfterAMergeOnGitHub() async throws {
         try await expectPass("after-merge", environment: [
             "LOAM_DRIVER_LOAM": Self.loamBinary, "LOAM_DRIVER_FAKE_GH": Self.fakeGH,

@@ -16,7 +16,7 @@ extension Scenarios {
         do { try await afterMergeSteps(app) } catch { app.dumpAccessibility(); throw error }
     }
 
-    /// What GitHub says about the PRs of `example/widgets`: four PRs, approved, with one passed check, all on the commit
+    /// What GitHub says about the PRs of `example/widgets`: five PRs, approved, with one passed check, all on the commit
     /// `head`. GitHub merged the PRs in `merged`. PR 145 has no head commit, as a PR in a cache from before Loam kept the
     /// head. The core then shows the Merged stage although the worktree has changed files, so the app must check them.
     private static func mergeGitHub(head: String, merged: Set<Int>) throws -> Data {
@@ -48,7 +48,7 @@ extension Scenarios {
                     "latestOpinionatedReviews": ["nodes": [["state": "APPROVED"]]], "reviewThreads": ["nodes": [Any]()]]
         }
         let state: [String: Any] = [
-            "refs": ["link-labels", "fix-login", "rename-users", "native-panel"],
+            "refs": ["link-labels", "fix-login", "rename-users", "native-panel", "dark-mode"],
             "repository": ["mergeCommitAllowed": false, "squashMergeAllowed": true, "rebaseMergeAllowed": true,
                            "viewerDefaultMergeMethod": "SQUASH"],
             "pulls": [
@@ -56,8 +56,10 @@ extension Scenarios {
                 pull(143, "fix-login", title: "Fix login", head: head),
                 pull(144, "rename-users", title: "Rename users", head: head),
                 pull(145, "native-panel", title: "Native panel", head: nil),
+                pull(146, "dark-mode", title: "Dark mode", head: head),
             ],
-            "details": ["142": detail(run: 501), "143": detail(run: 502), "144": detail(run: 503), "145": detail(run: 504)],
+            "details": ["142": detail(run: 501), "143": detail(run: 502), "144": detail(run: 503), "145": detail(run: 504),
+                        "146": detail(run: 505)],
         ]
         return try JSONSerialization.data(withJSONObject: state)
     }
@@ -75,7 +77,7 @@ extension Scenarios {
             app.screenshot(name)
         }
 
-        // 1. A repo with four worktrees. native-panel has 2 files that are not committed. The remote becomes a GitHub
+        // 1. A repo with five worktrees. native-panel has 2 files that are not committed. The remote becomes a GitHub
         // address after the worktrees exist, so no git command asks the network.
         let plot = try rig.newPlot("Widgets plot")
         let widgets = try makeRepo(rig, named: "widgets")
@@ -85,6 +87,7 @@ extension Scenarios {
         let fix = try makeWorktree(rig, plot: plot, repo: widgets, name: "fix-login")
         let rename = try makeWorktree(rig, plot: plot, repo: widgets, name: "rename-users")
         let panel = try makeWorktree(rig, plot: plot, repo: widgets, name: "native-panel")
+        let dark = try makeWorktree(rig, plot: plot, repo: widgets, name: "dark-mode")
         for name in ["notes.txt", "todo.txt"] {
             try "draft\n".write(to: URL(fileURLWithPath: panel.path).appendingPathComponent(name), atomically: true, encoding: .utf8)
         }
@@ -105,7 +108,7 @@ extension Scenarios {
         let model = host.model
         try await app.waitUntil("the plot is active") { model.workspace.activePlotID == plot }
         try await app.waitUntil("the stages") {
-            [labels, fix, rename, panel].allSatisfy { model.worktreeStatus($0.id)?.stage == .readyToMerge }
+            [labels, fix, rename, panel, dark].allSatisfy { model.worktreeStatus($0.id)?.stage == .readyToMerge }
         }
         func merge(_ numbers: Set<Int>) async throws {
             try mergeGitHub(head: head, merged: numbers).write(to: ghState)
@@ -113,9 +116,28 @@ extension Scenarios {
         }
         func callout(_ id: String) -> String { app.text(of: "panel-merged-\(id)") ?? "" }
 
-        // 2. A shell in link-labels, and the panel.
-        model.openWorktreePane(try model.worktreeStatus(labels.id)?.worktree ?? { throw DriverFailure("no link-labels") }(), kind: .shell)
-        let shell = try model.workspace.focusedPane ?? { throw DriverFailure("no focused pane") }()
+        /// A shell pane in a worktree, at its prompt.
+        func openShell(in id: String) async throws -> (pane: PaneID, view: TerminalSurfaceView) {
+            model.openWorktreePane(try model.worktreeStatus(id)?.worktree ?? { throw DriverFailure("no worktree \(id)") }(), kind: .shell)
+            let pane = try model.workspace.focusedPane ?? { throw DriverFailure("no focused pane") }()
+            try await app.waitUntil("the shell has a terminal") { host.paneView(pane) is TerminalSurfaceView }
+            let view = try host.paneView(pane) as? TerminalSurfaceView ?? { throw DriverFailure("no terminal") }()
+            try await app.waitForPrompt(view)
+            return (pane, view)
+        }
+
+        // 2. A shell in link-labels, at its prompt. A shell in dark-mode runs a process, as a dev server does. The
+        // foreground process group of its terminal is the job then, not the shell. Then the panel.
+        let (shell, idle) = try await openShell(in: labels.id)
+        let server = try await openShell(in: dark.id)
+        host.window.makeFirstResponder(server.view)
+        try app.type("sleep 600")
+        app.press(.returnKey)
+        func job(_ view: TerminalSurfaceView) -> Bool {
+            ForegroundJob.runs(group: view.foregroundProcessGroup, app: getpid(), read: ForegroundJob.read)
+        }
+        try await app.waitUntil("the shell of dark-mode runs a job") { job(server.view) && server.view.runsAProcess }
+        try expectMerge(!job(idle), "the shell at its prompt runs a job")
         try await app.openPanel(host)
 
         // 3. GitHub merges #143. The repo asks: a callout at the top of the panel. Keep leaves the faded Merged row with its
@@ -177,13 +199,35 @@ extension Scenarios {
         try await setAfterMergeInTheMenu(app, host, repo: repoID)
         try await app.waitUntil("the repo says remove") { model.panel.plot?.repos.first?.afterMerge == .remove }
 
-        // 7. GitHub merges #144 and #145. rename-users is clean, so it goes with a toast. native-panel has changed files,
-        // so it asks, and keeps its files.
-        try await merge([142, 143, 144, 145])
+        // 7. GitHub merges #144, #145 and #146. rename-users is clean, so it goes with a toast. native-panel has changed
+        // files, so it asks, and keeps its files. The shell of dark-mode runs a process, so it asks, and the process goes
+        // on. The shells here have no Ghostty shell integration, so the close check of libghostty says yes also for a
+        // shell at its prompt. Step 2 shows that the check of the foreground group tells the two apart.
+        //
+        // The bar shows a toast only while it fits after the pane label, so the window grows when the screen has room.
+        // The check reads the toasts that the app gives the bar.
+        if let screen = host.window.screen?.visibleFrame {
+            let width = min(1480, screen.width)
+            host.window.setFrame(NSRect(x: screen.maxX - width, y: host.window.frame.minY, width: width,
+                                        height: host.window.frame.height), display: true)
+        }
+        var toasts: [String] = []
+        let barToast = model.onToast
+        model.onToast = { text, kind in
+            toasts.append(text)
+            barToast?(text, kind)
+        }
+        try await merge([142, 143, 144, 145, 146])
         try await app.waitUntil("the toast of the removal", timeout: 20) {
-            app.text(of: "action-bar-toast")?.contains("#144 was merged on GitHub. Loam removed the worktree rename-users.") == true
+            toasts == ["#144 was merged on GitHub. Loam removed the worktree rename-users."]
         }
         try expectMerge(!FileManager.default.fileExists(atPath: rename.path), "the folder of rename-users is still there")
+        try await app.waitUntil("the callout of dark-mode") {
+            callout(dark.id) == "#146 was merged on GitHub. Remove the worktree dark-mode?"
+        }
+        try expectMerge(model.workspace.allPaneIDs.contains(server.pane) && job(server.view),
+                        "Loam closed the shell of dark-mode, or stopped its process")
+        try expectMerge(FileManager.default.fileExists(atPath: dark.path), "the folder of dark-mode is gone")
         try await app.waitUntil("the callout of native-panel") {
             callout(panel.id) == "#145 was merged on GitHub. Remove the worktree native-panel?"
         }
