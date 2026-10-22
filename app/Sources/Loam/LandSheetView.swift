@@ -73,9 +73,9 @@ struct LandSheetView: View {
     }
 
     /// The text view that has the keys in the window of the sheet: the field editor of the Where it stands box. The sheet
-    /// itself and the terminal are not text views.
+    /// itself, the terminal and a callout that you select are not.
     private var fieldEditor: NSTextView? {
-        (window.window ?? NSApp.keyWindow)?.firstResponder as? NSTextView
+        LandSheetKeys.editor(of: (window.window ?? NSApp.keyWindow)?.firstResponder)
     }
 
     /// Return, or a click on the primary button. The model does nothing while a check blocks.
