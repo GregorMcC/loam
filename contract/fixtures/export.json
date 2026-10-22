@@ -9,6 +9,7 @@
       "repos": [],
       "revision": 2,
       "versions": {
+        "links": 0,
         "name": 2,
         "what": 2,
         "where": 2,
@@ -57,6 +58,7 @@
       "versions": {
         "link:linkaaaaab": 7,
         "link:linkaaaaac": 16,
+        "links": 0,
         "name": 1,
         "repo:repoaaaaad": 15,
         "what": 17,
