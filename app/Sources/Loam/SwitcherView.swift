@@ -73,6 +73,12 @@ struct SwitcherView: View {
                     .focused($fieldFocused)
                     .accessibilityIdentifier("switcher-field")
                     .onSubmit { model.chooseSelected() }
+                    // The second action of the result (ticket 115), such as Start work… on an issue link.
+                    .onKeyPress(keys: [.return], phases: .down) { press in
+                        guard press.modifiers.contains(.command) else { return .ignored }
+                        model.chooseSelectedAlternate()
+                        return .handled
+                    }
                     .onKeyPress(.downArrow) { model.moveSelection(1); return .handled }
                     .onKeyPress(.upArrow) { model.moveSelection(-1); return .handled }
                     .onKeyPress(.escape) { model.close(); return .handled }
@@ -100,7 +106,8 @@ struct SwitcherView: View {
                     list(results, context: context, fixedHeight: false, height: listHeight)
                 }
                 if let selected, let preview {
-                    SwitcherFooter(icon: selected.item.icon, action: preview.footerAction) { model.chooseSelected() }
+                    SwitcherFooter(icon: selected.item.icon, action: preview.footerAction, alternate: preview.alternateAction,
+                                   run: { model.chooseSelected() }, runAlternate: { model.chooseSelectedAlternate() })
                 }
             }
         }

@@ -64,13 +64,18 @@ public struct IssueLink: Equatable, Sendable {
     }
 }
 
+extension IssueLink {
+    /// The issue that a link of this kind and target points at. Nil for a link of any other kind than Linear and GitHub.
+    public init?(kind: LinkKind, target: String) {
+        switch kind {
+        case .linear, .github: self.init(target: target)
+        case .notion, .url, .path, .vault: return nil
+        }
+    }
+}
+
 extension PlotLink {
     /// The issue that the link points at, for Start work… (ticket 115). Nil for a link of any other kind, and for a GitHub pull
     /// request.
-    public var issue: IssueLink? {
-        switch kind {
-        case .linear, .github: IssueLink(target: target)
-        case .notion, .url, .path, .vault: nil
-        }
-    }
+    public var issue: IssueLink? { IssueLink(kind: kind, target: target) }
 }

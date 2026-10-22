@@ -146,11 +146,14 @@ struct SwitcherPreviewView: View {
     }
 }
 
-/// The footer of the switcher: 44 pt, a hairline above, and the primary action of the selected result.
+/// The footer of the switcher: 44 pt, a hairline above, and the primary action of the selected result. A result with a
+/// second action lists it first, on ⌘Return (ticket 115).
 struct SwitcherFooter: View {
     let icon: LoamIcon
     let action: String
+    var alternate: String?
     let run: () -> Void
+    var runAlternate: () -> Void = {}
 
     var body: some View {
         VStack(spacing: 0) {
@@ -158,6 +161,21 @@ struct SwitcherFooter: View {
             HStack(spacing: 8) {
                 LoamIconView(icon: icon, size: 13, color: LoamColor.inkMuted)
                 Spacer(minLength: 0)
+                if let alternate {
+                    Button(action: runAlternate) {
+                        HStack(spacing: 8) {
+                            Text(alternate)
+                                .font(.system(size: 12.5, weight: .medium))
+                                .foregroundStyle(LoamColor.inkMuted)
+                            SwitcherKeycap(text: "\u{2318}\u{21B5}")
+                        }
+                        .padding(.horizontal, 6)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(alternate)
+                    .accessibilityIdentifier("switcher-footer-alternate")
+                }
                 Button(action: run) {
                     HStack(spacing: 8) {
                         Text(action)

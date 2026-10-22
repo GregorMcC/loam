@@ -45,6 +45,11 @@ public struct SwitcherLink: Equatable, Sendable {
         self.target = target
         self.kind = kind
     }
+
+    /// The link as the panel holds it, for Start work…. The switcher does not read the note or the version.
+    var plotLink: PlotLink {
+        PlotLink(id: linkID, label: label, target: target, note: "", position: 0, version: 0, kind: kind, exists: nil)
+    }
 }
 
 /// One row of the switcher.
@@ -106,10 +111,28 @@ public struct SwitcherItem: Equatable, Sendable, Identifiable {
     /// The kind and target of a link item. Nil for the other kinds.
     public var linkKind: LinkKind?
     public var linkTarget: String?
+    /// The second action of the item, on ⌘Return (ticket 115). The footer lists it beside the first. Nil for an item that has
+    /// only one, and ⌘Return then does nothing.
+    public var alternate: Alternate?
+
+    /// What ⌘Return does. A kind that gets a second action adds a case to `Action` and builds the item with it.
+    public struct Alternate: Equatable, Sendable {
+        public enum Action: Equatable, Sendable {
+            /// Start work… on the issue link: the New worktree sheet, filled from the link.
+            case startWork(SwitcherLink)
+        }
+        public var title: String
+        public var action: Action
+
+        public init(title: String, action: Action) {
+            self.title = title
+            self.action = action
+        }
+    }
 
     public init(id: String, kind: Kind, title: String, otherText: [String] = [], plotName: String? = nil,
                 shortcut: String = "", attention: PaneAttention = .none, target: Target, icon: LoamIcon? = nil,
-                linkKind: LinkKind? = nil, linkTarget: String? = nil) {
+                linkKind: LinkKind? = nil, linkTarget: String? = nil, alternate: Alternate? = nil) {
         self.id = id
         self.kind = kind
         self.title = title
@@ -121,6 +144,7 @@ public struct SwitcherItem: Equatable, Sendable, Identifiable {
         self.icon = icon ?? kind.icon
         self.linkKind = linkKind
         self.linkTarget = linkTarget
+        self.alternate = alternate
     }
 
     /// The kind in words, on the right of the row: "Home", "Plot", "Pane", "Worktree", "Local link", "Action".
