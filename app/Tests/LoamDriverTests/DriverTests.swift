@@ -202,6 +202,15 @@ struct DriverTests {
         ])
     }
 
+    /// Ticket 112: the Land sheet. A blocked worktree keeps Merge off, a worktree with running checks merges when ready,
+    /// a refused merge leaves the sheet open with the message of GitHub, and a merge of a worktree with a shell open closes the
+    /// pane, removes the worktree, saves Where it stands as one change, and shows the toast.
+    @Test func landsAWorktreeFromTheLandSheet() async throws {
+        try await expectPass("land-sheet", environment: [
+            "LOAM_DRIVER_LOAM": Self.loamBinary, "LOAM_DRIVER_FAKE_GH": Self.fakeGH,
+        ])
+    }
+
     /// Ticket 48: archive a plot with a session, unarchive it and see the session resume, and delete an archived plot.
     /// Ticket 61: an unarchive and show at once still gives one `claude` for the session.
     @Test func archivesUnarchivesAndDeletesAPlot() async throws {

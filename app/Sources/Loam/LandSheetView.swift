@@ -194,6 +194,7 @@ struct LandSheetView: View {
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(color(of: row.tone))
                 .frame(width: 14)
+                .accessibilityHidden(true)
             Text(row.title).lineLimit(1)
             if row.hasTrailing, !row.value.isEmpty { value(row.value) }
             Spacer(minLength: 8)
@@ -219,8 +220,9 @@ struct LandSheetView: View {
         .frame(height: 30)
         .overlay(alignment: .bottom) { LoamColor.inkHairline.frame(height: 1) }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel([row.title, row.value, row.hint].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", "))
-        .accessibilityValue(row.tone == .blocking ? "blocks" : "")
+        // The mark and the rust colour carry the state for the eye, so the label says it in words.
+        .accessibilityLabel(([row.title, row.value, row.hint].compactMap { $0 }.filter { !$0.isEmpty }
+                             + (row.tone == .blocking ? ["blocks the merge"] : [])).joined(separator: ", "))
         .accessibilityIdentifier("land-sheet-row-\(row.id)")
     }
 
