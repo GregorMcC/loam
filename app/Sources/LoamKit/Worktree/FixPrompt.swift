@@ -34,7 +34,8 @@ public struct FixPrompt: Equatable, Sendable {
 
     /// The most failed checks that a prompt names. "and 3 more" counts the rest.
     public static let namedChecks = 5
-    /// The most characters of a check name in a prompt, with the "…" at the end of a name that is cut.
+    /// The most code points of a check name in a prompt, with the "…" at the end of a name that is cut. Code
+    /// points, not characters, because combining marks can make one character as long as they want.
     public static let longestCheckName = 80
 
     public let kind: Kind
@@ -69,10 +70,13 @@ public struct FixPrompt: Equatable, Sendable {
     /// The text as one line that shows each character it has. GitHub gives the names, and a PR from a fork can name
     /// its own checks and branches. A control character could act as a key in the terminal, and a line break as
     /// Return. A character that shows nothing could hide words: a direction mark, a zero-width or tag character, a
-    /// byte order mark, a private use or an unassigned code point. So each run of white space and control characters
-    /// becomes one space, and the format, private use, unassigned and surrogate code points go.
+    /// byte order mark, a variation selector, a Hangul filler, a private use or an unassigned code point. So each
+    /// run of white space and control characters becomes one space. The format, private use, unassigned and
+    /// surrogate code points go, and so does each default ignorable code point.
     static func oneLine(_ text: String) -> String {
-        let shown = text.unicodeScalars.filter { !hidden.contains($0.properties.generalCategory) }
+        let shown = text.unicodeScalars.filter {
+            !hidden.contains($0.properties.generalCategory) && !$0.properties.isDefaultIgnorableCodePoint
+        }
         return shown
             .split { $0.properties.generalCategory == .control || $0.properties.isWhitespace }
             .map { String(String.UnicodeScalarView($0)) }
@@ -82,8 +86,11 @@ public struct FixPrompt: Equatable, Sendable {
     /// The general categories that show nothing: Cf, Co, Cn and Cs. Cf has the direction marks.
     private static let hidden: Set<Unicode.GeneralCategory> = [.format, .privateUse, .unassigned, .surrogate]
 
-    /// A check name of at most `longestCheckName` characters. A longer name ends in "…".
+    /// A check name of at most `longestCheckName` code points. A longer name ends in "…".
     static func cut(_ name: String) -> String {
-        name.count > longestCheckName ? String(name.prefix(longestCheckName - 1)) + "\u{2026}" : name
+        guard name.unicodeScalars.count > longestCheckName else { return name }
+        var kept = String.UnicodeScalarView(name.unicodeScalars.prefix(longestCheckName - 1))
+        kept.append("\u{2026}")
+        return String(kept)
     }
 }

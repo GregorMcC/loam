@@ -94,6 +94,27 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
         #expect(FixPrompt.oneLine("\u{202E}\u{200B}\u{FEFF}") == "")
     }
 
+    /// Variation selectors, the combining grapheme joiner, the Mongolian variation selectors and the Hangul fillers
+    /// show nothing either. A selector changes the look of the character before it, so it could also hide words.
+    @Test func aNameLosesTheIgnorableCharacters() throws {
+        let selectors = (0xFE00...0xFE0F).map { String(UnicodeScalar($0)!) }.joined()
+            + (0xE0100...0xE01EF).map { String(UnicodeScalar($0)!) }.joined()
+        #expect(FixPrompt.oneLine("\u{1F600}" + selectors) == "\u{1F600}")
+        #expect(FixPrompt.oneLine("lint \u{1F600}" + String(repeating: "\u{E0100}", count: 500)) == "lint \u{1F600}")
+        #expect(FixPrompt.oneLine("li\u{034F}nt\u{180B}\u{3164}\u{FFA0}") == "lint")
+    }
+
+    /// Combining marks show, so they stay. A name cuts at 80 code points, so marks cannot make one character
+    /// as long as they want.
+    @Test func aLongCharacterIsCutByItsCodePoints() throws {
+        var pr = try pr(.checksFailed)
+        pr.failedChecks = try checks(["lint " + "a" + String(repeating: "\u{0301}", count: 500)])
+        let text = FixPrompt(.failures, pr: pr).text
+        let name = try #require(text.split(separator: ": ").dropFirst().first?.split(separator: ". Run").first)
+        #expect(name.unicodeScalars.count == FixPrompt.longestCheckName)
+        #expect(name.hasSuffix("\u{2026}"))
+    }
+
     /// A check name can be as long as its job wants. The prompt cuts it at 80 characters. A branch name stays whole,
     /// because the conflicts prompt tells the session to merge it.
     @Test func aLongCheckNameIsCutAndABranchNameIsNot() throws {
