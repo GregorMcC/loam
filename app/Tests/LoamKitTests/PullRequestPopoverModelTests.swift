@@ -520,6 +520,22 @@ import Testing
         await idle(model)
     }
 
+    /// A refresh can take the row of the passed checks away, such as after Update branch when no check has
+    /// failed yet. The list goes with its row, so a row that comes back later shows it closed.
+    @Test func theListClosesWhenItsRowGoesAway() async throws {
+        let rig = try await rig()
+        let model = rig.model
+        model.prPopover.hidePassedChecks()
+        #expect(!model.prPopover.showsPassedChecks)  // No popover is open.
+        model.openPullRequest(nativePanel)
+        await idle(model)
+        model.prPopover.togglePassedChecks()
+        #expect(model.prPopover.showsPassedChecks)
+        model.prPopover.hidePassedChecks()
+        #expect(!model.prPopover.showsPassedChecks)
+        model.closePullRequest()
+    }
+
     // MARK: The chip and the pane header
 
     func workspaceRef(_ id: String, in model: AppModel) throws -> WorktreeRef {

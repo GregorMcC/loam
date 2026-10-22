@@ -108,6 +108,12 @@ public final class PRPopoverModel {
         showsPassedChecks.toggle()
     }
 
+    /// Closes the passed checks because their row went away: a refresh found no failed check. A row that comes
+    /// back later shows the list closed.
+    public func hidePassedChecks() {
+        showsPassedChecks = false
+    }
+
     // MARK: Refresh
 
     /// A refresh of `id` starts.
