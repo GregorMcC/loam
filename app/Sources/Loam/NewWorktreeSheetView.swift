@@ -35,7 +35,12 @@ struct NewWorktreeSheetView: View {
         .focusable()
         .focused($focus, equals: .sheet)
         .focusEffectDisabled()
-        .onKeyPress(.escape) { app.closeNewWorktree(); return .handled }
+        .onKeyPress(.escape) {
+            // Escape that cancels an input method composition is the input method's.
+            guard !window.isComposing else { return .ignored }
+            app.closeNewWorktree()
+            return .handled
+        }
         // Return starts the session, but not when a field has the keys: the field takes the Return as its own (`onSubmit`).
         .onKeyPress(.return, phases: .down) { _ in
             guard fieldEditor == nil else { return .ignored }
@@ -137,7 +142,7 @@ struct NewWorktreeSheetView: View {
                         .font(.system(size: 12.5, design: .monospaced))
                         .focused($focus, equals: .branch)
                         .fieldBox()
-                        .modifier(FieldKeys(close: { app.closeNewWorktree() }, submit: start))
+                        .modifier(FieldKeys(close: { app.closeNewWorktree() }, composing: { window.isComposing }, submit: start))
                         .accessibilityLabel("Branch")
                         .accessibilityIdentifier("new-worktree-branch")
                     note(content.branchNote, id: "new-worktree-branch-note")
@@ -156,7 +161,7 @@ struct NewWorktreeSheetView: View {
                         .font(.system(size: 13))
                         .focused($focus, equals: .goal)
                         .fieldBox()
-                        .modifier(FieldKeys(close: { app.closeNewWorktree() }, submit: start))
+                        .modifier(FieldKeys(close: { app.closeNewWorktree() }, composing: { window.isComposing }, submit: start))
                         .accessibilityLabel("Goal")
                         .accessibilityIdentifier("new-worktree-goal")
                     note(content.goalNote, id: "new-worktree-goal-note")
@@ -174,7 +179,7 @@ struct NewWorktreeSheetView: View {
                             .font(.system(size: 12, design: .monospaced))
                             .focused($focus, equals: .url)
                             .fieldBox()
-                            .modifier(FieldKeys(close: { app.closeNewWorktree() }, submit: start))
+                            .modifier(FieldKeys(close: { app.closeNewWorktree() }, composing: { window.isComposing }, submit: start))
                             .accessibilityLabel("Link URL")
                             .accessibilityIdentifier("new-worktree-url")
                     }
@@ -398,14 +403,20 @@ private extension View {
     }
 }
 
-/// Escape closes the sheet and Return starts the session, from inside a text field too.
+/// Escape closes the sheet and Return starts the session, from inside a text field too. Escape that cancels an input
+/// method composition does neither: it is the input method's.
 private struct FieldKeys: ViewModifier {
     let close: () -> Void
+    let composing: () -> Bool
     let submit: () -> Void
 
     func body(content: Content) -> some View {
         content
             .onSubmit(submit)
-            .onKeyPress(.escape) { close(); return .handled }
+            .onKeyPress(.escape) {
+                guard !composing() else { return .ignored }
+                close()
+                return .handled
+            }
     }
 }

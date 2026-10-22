@@ -16,6 +16,8 @@ struct PRPopoverView: View {
     @FocusState private var focused: Bool
     /// The goal field of a worktree with no PR (ticket 115) holds the keys while you edit it.
     @FocusState private var goalFocused: Bool
+    /// The window, to ask if an input method composes in the goal field.
+    @State private var window = WindowRef()
     @Environment(\.colorScheme) private var scheme
 
     static let width: CGFloat = 360
@@ -41,9 +43,17 @@ struct PRPopoverView: View {
         .focusable()
         .focused($focused)
         .focusEffectDisabled()
-        .onKeyPress(.escape) { app.closePullRequest(); return .handled }
+        .background(WindowReader(ref: window))
+        .onKeyPress(.escape) {
+            // Escape that cancels an input method composition is the input method's.
+            guard !window.isComposing else { return .ignored }
+            // Escape ends the goal edit first, whichever view has the focus. The next one closes the popover.
+            if model.goalDraft != nil { app.cancelGoalEdit() } else { app.closePullRequest() }
+            return .handled
+        }
         .onKeyPress(.return) {
-            guard let primary = currentPrimary else { return .ignored }
+            // Return in the goal field saves the goal. It never runs the button of the card.
+            guard model.goalDraft == nil, let primary = currentPrimary else { return .ignored }
             runPrimary(primary)
             return .handled
         }
@@ -186,7 +196,11 @@ struct PRPopoverView: View {
                         .textFieldStyle(.plain)
                         .focused($goalFocused)
                         .onSubmit { Task { await app.saveGoalEdit() } }
-                        .onKeyPress(.escape) { app.cancelGoalEdit(); return .handled }
+                        .onKeyPress(.escape) {
+                            guard !window.isComposing else { return .ignored }
+                            app.cancelGoalEdit()
+                            return .handled
+                        }
                         .onAppear { goalFocused = true }
                         .disabled(model.isSavingGoal)
                         .padding(.horizontal, 6)
