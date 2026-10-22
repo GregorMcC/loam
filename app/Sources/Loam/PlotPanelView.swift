@@ -24,6 +24,7 @@ struct PlotPanelView: View {
     @State private var linkLabel = ""
     @State private var linkTarget = ""
     @State private var linkNote = ""
+    @State private var linkDrag = LinkDrag()
     /// True while a drag over the panel holds something it can add.
     @State private var dropTargeted = false
     @FocusState private var focus: Field?
@@ -350,20 +351,14 @@ struct PlotPanelView: View {
     // MARK: Links
 
     private func links(_ plot: Plot) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        let order = plot.links.map(\.id)
+        return VStack(alignment: .leading, spacing: LinkDrag.spacing) {
             PanelSectionHeader(title: "Links", add: ("Add link", "panel-add-link-open")) { open(.link) }
-            ForEach(plot.links) { link in
+            ForEach(Array(plot.links.enumerated()), id: \.element.id) { index, link in
                 if editingLink == link.id {
                     linkEditor(link).padding(.horizontal, 8).padding(.vertical, 4)
                 } else {
-                    HoverMenuRow(menuLabel: "Link actions", menuID: "panel-link-menu-\(link.id)", kind: link.kindLabel) {
-                        LinkRow(link: link, missing: model.isMissing(link)) {
-                            Task { await model.open(linkID: link.id) }
-                        }
-                    } actions: {
-                        linkActions(link)
-                    }
-                    .accessibilityIdentifier("panel-link-row-\(link.id)")
+                    linkRow(link, index: index, order: order)
                 }
             }
             if adding == .link {
@@ -372,6 +367,63 @@ struct PlotPanelView: View {
                 EmptyRow(text: "No links")
             }
         }
+        .coordinateSpace(.named(LinkDrag.space))
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { linkDrag.bounds = CGRect(origin: .zero, size: $0) }
+        .overlay(alignment: .topLeading) {
+            if let line = linkDrag.line(order: order) {
+                RoundedRectangle(cornerRadius: 1).fill(LoamColor.moss)
+                    .frame(width: line.width, height: line.height)
+                    .offset(x: line.minX, y: line.minY)
+                    .allowsHitTesting(false)
+            }
+        }
+        .onChange(of: order) { linkDrag.orderChanged(order) }
+    }
+
+    private func linkRow(_ link: PlotLink, index: Int, order: [String]) -> some View {
+        let dragged = linkDrag.isDragged(link.id, order: order)
+        let lifted = dragged && !LoamMotion.reduceMotion
+        // The gesture sits on the row content, not the hover menu button, and never runs while an
+        // editor is open.
+        let canDrag = editingLink == nil && order.count > 1
+        return HoverMenuRow(menuLabel: "Link actions", menuID: "panel-link-menu-\(link.id)", kind: link.kindLabel) {
+            LinkRow(link: link, missing: model.isMissing(link)) {
+                guard !linkDrag.isActive else { return }
+                Task { await model.open(linkID: link.id) }
+            }
+            .highPriorityGesture(linkDragGesture(link, order: order), including: canDrag ? .all : .subviews)
+        } actions: {
+            linkActions(link)
+        }
+        .accessibilityIdentifier("panel-link-row-\(link.id)")
+        .accessibilityActions {
+            if index > 0 {
+                Button("Move up") { Task { await model.moveLink(id: link.id, to: index) } }
+            }
+            if index < order.count - 1 {
+                Button("Move down") { Task { await model.moveLink(id: link.id, to: index + 2) } }
+            }
+        }
+        .linkDragLift(lifted)
+        .opacity(dragged && LoamMotion.reduceMotion ? 0.5 : 1)
+        .offset(y: linkDrag.offset(of: link.id, order: order))
+        // The dragged row follows the pointer with no lag; only its settle animates.
+        .transaction { if lifted, linkDrag.active?.ending == false { $0.animation = nil } }
+        .zIndex(dragged ? 1 : 0)
+        // After the offset, so the frame is the row's place in the layout.
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(LinkDrag.space)) } action: {
+            linkDrag.frames[link.id] = $0
+        }
+    }
+
+    private func linkDragGesture(_ link: PlotLink, order: [String]) -> some Gesture {
+        DragGesture(minimumDistance: LinkDrag.threshold, coordinateSpace: .named(LinkDrag.space))
+            .onChanged { linkDrag.changed(link: link.id, order: order, translation: $0.translation.height) }
+            .onEnded { value in
+                linkDrag.ended(at: value.location) { id, position in
+                    await model.moveLink(id: id, to: position)
+                }
+            }
     }
 
     @ViewBuilder private func linkActions(_ link: PlotLink) -> some View {
