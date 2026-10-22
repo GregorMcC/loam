@@ -72,13 +72,56 @@ func TestCreateWithAnIssueURL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := store.WorktreeLink{Target: githubIssue, Label: "widgets#57", Key: "#57"}
+	// The origin of the repo is not on GitHub, so the key names the repo.
+	want := store.WorktreeLink{Target: githubIssue, Label: "widgets#57", Key: "example/widgets#57"}
 	if l := res.Worktree.Link; l == nil || *l != want {
 		t.Fatalf("%+v", l)
 	}
 	// The URL stays on the worktree. It does not go into the plot's links.
 	if p, _ := e.s.GetPlot(e.plot.ID); len(p.Links) != 0 {
 		t.Fatalf("links %+v", p.Links)
+	}
+}
+
+// GitHub reads "Fixes #57" as an issue of the repo that the PR goes to. So
+// the key of a GitHub issue is "#57" only when the issue is in the repo of
+// origin. Else the key names the repo. The record and the seed show the key
+// that the worktree got when Loam made it.
+func TestTheIssueKeyFollowsTheRepoOfOrigin(t *testing.T) {
+	for _, c := range []struct{ name, origin, key string }{
+		{"same repo", "git@github.com:Example/Widgets.git", "#57"},
+		{"another repo", "https://github.com/example/gadgets.git", "example/widgets#57"},
+		// The bare remote of setup is a folder, not a GitHub repo.
+		{"no GitHub origin", "", "example/widgets#57"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			e := setup(t)
+			if c.origin != "" {
+				// No command may reach GitHub. The fetch of Create fails,
+				// and the worktree starts from the last fetched state.
+				t.Setenv("GIT_ALLOW_PROTOCOL", "file")
+				testutil.Git(t, e.repo, "remote", "set-url", "origin", c.origin)
+			}
+			linkID := e.addLink("The issue", githubIssue)
+			for _, link := range []string{githubIssue, linkID} {
+				name := "fix-57-" + strings.ReplaceAll(strings.TrimPrefix(link, "https://"), "/", "-")
+				res, err := worktree.Create(e.s, worktree.CreateOptions{PlotID: e.plot.ID, Repo: e.repo, Name: name,
+					Goal: "Fix the login form", Link: link})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if l := res.Worktree.Link; l == nil || l.Key != c.key {
+					t.Fatalf("%s: link %+v, want the key %q", link, l, c.key)
+				}
+				if rec, _ := e.s.GetWorktree(res.Worktree.ID); rec.Link == nil || rec.Link.Key != c.key {
+					t.Fatalf("%s: record %+v", link, rec.Link)
+				}
+				line := "- app-" + name + ": Fix the login form (" + c.key + ", from origin/main)\n"
+				if got := e.seedText(); !strings.Contains(got, line) {
+					t.Fatalf("%s: seed has no line %q:\n%s", link, line, got)
+				}
+			}
+		})
 	}
 }
 
@@ -234,8 +277,34 @@ func TestCheckRefusesWhatCreateRefuses(t *testing.T) {
 	if err := check(worktree.CreateOptions{Name: "x", Base: "no-such-base"}); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("base: %v", err)
 	}
-	if err := check(worktree.CreateOptions{Name: "main", Base: "main"}); !errors.Is(err, store.ErrInvalid) {
-		t.Errorf("base for a branch that exists: %v", err)
+}
+
+// The New worktree sheet runs the dry run as you type, with the base that it
+// shows. A name whose branch exists is a result: the branch exists, and the
+// base does not apply. worktree new still refuses a base for it.
+func TestCheckSkipsTheBaseForABranchThatExists(t *testing.T) {
+	e := setup(t)
+	testutil.Git(t, e.repo, "branch", "local-only")
+	for _, c := range []struct{ name, base string }{
+		{"main", "main"},              // a local branch and a branch of origin
+		{"local-only", "origin/main"}, // a local branch
+		{"main", "no-such-base"},      // the base is not checked at all
+	} {
+		o := worktree.CreateOptions{PlotID: e.plot.ID, Repo: e.repo, Name: c.name, Base: c.base}
+		res, err := worktree.Check(e.s, o)
+		if err != nil {
+			t.Fatalf("%s from %s: %v", c.name, c.base, err)
+		}
+		if !res.ValidName || !res.BranchExists || res.WorktreeExists {
+			t.Fatalf("%s from %s: %+v", c.name, c.base, res)
+		}
+		if _, err := worktree.Create(e.s, o); !errors.Is(err, store.ErrInvalid) || !strings.Contains(err.Error(), "--base does not apply") {
+			t.Fatalf("create %s from %s: %v", c.name, c.base, err)
+		}
+	}
+	// A new branch still needs a base that works.
+	if _, err := worktree.Check(e.s, worktree.CreateOptions{PlotID: e.plot.ID, Repo: e.repo, Name: "new", Base: "no-such-base"}); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("new branch from a missing base: %v", err)
 	}
 }
 

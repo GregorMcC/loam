@@ -46,7 +46,7 @@ func TestHookCompactPrintsTheWorktrees(t *testing.T) {
 	p := e.plot(t, store.PlotInput{Name: "Alpha", Repos: []store.RepoInput{{Path: "/work/app"}}})
 	if _, err := e.store.AddWorktree(store.Worktree{PlotID: p.ID, Repo: "/work/app", Name: "fix-57", Branch: "fix-57", Base: "origin/main",
 		Path: filepath.Join(e.home, "worktrees", p.ID, "app-fix-57"), Goal: "Fix the login form",
-		Link: store.NewWorktreeLink("https://github.com/example/widgets/issues/57", "widgets#57", "")}); err != nil {
+		Link: &store.WorktreeLink{Target: "https://github.com/example/widgets/issues/57", Label: "widgets#57", Key: "#57"}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := seed.Write(e.store, p.ID); err != nil {

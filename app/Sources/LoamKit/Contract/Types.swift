@@ -276,7 +276,9 @@ public struct Worktree: Codable, Equatable, Sendable, Identifiable {
 public struct WorktreeLink: Codable, Equatable, Sendable {
     public var target: String
     public var label: String
-    /// "ENG-482" for a Linear issue, "#57" for a GitHub issue, empty for any other link.
+    /// The issue key for "Fixes" in a PR body: "ENG-482" for a Linear issue. For a GitHub
+    /// issue, "#57" when the issue is in the repo of origin, else "owner/repo#57". Empty for
+    /// any other link. Show it as it is: the seed shows the same key.
     public var key: String
     /// The plot link it was copied from. Empty for a URL given directly.
     public var linkID: String

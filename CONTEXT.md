@@ -51,7 +51,7 @@ One line that says what a worktree is for. The seed lists it, so a session in th
 _Avoid_: task, title
 
 **Link key**:
-The short ID of the issue that the link of a worktree points at: the issue ID for Linear, such as ENG-482, or # and the number for GitHub, such as #57. A link that is not an issue has no key. A PR body puts "Fixes" and the key, so the merge closes the issue.
+The short ID of the issue that the link of a worktree points at. For Linear it is the issue ID, such as ENG-482. For GitHub it is # and the number, such as #57, when the issue is in the repo of origin. Else it is owner/repo#57, because GitHub reads #57 as an issue of the PR's repo. A link that is not an issue has no key. A PR body puts "Fixes" and the key, so the merge closes the issue.
 _Avoid_: issue number, ticket ID
 
 **Land**:

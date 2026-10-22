@@ -204,7 +204,7 @@ func Render(p store.Plot, worktrees []store.Worktree) string {
 // out, such as "- loam-native-panel: Native panel spacing (from origin/main)".
 func worktreeLine(w store.Worktree) string {
 	line := "- " + oneLine(noControl(filepath.Base(w.Path)))
-	if goal := oneLine(w.Goal); goal != "" {
+	if goal := oneLine(noControl(w.Goal)); goal != "" {
 		line += ": " + goal
 	}
 	var about []string

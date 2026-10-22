@@ -8,7 +8,9 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"unicode"
 
+	"github.com/GregorMcC/loam/core/internal/seed"
 	"github.com/GregorMcC/loam/core/internal/store"
 	"github.com/GregorMcC/loam/core/internal/worktree"
 )
@@ -57,8 +59,26 @@ func TestWorktreeNewWithGoalAndLink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(text, "Link: #57 widgets#57 ("+cliGitHubIssue+")") {
+	// The origin of the repo is not on GitHub, so the key names the repo of
+	// the issue. The text, the JSON, and the seed show the same key.
+	const key = "example/widgets#57"
+	if !strings.Contains(text, "Link: "+key+" widgets#57 ("+cliGitHubIssue+")") {
 		t.Fatalf("text %q", text)
+	}
+	if b, err := os.ReadFile(seed.Path(s, p.ID)); err != nil || !strings.Contains(string(b), "- app-fix-57 ("+key+", from origin/main)\n") {
+		t.Fatalf("seed: %v\n%s", err, b)
+	}
+	out, _, err = lrRun(t, "", "worktree", "list", "alpha", "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var listed []worktree.Status
+	if err := json.Unmarshal([]byte(out), &listed); err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	if i := slices.IndexFunc(listed, func(st worktree.Status) bool { return st.Worktree.Name == "fix-57" }); i < 0 ||
+		listed[i].Worktree.Link == nil || listed[i].Worktree.Link.Key != key {
+		t.Fatalf("list --json: %s", out)
 	}
 	if links := lrPlot(t, s, p.ID).Links; len(links) != 1 {
 		t.Fatalf("links %+v", links)
@@ -78,10 +98,53 @@ func TestWorktreeNewWithGoalAndLink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, line := range []string{"    Link kinds for Figma (ENG-482)\n", "    #57\n", "    Native panel spacing\n"} {
+	for _, line := range []string{"    Link kinds for Figma (ENG-482)\n", "    " + key + "\n", "    Native panel spacing\n"} {
 		if !strings.Contains(text, line) {
 			t.Errorf("list misses %q:\n%s", line, text)
 		}
+	}
+}
+
+// A goal with an escape sequence never reaches the terminal through the text
+// output. The JSON keeps the goal as it was given.
+func TestWorktreeTextDropsControlCharactersOfTheGoal(t *testing.T) {
+	_, _, repo := wtCLI(t)
+	// An ESC color sequence, an OSC sequence that sets the terminal title,
+	// NUL, 0x1c to 0x1f, and the C1 control CSI (U+009B).
+	const goal = "Fix \x1b[31mthe login\x1b[0m form\x00 \x1b]0;owned\x07 now\x1c\x1d\x1e\x1f\u009b"
+	const shown = "Fix [31mthe login [0m form ]0;owned now"
+	noControl := func(what, text string) {
+		t.Helper()
+		for _, r := range text {
+			if r != '\n' && unicode.IsControl(r) {
+				t.Errorf("%s holds the control character %U: %q", what, r, text)
+				return
+			}
+		}
+	}
+	text, _, err := lrRun(t, "", "worktree", "new", "alpha", repo, "fix-login", "--goal", goal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "Goal: "+shown+"\n") {
+		t.Errorf("new: %q", text)
+	}
+	noControl("new", text)
+	text, _, err = lrRun(t, "", "worktree", "list", "alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "    "+shown+"\n") {
+		t.Errorf("list: %q", text)
+	}
+	noControl("list", text)
+	out, _, err := lrRun(t, "", "worktree", "list", "alpha", "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var listed []worktree.Status
+	if err := json.Unmarshal([]byte(out), &listed); err != nil || len(listed) != 1 || listed[0].Worktree.Goal != goal {
+		t.Fatalf("list --json: %v %s", err, out)
 	}
 }
 
@@ -120,6 +183,19 @@ func TestWorktreeNewDryRun(t *testing.T) {
 	if got := dry("main"); !got.ValidName || !got.BranchExists {
 		t.Fatalf("existing: %+v", got)
 	}
+	// The New worktree sheet sends its base as you type. For a branch that
+	// exists, the dry run reports the branch and does not check the base.
+	if got := dry("main", "--base", "origin/main"); !got.ValidName || !got.BranchExists {
+		t.Fatalf("existing with a base: %+v", got)
+	}
+	text, _, err := lrRun(t, "", "worktree", "new", "alpha", repo, "main", "--dry-run", "--base", "origin/main")
+	if err != nil || !strings.Contains(text, "The worktree app-main can use the branch main, which exists, so --base does not apply.\n") {
+		t.Fatalf("%q %v", text, err)
+	}
+	// worktree new still refuses the base.
+	if _, _, err := lrRun(t, "", "worktree", "new", "alpha", repo, "main", "--base", "origin/main"); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("new with a base for a branch that exists: %v", err)
+	}
 	if ws, _ := s.ListWorktrees(p.ID); len(ws) != 0 {
 		t.Fatalf("a dry run made %+v", ws)
 	}
@@ -130,7 +206,7 @@ func TestWorktreeNewDryRun(t *testing.T) {
 	if _, _, err := lrRun(t, "", "worktree", "new", "alpha", repo, "x", "--dry-run", "--link", "https://example.com/x"); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("%v", err)
 	}
-	text, _, err := lrRun(t, "", "worktree", "new", "alpha", repo, "a b", "--dry-run")
+	text, _, err = lrRun(t, "", "worktree", "new", "alpha", repo, "a b", "--dry-run")
 	if err != nil || !strings.Contains(text, "branch name") {
 		t.Fatalf("%q %v", text, err)
 	}

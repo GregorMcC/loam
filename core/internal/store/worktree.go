@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"time"
-
-	"github.com/GregorMcC/loam/core/internal/linkkind"
 )
 
 // RepoSettings are the worktree settings of one repo path: a setup command
@@ -130,25 +128,18 @@ type Worktree struct {
 type WorktreeLink struct {
 	Target string `json:"target"`
 	Label  string `json:"label"`
-	// Key names the issue, such as "ENG-482" or "#57" (see
-	// [linkkind.IssueKey]). It is empty for a link that is not an issue.
+	// Key names the issue, such as "ENG-482", "#57", or "example/widgets#57"
+	// (see [linkkind.IssueKey]). It is empty for a link that is not an issue.
+	// The key of a GitHub issue depends on the origin of the repo when the
+	// worktree was made, so the record keeps it.
 	Key string `json:"key"`
 	// LinkID is the ID of the plot link that the worktree copied. It is
 	// empty for a URL that was given as it is.
 	LinkID string `json:"link_id"`
 }
 
-// NewWorktreeLink returns the link of a worktree with its key. An empty
-// target gives no link.
-func NewWorktreeLink(target, label, linkID string) *WorktreeLink {
-	if target == "" {
-		return nil
-	}
-	return &WorktreeLink{Target: target, Label: label, Key: linkkind.IssueKey(target), LinkID: linkID}
-}
-
 // worktreeCols are the columns of a worktree record.
-const worktreeCols = `id, plot_id, repo_path, name, branch, base, path, setup_done, created_at, goal, link_target, link_label, link_id`
+const worktreeCols = `id, plot_id, repo_path, name, branch, base, path, setup_done, created_at, goal, link_target, link_label, link_key, link_id`
 
 // worktreeSelect reads worktreeCols and the version of the goal. Use it with
 // FROM worktrees, with no alias.
@@ -158,11 +149,13 @@ const worktreeSelect = worktreeCols + `, (SELECT COALESCE(MAX(e.change_id), 0) F
 func scanWorktree(sc interface{ Scan(...any) error }) (Worktree, error) {
 	var w Worktree
 	var created int64
-	var target, label, linkID string
+	var l WorktreeLink
 	err := sc.Scan(&w.ID, &w.PlotID, &w.Repo, &w.Name, &w.Branch, &w.Base, &w.Path, &w.SetupDone, &created,
-		&w.Goal, &target, &label, &linkID, &w.Version)
+		&w.Goal, &l.Target, &l.Label, &l.Key, &l.LinkID, &w.Version)
 	w.CreatedAt = tm(created)
-	w.Link = NewWorktreeLink(target, label, linkID)
+	if l.Target != "" {
+		w.Link = &l
+	}
 	return w, err
 }
 
@@ -196,16 +189,20 @@ func (s *Store) AddWorktree(w Worktree) (Worktree, error) {
 	if err != nil {
 		return Worktree{}, err
 	}
-	var target, label, linkID string
-	if w.Link != nil {
-		target, label, linkID = w.Link.Target, w.Link.Label, w.Link.LinkID
+	// A link with no target is no link.
+	var l WorktreeLink
+	if w.Link != nil && w.Link.Target != "" {
+		l = *w.Link
 	}
 	now := time.Now().UnixMilli()
-	if err := tx.exec(`INSERT INTO worktrees(`+worktreeCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`,
-		w.ID, w.PlotID, w.Repo, w.Name, w.Branch, w.Base, w.Path, now, w.Goal, target, label, linkID); err != nil {
+	if err := tx.exec(`INSERT INTO worktrees(`+worktreeCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`,
+		w.ID, w.PlotID, w.Repo, w.Name, w.Branch, w.Base, w.Path, now, w.Goal, l.Target, l.Label, l.Key, l.LinkID); err != nil {
 		return Worktree{}, err
 	}
-	w.SetupDone, w.CreatedAt, w.Link, w.Version = false, tm(now), NewWorktreeLink(target, label, linkID), 0
+	w.SetupDone, w.CreatedAt, w.Link, w.Version = false, tm(now), nil, 0
+	if l.Target != "" {
+		w.Link = &l
+	}
 	return w, tx.commit()
 }
 

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"unicode"
 
 	"github.com/GregorMcC/loam/core/internal/store"
 	"github.com/GregorMcC/loam/core/internal/worktree"
@@ -81,7 +82,7 @@ func newWorktreeNewCmd() *cobra.Command {
 				fmt.Fprintf(out, "Goal: %s\n", g)
 			}
 			if l := res.Worktree.Link; l != nil {
-				fmt.Fprintf(out, "Link: %s (%s)\n", oneLine(l.Key+" "+l.Label), l.Target)
+				fmt.Fprintf(out, "Link: %s (%s)\n", oneLine(l.Key+" "+l.Label), noControl(l.Target))
 			}
 			if n := len(res.Copied); n > 0 {
 				fmt.Fprintf(out, "Copied %d file(s).\n", n)
@@ -115,6 +116,8 @@ func checkWorktree(cmd *cobra.Command, s *store.Store, o worktree.CreateOptions)
 		fmt.Fprintf(out, "%s.\n", res.NameError)
 	case res.WorktreeExists:
 		fmt.Fprintf(out, "The plot already has the worktree %s.\n", res.Folder)
+	case res.BranchExists && o.Base != "":
+		fmt.Fprintf(out, "The worktree %s can use the branch %s, which exists, so --base does not apply.\n", res.Folder, res.Name)
 	case res.BranchExists:
 		fmt.Fprintf(out, "The worktree %s can use the branch %s, which exists.\n", res.Folder, res.Name)
 	case res.DefaultBase != "":
@@ -322,8 +325,20 @@ func goalText(w store.Worktree) string {
 }
 
 // oneLine joins the lines of a text, such as a goal, so that it keeps the
-// layout of the text output. The JSON keeps the text as it is.
-func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
+// layout of the text output. It drops each control character first, so a
+// terminal never acts on an escape sequence in the text. The JSON keeps the
+// text as it is.
+func oneLine(s string) string { return strings.Join(strings.Fields(noControl(s)), " ") }
+
+// noControl turns each control character, such as ESC or NUL, into a space.
+func noControl(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, s)
+}
 
 // prStageText is the stage of a worktree with a PR, for the words after "PR #12".
 func prStageText(st worktree.Status) string {

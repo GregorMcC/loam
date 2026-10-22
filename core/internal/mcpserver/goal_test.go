@@ -27,7 +27,9 @@ func TestCreateWorktreeWithGoalAndLink(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &c); err != nil {
 		t.Fatalf("%v: %s", err, out)
 	}
-	want := store.WorktreeLink{Target: githubIssue, Label: "widgets#57", Key: "#57"}
+	// The origin of the repo is a folder, not GitHub, so the key names the
+	// repo of the issue.
+	want := store.WorktreeLink{Target: githubIssue, Label: "widgets#57", Key: "example/widgets#57"}
 	if c.Worktree.Goal != "Fix the login form" || c.Worktree.Link == nil || *c.Worktree.Link != want || len(c.Warnings) != 0 {
 		t.Fatalf("%+v %+v", c, c.Worktree.Link)
 	}
@@ -56,12 +58,12 @@ func TestCreateWorktreeWithGoalAndLink(t *testing.T) {
 		t.Fatalf("warnings %q", c.Warnings)
 	}
 	// list_worktrees shows the goal and the link.
-	if out := e.ok("list_worktrees", nil); !strings.Contains(out, `"goal": "Fix the login form"`) || !strings.Contains(out, `"key": "#57"`) {
+	if out := e.ok("list_worktrees", nil); !strings.Contains(out, `"goal": "Fix the login form"`) || !strings.Contains(out, `"key": "example/widgets#57"`) {
 		t.Fatalf("%s", out)
 	}
 	// The seed lists the worktrees.
 	b, err := os.ReadFile(seed.Path(e.s, e.plot.ID))
-	if err != nil || !strings.Contains(string(b), ": Fix the login form (#57, from origin/main)") {
+	if err != nil || !strings.Contains(string(b), ": Fix the login form (example/widgets#57, from origin/main)") {
 		t.Fatalf("seed: %v\n%s", err, b)
 	}
 }

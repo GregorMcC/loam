@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/GregorMcC/loam/core/internal/github"
+	"github.com/GregorMcC/loam/core/internal/gitremote"
 	"github.com/GregorMcC/loam/core/internal/linkkind"
 	"github.com/GregorMcC/loam/core/internal/seed"
 	"github.com/GregorMcC/loam/core/internal/store"
@@ -87,25 +88,30 @@ func nameProblem(repo, name string) string {
 	return ""
 }
 
-// ResolveLink returns the link of a new worktree from its argument: the ID of
-// a link of the plot, or the URL of a Linear issue or a GitHub issue. A link
-// of the plot keeps its label and records its ID. A URL takes its label from
-// the target, and it does not go into the plot's links. An empty argument
-// gives no link.
-func ResolveLink(p store.Plot, arg string) (*store.WorktreeLink, error) {
+// ResolveLink returns the link of a new worktree of repoPath from its
+// argument: the ID of a link of the plot, or the URL of a Linear issue or a
+// GitHub issue. A link of the plot keeps its label and records its ID. A URL
+// takes its label from the target, and it does not go into the plot's links.
+// The key of a GitHub issue is "#57" only when the issue is in the repo of
+// origin (see [linkkind.IssueKey]). An empty argument gives no link.
+func ResolveLink(p store.Plot, repoPath, arg string) (*store.WorktreeLink, error) {
 	arg = strings.TrimSpace(arg)
 	if arg == "" {
 		return nil, nil
 	}
+	link := func(target, label, linkID string) *store.WorktreeLink {
+		origin, _ := gitremote.Origin(repoPath)
+		return &store.WorktreeLink{Target: target, Label: label, Key: linkkind.IssueKey(target, origin), LinkID: linkID}
+	}
 	if strings.Contains(arg, "://") {
-		if linkkind.IssueKey(arg) == "" {
+		if linkkind.IssueKey(arg, "") == "" {
 			return nil, fmt.Errorf("%s is not a Linear issue or a GitHub issue. Give the URL of an issue, or the ID of a link of the plot: %w", arg, store.ErrInvalid)
 		}
-		return store.NewWorktreeLink(arg, linkkind.Label(arg), ""), nil
+		return link(arg, linkkind.Label(arg), ""), nil
 	}
 	for _, l := range p.Links {
 		if l.ID == arg {
-			return store.NewWorktreeLink(l.Target, l.Label, l.ID), nil
+			return link(l.Target, l.Label, l.ID), nil
 		}
 	}
 	return nil, fmt.Errorf("no link %q in plot %s. Give a link ID from loam show, or the URL of an issue: %w", arg, p.Name, store.ErrNotFound)
@@ -148,7 +154,7 @@ func prepare(s *store.Store, o CreateOptions, checkName bool) (*newWorktree, err
 			return nil, err
 		}
 	}
-	link, err := ResolveLink(plot, o.Link)
+	link, err := ResolveLink(plot, repo.Path, o.Link)
 	if err != nil {
 		return nil, err
 	}
@@ -302,7 +308,9 @@ type CheckResult struct {
 // nothing. It never asks the remote, so the app can run it as you type: the
 // branch checks and the default base read the last fetched state. A name that
 // is not a good branch name is a result, not an error. A repo, a link, or a
-// base that Create would refuse is an error, as in Create.
+// base that Create would refuse is an error, as in Create. The exception is a
+// base for a branch that exists: Check reports BranchExists and does not check
+// the base, though Create refuses any base for that branch.
 func Check(s *store.Store, o CreateOptions) (*CheckResult, error) {
 	n, err := prepare(s, o, false)
 	if err != nil {
@@ -314,9 +322,12 @@ func Check(s *store.Store, o CreateOptions) (*CheckResult, error) {
 	} else {
 		res.ValidName = true
 		res.BranchExists = n.localBranch || n.remoteBranch
-		// A given base must work, as in Create. Without one, Create asks the
-		// remote for its default branch, which a dry run does not.
-		if o.Base != "" {
+		// A given base must work for a new branch, as in Create. Without
+		// one, Create asks the remote for its default branch, which a dry
+		// run does not. A branch that exists takes no base, so the check is
+		// skipped: the app sends its base as you type, and branch_exists
+		// tells it that the base does not apply. Create still refuses it.
+		if o.Base != "" && !res.BranchExists {
 			if _, _, _, err := n.addArgs(o); err != nil {
 				return nil, err
 			}

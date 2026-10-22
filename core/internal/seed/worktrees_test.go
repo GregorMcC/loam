@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"unicode"
 
 	"github.com/GregorMcC/loam/core/internal/seed"
 	"github.com/GregorMcC/loam/core/internal/store"
@@ -62,9 +63,11 @@ func section(seedText string) string {
 }
 
 func TestWorktreeLines(t *testing.T) {
-	figma := store.NewWorktreeLink(linearIssue, "Link kinds for Figma", "linkaaaaab")
-	widgets := store.NewWorktreeLink(githubIssue, "widgets#57", "")
-	spec := store.NewWorktreeLink("https://example.com/spec", "Spec", "linkaaaaac") // a plot link that is not an issue
+	figma := &store.WorktreeLink{Target: linearIssue, Label: "Link kinds for Figma", Key: "ENG-482", LinkID: "linkaaaaab"}
+	widgets := &store.WorktreeLink{Target: githubIssue, Label: "widgets#57", Key: "#57"}
+	// The issue is in another repo than the origin of the worktree's repo.
+	elsewhere := &store.WorktreeLink{Target: githubIssue, Label: "widgets#57", Key: "example/widgets#57"}
+	spec := &store.WorktreeLink{Target: "https://example.com/spec", Label: "Spec", LinkID: "linkaaaaac"} // a plot link that is not an issue
 	for _, c := range []struct {
 		name      string
 		ws        []wt
@@ -88,6 +91,10 @@ func TestWorktreeLines(t *testing.T) {
 		{name: "one, GitHub link and goal, a branch that existed",
 			ws:        []wt{{name: "fix-57", goal: "Fix the login form", link: widgets}},
 			lines:     "- loam-fix-57: Fix the login form (#57)\n",
+			withFixes: true},
+		{name: "one, GitHub link to an issue in another repo",
+			ws:        []wt{{name: "fix-57", base: "origin/main", goal: "Fix the login form", link: elsewhere}},
+			lines:     "- loam-fix-57: Fix the login form (example/widgets#57, from origin/main)\n",
 			withFixes: true},
 		{name: "one, a link with no key",
 			ws:    []wt{{name: "spec", base: "origin/main", goal: "Write the spec", link: spec}},
@@ -139,10 +146,39 @@ func TestFullSeedWithWorktrees(t *testing.T) {
 	})
 	addWorktrees(t, s, p,
 		wt{name: "eng-482-link-kinds-for-figma", base: "origin/main", goal: "Link kinds for Figma",
-			link: store.NewWorktreeLink(linearIssue, "Link kinds for Figma", p.Links[0].ID)},
+			link: &store.WorktreeLink{Target: linearIssue, Label: "Link kinds for Figma", Key: "ENG-482", LinkID: p.Links[0].ID}},
 		wt{name: "native-panel", base: "origin/main", goal: "Native panel spacing"},
 	)
 	golden(t, s, p, "worktrees")
+}
+
+// controlGoal is a goal with control characters: an ESC color sequence, an
+// OSC sequence that sets the terminal title, NUL, 0x1c to 0x1f, and the C1
+// control CSI (U+009B).
+const controlGoal = "Fix \x1b[31mthe login\x1b[0m form\x00 \x1b]0;owned\x07 now\x1c\x1d\x1e\x1f\u009b"
+
+// controlGoalLine is controlGoal on one line, with each control character
+// gone.
+const controlGoalLine = "Fix [31mthe login [0m form ]0;owned now"
+
+// A session reads the seed, and a terminal can print it. A control character
+// in a goal never reaches it. The store keeps the goal as it was given.
+func TestGoalCannotAddControlCharacters(t *testing.T) {
+	s := newStore(t)
+	p := create(t, s, store.PlotInput{Name: "T", What: "w"})
+	w := addWorktrees(t, s, p, wt{name: "x", base: "origin/main", goal: controlGoal})[0]
+	got := readSeed(t, s, p.ID)
+	if !strings.Contains(got, "- loam-x: "+controlGoalLine+" (from origin/main)\n") {
+		t.Errorf("seed line:\n%q", section(got))
+	}
+	for _, r := range got {
+		if r != '\n' && unicode.IsControl(r) {
+			t.Errorf("the seed holds the control character %U:\n%q", r, got)
+		}
+	}
+	if rec, err := s.GetWorktree(w.ID); err != nil || rec.Goal != controlGoal {
+		t.Errorf("the store changed the goal to %q: %v", rec.Goal, err)
+	}
 }
 
 func TestGoalCannotAddSeedLines(t *testing.T) {

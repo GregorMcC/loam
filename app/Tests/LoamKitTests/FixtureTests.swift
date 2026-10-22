@@ -127,7 +127,8 @@ func decodeFixture(schema: String, data: Data) throws {
     @Test func worktreeGoalDecodes() throws {
         let made = try JSONDecoder().decode(WorktreeNewResult.self, from: Fixtures.data("worktree_new"))
         #expect(made.worktree.goal == "Fix the login form")
-        #expect(made.worktree.link?.key == "#57")
+        // The origin of the fixture repo is not on GitHub, so the key names the repo.
+        #expect(made.worktree.link?.key == "example/widgets#57")
         #expect(made.worktree.link?.linkID == "")
         #expect(made.worktree.version == 0)
         let check = try JSONDecoder().decode(WorktreeCheck.self, from: Fixtures.data("worktree_new_dry_run"))

@@ -26,9 +26,12 @@ func setGoal(id, goal string) store.Change {
 func TestWorktreeKeepsItsGoalAndLink(t *testing.T) {
 	s := openStore(t)
 	p := newPlot(t, s, "A")
-	link := store.NewWorktreeLink("https://linear.app/example/issue/ENG-482/link-kinds", "Link kinds", "linkaaaaab")
-	w := addWorktree(t, s, p.ID, "eng-482", "Link kinds for Figma", link)
-	if w.Goal != "Link kinds for Figma" || w.Link == nil || w.Link.Key != "ENG-482" || w.Version != 0 {
+	// The store keeps the key that it is given. The key of a GitHub issue
+	// depends on the repo of origin, which the store does not know.
+	link := &store.WorktreeLink{Target: "https://github.com/example/widgets/issues/57", Label: "widgets#57",
+		Key: "example/widgets#57", LinkID: "linkaaaaab"}
+	w := addWorktree(t, s, p.ID, "fix-57", "Fix the login form", link)
+	if w.Goal != "Fix the login form" || w.Link == nil || *w.Link != *link || w.Version != 0 {
 		t.Fatalf("add: %+v %+v", w, w.Link)
 	}
 	got, err := s.GetWorktree(w.ID)
@@ -50,22 +53,6 @@ func TestWorktreeKeepsItsGoalAndLink(t *testing.T) {
 	}
 	if pl.Revision != p.Revision {
 		t.Fatalf("adding a worktree moved the revision from %d to %d", p.Revision, pl.Revision)
-	}
-}
-
-func TestNewWorktreeLinkKeys(t *testing.T) {
-	for _, c := range []struct{ target, key string }{
-		{"https://linear.app/example/issue/ENG-482/link-kinds", "ENG-482"},
-		{"https://github.com/example/widgets/issues/57", "#57"},
-		{"https://github.com/example/widgets/pull/57", ""},
-		{"https://example.com/spec", ""},
-	} {
-		if got := store.NewWorktreeLink(c.target, "l", "").Key; got != c.key {
-			t.Errorf("%s: key %q, want %q", c.target, got, c.key)
-		}
-	}
-	if store.NewWorktreeLink("", "l", "") != nil {
-		t.Error("an empty target must give no link")
 	}
 }
 

@@ -236,8 +236,13 @@ A worktree is a separate checkout of one repo of a plot, on its own branch. It l
 
 - `name` is the branch name. `base` is the branch that a new branch started from. It is empty when the branch existed.
 - `setup_done` is true after the setup command has succeeded in the worktree.
-- `goal` is one line that says what the worktree is for. It is empty when none is set.
-- `link` is the link that the work started from, or null. It belongs to the worktree, not to the links of the plot, and it goes when the worktree goes. `key` is the ID of a Linear issue, such as `ENG-482`, or `#` and the number of a GitHub issue, such as `#57`. It is empty for any other link. `link_id` is the ID of the plot link that it was copied from, or empty for a URL.
+- `goal` is one line that says what the worktree is for. It is empty when none is set. The JSON keeps the goal as it was given. The seed and the text output show it on one line, with each control character, such as ESC, as a space.
+- `link` is the link that the work started from, or null. It belongs to the worktree, not to the links of the plot, and it goes when the worktree goes. `link_id` is the ID of the plot link that it was copied from, or empty for a URL.
+- `link.key` names the issue, so that a PR body can put "Fixes" and the key. `worktree new` sets the key, and the record keeps it. The seed line, the text output, and the JSON show the same key.
+  - A Linear issue: the issue ID, such as `ENG-482`.
+  - A GitHub issue in the repo of `origin` on github.com: `#` and the number, such as `#57`. Loam compares the owner and the repo without case.
+  - A GitHub issue in another repo: `owner/repo#57`, such as `example/widgets#57`, because GitHub reads `#57` as an issue of the repo of the PR. A repo with no `origin` on github.com always gets this form.
+  - Any other link: empty.
 - `version` is the ID of the change that last set the goal, or 0 when no change has set it.
 
 | Command | Output |
@@ -252,7 +257,7 @@ A worktree is a separate checkout of one repo of a plot, on its own branch. It l
 
 `--goal` sets the goal. A goal of more than 20 words saves, with the warning "The goal has 24 words. The soft limit is 20 words. Shorten it." on stderr. `--link` takes the ID of a link of the plot, or a URL. A link ID copies the target and the label of that link, and records its ID. A URL must be a Linear issue or a GitHub issue, else `new` exits with code 2 and makes nothing. A URL gets a label from its target, as `loam link add` does, and does not go into the links of the plot. An unknown link ID exits with code 1. Loam never fetches the issue.
 
-`new --dry-run` changes nothing and never asks `origin`, so the app can run it as you type. The branch checks and the default base read the last fetched state. A repo, a `--link`, or a `--base` that `new` would refuse fails as it fails `new`. A name that is not a good branch name is a result, not a failure:
+`new --dry-run` changes nothing and never asks `origin`, so the app can run it as you type. The branch checks and the default base read the last fetched state. A repo, a `--link`, or a `--base` that `new` would refuse fails as it fails `new`, with one exception: when the branch exists, the dry run reports `branch_exists: true` and does not check `--base`. The app sends its base as you type, and `branch_exists` tells it that the base does not apply. `new` with `--base` for a branch that exists still exits with code 2. A name that is not a good branch name is a result, not a failure:
 
 ```json
 { "name": "fix-login", "folder": "web-fix-login", "valid_name": true, "worktree_exists": false, "branch_exists": false,
@@ -261,7 +266,7 @@ A worktree is a separate checkout of one repo of a plot, on its own branch. It l
 
 - `valid_name` is false when the name is not a good branch name. `name_error` then says why. It is left out when the name is valid.
 - `worktree_exists` is true when the plot already has the worktree, or its folder exists. `new` would refuse it.
-- `branch_exists` is true when a local branch or a branch of `origin` has the name. `new` then uses that branch. It is false when the name is not valid.
+- `branch_exists` is true when a local branch or a branch of `origin` has the name. `new` then uses that branch, and a `--base` does not apply. It is false when the name is not valid.
 - `default_base` is the base of a new branch when no `--base` is given. It comes from `origin/HEAD` of the last fetch. It is empty when the last fetch did not record `origin/HEAD`, or the repo has no `origin`. `new` without `--base` then asks `origin`.
 - `bases` are the branches that a new branch can start from: `default_base` first, then the branches of `origin`, then the local branches, each with the newest commit first.
 
