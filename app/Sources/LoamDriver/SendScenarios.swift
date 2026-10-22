@@ -209,7 +209,8 @@ extension Scenarios {
         // ⌘↑ moves the view, not the input, so it does not count. The driver app is not frontmost, so its window
         // is not key and ⌘V finds no target. The Paste item sends its action to the terminal, as in the key window.
         try await app.waitUntil("the session has the keys in the turn") { hasTheKeys(session) }
-        try expectSend(model.workspace.session(of: session)?.typedSinceSubmit == false, "the submit did not empty the input")
+        let afterSubmit = model.workspace.session(of: session)
+        try expectSend(afterSubmit?.typedSinceSubmit == false && afterSubmit?.loamPrompt == nil, "the submit did not empty the input")
         let view = try terminal(session)
         let hook = view.onInput
         let inputs = InputCount()
