@@ -113,6 +113,10 @@ public final class ShipRefresher {
         await task.value
     }
 
+    /// True while a refresh of the plot runs. A caller that wants no second refresh of the plot asks first,
+    /// since a `refresh` during the one that runs makes one more.
+    public func isRefreshing(_ plot: String) -> Bool { runs[plot] != nil }
+
     /// A seeded session in the plot ended a turn. The refresh comes after `stopWindow`, and the Stop
     /// events of the plot in that time join it.
     public func stopped(in plot: String) {

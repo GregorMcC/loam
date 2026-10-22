@@ -274,7 +274,7 @@ struct PlotPanelView: View {
                 .textFieldStyle(.roundedBorder)
                 .focused($focus, equals: .newRepo)
                 .onSubmit(addRepo)
-                .onKeyPress(.escape) { closeEditors(); return .handled }
+                .onKeyPress(.escape) { finishEditing(); return .handled }
                 .accessibilityIdentifier("panel-new-repo")
             ForEach(Array(suggestions.enumerated()), id: \.element.id) { index, suggestion in
                 RepoSuggestionRow(suggestion: suggestion, returnAdds: returnPicksFirst && index == 0) {
@@ -300,7 +300,7 @@ struct PlotPanelView: View {
             await model.addRepo(path: path)
             addBusy = false
             // Close the row only if it is still the open one, so an editor opened meanwhile stays.
-            if model.errorMessage == nil, adding == .repo { closeEditors() }
+            if model.errorMessage == nil, adding == .repo { finishEditing() }
         }
     }
 
@@ -361,7 +361,7 @@ struct PlotPanelView: View {
         .labelsHidden()
         .textFieldStyle(.roundedBorder)
         .onSubmit(addLink)
-        .onKeyPress(.escape) { closeEditors(); return .handled }
+        .onKeyPress(.escape) { finishEditing(); return .handled }
         .task { focus = .newTarget }
     }
 
@@ -374,7 +374,7 @@ struct PlotPanelView: View {
         Task {
             await model.addLink(label: label, target: target)
             addBusy = false
-            if model.errorMessage == nil, adding == .link { closeEditors() }
+            if model.errorMessage == nil, adding == .link { finishEditing() }
         }
     }
 
@@ -395,7 +395,7 @@ struct PlotPanelView: View {
                 .accessibilityIdentifier("panel-edit-link-target")
             TextField("Note", text: $linkNote, prompt: Text("Note"))
             TrailingButtons {
-                Button("Cancel", action: closeEditors)
+                Button("Cancel", action: finishEditing)
                     .accessibilityIdentifier("panel-edit-link-cancel")
                 Button("Save") { saveLink(link) }
                     .loamPrimaryButton()
@@ -406,7 +406,7 @@ struct PlotPanelView: View {
         .labelsHidden()
         .textFieldStyle(.roundedBorder)
         .onSubmit { saveLink(link) }
-        .onKeyPress(.escape) { closeEditors(); return .handled }
+        .onKeyPress(.escape) { finishEditing(); return .handled }
         .task { focus = .linkLabel }
     }
 
@@ -419,7 +419,7 @@ struct PlotPanelView: View {
         Task {
             await model.editLink(id: link.id, label: label, target: target, note: note)
             addBusy = false
-            if model.errorMessage == nil, model.clash == nil, editingLink == link.id { closeEditors() }
+            if model.errorMessage == nil, model.clash == nil, editingLink == link.id { finishEditing() }
         }
     }
 
@@ -432,7 +432,7 @@ struct PlotPanelView: View {
                 .disabled(addBusy)
                 .accessibilityIdentifier("\(id)-choose")
             Spacer()
-            Button("Cancel", action: closeEditors)
+            Button("Cancel", action: finishEditing)
                 .accessibilityIdentifier("panel-add-cancel")
             Button("Add", action: add)
                 .loamPrimaryButton()
@@ -482,6 +482,15 @@ struct PlotPanelView: View {
     private func open(_ row: AddRow) {
         closeEditors()
         adding = row
+    }
+
+    /// Closes the editors as you end them (Return, Escape, Cancel), and gives the keyboard back to the
+    /// focused pane. A close for another reason, such as a new editor that opens, leaves the keyboard.
+    /// SwiftUI clears the focus of the closed field in its next update, and that resigns the first
+    /// responder of any view. So the keyboard goes back in the next turn, after it.
+    private func finishEditing() {
+        closeEditors()
+        Task { model.onEditorClosed?() }
     }
 
     /// Closes the add rows and the link editor, and clears what they held.

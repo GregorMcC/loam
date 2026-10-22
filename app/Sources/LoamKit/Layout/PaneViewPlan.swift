@@ -34,6 +34,11 @@ public final class PaneViewPlan {
         var pane: PaneID
         var view: Int
         var target: ObjectIdentifier
+
+        /// True when the space, tab, pane, and view are the same, so at most the target changed.
+        func sameView(as other: KeyFocus) -> Bool {
+            space == other.space && tab == other.tab && pane == other.pane && view == other.view
+        }
     }
 
     public init() {}
@@ -64,15 +69,24 @@ public final class PaneViewPlan {
     /// list, or a pane event, must not move the keyboard: you can type in a field of the plot panel then.
     /// A focused pane with no view or no target, and Home with no pane, leave the keyboard nowhere, so
     /// the next view takes it.
-    public func movesKeys(in workspace: Workspace, target: AnyObject?) -> Bool {
+    ///
+    /// `holder` is the view that holds the keyboard now, or nil when none does (the window itself is the
+    /// first responder). When only the target changed, the keys move only from the old target or from
+    /// nowhere. A field that you type in, such as Where it stands, keeps them when a session ends: the
+    /// Session ended bar would read "n" as New session and Return as Resume.
+    public func movesKeys(in workspace: Workspace, target: AnyObject?, heldBy holder: AnyObject? = nil) -> Bool {
         guard let pane = workspace.focusedPane, let view = viewNumbers[pane], let target else {
             keys = nil
             return false
         }
         let focus = KeyFocus(space: workspace.activeSpace, tab: workspace.activeTab?.id, pane: pane, view: view,
                              target: ObjectIdentifier(target))
-        defer { keys = focus }
-        return focus != keys
+        let before = keys
+        keys = focus
+        guard let before else { return true }
+        guard focus.sameView(as: before) else { return true }
+        guard focus.target != before.target else { return false }
+        return holder.map { ObjectIdentifier($0) == before.target } ?? true
     }
 
     /// True while a close of a view of the pane runs.

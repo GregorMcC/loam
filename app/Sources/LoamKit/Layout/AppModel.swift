@@ -333,17 +333,20 @@ public final class AppModel {
     /// `gh` answered for a plot, so it works again. The Ready to merge row stays hidden while any plot
     /// holds the note of a missing or signed out `gh` (`SidebarModel.showsReadyToMerge`), and "check
     /// again" asks for one plot only. So each other plot that holds the note refreshes too. It goes
-    /// through the refresher, so it joins a refresh of that plot that runs now. A plot that refreshes for
-    /// this reason does not start the same refresh again while it runs, so the answers of these
-    /// refreshes do not start each other.
+    /// through the refresher, so it joins a refresh of that plot that runs now. The plots refresh one
+    /// after the other, so a fix does not start a `loam` process for every plot at once. A plot that
+    /// waits for this reason, or refreshes for it, does not start the same refresh again, so the answers
+    /// of these refreshes do not start each other.
     private func recheckGitHubNotes(except plot: String) {
-        let holding = plots.map(\.id).filter { id in
-            id != plot && !rechecking.contains(id) && worktrees[id]?.contains(where: \.holdsGitHubNote) == true
-        }
-        for id in holding {
-            rechecking.insert(id)
-            Task {
-                await shipRefresh.refresh(id)
+        func holdsNote(_ id: String) -> Bool { worktrees[id]?.contains(where: \.holdsGitHubNote) == true }
+        let holding = plots.map(\.id).filter { $0 != plot && !rechecking.contains($0) && holdsNote($0) }
+        guard !holding.isEmpty else { return }
+        rechecking.formUnion(holding)
+        Task {
+            for id in holding {
+                // A plot that cleared its note meanwhile needs none. A plot whose refresh runs now is left to
+                // that refresh, since one more would repeat it.
+                if holdsNote(id), !shipRefresh.isRefreshing(id) { await shipRefresh.refresh(id) }
                 rechecking.remove(id)
             }
         }

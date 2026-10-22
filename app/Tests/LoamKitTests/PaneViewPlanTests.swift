@@ -189,6 +189,62 @@ import Testing
         #expect(plan.movesKeys(in: model.workspace, target: terminalView), "the terminal takes them back at a resume")
     }
 
+    /// The Session ended bar takes the keys when the session ends, but only from the terminal of the pane, or
+    /// from nowhere (the window itself holds them). A field that you type in, such as Where it stands in the
+    /// plot panel, keeps them: the bar would read "n" as New session and Return as Resume.
+    @Test func theEndedBarTakesTheKeysOnlyFromTheTerminalOrFromNowhere() throws {
+        let (model, _, _) = try model(FakeLoam([]))
+        let plan = PaneViewPlan()
+        let field = NSObject()  // A field of the plot panel.
+
+        _ = render(plan, model.workspace)
+        #expect(plan.movesKeys(in: model.workspace, target: terminalView))
+        #expect(!plan.movesKeys(in: model.workspace, target: endedBarView, heldBy: field), "the session ended while you type in a field")
+        #expect(!plan.movesKeys(in: model.workspace, target: endedBarView, heldBy: field))
+
+        // The same for a session that ends while the terminal holds the keys, and while nothing holds them.
+        for holder in [terminalView, nil] {
+            let plan = PaneViewPlan()
+            _ = render(plan, model.workspace)
+            #expect(plan.movesKeys(in: model.workspace, target: terminalView))
+            #expect(plan.movesKeys(in: model.workspace, target: endedBarView, heldBy: holder), "the keys were with \(holder == nil ? "nothing" : "the terminal")")
+            #expect(!plan.movesKeys(in: model.workspace, target: endedBarView, heldBy: endedBarView))
+        }
+    }
+
+    /// The field keeps the keys only when the target changes alone. Any other reason still moves them to the
+    /// pane, also from a field.
+    @Test func aFieldKeepsTheKeysOnlyWhenTheTargetChangesAlone() throws {
+        let (model, session, _) = try model(FakeLoam([]))
+        let plan = PaneViewPlan()
+        let field = NSObject()
+        _ = render(plan, model.workspace)
+        #expect(plan.movesKeys(in: model.workspace, target: terminalView, heldBy: field), "the first render")
+
+        model.focus(session)
+        #expect(plan.movesKeys(in: model.workspace, target: terminalView, heldBy: field), "another pane has the focus")
+        model.openTab(.shell)
+        _ = render(plan, model.workspace)
+        #expect(plan.movesKeys(in: model.workspace, target: terminalView, heldBy: field), "a new tab")
+        model.selectTab(index: 0)
+        #expect(plan.movesKeys(in: model.workspace, target: terminalView, heldBy: field), "another tab")
+        model.activate(plot: "plotaaaaac")
+        model.openTab(.shell)
+        _ = render(plan, model.workspace)
+        #expect(plan.movesKeys(in: model.workspace, target: terminalView, heldBy: field), "another plot")
+        model.activate(plot: "plotaaaaab")
+        #expect(plan.movesKeys(in: model.workspace, target: terminalView, heldBy: field), "back in the first plot")
+
+        // A resume gives the focused pane a new view, which takes the keys from a field.
+        #expect(model.workspace.focusedPane == session)
+        model.paneExited(session)
+        model.resumeSession(in: session)
+        let step = render(plan, model.workspace)
+        step.closes[session]?()
+        #expect(render(plan, model.workspace).built == [session])
+        #expect(plan.movesKeys(in: model.workspace, target: terminalView, heldBy: field), "a new view of the pane")
+    }
+
     /// A pane with no view to take the keys leaves them nowhere, so the next view takes them.
     @Test func aFocusedPaneWithNoTargetLeavesTheKeysNowhere() throws {
         let (model, _, _) = try model(FakeLoam([]))

@@ -69,6 +69,8 @@ private func settle() async { try? await Task.sleep(for: .milliseconds(200)) }
 @Suite struct ShipModelTests {
     let plotB = "plotaaaaab"
     let plotC = "plotaaaaac"
+    let plotD = "plotaaaaad"
+    let plotE = "plotaaaaae"
 
     /// A model with plots B and C, B active, and a refresher that waits on `sleep`. An archived plot is
     /// in the archived list only.
@@ -444,6 +446,75 @@ private func settle() async { try? await Task.sleep(for: .milliseconds(200)) }
         await waitUntil("no plot holds a note") { model.worktrees.values.joined().allSatisfy { $0.prNote != .ghMissing } }
         await settle()
         #expect(refreshCalls(fake).count == 6, "\(refreshCalls(fake).count) refreshes, not 6")
+        model.shipRefresh.stop()
+    }
+
+    /// A model with the plots B, C, D and E, B active, whose refreshes go through `probe`. The probe records each
+    /// refresh when it starts, and holds it while `probe.holds` is true. The timers never fire, and the test
+    /// starts the refresher.
+    func probedModel(_ fake: FakeLoam, _ probe: RefreshProbe) -> AppModel {
+        let sleep = ManualSleep()
+        let model = AppModel(client: fake.client(), shipRefresh: ShipRefresher(sleep: { try await sleep.sleep($0) }))
+        model.apply([plotB, plotC, plotD, plotE].map(plot))
+        model.activate(plot: plotB)
+        model.shipRefresh.run = { [weak model] id in
+            await probe.run(id)
+            await model?.refreshWorktrees(plot: id)
+        }
+        return model
+    }
+
+    /// The rechecks of a fix run one after the other. Fourteen plots with a note must not start fourteen
+    /// `loam worktree list --refresh` together, so each recheck waits until the one before it ends.
+    @Test func theRechecksOfAFixRunOneAfterTheOther() async throws {
+        let fake = try fakePrinting(try stageRows(note: "gh_signed_out"))
+        let probe = RefreshProbe()
+        let model = probedModel(fake, probe)
+        let everyPlot = [plotB, plotC, plotD, plotE]
+        model.shipRefresh.start()
+        await waitUntil("every plot holds the note") { holdNote(model, everyPlot) }
+        try reprint(Fixtures.data("worktree_list_stages"), from: fake)
+        let before = probe.started.count
+
+        probe.holds = true
+        let check = Task { await model.checkGitHub() }  // Plot B, the active plot.
+        await waitUntil("the refresh of plot B") { probe.started.count == before + 1 }
+        probe.finishOne()
+        await check.value
+        for (index, plot) in [plotC, plotD, plotE].enumerated() {
+            await waitUntil("the recheck of \(plot)") { probe.started.count == before + 2 + index }
+            await settle()
+            #expect(probe.started.count == before + 2 + index, "a recheck started while the one before it ran")
+            probe.finishOne()
+        }
+        await waitUntil("no plot holds the note") { !everyPlot.contains { holdNote(model, [$0]) } }
+        await settle()
+        #expect(Array(probe.started.dropFirst(before)) == everyPlot, "each plot refreshes once, in the order of the sidebar")
+        model.shipRefresh.stop()
+    }
+
+    /// A plot whose refresh runs when the fix comes gets no second refresh. The refresher would run one more
+    /// after the one that runs, since a trigger during a refresh makes one more.
+    @Test func aPlotThatRefreshesAlreadyGetsNoSecondRefreshAtAFix() async throws {
+        let fake = try fakePrinting(try stageRows(note: "gh_signed_out"))
+        let probe = RefreshProbe()
+        let model = probedModel(fake, probe)
+        model.shipRefresh.start()
+        await waitUntil("every plot holds the note") { holdNote(model, [plotB, plotC, plotD, plotE]) }
+        try reprint(Fixtures.data("worktree_list_stages"), from: fake)
+        let before = probe.started.count
+
+        probe.holds = true
+        let running = Task { await model.shipRefresh.refresh(plotC) }  // The refresh of plot C runs when the fix comes.
+        await waitUntil("the refresh of plot C") { probe.started.count == before + 1 }
+        probe.holds = false
+        await model.checkGitHub()  // Plot B comes back clean, and the plots that hold the note recheck.
+        await waitUntil("the rechecks of plots D and E") { probe.started.count == before + 4 }
+        await settle()
+        probe.finishOne()  // The refresh of plot C ends.
+        await running.value
+        await settle()
+        #expect(Array(probe.started.dropFirst(before)) == [plotC, plotB, plotD, plotE], "plot C refreshed again")
         model.shipRefresh.stop()
     }
 

@@ -165,6 +165,20 @@ final class RefreshProbe {
         refresher.stop()
     }
 
+    @Test func aPlotIsRefreshingWhileItsRefreshRuns() async {
+        refresher.start()
+        #expect(!refresher.isRefreshing("a"))
+        probe.holds = true
+        let running = Task { await refresher.refresh("a") }
+        await probe.waitForStarted(1)
+        #expect(refresher.isRefreshing("a"))
+        #expect(!refresher.isRefreshing("b"), "the refresh of another plot")
+        probe.finishOne()
+        await running.value
+        #expect(!refresher.isRefreshing("a"))
+        refresher.stop()
+    }
+
     @Test func aTriggerAfterTheRefreshEndedRunsANewOne() async {
         refresher.start()
         await refresher.refresh("a")
