@@ -154,8 +154,11 @@ extension Scenarios {
         func worktree(_ made: (id: String, path: String)) throws -> Worktree {
             try model.worktreeStatus(made.id)?.worktree ?? { throw DriverFailure("the list has no worktree \(made.id)") }()
         }
+        /// The sheet shows the plan of PR `number`. The tree of the accessibility API trails the model, and `node` reads a
+        /// scan that can be 150 ms old, so the rows and the footer must show in it before a step reads them.
         func sheetIsUp(_ number: Int) -> Bool {
-            app.exists("land-sheet-merge") && model.landContent?.number == number
+            model.landContent?.number == number && app.exists("land-sheet-merge")
+                && ["land-sheet-row-checks", "land-sheet-row-worktree", "land-sheet-footer"].allSatisfy { !label($0).isEmpty }
         }
         func sheetCloses() async throws {
             try await app.waitUntil("the sheet closes", timeout: 30) { !model.landSheet.isOpen && !app.exists("land-sheet") }
@@ -305,7 +308,9 @@ extension Scenarios {
         try expectLand(!listed.contains("link-labels") && listed.contains("fix-login"), "the list reads \(listed)")
         let github = try JSONSerialization.jsonObject(with: Data(contentsOf: ghState)) as? [String: Any] ?? [:]
         try expectLand(!(github["refs"] as? [String] ?? []).contains("link-labels"), "the branch is still on GitHub")
-        try expectLand(model.worktreeStatus(labels.id) == nil, "the app still lists link-labels")
+        // The reload after the land can lose to a newer read of the list that is still on its way. The toast then shows
+        // for a moment before the row leaves.
+        try await app.waitUntil("the app drops link-labels from its list") { model.worktreeStatus(labels.id) == nil }
 
         // Where it stands has the text of the box, saved as one change by the app.
         let saved = (try rig.show(plot)["where_it_stands"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
