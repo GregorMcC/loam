@@ -164,24 +164,24 @@ import Testing
 
     @Test func aPlotRowCountsItsPanesThatNeedYouAndShowsDoneUnreadOtherwise() {
         var s = attentionSample()
-        s.ws.apply(event("PermissionRequest", "b1"), to: s.b1)
-        s.ws.apply(event("StopFailure", "b2"), to: s.b2)
-        s.ws.apply(event("Stop", "c1"), to: s.c1)
+        s.ws.apply(event("PermissionRequest", "b1"), to: s.b1, now: anyTime)
+        s.ws.apply(event("StopFailure", "b2"), to: s.b2, now: anyTime)
+        s.ws.apply(event("Stop", "c1"), to: s.c1, now: anyTime)
         let model = SidebarModel(plots: plots, workspace: s.ws, collapsed: false, arriving: [s.b2])
         let rows = Dictionary(uniqueKeysWithValues: model.withPanes.map { ($0.id, $0) })
         #expect(rows["b"]?.needsYouCount == 2 && rows["b"]?.isArriving == true)
         #expect(rows["c"]?.needsYouCount == 0 && rows["c"]?.hasDoneUnread == true && rows["c"]?.isArriving == false)
         #expect(rows["a"]?.needsYouCount == 0 && rows["a"]?.hasDoneUnread == false)
         // Needs you wins: a plot with both shows the count only.
-        s.ws.apply(event("Stop", "b1"), to: s.b1)
+        s.ws.apply(event("Stop", "b1"), to: s.b1, now: anyTime)
         let after = SidebarModel(plots: plots, workspace: s.ws, collapsed: false)
         #expect(after.withPanes.first { $0.id == "b" }?.needsYouCount == 1)
     }
 
     @Test func thePaneRowsOfTheActivePlotCarryTheirMark() {
         var s = attentionSample()
-        s.ws.apply(event("PermissionRequest", "a1"), to: s.a1)
-        s.ws.apply(event("Stop", "a2"), to: s.a2)
+        s.ws.apply(event("PermissionRequest", "a1"), to: s.a1, now: anyTime)
+        s.ws.apply(event("Stop", "a2"), to: s.a2, now: anyTime)
         let model = SidebarModel(plots: plots, workspace: s.ws, collapsed: false, arriving: [s.a1])
         #expect(model.activePanes.map(\.attention) == [.needsYou, .doneUnread])
         #expect(model.activePanes.map(\.isArriving) == [true, false])
@@ -190,10 +190,10 @@ import Testing
     @Test func theNeedsYouListShowsOnlyWhileAPaneNeedsYouInSidebarOrder() {
         var s = attentionSample()
         #expect(SidebarModel(plots: plots, workspace: s.ws, collapsed: false).needsYou.isEmpty)
-        s.ws.apply(event("PermissionRequest", "c1"), to: s.c1)
-        s.ws.apply(event("PermissionRequest", "b2"), to: s.b2)
-        s.ws.apply(event("PermissionRequest", "a2"), to: s.a2)
-        s.ws.apply(event("Stop", "b1"), to: s.b1)
+        s.ws.apply(event("PermissionRequest", "c1"), to: s.c1, now: anyTime)
+        s.ws.apply(event("PermissionRequest", "b2"), to: s.b2, now: anyTime)
+        s.ws.apply(event("PermissionRequest", "a2"), to: s.a2, now: anyTime)
+        s.ws.apply(event("Stop", "b1"), to: s.b1, now: anyTime)
         let model = SidebarModel(plots: plots, workspace: s.ws, collapsed: true, arriving: [s.c1])
         #expect(model.needsYou.map(\.id) == [s.a2, s.b2, s.c1])
         #expect(model.needsYou.map(\.plotName) == ["Alpha", "Beta", "Gamma"])
@@ -206,10 +206,10 @@ import Testing
         var s = attentionSample()
         let none = SidebarModel(plots: plots, workspace: s.ws, collapsed: false)
         #expect(none.needsYouCount == 0 && none.doneUnreadCount == 0)
-        s.ws.apply(event("PermissionRequest", "c1"), to: s.c1)
-        s.ws.apply(event("PermissionRequest", "b2"), to: s.b2)
-        s.ws.apply(event("Stop", "b1"), to: s.b1)
-        s.ws.apply(event("Stop", "a1"), to: s.a1)
+        s.ws.apply(event("PermissionRequest", "c1"), to: s.c1, now: anyTime)
+        s.ws.apply(event("PermissionRequest", "b2"), to: s.b2, now: anyTime)
+        s.ws.apply(event("Stop", "b1"), to: s.b1, now: anyTime)
+        s.ws.apply(event("Stop", "a1"), to: s.a1, now: anyTime)
         let model = SidebarModel(plots: plots, workspace: s.ws, collapsed: false)
         #expect(model.needsYouCount == 2)
         #expect(model.doneUnreadCount == 2)
@@ -361,7 +361,7 @@ struct AttentionCycleTests {
         let a1 = ws.openTab(session("a"))
         ws.activate("a")
         ws.apply(PaneEvent(event: "PermissionRequest", sessionID: "b1", cwd: "/tmp", at: "2026-10-03T09:00:00Z",
-                           source: nil, notificationType: nil), to: b1)
+                           source: nil, notificationType: nil), to: b1, now: anyTime)
         let model = SidebarModel(plots: plots, workspace: ws, collapsed: false, arriving: [b1])
         #expect(model.tree(of: "b").panes.map(\.attention) == [.needsYou])
         #expect(model.tree(of: "b").panes.map(\.isArriving) == [true])
@@ -425,7 +425,7 @@ struct AttentionCycleTests {
         let right = ws.split(in: "a", axis: .sideBySide, PaneSpec(kind: .session, space: "a", title: "claude", sessionID: "s2"))!
         ws.activate("a")
         ws.apply(PaneEvent(event: "PermissionRequest", sessionID: "s2", cwd: "/tmp", at: "2026-10-03T09:00:00Z",
-                           source: nil, notificationType: nil), to: right)
+                           source: nil, notificationType: nil), to: right, now: anyTime)
         let model = SidebarModel(plots: plots, workspace: ws, collapsed: false, arriving: [right])
         guard case .tab(let tab) = model.tree(of: "a").items.first else { Issue.record("no tab row"); return }
         #expect(tab.panes.map(\.id) == [left, right])
@@ -591,9 +591,9 @@ struct AttentionCycleTests {
         let two = ws.split(in: "p", axis: .sideBySide, seeded("two"))!
         let three = ws.openTab(seeded("three"))
         let four = ws.openTab(seeded("four"))
-        ws.apply(event("Stop", "one"), to: one)
-        ws.apply(event("PermissionRequest", "two"), to: two)
-        ws.apply(event("Stop", "three"), to: three)
+        ws.apply(event("Stop", "one"), to: one, now: anyTime)
+        ws.apply(event("PermissionRequest", "two"), to: two, now: anyTime)
+        ws.apply(event("Stop", "three"), to: three, now: anyTime)
         ws.focus(two)
         let items = TabBarModel(workspace: ws, space: "p", arriving: [two]).items
         #expect(items.map(\.attention) == [.needsYou, .doneUnread, .none])

@@ -324,37 +324,52 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
     @Test func aKeyInTheTurnBlocksAfterTheStop() async throws {
         let (model, _) = try await rig()
         let pane = try open(in: failed, model)
-        model.input(in: pane)
+        model.input(.key, in: pane)
         #expect(model.sendPlan(for: failed)?.step == .copy(.typed))
-        model.pressedReturn(in: pane)
+        model.input(.submit, in: pane)
         send("UserPromptSubmit", to: pane, model, source: "user")
-        model.input(in: pane)
+        model.input(.key, in: pane)
         send("Stop", to: pane, model)
         #expect(model.sendPlan(for: failed)?.step == .copy(.typed))
-        model.pressedReturn(in: pane)
+        model.input(.submit, in: pane)
         send("UserPromptSubmit", to: pane, model, source: "user")
         send("Stop", to: pane, model)
         #expect(model.sendPlan(for: failed)?.step == .type(pane))
     }
 
-    /// An arrow key picks an option of a question, and a digit or Return answers a permission dialog. None of
-    /// these keys is in the input, so they do not count, and Send types after the turn.
+    /// An arrow key moves to an option of a dialog, and Return answers it. Neither key is in the composer, so
+    /// they do not count, and Send types after the turn.
     @Test func theKeysOfADialogDoNotBlockSend() async throws {
         let (model, _) = try await rig()
         let pane = try open(in: failed, model)
-        model.pressedReturn(in: pane)
+        model.input(.submit, in: pane)
         send("UserPromptSubmit", to: pane, model, source: "user")
         model.apply(paneEvent("PermissionRequest", model.workspace.session(of: pane)!.sessionID!), to: pane)
-        // The terminal reports the input first, then the key that answers.
-        model.input(in: pane)
+        model.input(.key, in: pane)
         #expect(model.workspace.state(of: pane) == .needsYou)
-        model.pressedReturn(in: pane)
+        model.input(.submit, in: pane)
         model.typed(in: pane)
         #expect(model.workspace.state(of: pane) == .working)
         send("PostToolUse", to: pane, model)
         send("Stop", to: pane, model)
         #expect(model.workspace.session(of: pane)?.typedSinceSubmit == false)
         #expect(model.sendPlan(for: failed)?.step == .type(pane))
+    }
+
+    /// You approve with 1, and the tool runs for a long time. You type a draft while it runs, so Send copies the
+    /// prompt after the Stop.
+    @Test func keysWhileAnApprovedToolRunsBlockSend() async throws {
+        let (model, _) = try await rig()
+        let pane = try open(in: failed, model)
+        model.input(.submit, in: pane)
+        send("UserPromptSubmit", to: pane, model)
+        model.apply(paneEvent("PermissionRequest", model.workspace.session(of: pane)!.sessionID!), to: pane)
+        model.input(.pick, in: pane)
+        model.typed(in: pane)
+        model.input(.key, in: pane)
+        send("PostToolUse", to: pane, model)
+        send("Stop", to: pane, model)
+        #expect(model.sendPlan(for: failed)?.step == .copy(.typed))
     }
 
     /// Loam types the prompt, and you leave it. A background task ends, and Claude Code starts a turn with a submit
@@ -377,13 +392,13 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
         let pane = try open(in: failed, model)
         var now = Date(timeIntervalSince1970: 1_800_000_000)
         model.now = { now }
-        model.input(in: pane)
-        model.pressedReturn(in: pane)
+        model.input(.key, in: pane)
+        model.input(.submit, in: pane)
         now.addTimeInterval(4)
         send("UserPromptSubmit", to: pane, model)
         send("Stop", to: pane, model)
         #expect(model.sendPlan(for: failed)?.step == .copy(.typed))
-        model.pressedReturn(in: pane)
+        model.input(.submit, in: pane)
         now.addTimeInterval(1)
         send("UserPromptSubmit", to: pane, model)
         #expect(model.workspace.session(of: pane)?.typedSinceSubmit == false)
@@ -404,11 +419,14 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
     @Test func aNewSessionInThePaneForgetsTheKeysAndACompactKeepsThem() async throws {
         let (model, _) = try await rig()
         let pane = try open(in: failed, model)
-        model.input(in: pane)
+        model.input(.key, in: pane)
         send("SessionStart", to: pane, model, source: "compact")
         #expect(model.sendPlan(for: failed)?.step == .copy(.typed))
         send("SessionEnd", to: pane, model)
         model.apply(paneEvent("SessionStart", "next-session", source: "clear"), to: pane)
+        #expect(model.sendPlan(for: failed)?.step == .type(pane))
+        model.input(.key, in: pane)
+        model.apply(paneEvent("SessionStart", "resumed-session", source: "resume"), to: pane)
         #expect(model.sendPlan(for: failed)?.step == .type(pane))
     }
 
@@ -427,7 +445,7 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
         #expect(busy.typeTarget == nil && busy.toast == nil)
         #expect(busy.footnote == "The session is busy. Copy the prompt and send it when the turn ends.")
         send("Stop", to: pane, model)
-        model.input(in: pane)
+        model.input(.key, in: pane)
         #expect(model.sendPlan(for: failed)?.footnote == "You have typed in this session. Loam does not type over your text.")
         let start = try #require(model.sendPlan(for: review))
         #expect(start.buttonTitle == "Start session with prompt")
@@ -468,7 +486,7 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
         #expect(model.workspace.focusedPane == pane)
         #expect(record.toasts.count == 2)
         // Your Return sends it. The submit takes the input, so Loam can type again after the turn.
-        model.pressedReturn(in: pane)
+        model.input(.submit, in: pane)
         send("UserPromptSubmit", to: pane, model, source: "user")
         send("Stop", to: pane, model)
         model.sendToSession(failed)
@@ -518,7 +536,7 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
         #expect(spec.kind == .session && spec.worktree?.id == review && spec.space == .plot(plotID))
         #expect(record.typed.isEmpty)
         // The session runs the setup question first, and you answer it. Those keys are not in the input of Claude Code.
-        model.input(in: pane)
+        model.input(.key, in: pane)
         send("SessionStart", to: pane, model, source: "startup")
         #expect(record.typed.map(\.pane) == [pane])
         #expect(record.typed.map(\.text) == [try prompt(review, model)])
@@ -585,7 +603,7 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
         let pane = try open(in: failed, model)
         model.sendFromMenu(failed)
         #expect(record.typed.count == 1)
-        model.input(in: pane)
+        model.input(.key, in: pane)
         model.sendFromMenu(failed)
         #expect(model.prPopover.worktreeID == failed)
         #expect(record.copied.isEmpty && record.typed.count == 1)

@@ -108,8 +108,8 @@ import Testing
         var s = sample()
         let panes = s.moving.tree.paneIDs
         #expect(ClosePrompt.make(.move, closing: panes, in: s.ws) == nil)
-        s.ws.apply(event("SessionStart", "h1"), to: s.claude)
-        s.ws.apply(event("UserPromptSubmit", "h1"), to: s.claude)
+        s.ws.apply(event("SessionStart", "h1"), to: s.claude, now: anyTime)
+        s.ws.apply(event("UserPromptSubmit", "h1"), to: s.claude, now: anyTime)
         let prompt = ClosePrompt.make(.move, closing: panes, in: s.ws)
         #expect(prompt?.title == "Move this tab?")
         #expect(prompt?.confirm == "Move")

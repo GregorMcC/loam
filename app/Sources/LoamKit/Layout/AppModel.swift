@@ -834,24 +834,17 @@ public final class AppModel {
         workspace.typed(in: pane)
     }
 
-    /// You put something into the composer of the pane: a key, a paste, a drop, or text from dictation. An arrow
-    /// key can recall a prompt and Tab can complete one, so they count too. Send to session does not type into
-    /// the pane until Claude Code takes the composer (the composer rule of `PaneSession`). The workspace changes
-    /// only on the first input after a Return or a submit.
-    public func input(_ kind: PaneInput = .key, in pane: PaneID) {
+    /// You put something into the pane: a key, a paste, a drop, or text from dictation. An arrow key can recall a
+    /// prompt and Tab can complete one, so they count too. Send to session does not type into the pane until
+    /// Claude Code takes the composer (the composer rule of `PaneSession`). A key changes the workspace only when
+    /// it is the first input after a Return or a submit, and each submit Return changes it once.
+    public func input(_ input: PaneInput, in pane: PaneID) {
         guard var session = workspace.session(of: pane) else { return }
         let before = session
-        session.input(kind)
+        let time = now()
+        session.input(input, now: time)
         guard session != before else { return }
-        workspace.input(kind, in: pane)
-    }
-
-    /// You pressed a plain Return in the pane: it sends the composer of Claude Code, or does nothing when the
-    /// composer is empty (ticket 110). The `UserPromptSubmit` of the prompt comes later. A Return in a dialog
-    /// changes nothing.
-    public func pressedReturn(in pane: PaneID) {
-        guard workspace.session(of: pane)?.dialogOpen == false else { return }
-        workspace.pressedReturn(in: pane, now: now())
+        workspace.input(input, in: pane, now: time)
     }
 
     /// Loam became frontmost or stopped being frontmost. Done, unread of the pane that you see clears.

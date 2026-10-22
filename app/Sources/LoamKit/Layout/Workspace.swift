@@ -375,7 +375,7 @@ public struct Workspace: Codable, Equatable, Sendable {
     /// Applies a line from the pane's socket that came at `now`. A shell pane raises no state (spec 8.4), so it
     /// ignores the line. Returns true when the pane changed.
     @discardableResult
-    public mutating func apply(_ event: PaneEvent, to pane: PaneID, now: Date = Date()) -> Bool {
+    public mutating func apply(_ event: PaneEvent, to pane: PaneID, now: Date) -> Bool {
         guard specs[pane]?.kind == .session else { return false }
         return sessions[pane]?.apply(event, now: now) ?? false
     }
@@ -391,14 +391,9 @@ public struct Workspace: Codable, Equatable, Sendable {
         sessions[pane]?.typed() ?? false
     }
 
-    /// You put something into the composer of the pane (ticket 110).
-    public mutating func input(_ kind: PaneInput, in pane: PaneID) {
-        sessions[pane]?.input(kind)
-    }
-
-    /// You pressed a submit Return in the pane at `now` (ticket 110).
-    public mutating func pressedReturn(in pane: PaneID, now: Date = Date()) {
-        sessions[pane]?.pressedReturn(now: now)
+    /// You put something into the pane at `now` (ticket 110).
+    public mutating func input(_ input: PaneInput, in pane: PaneID, now: Date) {
+        sessions[pane]?.input(input, now: now)
     }
 
     /// Send to session typed `prompt` into the input of the pane (ticket 110).

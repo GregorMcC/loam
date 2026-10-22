@@ -64,12 +64,9 @@ public final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClien
     /// (ticket 110). Each of these counts: a key with no command key (an arrow key recalls a line, Tab completes
     /// one), ⌘⌫ and ⌘⌦ (they clear the line), a read of the clipboard (⌘V, ⌘⇧V, a middle click), text from an
     /// input method or dictation, and a drop. Other ⌘ keys scroll, zoom or move the focus, so they do not count.
-    /// Text that `pasteWithoutReturn` types is not yours, so it does not count. `InputKey` has the rule for keys.
-    /// A key comes as `.key`, and every other input as `.text`, because an open dialog takes only keys.
+    /// Text that `pasteWithoutReturn` types is not yours, so it does not count. `PaneInput` sorts the keys, and a
+    /// plain Return comes as `.submit`. Input that is not a key comes as `.text`, because a dialog takes only keys.
     public var onInput: ((PaneInput) -> Void)?
-    /// You pressed a plain Return, which sends the line (ticket 110). It is not input. A held Return, a Return
-    /// with a modifier, and a Return that ends a composition do not call it.
-    public var onReturn: (() -> Void)?
     public var onDesktopNotification: ((_ title: String, _ body: String) -> Void)?
     /// Called when a clipboard request shows its prompt. The driver uses it.
     public var onClipboardConfirmation: ((ClipboardConfirmation) -> Void)?
@@ -510,12 +507,9 @@ public final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClien
         // A held key that started in another view. A key held here started with a key down that is not a repeat.
         if event.isARepeat, dropsRepeats { return }
         dropsRepeats = false
-        switch InputKey(keyCode: event.keyCode, mods: KeyChord.Mods(event.modifierFlags), isARepeat: event.isARepeat,
-                        composing: markedText.length > 0) {
-        case .submit: onReturn?()
-        case .input: onInput?(.key)
-        case .none: break
-        }
+        let input = PaneInput(keyCode: event.keyCode, characters: event.characters, mods: KeyChord.Mods(event.modifierFlags),
+                              isARepeat: event.isARepeat, composing: markedText.length > 0)
+        if input != .none { onInput?(input) }
         if !event.modifierFlags.contains(.command), TypingKey.clearsNeedsYou(event.characters) { onKeyInput?() }
         guard let surface else {
             interpretKeyEvents([event])
