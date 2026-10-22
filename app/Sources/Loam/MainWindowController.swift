@@ -325,6 +325,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         if !model.switcher.isOpen, !actionBar.menu.isOpen, let focused = tab?.focused, let container = paneArea.container(for: focused) {
             window?.makeFirstResponder(container.focusTarget)
         }
+        // A pane that opened with text to type (Sign in) has its terminal now.
+        model.deliverUnsentText()
     }
 
     /// The pane headers and the tab labels. A terminal title change runs only this (ticket 71), so it
@@ -585,6 +587,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let controller = settingsWindow ?? SettingsWindowController(settings: model.settings, terminal: model.terminalConfig)
         settingsWindow = controller
         controller.show()
+        // You may have installed `gh` or signed in on the way here (ticket 108).
+        Task { await model.checkGitHub() }
     }
 
     // MARK: Ghostty config

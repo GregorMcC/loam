@@ -479,7 +479,8 @@ private struct CheckoutRowView: View {
         .contextMenu {
             Button("New pane") { newPane() }
             if row.kind == .worktree {
-                Button("Remove\u{2026}") { WorktreeDialogs.askRemove(row.id, model: model) }
+                Divider()
+                WorktreeActions(model: model, id: row.id)
             }
         }
         .accessibilityElement(children: .combine)
