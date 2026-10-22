@@ -290,7 +290,8 @@ A worktree is a separate checkout of one repo of a plot, on its own branch. It l
 
 ```json
 { "name": "fix-login", "folder": "web-fix-login", "valid_name": true, "worktree_exists": false, "branch_exists": false,
-  "default_base": "origin/main", "bases": ["origin/main", "origin/develop", "develop", "main"] }
+  "default_base": "origin/main", "bases": ["origin/main", "origin/develop", "develop", "main"],
+  "seed_line": "- web-fix-login: Fix the login form (#57, from origin/main)" }
 ```
 
 - `valid_name` is false when the name is not a good branch name. `name_error` then says why. It is left out when the name is valid.
@@ -298,6 +299,7 @@ A worktree is a separate checkout of one repo of a plot, on its own branch. It l
 - `branch_exists` is true when a local branch or a branch of `origin` has the name. `new` then uses that branch, and a `--base` does not apply. It is false when the name is not valid.
 - `default_base` is the base of a new branch when no `--base` is given. It comes from `origin/HEAD` of the last fetch. It is empty when the last fetch did not record `origin/HEAD`, or the repo has no `origin`. `new` without `--base` then asks `origin`.
 - `bases` are the branches that a new branch can start from: `default_base` first, then the branches of `origin`, then the local branches, each with the newest commit first.
+- `seed_line` is the line that the seed of the plot gets for the worktree, with the `--goal`, the `--link` and the base of this check. The base is the `--base`, else `default_base`. A branch that exists has none. `seed_line` is left out when the name is not valid. The same code writes the seed line of `new`, so the line shows what the seed says.
 
 `edit` sets the goal as one change in the change log, with the entry `{ "item": "worktree:<id>", "field": "goal" }`. `loam undo` puts the old goal back. An empty `--goal` clears the goal, and `edit` without `--goal` exits with code 2. `change_id` is 0 when the goal is the same. `<worktree>` is an ID, a folder name, or a name, as for `rm`.
 

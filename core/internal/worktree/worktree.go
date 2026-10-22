@@ -302,6 +302,11 @@ type CheckResult struct {
 	// base first, then the branches of origin, then the local branches, each
 	// with the newest commit first.
 	Bases []string `json:"bases"`
+	// SeedLine is the line that the seed of the plot gets for the worktree,
+	// such as "- web-fix-login: Fix the login form (#57, from origin/main)",
+	// with the goal, the link and the base of this check. It is empty when
+	// the name is not valid.
+	SeedLine string `json:"seed_line,omitempty"`
 }
 
 // Check is a dry run of [Create]. It runs the checks of Create and changes
@@ -317,6 +322,8 @@ func Check(s *store.Store, o CreateOptions) (*CheckResult, error) {
 		return nil, err
 	}
 	res := &CheckResult{Name: o.Name, Folder: filepath.Base(n.dest), WorktreeExists: n.exists != "", Bases: []string{}}
+	// base is the base that Create would record. A branch that exists has none.
+	var base string
 	if problem := nameProblem(n.repo.Path, o.Name); problem != "" {
 		res.NameError = problem
 	} else {
@@ -328,7 +335,8 @@ func Check(s *store.Store, o CreateOptions) (*CheckResult, error) {
 		// skipped: the app sends its base as you type, and branch_exists
 		// tells it that the base does not apply. Create still refuses it.
 		if o.Base != "" && !res.BranchExists {
-			if _, _, _, err := n.addArgs(o); err != nil {
+			var err error
+			if _, base, _, err = n.addArgs(o); err != nil {
 				return nil, err
 			}
 		}
@@ -341,6 +349,13 @@ func Check(s *store.Store, o CreateOptions) (*CheckResult, error) {
 	res.Bases, err = bases(n.repo.Path, n.remoteOn, res.DefaultBase)
 	if err != nil {
 		return nil, err
+	}
+	if res.ValidName {
+		if o.Base == "" && !res.BranchExists {
+			base = res.DefaultBase
+		}
+		line := seed.WorktreeLine(store.Worktree{Path: n.dest, Base: base, Goal: o.Goal, Link: n.link})
+		res.SeedLine = strings.TrimSuffix(line, "\n")
 	}
 	return res, nil
 }

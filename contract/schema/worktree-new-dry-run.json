@@ -17,9 +17,14 @@
       "description": "The branches that a new branch can start from: default_base first, then the branches of origin, then the local branches, each with the newest commit first.",
       "type": "array",
       "items": { "type": "string", "minLength": 1 }
+    },
+    "seed_line": {
+      "description": "The line that the seed of the plot gets for the worktree, with the goal, the link and the base of this check, such as '- web-fix-login: Fix the login form (#57, from origin/main)'. It is present only when valid_name is true.",
+      "type": "string",
+      "minLength": 1
     }
   },
   "if": { "properties": { "valid_name": { "const": false } } },
-  "then": { "required": ["name_error"] },
-  "else": { "not": { "required": ["name_error"] } }
+  "then": { "required": ["name_error"], "not": { "required": ["seed_line"] } },
+  "else": { "required": ["seed_line"], "not": { "required": ["name_error"] } }
 }

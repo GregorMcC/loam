@@ -183,7 +183,7 @@ func Render(p store.Plot, worktrees []store.Worktree) string {
 	if len(worktrees) > 0 {
 		b.WriteString("\n## Worktrees\n\n")
 		for _, w := range worktrees {
-			b.WriteString(worktreeLine(w))
+			b.WriteString(WorktreeLine(w))
 		}
 	}
 	if len(p.Links) > 0 {
@@ -199,10 +199,12 @@ func Render(p store.Plot, worktrees []store.Worktree) string {
 	return b.String()
 }
 
-// worktreeLine is the seed line of a worktree: its folder name, its goal,
+// WorktreeLine is the seed line of a worktree: its folder name, its goal,
 // and in brackets the link key and the base. A part that is empty is left
 // out, such as "- loam-native-panel: Native panel spacing (from origin/main)".
-func worktreeLine(w store.Worktree) string {
+// The line ends in a newline. The dry run of worktree new shows this line
+// before the worktree exists, so the app shows what the seed will say.
+func WorktreeLine(w store.Worktree) string {
 	line := "- " + oneLine(noControl(filepath.Base(w.Path)))
 	if goal := oneLine(noControl(w.Goal)); goal != "" {
 		line += ": " + goal
