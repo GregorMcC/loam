@@ -168,6 +168,24 @@ import Testing
                                         hasPullRequest: true, checksFailed: true))
     }
 
+    /// Ticket 112: Land… leads the section when the PR is ready to merge, and shows for no other stage.
+    @Test func aReadyPRAddsLandAtTheTop() {
+        func titles(ready: Bool, pullRequest: Bool = true) -> [String]? {
+            ActionMenu.sections(
+                paneTitle: "claude", plotName: "Loam", worktree: ActionMenu.WorktreeFacts(branch: "link-labels"), chord: menuChord,
+                isEnabled: { ActionMenu.isAvailable($0, hasSpace: true, hasPlot: true, hasPane: true, hasWorktree: true,
+                                                    hasPullRequest: pullRequest, readyToMerge: ready) })
+                .first { $0.id == "worktree" }?.items.map(\.title)
+        }
+        #expect(titles(ready: true) == ["Land\u{2026}", "Show pull request", "Refresh"])
+        #expect(titles(ready: false) == ["Show pull request", "Refresh"])
+        #expect(titles(ready: true, pullRequest: false) == ["Refresh"])
+        #expect(!ActionMenu.isAvailable(.landWorktree, hasSpace: true, hasPlot: true, hasPane: true, hasWorktree: false,
+                                        hasPullRequest: true, readyToMerge: true))
+        #expect(!ActionMenu.isAvailable(.landWorktree, hasSpace: true, hasPlot: true, hasPane: true, hasWorktree: true,
+                                        hasPullRequest: true))
+    }
+
     @Test func theFilterFindsTheWorktreeRows() {
         let all = sections(worktree: ActionMenu.WorktreeFacts(branch: "native-panel"))
         #expect(ActionMenu.filter(all, query: "refresh").map(\.id) == ["worktree"])
@@ -274,6 +292,20 @@ import Testing
         bar.changesArrived([change(1, claude), change(2, claude), change(3, you, item: "link:9")], activePlot: "p1")
         #expect(bar.toast == "You added link")
         #expect(bar.toastID == id + 1)
+    }
+
+    /// Ticket 112: a land saves Where it stands and tells about it in its own toast, which the change must not replace.
+    @Test func aChangeThatTheAppToldAboutShowsNoToast() {
+        let bar = ActionBarModel()
+        bar.changesArrived([], activePlot: "p1")
+        bar.show("Merged #22. Removed the worktree link-labels.")
+        let id = bar.toastID
+        bar.ignoreChange(2)
+        bar.changesArrived([change(2, you)], activePlot: "p1")
+        #expect(bar.toast == "Merged #22. Removed the worktree link-labels." && bar.toastID == id)
+        // The next change from somebody else still shows.
+        bar.changesArrived([change(2, you), change(3, claude)], activePlot: "p1")
+        #expect(bar.toast == "Claude set Where it stands")
     }
 
     @Test func aChangeOfAnotherPlotShowsNoToast() {

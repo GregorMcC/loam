@@ -61,11 +61,23 @@ public final class AppModel {
         didSet {
             guard worktrees != oldValue else { return }
             followPullRequestRow()
+            followLandSheet()
             onWorkspaceChange?()
         }
     }
     /// The PR popover (ticket 109).
     @ObservationIgnored public let prPopover = PRPopoverModel()
+    /// The Land sheet (ticket 112).
+    @ObservationIgnored public let landSheet = LandSheetModel()
+    /// Asks the question of a close that ends a session in a turn, and returns true on the confirm button. The window
+    /// shows it as a sheet. The default says no, so a land with no window never stops a session.
+    @ObservationIgnored public var confirmClose: (ClosePrompt) async -> Bool = { _ in false }
+    /// Returns when the views of the closed panes are gone, and so are their processes. The window sets it. A land
+    /// removes the folder of the panes, so it waits for them.
+    @ObservationIgnored public var paneClosesFinished: () async -> Void = {}
+    /// Tells the action bar about a change that the app made itself, so the toast of the app is not replaced by
+    /// "You set Where it stands".
+    @ObservationIgnored public var onOwnChange: ((Int) -> Void)?
     /// Copies text to the clipboard (ticket 110). The window sets the clipboard of the Mac, and the driver a
     /// private one.
     @ObservationIgnored public var copyText: (String) -> Void = { _ in }
@@ -474,7 +486,7 @@ public final class AppModel {
         lastError = Self.message(for: error)
     }
 
-    private static func message(for error: Error) -> String {
+    static func message(for error: Error) -> String {
         (error as? LoamError)?.userMessage ?? String(describing: error)
     }
 

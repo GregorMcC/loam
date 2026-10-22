@@ -334,4 +334,47 @@ import Testing
         #expect(LandSheetContent.RowAction.updateBranch.title == "Update branch")
         #expect(LandSheetContent.RowAction.openOnGitHub.title == "Open on GitHub")
     }
+
+    // MARK: The toast
+
+    func landed(_ edit: (inout LandResult) -> Void = { _ in }) throws -> LandResult {
+        var result = try JSONDecoder().decode(LandResult.self, from: Fixtures.data("worktree_land"))
+        result.pr.number = 22
+        result.worktree.name = "link-labels"
+        edit(&result)
+        return result
+    }
+
+    @Test func theToastAfterAMergeNamesTheRemovedWorktree() throws {
+        let toast = LandSheetContent.toast(for: try landed(), asked: .init())
+        #expect(toast.text == "Merged #22. Removed the worktree link-labels." && toast.kind == .done)
+    }
+
+    @Test func aWorktreeThatYouKeptNeedsNoWord() throws {
+        let toast = LandSheetContent.toast(for: try landed { $0.worktreeRemoved = false }, asked: .init(keepWorktree: true))
+        #expect(toast.text == "Merged #22." && toast.kind == .done)
+    }
+
+    @Test func aWorktreeThatTheCoreKeptIsANotice() throws {
+        let toast = LandSheetContent.toast(for: try landed { $0.worktreeRemoved = false }, asked: .init())
+        #expect(toast.text == "Merged #22. Loam kept the worktree link-labels." && toast.kind == .notice)
+    }
+
+    @Test func aBranchThatGitHubKeptIsANoticeUnlessYouKeptIt() throws {
+        let kept = try landed { $0.remoteBranchDeleted = false; $0.remoteBranchNote = "Kept the branch link-labels on GitHub: it has commits after the head." }
+        #expect(LandSheetContent.toast(for: kept, asked: .init()).text
+            == "Merged #22. Removed the worktree link-labels. Loam kept the branch on GitHub.")
+        #expect(LandSheetContent.toast(for: kept, asked: .init()).kind == .notice)
+        #expect(LandSheetContent.toast(for: try landed { $0.remoteBranchDeleted = false }, asked: .init(keepRemoteBranch: true)).kind == .done)
+    }
+
+    @Test func aMergeThatWaitsHasItsOwnWords() throws {
+        let auto = try landed { $0.merged = false; $0.mergeLater = true; $0.auto = true; $0.worktreeRemoved = false }
+        #expect(LandSheetContent.toast(for: auto, asked: .init()).text == "#22 will merge when its checks pass.")
+        let queued = try landed { $0.merged = false; $0.mergeLater = true; $0.mergeQueue = true; $0.worktreeRemoved = false }
+        #expect(LandSheetContent.toast(for: queued, asked: .init()).text == "Added #22 to the merge queue.")
+        let unseen = try landed { $0.merged = false; $0.mergeLater = true; $0.mergeNote = "GitHub merged PR #22, but the PR does not show the merge yet." }
+        let toast = LandSheetContent.toast(for: unseen, asked: .init())
+        #expect(toast.text == "GitHub took #22, but Loam does not see the merge yet." && toast.kind == .notice)
+    }
 }

@@ -41,8 +41,9 @@ public enum ActionMenu {
         Entry(command: .closePane, title: "Close pane", symbol: "xmark"),
     ]
 
-    /// The worktree of the focused pane (ticket 109). Send failures to session is ticket 110.
+    /// The worktree of the focused pane (ticket 109). Send failures to session is ticket 110, and Land… is ticket 112.
     static let worktreeEntries = [
+        Entry(command: .landWorktree, title: "Land\u{2026}", symbol: "arrow.triangle.merge"),
         Entry(command: .sendFailuresToSession, title: "Send failures to session", symbol: "paperplane"),
         Entry(command: .showWorktreePullRequest, title: "Show pull request", symbol: "arrow.triangle.pull"),
         Entry(command: .refreshWorktree, title: "Refresh", symbol: "arrow.clockwise"),
@@ -104,9 +105,11 @@ public enum ActionMenu {
     /// the actions list agree. Tab commands need an active space (Home or a plot), pane commands a
     /// focused pane, and plot commands an active plot. A move to a plot needs a tab in Home. The worktree
     /// commands need a focused pane in a worktree (ticket 109), and Show pull request needs a PR as well.
-    /// Send failures to session needs a PR whose checks failed (ticket 110).
+    /// Send failures to session needs a PR whose checks failed (ticket 110), and Land… a PR that is ready to merge
+    /// (ticket 112).
     public static func isAvailable(_ command: AppCommand, hasSpace: Bool, hasPlot: Bool, hasPane: Bool,
-                                   hasWorktree: Bool = false, hasPullRequest: Bool = false, checksFailed: Bool = false) -> Bool {
+                                   hasWorktree: Bool = false, hasPullRequest: Bool = false, checksFailed: Bool = false,
+                                   readyToMerge: Bool = false) -> Bool {
         switch command {
         case .newTab, .newShellTab: hasSpace
         case .newPlotSession, .editBrief, .addLink, .addRepo, .archivePlot, .togglePlotPanel: hasPlot
@@ -115,6 +118,7 @@ public enum ActionMenu {
         case .refreshWorktree: hasWorktree
         case .showWorktreePullRequest: hasWorktree && hasPullRequest
         case .sendFailuresToSession: hasWorktree && hasPullRequest && checksFailed
+        case .landWorktree: hasWorktree && hasPullRequest && readyToMerge
         default: true
         }
     }

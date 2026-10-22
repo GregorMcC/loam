@@ -106,8 +106,8 @@ public struct LandSheetContent: Equatable, Sendable {
         let pr = plan.pr
         number = pr.number
         prTitle = FixPrompt.oneLine(pr.title)
-        title = "Land \(StageMark.numberText(pr.number)) \(prTitle)"
-        subtitle = PRPopoverContent.subtitle(of: pr)
+        title = Self.title(of: pr)
+        subtitle = Self.subtitle(of: pr)
         isMerged = plan.merged || pr.state == "MERGED"
         mergeQueue = plan.mergeQueue && !isMerged
         worktreeName = plan.worktree.name
@@ -149,6 +149,14 @@ public struct LandSheetContent: Equatable, Sendable {
             "You cannot undo a merge."
         }
     }
+
+    /// "Land #142 Link labels from plot brief". The sheet shows it from the row of the worktree while the plan loads.
+    public static func title(of pr: PullRequest) -> String {
+        "Land \(StageMark.numberText(pr.number)) \(FixPrompt.oneLine(pr.title))"
+    }
+
+    /// "link-labels → main · 9 commits", the line under the title.
+    public static func subtitle(of pr: PullRequest) -> String { PRPopoverContent.subtitle(of: pr) }
 
     // MARK: Rows
 
@@ -287,5 +295,45 @@ public struct LandSheetContent: Equatable, Sendable {
         let sentence = name.isEmpty ? head + "." : [".", "!", "?"].contains { name.hasSuffix($0) } ? "\(head) \(name)" : "\(head) \(name)."
         let rest = current.trimmingCharacters(in: .whitespacesAndNewlines)
         return WhereItStands(text: rest.isEmpty ? sentence : sentence + " " + rest, sentence: sentence)
+    }
+
+    // MARK: The toast
+
+    /// What the merge asked to keep, so the toast can tell a keep that you chose from one that the core made.
+    public struct Request: Equatable, Sendable {
+        public var keepWorktree: Bool
+        public var keepRemoteBranch: Bool
+
+        public init(keepWorktree: Bool = false, keepRemoteBranch: Bool = false) {
+            self.keepWorktree = keepWorktree
+            self.keepRemoteBranch = keepRemoteBranch
+        }
+    }
+
+    /// The toast after a land that went through: "Merged #142. Removed the worktree link-labels." A keep that you
+    /// chose needs no word. A step that the core could not do shows as a notice, and the Remove… pill of the
+    /// Worktrees row says why when you press it.
+    public static func toast(for result: LandResult, asked: Request) -> (text: String, kind: ActionBarModel.ToastKind) {
+        let number = StageMark.numberText(result.pr.number)
+        let name = result.worktree.name
+        if result.merged {
+            var text = "Merged \(number)."
+            var kind = ActionBarModel.ToastKind.done
+            if result.worktreeRemoved {
+                text += " Removed the worktree \(name)."
+            } else if !asked.keepWorktree {
+                text += " Loam kept the worktree \(name)."
+                kind = .notice
+            }
+            if !result.remoteBranchDeleted, !asked.keepRemoteBranch, result.remoteBranchNote != nil {
+                text += " Loam kept the branch on GitHub."
+                kind = .notice
+            }
+            return (text, kind)
+        }
+        if result.mergeLater, result.mergeQueue { return ("Added \(number) to the merge queue.", .done) }
+        if result.mergeLater, result.auto { return ("\(number) will merge when its checks pass.", .done) }
+        if result.mergeLater { return ("GitHub took \(number), but Loam does not see the merge yet.", .notice) }
+        return ("Landed \(number).", .done)
     }
 }
