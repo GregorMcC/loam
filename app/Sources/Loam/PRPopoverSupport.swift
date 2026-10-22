@@ -25,6 +25,7 @@ extension MainWindowController {
         // One overlay at a time: the switcher and the actions menu would take the clicks.
         if model.switcher.isOpen { model.switcher.close() }
         closeActionsMenu()
+        model.closeLandSheet()
         let workspace = model.workspace
         popoverContext = ActionsContext(space: workspace.activeSpace, pane: workspace.focusedPane)
         keysBeforePopover = keysHeldInPanel()
@@ -41,15 +42,13 @@ extension MainWindowController {
     }
 
     /// Return on the primary button, or a click on it. The three Send buttons type the prompt into the session
-    /// of the worktree, copy it, or start a session (ticket 110). No Land… button shows until ticket 112 builds it
-    /// (`PRPrimaryAction.built`).
+    /// of the worktree, copy it, or start a session (ticket 110). Land… opens the Land sheet, which closes the
+    /// popover (ticket 112).
     func runPrimaryAction(_ action: PRPrimaryAction) {
+        guard let id = model.prPopover.worktreeID else { return }
         switch action {
-        case .sendFailures, .sendReview, .sendConflicts:
-            guard let id = model.prPopover.worktreeID else { return }
-            model.sendToSession(id)
-        case .land:
-            assertionFailure("The primary button \(action) shows before its ticket is built")
+        case .sendFailures, .sendReview, .sendConflicts: model.sendToSession(id)
+        case .land: model.openLandSheet(id)
         }
     }
 

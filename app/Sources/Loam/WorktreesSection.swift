@@ -5,7 +5,9 @@ import SwiftUI
 /// The Worktrees section of the plot panel (ticket 108), after Why and before Repos. A header with the
 /// age of the data and a `+` for a new worktree, the callouts about `gh`, and one row for each worktree
 /// of the plot in the order of the sidebar. The text of a row comes from `StatusLine` and the mark from
-/// the stage table (`WorktreeStage`), the same as the tooltip in the sidebar.
+/// the stage table (`WorktreeStage`), the same as the tooltip in the sidebar. A row that is ready to merge has
+/// a Land… pill, and a row that is merged shows faded with a Remove… pill (ticket 112). A row that a land
+/// removes leaves with the row animation.
 struct WorktreesSection: View {
     let app: AppModel
     let plot: String
@@ -23,11 +25,14 @@ struct WorktreesSection: View {
                 ) { WorktreeDialogs.askNewWorktree(plot: plot, model: app) }
             }
             ForEach(app.shipNotices(for: plot), id: \.self) { ShipNoticeCard(app: app, notice: $0) }
-            ForEach(rows, id: \.worktree.id) { WorktreeRowView(app: app, row: $0, timeZone: timeZone) }
+            ForEach(rows, id: \.worktree.id) {
+                WorktreeRowView(app: app, row: $0, timeZone: timeZone).transition(LoamAnimation.growIn)
+            }
             if rows.isEmpty {
                 EmptyRow(text: "No worktrees")
             }
         }
+        .animation(LoamAnimation.lift, value: rows.map(\.worktree.id))
     }
 }
 
@@ -73,7 +78,8 @@ private struct ShipNoticeCard: View {
 
 /// One worktree: the stage mark, the branch with its PR number, and the status line. A click opens the
 /// PR popover (ticket 109). The hover menu and the context menu hold `WorktreeActions`, the same as the
-/// sidebar row.
+/// sidebar row. The pill before the menu is Land… at Ready to merge, and Remove… at Merged, where the row is
+/// faded (ticket 112, boards 4.1 and 5.1).
 private struct WorktreeRowView: View {
     let app: AppModel
     let row: WorktreeStatus
@@ -82,6 +88,7 @@ private struct WorktreeRowView: View {
 
     var body: some View {
         let line = StatusLine(of: row, timeZone: timeZone)
+        let faded = row.stage == .merged && !row.missing
         HoverMenuRow(menuLabel: "Worktree actions", menuID: "panel-worktree-menu-\(row.worktree.id)",
                      kind: row.missing ? "gone" : nil, minHeight: 44, trailingInset: 28) {
             HStack(spacing: 8) {
@@ -90,18 +97,21 @@ private struct WorktreeRowView: View {
                     HStack(spacing: 5) {
                         Text(row.worktree.branch)
                             .font(.system(size: 13))
-                            .foregroundStyle(row.missing ? LoamColor.inkFaint : LoamColor.ink)
+                            .foregroundStyle(row.missing || faded ? LoamColor.inkFaint : LoamColor.ink)
                             .lineLimit(1)
                             .truncationMode(.middle)
                         if let number = row.pr?.number {
-                            Text("#\(number)").font(.system(size: 13)).foregroundStyle(LoamColor.inkMuted).fixedSize()
+                            Text("#\(number)").font(.system(size: 13)).foregroundStyle(faded ? LoamColor.inkFaint : LoamColor.inkMuted).fixedSize()
                         }
                     }
-                    statusLineText(line.parts, color: LoamColor.inkMuted, separator: LoamColor.inkMuted)
+                    statusLineText(line.parts, color: faded ? LoamColor.inkFaint : LoamColor.inkMuted,
+                                   separator: faded ? LoamColor.inkFaint : LoamColor.inkMuted)
                         .font(.system(size: 11.5))
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
+                Spacer(minLength: 4)
+                pill
             }
             // A narrow panel cuts a long line, so the tooltip holds all of it.
             .help(line.text)
@@ -113,6 +123,22 @@ private struct WorktreeRowView: View {
         .accessibilityLabel(label(line))
         .accessibilityIdentifier("panel-worktree-\(row.worktree.id)")
         .accessibilityAction { showPullRequest() }
+    }
+
+    /// Land… for a PR that is ready to merge, in the pill style of the panel and not in `moss`. Remove… for a worktree
+    /// that is merged: a worktree that you kept, or one that was merged on GitHub.
+    @ViewBuilder private var pill: some View {
+        if row.stage == .readyToMerge, !row.missing {
+            Button(PRPrimaryAction.land.title) { app.openLandSheet(row.worktree.id) }
+                .buttonStyle(PanelPillStyle())
+                .foregroundStyle(LoamColor.ink)
+                .accessibilityIdentifier("panel-worktree-land-\(row.worktree.id)")
+        } else if row.stage == .merged, !row.missing {
+            Button("Remove\u{2026}") { WorktreeDialogs.askRemove(row.worktree.id, model: app) }
+                .buttonStyle(PanelPillStyle())
+                .foregroundStyle(LoamColor.ink)
+                .accessibilityIdentifier("panel-worktree-remove-\(row.worktree.id)")
+        }
     }
 
     private func showPullRequest() {
