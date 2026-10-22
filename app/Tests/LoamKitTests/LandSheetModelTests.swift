@@ -577,14 +577,28 @@ import Testing
         let model = rig.model
         try await open(rig)
         try rig.touch("hold-land")
+        try rig.failLand(code: 1, message: "could not merge PR #22: nope")
         let merge = Task { await model.land() }
         await waitUntil("the land started") { !rig.lands().isEmpty }
         model.switcher.open()
         #expect(!model.switcher.isOpen, "the quick switcher stays shut: its commands would change the window under the merge")
         model.switcher.open(actionsOnly: true)
         #expect(!model.switcher.isOpen)
+        // The PR popover would take the keys from the sheet, so a merge that fails would leave the sheet with no keys.
+        #expect(!model.openPullRequest(ready), "Show Pull Request does nothing while a merge runs")
+        #expect(!model.prPopover.isOpen)
+        let selected = model.selectedWorktree
+        #expect(!model.goToNextReadyWorktree(), "the key for the next ready worktree does nothing while a merge runs")
+        #expect(!model.prPopover.isOpen && model.selectedWorktree == selected)
+        #expect(model.landSheet.isOpen && model.landSheet.isMerging)
         rig.remove("hold-land")
         await merge.value
+        // The merge failed, so the worktree is still there. Each one opens again, so the guard was the reason.
+        #expect(model.landSheet.isOpen && !model.landSheet.isMerging)
+        #expect(model.openPullRequest(ready))
+        #expect(model.prPopover.isOpen)
+        model.closePullRequest()
+        #expect(model.goToNextReadyWorktree())
         model.switcher.open()
         #expect(model.switcher.isOpen)
     }
@@ -784,6 +798,7 @@ import Testing
         await rig.model.land()
         #expect(rig.lands().count == 1 && rig.lands().first?.contains("--method") == false)
         #expect(rig.lands().first?.contains("--auto") == false)
+        #expect(rig.lands().first?.contains("--head \(head)") == true, "a merge queue gets the head of the plan too")
         #expect(rig.record.toasts.map(\.text) == ["Added #22 to the merge queue."])
     }
 

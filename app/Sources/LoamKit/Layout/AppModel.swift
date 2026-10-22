@@ -928,10 +928,11 @@ public final class AppModel {
     }
 
     /// ⌘⇧L and a click on the "Ready to merge" row: goes to the next ready worktree, in any plot, and
-    /// opens its PR popover. Returns false when no worktree is ready.
+    /// opens its PR popover. Returns false when no worktree is ready, and while a merge runs.
     @discardableResult
     public func goToNextReadyWorktree() -> Bool {
-        guard let row = nextReadyWorktree() else { return false }
+        // A merge that runs keeps the keys on the Land sheet, and the popover would take them.
+        guard !landSheet.isMerging, let row = nextReadyWorktree() else { return false }
         goToWorktree(row.id)
         openPullRequest(row.id)
         return true
@@ -1149,10 +1150,12 @@ public final class AppModel {
 
     /// Opens the PR popover for a worktree and asks GitHub about it (`refreshWorktree`), so the popover
     /// shows the state now. The popover shows the last state until the answer comes. A popover that is open
-    /// moves to the worktree. Returns false when the worktree is unknown.
+    /// moves to the worktree. Returns false when the worktree is unknown, and while a merge runs.
     @discardableResult
     public func openPullRequest(_ id: String, anchor: PopoverAnchor = .actionBar) -> Bool {
-        guard worktreeStatus(id) != nil else { return false }
+        // The popover would open under a sheet that merges and take its keys, so a merge that fails leaves the sheet
+        // with none.
+        guard !landSheet.isMerging, worktreeStatus(id) != nil else { return false }
         prPopover.open(id, anchor: anchor)
         worktreeRefresh(id)
         return true
