@@ -53,6 +53,7 @@ enum Scenarios {
         Scenario(name: "send-to-session", limit: 120, body: sendToSession),
         Scenario(name: "land-sheet", limit: 240, body: landSheet),
         Scenario(name: "after-merge", limit: 120, body: afterMerge),
+        Scenario(name: "start-work", limit: 180, body: startWork),
         Scenario(name: "archive", limit: 120, body: archive),
         Scenario(name: "restore-quit", limit: 90, body: restoreQuit),
         Scenario(name: "restore-relaunch", limit: 90, body: restoreRelaunch),

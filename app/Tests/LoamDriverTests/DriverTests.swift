@@ -220,6 +220,15 @@ struct DriverTests {
         ])
     }
 
+    /// Ticket 115: Start work… on a Linear issue link fills the New worktree sheet. The sheet checks the branch as you type,
+    /// Start session makes the worktree and starts a seeded session in it, the issue key shows on the rows, and the plus of
+    /// the Worktrees section opens the sheet with no link.
+    @Test func startsWorkFromALink() async throws {
+        try await expectPass("start-work", environment: [
+            "LOAM_DRIVER_LOAM": Self.loamBinary, "LOAM_DRIVER_FAKE_CLAUDE": Self.fakeClaude,
+        ])
+    }
+
     /// Ticket 48: archive a plot with a session, unarchive it and see the session resume, and delete an archived plot.
     /// Ticket 61: an unarchive and show at once still gives one `claude` for the session.
     @Test func archivesUnarchivesAndDeletesAPlot() async throws {

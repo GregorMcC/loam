@@ -285,7 +285,9 @@ struct NewWorktreeSheetView: View {
             .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(LoamColor.inkHairline))
             .contentShape(RoundedRectangle(cornerRadius: 6))
         }
-        .menuStyle(.borderlessButton)
+        // The borderless style keeps only the text and the image of the label. The plain button style keeps the box.
+        .menuStyle(.button)
+        .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .accessibilityLabel(label)
         .accessibilityValue(title)

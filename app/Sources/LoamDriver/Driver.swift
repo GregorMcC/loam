@@ -303,13 +303,15 @@ final class DriverApp: NSObject, NSApplicationDelegate {
         Log.line("SCREEN \(pane.identifier?.rawValue ?? "?") \(label):\n\(body)")
     }
 
-    /// A screenshot of the driver's window, or of `other`, such as the settings window.
-    func screenshot(_ name: String, of other: NSWindow? = nil) {
+    /// A screenshot of the driver's window, or of `other`, such as the settings window. With `menu`, the shot is of the menu
+    /// window that shows over the window: `screencapture -l` gives the window with the menu in place. It never holds a
+    /// window of another app.
+    func screenshot(_ name: String, of other: NSWindow? = nil, menu: NSWindow? = nil) {
         shotNumber += 1
         let path = String(format: "%@/%02d-%@.png", outFolder, shotNumber, name)
         let shot = Process()
         shot.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-        shot.arguments = ["-x", "-o", "-l", "\((other ?? window).windowNumber)", path]
+        shot.arguments = ["-x", "-o", "-l", "\((menu ?? other ?? window).windowNumber)", path]
         try? shot.run()
         shot.waitUntilExit()
         Log.line("screenshot \(path)\(FileManager.default.fileExists(atPath: path) ? "" : " (not written)")")
