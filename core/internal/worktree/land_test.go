@@ -1090,6 +1090,78 @@ func TestLandReturnsTheMessageOfARefusedMerge(t *testing.T) {
 	}
 }
 
+// The app lands the commit that its sheet showed. With Head set, a land stops when the PR head is another commit by
+// the time of the refresh: it exits as not ready, merges nothing, and changes nothing.
+func TestLandStopsWhenThePRHasNewCommits(t *testing.T) {
+	for name, o := range map[string]worktree.LandOptions{"direct": {}, "auto": {Auto: true}, "keep worktree": {KeepWorktree: true}} {
+		t.Run(name, func(t *testing.T) {
+			e := setup(t)
+			w, _ := e.landing(landState)
+			o.Head = strings.Repeat("b", 40)
+			_, err := e.land(o)
+			if !errors.Is(err, worktree.ErrNotReady) || !strings.Contains(err.Error(), "has new commits since you looked at it. Look again before you merge") {
+				t.Fatalf("%v", err)
+			}
+			var details interface{ ErrorDetails() any }
+			if !errors.As(err, &details) {
+				t.Fatalf("%v has no details", err)
+			}
+			if got, ok := details.ErrorDetails().(struct {
+				Checks []worktree.LandCheck `json:"checks"`
+			}); !ok || got.Checks == nil || len(got.Checks) != 0 {
+				t.Fatalf("%#v", details.ErrorDetails())
+			}
+			if merges(t) || !onlyQueries(t) {
+				t.Fatalf("gh got %q", ghCommands(t))
+			}
+			if got, err := e.s.GetWorktree(w.ID); err != nil || got.Land != nil || !e.branchExists("fix-login") {
+				t.Fatalf("%+v %v", got, err)
+			}
+		})
+	}
+}
+
+// The commit that the caller names is the PR head: the land goes on, and the merge names that commit.
+func TestLandWithTheHeadThatWasCheckedMerges(t *testing.T) {
+	e := setup(t)
+	_, head := e.landing(landState)
+	res, err := e.land(worktree.LandOptions{Head: head})
+	if err != nil || !res.Merged || !res.WorktreeRemoved {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if got := ghCommands(t); !slices.ContainsFunc(got, func(c string) bool { return strings.HasSuffix(c, "--match-head-commit "+head) }) {
+		t.Fatalf("%q", got)
+	}
+}
+
+// A dry run changes nothing, so it has no commit to hold to. A merged PR has no merge to hold it to.
+func TestLandHeadAppliesOnlyToAMergeOfAnOpenPR(t *testing.T) {
+	other := strings.Repeat("b", 40)
+	e := setup(t)
+	e.landing(landState)
+	if res, err := e.land(worktree.LandOptions{Head: other, DryRun: true}); err != nil || !res.Ready {
+		t.Fatalf("%+v %v", res, err)
+	}
+	setGitHub(t, mergedState(testutil.Git(t, e.repo, "rev-parse", "fix-login")))
+	if res, err := e.land(worktree.LandOptions{Head: other}); err != nil || !res.Merged || !res.WorktreeRemoved {
+		t.Fatalf("%+v %v", res, err)
+	}
+}
+
+// A head that is not a full commit ID is a mistake of the caller.
+func TestLandRejectsAHeadThatIsNotACommit(t *testing.T) {
+	e := setup(t)
+	e.landing(landState)
+	for _, head := range []string{"abc123", "not a commit", strings.Repeat("g", 40)} {
+		if _, err := e.land(worktree.LandOptions{Head: head}); !errors.Is(err, store.ErrInvalid) {
+			t.Fatalf("%q: %v", head, err)
+		}
+	}
+	if len(testutil.FakeGHCalls(t)) != 0 {
+		t.Fatalf("gh got %q", ghCommands(t))
+	}
+}
+
 // The state of the fake gh can hold the message of a refusal ("merge_refusal"), so a test of the app
 // does not need a call number. The merge fails with that message, and the worktree stays.
 func TestLandReturnsTheMessageOfARefusalInTheState(t *testing.T) {
