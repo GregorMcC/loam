@@ -131,6 +131,18 @@ final class LinkDrag {
         } completion: { self.reset(token) }
     }
 
+    /// The gesture is gone, ended or cancelled by SwiftUI with no `ended`: send the rows back.
+    func gestureGone() {
+        cancelled = false
+        cancel()
+    }
+
+    /// The Links section left the panel: drop the drag at once.
+    func abandon() {
+        cancelled = false
+        if let active { reset(active.token) }
+    }
+
     /// The link order changed under the drag, say by a reload: the geometry is stale.
     func orderChanged(_ order: [String]) {
         guard let active, !active.ending, active.order != order else { return }

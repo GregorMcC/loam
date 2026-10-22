@@ -25,6 +25,8 @@ struct PlotPanelView: View {
     @State private var linkTarget = ""
     @State private var linkNote = ""
     @State private var linkDrag = LinkDrag()
+    /// True while a link drag gesture runs. SwiftUI resets it even when it cancels the gesture.
+    @GestureState private var linkGesture = false
     /// True while a drag over the panel holds something it can add.
     @State private var dropTargeted = false
     @FocusState private var focus: Field?
@@ -378,6 +380,9 @@ struct PlotPanelView: View {
             }
         }
         .onChange(of: order) { linkDrag.orderChanged(order) }
+        // After `onEnded`, so a release has settled before this sends the rows back.
+        .onChange(of: linkGesture) { _, live in if !live { Task { linkDrag.gestureGone() } } }
+        .onDisappear { linkDrag.abandon() }
     }
 
     private func linkRow(_ link: PlotLink, index: Int, order: [String]) -> some View {
@@ -418,6 +423,7 @@ struct PlotPanelView: View {
 
     private func linkDragGesture(_ link: PlotLink, order: [String]) -> some Gesture {
         DragGesture(minimumDistance: LinkDrag.threshold, coordinateSpace: .named(LinkDrag.space))
+            .updating($linkGesture) { _, live, _ in live = true }
             .onChanged { linkDrag.changed(link: link.id, order: order, translation: $0.translation.height) }
             .onEnded { value in
                 linkDrag.ended(at: value.location) { id, position in
