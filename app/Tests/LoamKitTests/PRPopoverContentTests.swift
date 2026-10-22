@@ -257,6 +257,81 @@ private func text(_ parts: [StatusLine.Part]) -> String { parts.map(\.text).join
         #expect(unstable.secondary == [.rerunFailed, .openOnGitHub])
     }
 
+    // MARK: Passed checks (ticket 116)
+
+    @Test func thePassedChecksListInTheOrderOfGitHubWithTheirTimes() throws {
+        let unstable = content(try #require(try stageRows().last))
+        #expect(unstable.passedChecks.map(\.name) == ["build", "test"])
+        #expect(unstable.passedChecks.map(\.duration) == ["1:20", "2:05"])
+        #expect(unstable.passedChecks.map(\.log) == [
+            URL(string: "https://github.com/example/widgets/actions/runs/306/job/6"),
+            URL(string: "https://github.com/example/widgets/actions/runs/305/job/5"),
+        ])
+    }
+
+    /// The board: "2 failed · 12 passed" in the Checks row, and the row "12 passed" under the failed checks.
+    @Test func theCountOfThePassedRowMatchesTheChecksRow() throws {
+        let failed = try row(.checksFailed, in: stageRows())
+        let popover = content(failed)
+        let passed = try #require(failed.pr?.checks.passed)
+        #expect(popover.passedTitle == "\(passed) passed")
+        #expect(text(popover.rows[0].parts) == "2 failed \u{00B7} \(popover.passedTitle)")
+        // A list of 12 reads as the board does.
+        var twelve = failed
+        twelve.pr?.passedChecks = (1...12).map { PRCheck(name: "job \($0)", url: "", duration: 0, required: false, runID: nil) }
+        twelve.pr?.checks.passed = 12
+        twelve.pr?.checks.total = 14
+        let board = content(twelve)
+        #expect(board.passedTitle == "12 passed" && board.passedChecks.count == 12)
+        #expect(text(board.rows[0].parts) == "2 failed \u{00B7} 12 passed")
+    }
+
+    /// Of the fixture, the PR that failed two checks and the Ready PR with two optional failures have both lists.
+    @Test func thePassedRowShowsOnlyWithFailedAndPassedChecks() throws {
+        let rows = try stageRows()
+        #expect(rows.filter { !content($0).passedChecks.isEmpty }.map(\.stage) == [.checksFailed, .readyToMerge])
+        #expect(rows.filter { content($0).failedChecks.isEmpty }.allSatisfy { content($0).passedChecks.isEmpty })
+
+        // With no failed check, the Checks row says "1 of 1 passed" and there is no list.
+        let ready = try row(.readyToMerge, in: rows)
+        #expect(try #require(ready.pr?.passedChecks).count == 1)
+        #expect(content(ready).passedChecks.isEmpty)
+
+        // With no passed check, there is no row to open.
+        var failed = try row(.checksFailed, in: rows)
+        failed.pr?.passedChecks = []
+        failed.pr?.checks.passed = 0
+        #expect(content(failed).passedChecks.isEmpty && !content(failed).failedChecks.isEmpty)
+    }
+
+    @Test func aMergedOrClosedPRHasNoPassedList() throws {
+        let rows = try stageRows()
+        for stage in [WorktreeStage.merged, .closed] {
+            var done = try row(stage, in: rows)
+            done.pr?.passedChecks = [PRCheck(name: "build", url: "", duration: 0, required: true, runID: nil)]
+            done.pr?.failedChecks = [PRCheck(name: "lint", url: "", duration: 0, required: true, runID: nil)]
+            #expect(content(done).passedChecks.isEmpty && content(done).failedChecks.isEmpty, "\(stage)")
+        }
+    }
+
+    /// A core from before ticket 116 sends no list. A cache row from before it sends an empty list while
+    /// `checks.passed` counts checks. Neither gives a row that opens an empty list.
+    @Test func noListOfPassedChecksGivesNoRow() throws {
+        var failed = try row(.checksFailed, in: stageRows())
+        #expect(try #require(failed.pr?.checks.passed) > 0)
+        failed.pr?.passedChecks = nil
+        #expect(content(failed).passedChecks.isEmpty)
+        failed.pr?.passedChecks = []
+        #expect(content(failed).passedChecks.isEmpty)
+    }
+
+    @Test func aPassedLogLinkNeedsAnHTTPSAddress() throws {
+        var unstable = try #require(try stageRows().last)
+        unstable.pr?.passedChecks?[0].url = "file:///etc/passwd"
+        unstable.pr?.passedChecks?[1].url = ""
+        #expect(content(unstable).passedChecks.map(\.log) == [nil, nil])
+    }
+
     // MARK: Notes of a stage
 
     @Test func blockedSaysWhereToSeeWhy() throws {
@@ -507,6 +582,38 @@ private func text(_ parts: [StatusLine.Part]) -> String { parts.map(\.text).join
         #expect(PopoverPlacement.frame(size: size, anchor: anchor, in: container).minX == PopoverPlacement.margin)
     }
 
+    @Test func theCardFitsTheContainerLessItsMargins() {
+        #expect(PopoverPlacement.maxHeight(in: container) == 700 - 2 * PopoverPlacement.margin)
+        #expect(PopoverPlacement.maxHeight(in: CGRect(x: 0, y: 0, width: 100, height: 10)) == 0)
+    }
+
+    /// A list that opens in the card makes it taller (ticket 116). The card keeps the side it opened on, so it does
+    /// not jump over the control. It moves only as far as it needs to stay inside the container.
+    @Test func aCardThatGrowsKeepsItsSide() {
+        let anchor = CGRect(x: 100, y: 450, width: 40, height: 20)
+        let side = PopoverPlacement.side(size: CGSize(width: 360, height: 200), anchor: anchor, in: container)
+        #expect(side == .below)
+        let tall = CGSize(width: 360, height: 600)
+        // The rule for a new card puts a card of this size above the anchor.
+        #expect(PopoverPlacement.side(size: tall, anchor: anchor, in: container) == .above)
+        let grown = PopoverPlacement.frame(size: tall, anchor: anchor, side: side, in: container)
+        #expect(grown.maxY == container.maxY - PopoverPlacement.margin)
+        let small = PopoverPlacement.frame(size: CGSize(width: 360, height: 200), anchor: anchor, side: side, in: container)
+        #expect(small.minY == anchor.maxY + PopoverPlacement.gap)
+        #expect(PopoverPlacement.frame(size: size, anchor: anchor, in: container)
+                == PopoverPlacement.frame(size: size, anchor: anchor, side: PopoverPlacement.side(size: size, anchor: anchor, in: container), in: container))
+    }
+
+    @Test func aCardAboveItsAnchorGrowsUpward() {
+        let anchor = CGRect(x: 120, y: 660, width: 60, height: 24)
+        let side = PopoverPlacement.side(size: size, anchor: anchor, in: container)
+        #expect(side == .above)
+        let grown = PopoverPlacement.frame(size: CGSize(width: 360, height: 500), anchor: anchor, side: side, in: container)
+        #expect(grown.maxY == anchor.minY - PopoverPlacement.gap)
+        let taller = PopoverPlacement.frame(size: CGSize(width: 360, height: 700 - 2 * PopoverPlacement.margin), anchor: anchor, side: side, in: container)
+        #expect(taller.minY == PopoverPlacement.margin)
+    }
+
     @Test func aPopoverTallerThanEitherSideTakesTheSideWithMoreRoom() {
         let tall = CGSize(width: 360, height: 650)
         let high = PopoverPlacement.frame(size: tall, anchor: CGRect(x: 100, y: 200, width: 40, height: 20), in: container)
@@ -514,5 +621,46 @@ private func text(_ parts: [StatusLine.Part]) -> String { parts.map(\.text).join
         #expect(high.maxY <= container.maxY - PopoverPlacement.margin)
         let low = PopoverPlacement.frame(size: tall, anchor: CGRect(x: 100, y: 500, width: 40, height: 20), in: container)
         #expect(low.minY >= container.minY + PopoverPlacement.margin)
+    }
+}
+
+// MARK: What the window knows of the card
+
+@Suite struct PopoverMeasureTests {
+    let container = CGRect(x: 0, y: 0, width: 1000, height: 700)
+    /// In the lower half: a card of 200 fits below it, and a card of 600 fits on neither side.
+    let anchor = CGRect(x: 100, y: 450, width: 40, height: 20)
+    let closed = CGSize(width: 360, height: 200)
+    let grown = CGSize(width: 360, height: 600)
+
+    @Test func aNewOpenHasNoSizeUntilItIsMeasured() {
+        var measure = PopoverMeasure()
+        #expect(measure.frame(open: 1, anchor: anchor, in: container).size == .zero)
+        measure.measure(closed, open: 1, anchor: anchor, in: container)
+        #expect(measure.frame(open: 1, anchor: anchor, in: container).size == closed)
+        // The size of open 1 does not show for open 2, so the new card never stands in the old place.
+        #expect(measure.frame(open: 2, anchor: anchor, in: container).size == .zero)
+    }
+
+    /// A list that opens in the card makes it taller (ticket 116). The side of the first size stays.
+    @Test func aCardThatGrowsKeepsTheSideOfItsFirstSize() {
+        var measure = PopoverMeasure()
+        measure.measure(closed, open: 1, anchor: anchor, in: container)
+        measure.measure(grown, open: 1, anchor: anchor, in: container)
+        let frame = measure.frame(open: 1, anchor: anchor, in: container)
+        #expect(frame == PopoverPlacement.frame(size: grown, anchor: anchor, side: .below, in: container))
+        // A card that opens at this size takes the other side.
+        #expect(PopoverPlacement.frame(size: grown, anchor: anchor, in: container) != frame)
+        // The list closes again, and the card goes back to its place.
+        measure.measure(closed, open: 1, anchor: anchor, in: container)
+        #expect(measure.frame(open: 1, anchor: anchor, in: container).minY == anchor.maxY + PopoverPlacement.gap)
+    }
+
+    @Test func aNewOpenPicksItsSideAgain() {
+        var measure = PopoverMeasure()
+        measure.measure(closed, open: 1, anchor: anchor, in: container)
+        // The second open is a tall card at the same control: it goes above.
+        measure.measure(grown, open: 2, anchor: anchor, in: container)
+        #expect(measure.frame(open: 2, anchor: anchor, in: container) == PopoverPlacement.frame(size: grown, anchor: anchor, in: container))
     }
 }

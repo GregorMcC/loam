@@ -14,14 +14,9 @@ struct PRPopoverView: View {
     /// Return, or a click on the primary button.
     let runPrimary: (PRPrimaryAction) -> Void
     @FocusState private var focused: Bool
-    /// The size of the card once it is laid out, and the open that it belongs to.
-    @State private var measured = Measured()
+    /// The size of the card once it is laid out, and the side of the control that it stands on.
+    @State private var measured = PopoverMeasure()
     @Environment(\.colorScheme) private var scheme
-
-    private struct Measured {
-        var open = 0
-        var size = CGSize.zero
-    }
 
     static let width: CGFloat = 360
     private static let radius = LoamTheme.radiusMd
@@ -34,16 +29,17 @@ struct PRPopoverView: View {
                     .contentShape(Rectangle())
                     .onTapGesture { app.closePullRequest() }
                 if let status = model.worktreeID.flatMap({ app.worktreeStatus($0) }) {
-                    // A size from an earlier open does not count, so a new card never shows for one frame in
-                    // the place that the last card had. Each open is a new card, so it is measured again.
                     let open = model.openCount
-                    let size = measured.open == open ? measured.size : .zero
-                    let frame = PopoverPlacement.frame(size: size, anchor: place.anchor, in: CGRect(origin: .zero, size: proxy.size))
-                    card(PRPopoverContent(status, attemptedAt: model.attemptedAt), status: status)
-                        .onGeometryChange(for: CGSize.self, of: \.size) { measured = Measured(open: open, size: $0) }
+                    let bounds = CGRect(origin: .zero, size: proxy.size)
+                    let frame = measured.frame(open: open, anchor: place.anchor, in: bounds)
+                    card(PRPopoverContent(status, attemptedAt: model.attemptedAt), status: status,
+                         maxHeight: PopoverPlacement.maxHeight(in: bounds))
+                        .onGeometryChange(for: CGSize.self, of: \.size) {
+                            measured.measure($0, open: open, anchor: place.anchor, in: bounds)
+                        }
                         .id(open)
                         // The card has no size until it is laid out once, and it would show in the wrong place.
-                        .opacity(size == .zero ? 0 : 1)
+                        .opacity(frame.size == .zero ? 0 : 1)
                         .offset(x: frame.minX, y: frame.minY)
                 }
             }
@@ -74,27 +70,32 @@ struct PRPopoverView: View {
 
     // MARK: Card
 
-    private func card(_ content: PRPopoverContent, status: WorktreeStatus) -> some View {
+    /// `maxHeight` is the tallest card that the window holds. The passed checks scroll when the card would be taller.
+    private func card(_ content: PRPopoverContent, status: WorktreeStatus, maxHeight: CGFloat) -> some View {
+        HeightCap(maxHeight: maxHeight) { cardContent(content, status: status) }
+            .background(LoamColor.horizonB, in: RoundedRectangle(cornerRadius: Self.radius))
+            .overlay(RoundedRectangle(cornerRadius: Self.radius).strokeBorder(LoamColor.inkHairline))
+            .clipShape(RoundedRectangle(cornerRadius: Self.radius))
+            .shadow(color: Color(nsColor: LoamTheme.shadowRaised).opacity(LoamTheme.shadowRaisedAlpha(dark: scheme == .dark)),
+                    radius: 12, y: 8)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(content.title)
+            .accessibilityIdentifier("pr-popover")
+    }
+
+    private func cardContent(_ content: PRPopoverContent, status: WorktreeStatus) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             if let stage = content.stage { header(stage, content) }
             titleBlock(content)
             if let notice = content.notice { footnote(notice, id: "pr-popover-notice") }
             rows(content)
             if let note = content.stageNote { footnote(note, id: "pr-popover-stage-note") }
-            if !content.failedChecks.isEmpty { failedChecks(content.failedChecks) }
+            if !content.failedChecks.isEmpty { failedChecks(content) }
             if content.primary != nil || !content.secondary.isEmpty { buttons(content, status: status) }
             if let note = app.prPopover.note { footnote(note, id: "pr-popover-note") }
         }
         .padding(EdgeInsets(top: 14, leading: 16, bottom: 16, trailing: 16))
         .frame(width: Self.width)
-        .background(LoamColor.horizonB, in: RoundedRectangle(cornerRadius: Self.radius))
-        .overlay(RoundedRectangle(cornerRadius: Self.radius).strokeBorder(LoamColor.inkHairline))
-        .clipShape(RoundedRectangle(cornerRadius: Self.radius))
-        .shadow(color: Color(nsColor: LoamTheme.shadowRaised).opacity(LoamTheme.shadowRaisedAlpha(dark: scheme == .dark)),
-                radius: 12, y: 8)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(content.title)
-        .accessibilityIdentifier("pr-popover")
     }
 
     /// The stage symbol and name in the colour of the stage, and the time of the last answer of GitHub.
@@ -170,14 +171,18 @@ struct PRPopoverView: View {
 
     // MARK: Failed checks
 
-    private func failedChecks(_ checks: [PRPopoverContent.FailedCheckRow]) -> some View {
+    /// The failed checks, and the row at their end that opens the passed checks (ticket 116).
+    private func failedChecks(_ content: PRPopoverContent) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text("Failed checks")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(LoamColor.inkFaint)
             VStack(spacing: 0) {
-                ForEach(Array(checks.enumerated()), id: \.offset) { index, check in
-                    FailedCheckRowView(check: check, index: index)
+                ForEach(Array(content.failedChecks.enumerated()), id: \.offset) { index, check in
+                    CheckRowView(check: check, kind: .failed, index: index)
+                }
+                if !content.passedChecks.isEmpty {
+                    PassedChecksView(title: content.passedTitle, checks: content.passedChecks)
                 }
             }
             .padding(.horizontal, -8)
@@ -241,15 +246,67 @@ struct PRPopoverView: View {
     }
 }
 
-/// A failed check: the `rust` symbol, the name in the mono face, how long it ran, and a link to its log.
-private struct FailedCheckRowView: View {
-    let check: PRPopoverContent.FailedCheckRow
+/// Gives its one child at most `maxHeight` of room, and is as tall as the child. A flexible frame would do the
+/// first and then grow to the room. The card hugs its content, and only a list of passed checks that is too tall
+/// for `maxHeight` shrinks and scrolls.
+private struct HeightCap: Layout {
+    let maxHeight: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let child = subviews.first else { return .zero }
+        return child.sizeThatFits(capped(proposal))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(width: bounds.width, height: bounds.height))
+    }
+
+    private func capped(_ proposal: ProposedViewSize) -> ProposedViewSize {
+        ProposedViewSize(width: proposal.width, height: min(proposal.height ?? maxHeight, maxHeight))
+    }
+}
+
+/// The symbol of a passed check, and of the row that opens the passed checks.
+private struct PassedGlyph: View {
+    var body: some View { LoamIconView(icon: .symbol("checkmark.circle"), size: 13, color: LoamColor.inkMuted) }
+}
+
+/// A check of one of the two lists: a symbol, the name in the mono face, how long it ran, and a link to its
+/// log. A failed check has the `rust` symbol, and a passed check has `checkmark.circle` in `ink-muted`.
+private struct CheckRowView: View {
+    enum Kind {
+        case failed
+        case passed
+
+        func checkID(_ index: Int) -> String {
+            switch self {
+            case .failed: "pr-popover-check-\(index)"
+            case .passed: "pr-popover-passed-check-\(index)"
+            }
+        }
+
+        func logID(_ index: Int) -> String {
+            switch self {
+            case .failed: "pr-popover-log-\(index)"
+            case .passed: "pr-popover-passed-log-\(index)"
+            }
+        }
+    }
+
+    /// The height of a row, which the board sets for both lists.
+    static let height: CGFloat = 30
+
+    let check: PRPopoverContent.CheckRow
+    let kind: Kind
     let index: Int
     @State private var hovering = false
 
     var body: some View {
         HStack(spacing: 8) {
-            StageGlyph(stage: .checksFailed, size: 13)
+            switch kind {
+            case .failed: StageGlyph(stage: .checksFailed, size: 13)
+            case .passed: PassedGlyph()
+            }
             Text(check.name)
                 .font(.system(size: 12, design: .monospaced))
                 .foregroundStyle(LoamColor.ink)
@@ -265,14 +322,70 @@ private struct FailedCheckRowView: View {
                     .font(.system(size: 12))
                     .foregroundStyle(hovering ? LoamColor.ink : LoamColor.inkMuted)
                     .onHover { hovering = $0 }
-                    .accessibilityIdentifier("pr-popover-log-\(index)")
+                    .accessibilityIdentifier(kind.logID(index))
             }
         }
         .padding(.horizontal, 8)
-        .frame(height: 30)
+        .frame(height: Self.height)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(check.name)
-        .accessibilityIdentifier("pr-popover-check-\(index)")
+        .accessibilityIdentifier(kind.checkID(index))
+    }
+}
+
+/// The row "12 passed" and the list that it opens in place, under the row (ticket 116, board 2.1). A click on the row
+/// opens the list and turns the chevron down, and a second click closes it. The list scrolls inside the card when
+/// the card is taller than the window allows (`PopoverPlacement.maxHeight`). The row takes no keys: Escape still
+/// closes the popover with the list open. The list is closed on each open of the popover, because each open is a
+/// new card.
+private struct PassedChecksView: View {
+    let title: String
+    let checks: [PRPopoverContent.CheckRow]
+    @State private var isOpen = false
+    @State private var hovering = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            toggle
+            if isOpen {
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(Array(checks.enumerated()), id: \.offset) { index, check in
+                            CheckRowView(check: check, kind: .passed, index: index)
+                        }
+                    }
+                }
+                .scrollBounceBehavior(.basedOnSize)
+                // The list is as tall as its rows, or less when the card has no more room.
+                .frame(maxHeight: CGFloat(checks.count) * CheckRowView.height)
+                .accessibilityIdentifier("pr-popover-passed-list")
+            }
+        }
+    }
+
+    private var toggle: some View {
+        Button { isOpen.toggle() } label: {
+            HStack(spacing: 8) {
+                PassedGlyph()
+                Text(title)
+                    .font(.system(size: 13))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .rotationEffect(.degrees(isOpen ? 90 : 0))
+                    .animation(LoamAnimation.settle, value: isOpen)
+            }
+            .foregroundStyle(LoamColor.inkMuted)
+            .padding(.horizontal, 8)
+            .frame(height: CheckRowView.height)
+            .background(hovering ? LoamColor.inkFill : .clear, in: RoundedRectangle(cornerRadius: 6))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .accessibilityLabel(title)
+        .accessibilityValue(isOpen ? "Shown" : "Hidden")
+        .accessibilityIdentifier("pr-popover-passed-toggle")
     }
 }
 

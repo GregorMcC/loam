@@ -58,8 +58,8 @@ public enum PRSecondaryAction: String, CaseIterable, Sendable {
 /// so the sidebar tooltip, the Worktrees section and the popover say the same.
 ///
 /// A worktree with a PR shows the stage, the title, four rows (Checks, Review, Base and Conflicts), the
-/// failed checks and the buttons. A merged or closed PR shows one State row. A worktree with no PR shows
-/// its base and its local state (board 5.3).
+/// failed checks with the row that opens the passed checks, and the buttons. A merged or closed PR shows
+/// one State row. A worktree with no PR shows its base and its local state (board 5.3).
 public struct PRPopoverContent: Equatable, Sendable {
     public struct Row: Equatable, Sendable {
         public var label: String
@@ -68,8 +68,8 @@ public struct PRPopoverContent: Equatable, Sendable {
         public var isCode = false
     }
 
-    /// A failed check, with its time and the page of its log.
-    public struct FailedCheckRow: Equatable, Sendable {
+    /// A check, failed or passed, with its time and the page of its log.
+    public struct CheckRow: Equatable, Sendable {
         public var name: String
         /// "3:10". Nil when GitHub gives no run time.
         public var duration: String?
@@ -87,7 +87,12 @@ public struct PRPopoverContent: Equatable, Sendable {
     /// "link-labels → main · 9 commits", or why there is no PR.
     public let subtitle: String
     public let rows: [Row]
-    public let failedChecks: [FailedCheckRow]
+    public let failedChecks: [CheckRow]
+    /// The passed checks, behind the row "12 passed" at the end of the failed checks (ticket 116). Empty unless
+    /// the PR is open and has failed checks and passed checks. With no failed check, the Checks row already says
+    /// that the checks passed, and there is no list. It is empty too when the core gave no list (an older core,
+    /// or a cache row from before the list), so the row never opens an empty list.
+    public let passedChecks: [CheckRow]
     /// A line under the rows for a stage that the rows do not explain: Blocked and In merge queue.
     public let stageNote: String?
     /// The line for a refresh that failed, or for a repo with no GitHub remote.
@@ -97,6 +102,9 @@ public struct PRPopoverContent: Equatable, Sendable {
     public let secondary: [PRSecondaryAction]
     /// What Open on GitHub opens (`WorktreeStatus.githubPage`): the PR, or the compare page of a pushed branch.
     public let githubPage: URL?
+
+    /// "12 passed", the row that opens the passed checks. It has the words of the Checks row.
+    public var passedTitle: String { StatusLine.passed(passedChecks.count) }
 
     /// `attemptedAt` is the time of the last refresh that the app asked for, which the offline line names.
     /// `now` and `timeZone` give the day and the clock of the times. `built` is the set of primary buttons
@@ -120,6 +128,7 @@ public struct PRPopoverContent: Equatable, Sendable {
                    Row(label: "Base", parts: StatusLine.base(of: pr)), Row(label: "Conflicts", parts: StatusLine.conflicts(of: pr))]
                 : [Row(label: "State", parts: line.parts)]
             failedChecks = open ? pr.failedChecks.map(Self.row(of:)) : []
+            passedChecks = open && !pr.failedChecks.isEmpty ? (pr.passedChecks ?? []).map(Self.row(of:)) : []
             stageNote = Self.stageNote(for: stage, line: line)
             primary = PRPrimaryAction(stage: stage).flatMap { built.contains($0) ? $0 : nil }
             var buttons: [PRSecondaryAction] = []
@@ -141,6 +150,7 @@ public struct PRPopoverContent: Equatable, Sendable {
             if !status.missing { local.append(Row(label: "Local", parts: line.parts)) }
             rows = local
             failedChecks = []
+            passedChecks = []
             stageNote = nil
             primary = nil
             secondary = (githubPage == nil ? [] : [.openOnGitHub]) + [.copyBranchName]
@@ -186,8 +196,8 @@ public struct PRPopoverContent: Equatable, Sendable {
 
     // MARK: Checks
 
-    private static func row(of check: FailedCheck) -> FailedCheckRow {
-        FailedCheckRow(name: check.name, duration: duration(check.duration), log: URL(https: check.url))
+    private static func row(of check: PRCheck) -> CheckRow {
+        CheckRow(name: check.name, duration: duration(check.duration), log: URL(https: check.url))
     }
 
     /// "0:42", "3:10" or "1:02:05". Nil for zero, which is GitHub saying that it has no run time.
