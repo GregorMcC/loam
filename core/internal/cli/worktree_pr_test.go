@@ -32,7 +32,7 @@ const prState = `{
       "baseRef": {"compare": {"behindBy": 0}},
       "latestOpinionatedReviews": {"nodes": [{"state": "APPROVED"}]},
       "reviewThreads": {"nodes": []},
-      "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "SUCCESS", "contexts": {"nodes": [
+      "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "SUCCESS", "contexts": {"totalCount": 1, "nodes": [
         {"__typename": "CheckRun", "name": "test", "status": "COMPLETED", "conclusion": "SUCCESS", "isRequired": true}
       ]}}}}]}
     }
@@ -163,6 +163,7 @@ func TestWorktreeListRefreshNotes(t *testing.T) {
 		{worktree.NoteGHSignedOut, func(t *testing.T) { t.Setenv("LOAM_FAKE_GH_FAIL", "signed_out") }},
 		{worktree.NoteRateLimited, func(t *testing.T) { t.Setenv("LOAM_FAKE_GH_FAIL", "rate_limited") }},
 		{worktree.NoteOffline, func(t *testing.T) { t.Setenv("LOAM_FAKE_GH_FAIL", "offline") }},
+		{worktree.NoteNoAccess, func(t *testing.T) { t.Setenv("LOAM_FAKE_GH_FAIL", "forbidden") }},
 		{worktree.NoteGHMissing, func(t *testing.T) { t.Setenv("LOAM_GH", filepath.Join(t.TempDir(), "gh")) }},
 	} {
 		t.Run(string(c.note), func(t *testing.T) {
@@ -179,7 +180,55 @@ func TestWorktreeListRefreshNotes(t *testing.T) {
 			if st := listJSON(t, "alpha")["local-work"]; st.PRNote != c.note {
 				t.Fatalf("plain list: %+v", st)
 			}
+			text, _, err := lrRun(t, "", "worktree", "list", "alpha")
+			if err != nil || !strings.Contains(text, noteText[c.note]) {
+				t.Fatalf("%q %v", text, err)
+			}
 		})
+	}
+}
+
+// When the second query fails, the first one still counts. A worktree with
+// no PR, or with a merged or closed PR, gets the new state. A worktree with
+// an open PR keeps its last state and its time. Each worktree of the repo
+// gets the note.
+func TestWorktreeListRefreshUsesTheFirstQueryWhenTheSecondFails(t *testing.T) {
+	s, p, _ := prCLI(t)
+	first := listJSON(t, "alpha", "--refresh")
+	ws, err := s.ListWorktrees(p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// GitHub now has a closed PR for pushed-only, at its local head.
+	head := testutil.Git(t, ws[1].Path, "rev-parse", "HEAD")
+	file := os.Getenv("LOAM_FAKE_GH_STATE")
+	b, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed := strings.Replace(string(b), `"pulls": [`, `"pulls": [
+    {"number": 30, "title": "Pushed only", "url": "https://github.com/example/widgets/pull/30", "state": "CLOSED",
+     "isCrossRepository": false, "mergeable": "UNKNOWN", "mergeStateStatus": "UNKNOWN", "baseRefName": "main",
+     "headRefName": "pushed-only", "headRefOid": "`+head+`", "closedAt": "2026-01-02T10:00:00Z", "commits": {"totalCount": 1}},`, 1)
+	if err := os.WriteFile(file, []byte(closed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LOAM_FAKE_GH_FAIL", "rate_limited")
+	t.Setenv("LOAM_FAKE_GH_FAIL_CALL", "4") // the second call of the second refresh
+
+	got := listJSON(t, "alpha", "--refresh")
+	if n := len(testutil.FakeGHCalls(t)); n != 4 {
+		t.Fatalf("%d gh calls", n)
+	}
+	if st := got["fix-login"]; st.Stage != worktree.StageReadyToMerge || st.PR == nil || st.PR.Number != 15 ||
+		!st.PRCheckedAt.Equal(*first["fix-login"].PRCheckedAt) || st.PRNote != worktree.NoteRateLimited {
+		t.Fatalf("fix-login: %+v", st)
+	}
+	if st := got["pushed-only"]; st.Stage != worktree.StageClosed || st.PR == nil || st.PR.Number != 30 || st.PRNote != worktree.NoteRateLimited {
+		t.Fatalf("pushed-only: %+v", st)
+	}
+	if st := got["local-work"]; st.Stage != worktree.StageNotPushed || st.PRCheckedAt == nil || st.PRNote != worktree.NoteRateLimited {
+		t.Fatalf("local-work: %+v", st)
 	}
 }
 

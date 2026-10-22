@@ -32,11 +32,15 @@ func TestParseRepo(t *testing.T) {
 	}
 }
 
+// Each branch name is escaped for a URL path, and keeps its slashes.
 func TestCompareURL(t *testing.T) {
 	for _, c := range []struct{ base, head, want string }{
 		{"main", "fix-login", "https://github.com/example/widgets/compare/main...fix-login"},
 		{"", "feature/search", "https://github.com/example/widgets/compare/feature/search"},
 		{"main", "fix#12", "https://github.com/example/widgets/compare/main...fix%2312"},
+		{"", "fix#12", "https://github.com/example/widgets/compare/fix%2312"},
+		{"release/2.0", "feature/50%-faster", "https://github.com/example/widgets/compare/release/2.0...feature/50%25-faster"},
+		{"main", "a;b,c?d", "https://github.com/example/widgets/compare/main...a%3Bb%2Cc%3Fd"},
 	} {
 		if got := widgets.CompareURL(c.base, c.head); got != c.want {
 			t.Errorf("got %s, want %s", got, c.want)
@@ -61,7 +65,8 @@ func TestFindUsesLoamGH(t *testing.T) {
 
 // state is a made-up GitHub repo. fix-login has a merged PR and a newer open
 // one. fork-only has only a PR from a fork. old-work has a merged PR, and
-// GitHub deleted its branch.
+// GitHub deleted its branch. The open PR has 120 checks: the answer holds the
+// first page of them.
 const state = `{
   "refs": ["fix-login", "fork-only"],
   "pulls": [
@@ -91,7 +96,7 @@ const state = `{
       "baseRef": {"compare": {"behindBy": 3}},
       "latestOpinionatedReviews": {"nodes": [{"state": "APPROVED"}, {"state": "COMMENTED"}]},
       "reviewThreads": {"nodes": [{"isResolved": false}, {"isResolved": true}, {"isResolved": false}]},
-      "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "FAILURE", "contexts": {"nodes": [
+      "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "FAILURE", "contexts": {"totalCount": 120, "nodes": [
         {"__typename": "CheckRun", "name": "swiftformat", "status": "COMPLETED", "conclusion": "FAILURE",
          "detailsUrl": "https://github.com/example/widgets/actions/runs/1/job/1", "isRequired": true,
          "startedAt": "2026-01-01T10:00:00Z", "completedAt": "2026-01-01T10:00:42Z",
@@ -142,7 +147,8 @@ func TestFetchReadsEachBranch(t *testing.T) {
 	if pr.BehindBase != 3 || pr.Approvals != 1 || pr.Comments != 2 {
 		t.Fatalf("behind %d, approvals %d, comments %d", pr.BehindBase, pr.Approvals, pr.Comments)
 	}
-	want := github.Checks{State: "FAILURE", Total: 8, Passed: 2, Failed: 3, Running: 2, Waiting: 1}
+	// The total counts every check. The other counts are of the first page.
+	want := github.Checks{State: "FAILURE", Total: 120, Passed: 2, Failed: 3, Running: 2, Waiting: 1, Required: 2, RequiredPassed: 1}
 	if pr.Checks != want {
 		t.Fatalf("checks %+v, want %+v", pr.Checks, want)
 	}
@@ -196,11 +202,20 @@ func TestFetchMakesOneQueryWithNoOpenPR(t *testing.T) {
 	}
 }
 
+// Each failure of gh maps to one error. The fake gh prints what gh prints
+// for each one.
 func TestFetchErrors(t *testing.T) {
 	for fail, want := range map[string]error{
-		"signed_out":   github.ErrSignedOut,
-		"rate_limited": github.ErrRateLimited,
-		"offline":      github.ErrOffline,
+		"signed_out":           github.ErrSignedOut,
+		"bad_credentials":      github.ErrSignedOut,
+		"rate_limited":         github.ErrRateLimited,
+		"secondary_rate_limit": github.ErrRateLimited,
+		"forbidden":            github.ErrNoAccess,
+		"not_found":            github.ErrNoAccess,
+		"no_repo":              github.ErrNoAccess,
+		"saml":                 github.ErrNoAccess,
+		"sso":                  github.ErrNoAccess,
+		"offline":              github.ErrOffline,
 	} {
 		t.Run(fail, func(t *testing.T) {
 			testutil.Home(t)
@@ -229,5 +244,48 @@ func TestNewClientWithNoGH(t *testing.T) {
 	testutil.Home(t)
 	if _, err := github.NewClient(); !errors.Is(err, github.ErrGHMissing) {
 		t.Fatalf("%v", err)
+	}
+}
+
+// When the second query fails, the first one still counts: each branch with
+// no PR, or with a merged or closed PR, needs nothing from the second. A
+// branch with an open PR is not in the result.
+func TestFetchKeepsTheFirstQueryWhenTheSecondFails(t *testing.T) {
+	testutil.Home(t)
+	testutil.FakeGH(t, state)
+	t.Setenv("LOAM_FAKE_GH_FAIL", "rate_limited")
+	t.Setenv("LOAM_FAKE_GH_FAIL_CALL", "2")
+	got, err := client(t).Fetch(context.Background(), widgets, []string{"fix-login", "fork-only", "old-work", "local-only"})
+	if !errors.Is(err, github.ErrRateLimited) {
+		t.Fatalf("%v", err)
+	}
+	if _, ok := got["fix-login"]; ok || len(got) != 3 {
+		t.Fatalf("%+v", got)
+	}
+	if b := got["old-work"]; b.PR == nil || b.PR.State != "MERGED" {
+		t.Fatalf("old-work: %+v", b)
+	}
+	if b := got["fork-only"]; b.PR != nil || !b.Pushed {
+		t.Fatalf("fork-only: %+v", b)
+	}
+	if n := len(testutil.FakeGHCalls(t)); n != 2 {
+		t.Fatalf("%d gh calls", n)
+	}
+}
+
+// A cancelled refresh stops gh at once. It is not a GitHub failure.
+func TestFetchStopsWhenTheContextIsCancelled(t *testing.T) {
+	testutil.Home(t)
+	testutil.FakeGH(t, state)
+	t.Setenv("LOAM_FAKE_GH_FAIL", "hang")
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(200*time.Millisecond, cancel)
+	start := time.Now()
+	_, err := client(t).Fetch(ctx, widgets, []string{"fix-login"})
+	if !errors.Is(err, context.Canceled) || errors.Is(err, github.ErrOffline) {
+		t.Fatalf("%v", err)
+	}
+	if d := time.Since(start); d > 10*time.Second {
+		t.Fatalf("gh ran for %v after the cancel", d)
 	}
 }

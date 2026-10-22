@@ -8,7 +8,7 @@ Loam reads and writes GitHub only through the `gh` CLI, and only in the Loam cor
 
 ## Consequences
 
-- The core decides the stage, and the app only shows it. The stages, where the first one that applies wins: Merged, Closed, In merge queue, Conflicts, Changes requested, Checks failed, Approval needed, Behind base, Checks running, Waiting for review, Draft, Ready to merge, "Pushed, no PR", Not pushed.
+- The core decides the stage, and the app only shows it. The stages, where the first one that applies wins: Merged, Closed, In merge queue, Conflicts, Changes requested, Checks failed, Approval needed, Draft, Behind base, Checks running, Waiting for review, Blocked, Ready to merge, "Pushed, no PR", Not pushed.
 - No stage raises Needs you, a banner, a Dock badge or a halo. The Ready to merge row in the sidebar has the shape of an attention row, but it has no state hue.
 - Only Conflicts and Checks failed take `rust`. Every other stage is `ink`, `ink-muted` or `ink-faint`. No stage takes a new hue.
 - Without `gh`, or with `gh` signed out, Loam shows local state only and says how to fix it.

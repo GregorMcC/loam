@@ -17,16 +17,18 @@ import (
 const host = "github.com"
 
 // The errors of [Client.Fetch] and [NewClient]. An error that is not one of
-// the first three wraps ErrOffline.
+// the first four, and is not a cancelled context, wraps ErrOffline.
 var (
 	// ErrGHMissing means gh is not on PATH or in an install folder.
 	ErrGHMissing = errors.New("the GitHub CLI (gh) is not installed")
 	// ErrSignedOut means gh has no valid sign-in for github.com.
 	ErrSignedOut = errors.New("the GitHub CLI (gh) is signed out. Run: gh auth login")
+	// ErrNoAccess means gh cannot read the repo: no access, or SSO not authorized.
+	ErrNoAccess = errors.New("the GitHub CLI (gh) cannot read the repo. Run: gh auth status")
 	// ErrRateLimited means GitHub refused the request for its rate limit.
 	ErrRateLimited = errors.New("GitHub refused the request for its rate limit")
 	// ErrOffline means gh got no usable answer from GitHub: no network, a
-	// timeout, or a failed request.
+	// timeout, or another failed request.
 	ErrOffline = errors.New("could not reach GitHub")
 )
 
@@ -50,15 +52,25 @@ func ParseRepo(webURL string) (Repo, bool) {
 	return Repo{Owner: owner, Name: name}, true
 }
 
-// CompareURL returns the page that compares head with base, where a person
-// can open a pull request. An empty base compares with the default branch.
+// CompareURL returns the page that compares the branch head with the branch
+// base, where a person can open a pull request. With an empty base, GitHub
+// compares head with the default branch of the repo.
 func (r Repo) CompareURL(base, head string) string {
-	spec := head
+	spec := escapeBranch(head)
 	if base != "" {
-		spec = base + "..." + head
+		spec = escapeBranch(base) + "..." + spec
 	}
-	u := url.URL{Scheme: "https", Host: host, Path: "/" + r.Owner + "/" + r.Name + "/compare/" + spec}
-	return u.String()
+	return "https://" + host + "/" + url.PathEscape(r.Owner) + "/" + url.PathEscape(r.Name) + "/compare/" + spec
+}
+
+// escapeBranch escapes a branch name for a URL path. It keeps the slashes,
+// so a branch such as feature/search stays readable.
+func escapeBranch(name string) string {
+	parts := strings.Split(name, "/")
+	for i, p := range parts {
+		parts[i] = url.PathEscape(p)
+	}
+	return strings.Join(parts, "/")
 }
 
 // Branch is what GitHub knows about one branch.
@@ -123,6 +135,10 @@ type Checks struct {
 	// Waiting counts the checks that wait for a person, such as a workflow
 	// that needs approval.
 	Waiting int `json:"waiting"`
+	// Required counts the checks that the base branch needs to pass before a
+	// merge. RequiredPassed counts those that passed.
+	Required       int `json:"required"`
+	RequiredPassed int `json:"required_passed"`
 }
 
 // Check is one failed check.

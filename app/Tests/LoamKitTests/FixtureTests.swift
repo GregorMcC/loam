@@ -129,9 +129,13 @@ func decodeFixture(schema: String, data: Data) throws {
         #expect(plain[0].prNote == .noNote)
         #expect(plain[0].prCheckedAt == nil)
 
-        // One worktree for each stage, in the order of the rule.
+        // One worktree for each stage, in the order of the rule, then a
+        // second Ready to merge whose optional checks failed.
         let list = try JSONDecoder().decode([WorktreeStatus].self, from: Fixtures.data("worktree_list_stages"))
-        #expect(list.map(\.stage) == WorktreeStage.allCases.filter { $0 != .noStage })
+        let stages = WorktreeStage.allCases.filter { $0 != .noStage }
+        #expect(stages.count == 15)
+        #expect(list.count == stages.count + 1)
+        #expect(list.prefix(stages.count).map(\.stage) == stages)
         #expect(list.allSatisfy { $0.prCheckedAt != nil && $0.prNote == .noNote })
         let merged = try #require(list.first { $0.stage == .merged }?.pr)
         #expect(merged.mergedAt != nil)
@@ -140,9 +144,24 @@ func decodeFixture(schema: String, data: Data) throws {
         #expect(failed.checks.failed == 2)
         #expect(failed.failedChecks.map(\.name) == ["lint / swiftformat", "test / macos"])
         #expect(failed.failedChecks[0].duration == 42 && failed.failedChecks[0].required)
+        #expect(failed.checks.required == 3 && failed.checks.requiredPassed == 1)
+        #expect(list.first { $0.stage == .blocked }?.pr?.mergeState == "BLOCKED")
+        // "2 of 2 required checks passed · 2 optional failed"
+        let unstable = try #require(list.last)
+        #expect(unstable.stage == .readyToMerge)
+        let optional = try #require(unstable.pr)
+        #expect(optional.mergeState == "UNSTABLE")
+        #expect(optional.checks.required == 2 && optional.checks.requiredPassed == 2)
+        #expect(optional.checks.failed == 2 && optional.failedChecks.allSatisfy { !$0.required })
         let pushed = try #require(list.first { $0.stage == .pushedNoPR })
         #expect(pushed.pr == nil)
         #expect(pushed.compareURL == "https://github.com/example/widgets/compare/main...pushed-only")
+    }
+
+    @Test func theNewStageAndNoteDecode() throws {
+        let json = Data(#""blocked""#.utf8)
+        #expect(try JSONDecoder().decode(WorktreeStage.self, from: json) == .blocked)
+        #expect(try JSONDecoder().decode(PRNote.self, from: Data(#""no_access""#.utf8)) == .noAccess)
     }
 
     @Test func anUnknownStageOrNoteDecodesAsNothing() throws {

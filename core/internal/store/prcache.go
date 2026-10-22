@@ -47,8 +47,15 @@ func (s *Store) PRStates() (map[PRKey]PRState, error) {
 	return out, err
 }
 
+// hasWorktree is the condition of a PR cache write: a worktree has the repo
+// path and the branch. A refresh reads the worktrees, asks GitHub, then
+// writes. `loam worktree rm` can remove a worktree in that time. Then the
+// write skips its row, in the same transaction as the check, so the cache
+// keeps no row that RemoveWorktree cleared.
+const hasWorktree = `EXISTS (SELECT 1 FROM worktrees WHERE repo_path = ? AND branch = ?)`
+
 // SavePRStates writes whole rows of the PR cache in one write: the data,
-// its time, and the note.
+// its time, and the note. It skips a row whose worktree is gone.
 func (s *Store) SavePRStates(rows []PRState) error {
 	w, err := s.beginUnmarkedWrite()
 	if err != nil {
@@ -60,9 +67,9 @@ func (s *Store) SavePRStates(rows []PRState) error {
 		if !r.CheckedAt.IsZero() {
 			at = r.CheckedAt.UnixMilli()
 		}
-		if err := w.exec(`INSERT INTO pr_cache(repo_path, branch, data, checked_at, note) VALUES (?, ?, ?, ?, ?)
+		if err := w.exec(`INSERT INTO pr_cache(repo_path, branch, data, checked_at, note) SELECT ?, ?, ?, ?, ? WHERE `+hasWorktree+`
 ON CONFLICT(repo_path, branch) DO UPDATE SET data = excluded.data, checked_at = excluded.checked_at, note = excluded.note`,
-			r.Repo, r.Branch, r.Data, at, r.Note); err != nil {
+			r.Repo, r.Branch, r.Data, at, r.Note, r.Repo, r.Branch); err != nil {
 			return err
 		}
 	}
@@ -71,6 +78,7 @@ ON CONFLICT(repo_path, branch) DO UPDATE SET data = excluded.data, checked_at = 
 
 // NotePRStates sets the note of rows of the PR cache in one write. A row
 // keeps its data and its time. A branch with no row gets a row with no data.
+// It skips a row whose worktree is gone.
 func (s *Store) NotePRStates(note string, keys []PRKey) error {
 	w, err := s.beginUnmarkedWrite()
 	if err != nil {
@@ -78,8 +86,8 @@ func (s *Store) NotePRStates(note string, keys []PRKey) error {
 	}
 	defer w.rollback()
 	for _, k := range keys {
-		if err := w.exec(`INSERT INTO pr_cache(repo_path, branch, note) VALUES (?, ?, ?)
-ON CONFLICT(repo_path, branch) DO UPDATE SET note = excluded.note`, k.Repo, k.Branch, note); err != nil {
+		if err := w.exec(`INSERT INTO pr_cache(repo_path, branch, note) SELECT ?, ?, ? WHERE `+hasWorktree+`
+ON CONFLICT(repo_path, branch) DO UPDATE SET note = excluded.note`, k.Repo, k.Branch, note, k.Repo, k.Branch); err != nil {
 			return err
 		}
 	}

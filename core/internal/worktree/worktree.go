@@ -291,7 +291,9 @@ type Status struct {
 
 	// Stage is the one stage of the worktree (see [StageOf]).
 	Stage Stage `json:"stage"`
-	// PR is the pull request of the branch from the last refresh, or nil.
+	// PR is the pull request of the branch from the last refresh, or nil. It
+	// is nil too when the stage comes from the local checks after new work on
+	// a merged or closed PR (see [StageInput.UsesPR]).
 	PR *github.PR `json:"pr"`
 	// PRNote says why the ship state is missing or old.
 	PRNote PRNote `json:"pr_note"`

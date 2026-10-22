@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -26,6 +27,10 @@ var installPaths = []string{"/opt/homebrew/bin/gh", "/usr/local/bin/gh", "/opt/l
 
 // ghTimeout stops a gh call that waits on the network.
 const ghTimeout = 15 * time.Second
+
+// ghWaitDelay is how long Loam waits for the output of a gh call after it
+// stops gh, in case a child process of gh still holds the pipes.
+const ghWaitDelay = time.Second
 
 // ghExitAuth is the exit code of gh when it has no sign-in.
 const ghExitAuth = 4
@@ -78,6 +83,7 @@ func (c *Client) query(ctx context.Context, query string, vars map[string]any, o
 	ctx, cancel := context.WithTimeout(ctx, ghTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, c.gh, "api", "graphql", "--hostname", host, "--input", "-")
+	cmd.WaitDelay = ghWaitDelay
 	cmd.Stdin = bytes.NewReader(body)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
@@ -96,12 +102,22 @@ func (c *Client) query(ctx context.Context, query string, vars map[string]any, o
 	return nil
 }
 
+// noAccessText is the text in a gh error that says that gh cannot read the
+// repo: HTTP 403 or 404, a GraphQL error for a repo that gh cannot see, or an
+// organization that needs SAML SSO for the sign-in of gh.
+var noAccessText = []string{"HTTP 403", "HTTP 404", "Could not resolve to a Repository", "SAML", "SSO"}
+
 // ghError turns a failed gh call into one of the errors of this package.
-// GitHub sends a rate limit as an HTTP error or as a GraphQL error of type
-// RATE_LIMITED. gh prints the message of either one on stderr.
+// gh api prints "gh: " and the message of GitHub on stderr, for an HTTP error
+// and for a GraphQL error. A rate limit can come as either one, so Loam looks
+// for a rate limit before it looks for HTTP 403. A cancelled ctx gives the
+// error of the context: the caller stopped the call, and GitHub did not fail.
 func ghError(ctx context.Context, err error, stderr string) error {
-	if ctx.Err() != nil {
+	switch ctxErr := ctx.Err(); {
+	case errors.Is(ctxErr, context.DeadlineExceeded):
 		return fmt.Errorf("%w: gh did not answer in time", ErrOffline)
+	case ctxErr != nil:
+		return fmt.Errorf("gh stopped: %w", ctxErr)
 	}
 	if errors.Is(err, fs.ErrNotExist) {
 		return ErrGHMissing
@@ -114,8 +130,11 @@ func ghError(ctx context.Context, err error, stderr string) error {
 	if msg == "" {
 		msg = err.Error()
 	}
-	if strings.Contains(strings.ToLower(stderr), "rate limit") || strings.Contains(stderr, "HTTP 429") {
+	switch {
+	case strings.Contains(strings.ToLower(stderr), "rate limit") || strings.Contains(stderr, "HTTP 429"):
 		return fmt.Errorf("%w: %s", ErrRateLimited, msg)
+	case slices.ContainsFunc(noAccessText, func(text string) bool { return strings.Contains(stderr, text) }):
+		return fmt.Errorf("%w: %s", ErrNoAccess, msg)
 	}
 	return fmt.Errorf("%w: %s", ErrOffline, msg)
 }

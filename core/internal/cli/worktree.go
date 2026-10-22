@@ -2,7 +2,10 @@ package cli
 
 import (
 	"fmt"
+	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 
 	"github.com/GregorMcC/loam/core/internal/store"
 	"github.com/GregorMcC/loam/core/internal/worktree"
@@ -120,7 +123,11 @@ func newWorktreeListCmd() *cobra.Command {
 					}
 					ws = []store.Worktree{w}
 				}
-				if err := worktree.RefreshPRs(s, ws); err != nil {
+				// Ctrl-C stops gh, and the cache keeps its last state.
+				ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+				err = worktree.RefreshPRs(ctx, s, ws)
+				stop()
+				if err != nil {
 					return err
 				}
 			}
@@ -187,7 +194,7 @@ func prStageText(st worktree.Status) string {
 	if text, ok := prStageWords[st.Stage]; ok {
 		return text
 	}
-	return "open" // an open PR that matches no stage
+	return string(st.Stage)
 }
 
 // prStageWords holds the text of each stage of a PR. Behind base names the base.
@@ -202,6 +209,7 @@ var prStageWords = map[worktree.Stage]string{
 	worktree.StageChecksRunning:    "has checks running",
 	worktree.StageWaitingForReview: "waits for review",
 	worktree.StageDraft:            "is a draft",
+	worktree.StageBlocked:          "blocked by GitHub",
 	worktree.StageReadyToMerge:     "ready to merge",
 }
 
@@ -209,6 +217,7 @@ var prStageWords = map[worktree.Stage]string{
 var noteText = map[worktree.PRNote]string{
 	worktree.NoteGHMissing:      "install gh to see PRs",
 	worktree.NoteGHSignedOut:    "gh is signed out, run gh auth login",
+	worktree.NoteNoAccess:       "gh cannot read this repo, run gh auth status",
 	worktree.NoteNoGitHubRemote: "no GitHub remote",
 	worktree.NoteOffline:        "could not reach GitHub",
 	worktree.NoteRateLimited:    "GitHub rate limit, ship state is old",

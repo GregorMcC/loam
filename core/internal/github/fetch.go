@@ -12,8 +12,10 @@ import (
 // first. It is enough to find the open one among old PRs on the same head.
 const prsPerHead = 10
 
-// maxNodes is the largest page that GitHub gives. A PR with more checks,
-// reviews, or review threads than this counts only the first page.
+// maxNodes is the largest page that GitHub gives. Loam reads one page, to
+// keep to two queries for each repo. For a PR with more checks, reviews, or
+// review threads than this, only the total of the checks counts them all.
+// The other counts and the failed checks are of the first page.
 const maxNodes = 100
 
 // The first query reads the PRs and the ref of each branch. A branch has the
@@ -49,7 +51,7 @@ const detailFields = `    p%[1]d: pullRequest(number: $n%[1]d) {
       %[3]s
       latestOpinionatedReviews(first: %[2]d, writersOnly: true) { nodes { state } }
       reviewThreads(first: %[2]d) { nodes { isResolved } }
-      commits(last: 1) { nodes { commit { statusCheckRollup { state contexts(first: %[2]d) { nodes {
+      commits(last: 1) { nodes { commit { statusCheckRollup { state contexts(first: %[2]d) { totalCount nodes {
         __typename
         ... on CheckRun { name status conclusion detailsUrl startedAt completedAt isRequired(pullRequestNumber: $n%[1]d)
           checkSuite { workflowRun { workflow { name } } } }
@@ -106,7 +108,8 @@ type detailNode struct {
 				StatusCheckRollup *struct {
 					State    string `json:"state"`
 					Contexts struct {
-						Nodes []checkNode `json:"nodes"`
+						TotalCount int         `json:"totalCount"`
+						Nodes      []checkNode `json:"nodes"`
 					} `json:"contexts"`
 				} `json:"statusCheckRollup"`
 			} `json:"commit"`
@@ -138,7 +141,11 @@ type checkNode struct {
 
 // Fetch asks GitHub about branches of one repo. The result has an entry for
 // each branch. Fetch runs one query, and a second one when a branch has an
-// open PR. Each gh call stops after 15 seconds.
+// open PR. Each gh call stops after 15 seconds, or when ctx ends.
+//
+// When only the second query fails, Fetch returns its error with the
+// branches that need nothing from it: each branch with no PR, or with a
+// merged or closed PR. A branch with an open PR is not in that result.
 func (c *Client) Fetch(ctx context.Context, repo Repo, branches []string) (map[string]Branch, error) {
 	out := make(map[string]Branch, len(branches))
 	if len(branches) == 0 {
@@ -198,15 +205,19 @@ func (c *Client) Fetch(ctx context.Context, repo Repo, branches []string) (map[s
 	var second struct {
 		Repository map[string]json.RawMessage `json:"repository"`
 	}
-	if err := c.query(ctx, fmt.Sprintf(detailQuery, params.String(), fields.String()), vars, &second); err != nil {
-		return nil, err
+	details := make([]detailNode, len(open))
+	err := c.query(ctx, fmt.Sprintf(detailQuery, params.String(), fields.String()), vars, &second)
+	for i := 0; err == nil && i < len(open); i++ {
+		err = decodeAlias(second.Repository, fmt.Sprintf("p%d", i), &details[i])
+	}
+	if err != nil {
+		for _, b := range open {
+			delete(out, b)
+		}
+		return out, err
 	}
 	for i, b := range open {
-		var d detailNode
-		if err := decodeAlias(second.Repository, fmt.Sprintf("p%d", i), &d); err != nil {
-			return nil, err
-		}
-		addDetails(out[b].PR, d)
+		addDetails(out[b].PR, details[i])
 	}
 	return out, nil
 }
@@ -273,9 +284,16 @@ func addDetails(pr *PR, d detailNode) {
 	}
 	rollup := d.Commits.Nodes[0].Commit.StatusCheckRollup
 	pr.Checks.State = rollup.State
+	pr.Checks.Total = rollup.Contexts.TotalCount
 	for _, n := range rollup.Contexts.Nodes {
-		pr.Checks.Total++
-		switch outcome(n) {
+		o := outcome(n)
+		if n.IsRequired {
+			pr.Checks.Required++
+			if o == passed {
+				pr.Checks.RequiredPassed++
+			}
+		}
+		switch o {
 		case passed:
 			pr.Checks.Passed++
 		case failed:

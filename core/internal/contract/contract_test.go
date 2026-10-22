@@ -49,6 +49,7 @@ type harness struct {
 	env     []string
 	root    string // temp root, resolved
 	home    string // LOAM_HOME
+	ghState string // the state file of the fake gh
 	tokens  map[string]string
 	counts  map[string]int
 	entries []Entry
@@ -58,6 +59,14 @@ type harness struct {
 var timeRE = regexp.MustCompile(`\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?(Z|[+-]\d\d:\d\d)`)
 
 const fixedTime = "2026-01-01T00:00:00Z"
+
+// headStandIn is the PR head in testdata/github.json that the scenario
+// replaces with the commit of the worktrees. fixedHead replaces that commit
+// in the fixtures.
+const (
+	headStandIn = "LOCAL_HEAD"
+	fixedHead   = "abcdefabcdefabcdefabcdefabcdefabcdefabcd"
+)
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
@@ -81,7 +90,7 @@ func newHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	testutil.FakeGH(t, string(state))
+	h.ghState = testutil.FakeGH(t, string(state))
 	// The editor writes a fixed brief into the file that loam gives it.
 	ed := filepath.Join(root, "ed.sh")
 	script := "#!/bin/sh\nprintf '# Name\\nLoam\\n\\n# What\\nA personal tool.\\n\\n# Why\\nTo keep work in one place.\\n\\n# Where it stands\\nBuilding.\\n' > \"$1\"\n"
@@ -449,12 +458,14 @@ func scenario(t *testing.T) *harness {
 	h.run("worktree_rm", "worktree-rm", 0, "worktree", "rm", loam, "fix-login")
 	h.run("worktree_list_empty", "worktree-list", 0, "worktree", "list", loam)
 
-	// Ship state: one worktree for each stage, in the order of the rule. Each
-	// worktree comes from the local remote. Then origin names a made-up
+	// Ship state: one worktree for each stage, in the order of the rule, and
+	// then a second Ready to merge whose optional checks failed (UNSTABLE).
+	// Each worktree comes from the local remote. Then origin names a made-up
 	// GitHub repo, so no command may fetch after this. testdata/github.json
 	// holds what the fake gh answers.
 	for _, name := range []string{"add-search", "old-theme", "fix-login", "new-api", "rename-users", "native-panel", "deploy-docs",
-		"update-deps", "speed-up-tests", "add-billing", "try-dark-mode", "link-labels", "pushed-only", "local-work"} {
+		"try-dark-mode", "update-deps", "speed-up-tests", "add-billing", "sign-commits", "link-labels", "pushed-only", "local-work",
+		"tidy-styles"} {
 		if _, errOut, code := h.raw("worktree", "new", loam, gitRepo, name); code != 0 {
 			t.Fatalf("worktree new %s: exit %d: %s", name, code, errOut)
 		}
@@ -462,6 +473,19 @@ func scenario(t *testing.T) *harness {
 	if err := os.WriteFile(filepath.Join(h.home, "worktrees", loam, "web-local-work", "notes.txt"), []byte("x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// A merged or closed PR shows only when the worktree has its head checked
+	// out. Each worktree starts at the same commit, which changes from run to
+	// run, so the PR head in the state is a stand-in, and the fixture gets a
+	// fixed value.
+	localHead := testutil.Git(t, filepath.Join(h.home, "worktrees", loam, "web-add-search"), "rev-parse", "HEAD")
+	ghState, err := os.ReadFile(h.ghState)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(h.ghState, []byte(strings.ReplaceAll(string(ghState), headStandIn, localHead)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h.tokens[localHead] = fixedHead
 	testutil.Git(t, gitRepo, "remote", "set-url", "origin", "https://github.com/example/widgets.git")
 	h.run("worktree_list_stages", "worktree-list", 0, "worktree", "list", loam, "--refresh")
 

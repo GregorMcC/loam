@@ -276,7 +276,8 @@ public struct WorktreeStatus: Codable, Equatable, Sendable {
     /// The one stage of the worktree. The ship state fields are nil from a core
     /// that has no ship state.
     public var stage: WorktreeStage?
-    /// The pull request of the branch from the last refresh. Nil when no PR has the branch as its head.
+    /// The pull request of the branch from the last refresh. Nil when no PR has the branch as its head,
+    /// and when the stage comes from the local checks after new work on a merged or closed PR.
     public var pr: PullRequest?
     /// Why the ship state is missing or old: the result of the last refresh.
     public var prNote: PRNote?
@@ -299,10 +300,12 @@ public enum WorktreeStage: String, Codable, Equatable, Sendable, CaseIterable {
     case changesRequested = "changes_requested"
     case checksFailed = "checks_failed"
     case approvalNeeded = "approval_needed"
+    case draft
     case behindBase = "behind_base"
     case checksRunning = "checks_running"
     case waitingForReview = "waiting_for_review"
-    case draft
+    /// GitHub blocks the merge for a reason that no other stage covers.
+    case blocked
     case readyToMerge = "ready_to_merge"
     case pushedNoPR = "pushed_no_pr"
     case notPushed = "not_pushed"
@@ -321,6 +324,8 @@ public enum WorktreeStage: String, Codable, Equatable, Sendable, CaseIterable {
 public enum PRNote: String, Codable, Equatable, Sendable, CaseIterable {
     case ghMissing = "gh_missing"
     case ghSignedOut = "gh_signed_out"
+    /// gh cannot read the repo: no access, or SSO not authorized.
+    case noAccess = "no_access"
     case noGitHubRemote = "no_github_remote"
     case offline
     case rateLimited = "rate_limited"
@@ -378,7 +383,8 @@ public struct PullRequest: Codable, Equatable, Sendable {
     }
 }
 
-/// The checks of the head commit of a PR. A cancelled or stale check counts only in `total`.
+/// The checks of the head commit of a PR. `total` counts every check. The other
+/// counts are of the first 100 checks. A cancelled or stale check counts only in `total`.
 public struct PRCheckCounts: Codable, Equatable, Sendable {
     /// The summary of GitHub: SUCCESS, FAILURE, ERROR, PENDING, or EXPECTED. Empty when the head has no checks.
     public var state: String
@@ -388,6 +394,14 @@ public struct PRCheckCounts: Codable, Equatable, Sendable {
     public var running: Int
     /// The checks that wait for a person, such as a workflow that needs approval.
     public var waiting: Int
+    /// The checks that the base branch needs to pass before a merge. Nil from an older core.
+    public var required: Int?
+    /// The required checks that passed. Nil from an older core.
+    public var requiredPassed: Int?
+    enum CodingKeys: String, CodingKey {
+        case state, total, passed, failed, running, waiting, required
+        case requiredPassed = "required_passed"
+    }
 }
 
 /// A check of a PR that failed.

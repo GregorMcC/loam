@@ -191,16 +191,16 @@
         "error": { "description": "Why a check failed. It is left out when no check failed.", "type": "string" },
         "stage": {
           "description": "The one stage of the worktree, from the first rule that matches. Empty when there is nothing to show.",
-          "enum": ["merged", "closed", "in_merge_queue", "conflicts", "changes_requested", "checks_failed", "approval_needed", "behind_base",
-            "checks_running", "waiting_for_review", "draft", "ready_to_merge", "pushed_no_pr", "not_pushed", ""]
+          "enum": ["merged", "closed", "in_merge_queue", "conflicts", "changes_requested", "checks_failed", "approval_needed", "draft",
+            "behind_base", "checks_running", "waiting_for_review", "blocked", "ready_to_merge", "pushed_no_pr", "not_pushed", ""]
         },
         "pr": {
-          "description": "The pull request of the branch from the last refresh, or null.",
+          "description": "The pull request of the branch from the last refresh, or null. It is null when the stage comes from the local checks after new work on a merged or closed PR.",
           "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/pullRequest" }]
         },
         "pr_note": {
           "description": "Why the ship state is missing or old: the result of the last refresh. Empty after a refresh that got an answer.",
-          "enum": ["gh_missing", "gh_signed_out", "no_github_remote", "offline", "rate_limited", ""]
+          "enum": ["gh_missing", "gh_signed_out", "no_access", "no_github_remote", "offline", "rate_limited", ""]
         },
         "pr_checked_at": { "description": "When the ship state came from GitHub. It is left out when GitHub never answered.", "$ref": "#/$defs/time" },
         "compare_url": { "description": "The GitHub compare page of the branch. Only for the stage pushed_no_pr.", "type": "string" }
@@ -231,23 +231,25 @@
         "commits": { "type": "integer", "minimum": 0 },
         "behind_base": { "description": "The commits of the base branch that the head does not have.", "type": "integer", "minimum": 0 },
         "approvals": { "description": "The reviewers with write access whose last review approves.", "type": "integer", "minimum": 0 },
-        "comments": { "description": "The review threads that are not resolved.", "type": "integer", "minimum": 0 },
+        "comments": { "description": "The review threads that are not resolved, of the first 100.", "type": "integer", "minimum": 0 },
         "checks": { "$ref": "#/$defs/checkCounts" },
-        "failed_checks": { "type": "array", "items": { "$ref": "#/$defs/failedCheck" } }
+        "failed_checks": { "description": "The failed checks of the first 100 checks.", "type": "array", "items": { "$ref": "#/$defs/failedCheck" } }
       }
     },
     "checkCounts": {
-      "description": "The checks of the head commit. A cancelled or stale check counts only in total.",
+      "description": "The checks of the head commit. total counts every check. The other counts are of the first 100 checks. A cancelled or stale check counts only in total.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["state", "total", "passed", "failed", "running", "waiting"],
+      "required": ["state", "total", "passed", "failed", "running", "waiting", "required", "required_passed"],
       "properties": {
         "state": { "description": "The summary of GitHub: SUCCESS, FAILURE, ERROR, PENDING, or EXPECTED. Empty when the head has no checks.", "type": "string" },
         "total": { "type": "integer", "minimum": 0 },
         "passed": { "type": "integer", "minimum": 0 },
         "failed": { "type": "integer", "minimum": 0 },
         "running": { "type": "integer", "minimum": 0 },
-        "waiting": { "description": "The checks that wait for a person, such as a workflow that needs approval.", "type": "integer", "minimum": 0 }
+        "waiting": { "description": "The checks that wait for a person, such as a workflow that needs approval.", "type": "integer", "minimum": 0 },
+        "required": { "description": "The checks that the base branch needs to pass before a merge.", "type": "integer", "minimum": 0 },
+        "required_passed": { "description": "The required checks that passed.", "type": "integer", "minimum": 0 }
       }
     },
     "failedCheck": {

@@ -33,6 +33,8 @@ type createWorktreeOut struct {
 
 func (s *Server) registerWorktrees(srv *mcp.Server) {
 	open := true
+	// list_worktrees stays read-only with refresh: the refresh writes only
+	// Loam's internal PR cache, and the plot does not change.
 	mcp.AddTool(srv, &mcp.Tool{
 		Name: "list_worktrees",
 		Description: "List the git worktrees of the plot. Each has its name, branch, folder, and repo, and three checks: " +
@@ -40,7 +42,7 @@ func (s *Server) registerWorktrees(srv *mcp.Server) {
 			"Each also has its pull request on GitHub (pr, or null), its stage (such as checks_failed or ready_to_merge), " +
 			"pr_note (why the ship state is missing or old), and pr_checked_at (when it came from GitHub)." + plotNote,
 		Annotations: &mcp.ToolAnnotations{Title: "List worktrees", ReadOnlyHint: true, OpenWorldHint: &open},
-	}, func(_ context.Context, _ *mcp.CallToolRequest, in listWorktreesIn) (*mcp.CallToolResult, any, error) {
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in listWorktreesIn) (*mcp.CallToolResult, any, error) {
 		plotID, err := s.resolvePlot(in.Plot)
 		if err != nil {
 			return fail(err)
@@ -53,7 +55,7 @@ func (s *Server) registerWorktrees(srv *mcp.Server) {
 			if err != nil {
 				return fail(err)
 			}
-			if err := worktree.RefreshPRs(s.st, ws); err != nil {
+			if err := worktree.RefreshPRs(ctx, s.st, ws); err != nil { // a cancelled call stops gh
 				return fail(err)
 			}
 		}

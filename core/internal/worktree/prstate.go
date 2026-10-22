@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"sync"
@@ -23,13 +24,14 @@ type PRNote string
 const (
 	NoteGHMissing      PRNote = "gh_missing"
 	NoteGHSignedOut    PRNote = "gh_signed_out"
+	NoteNoAccess       PRNote = "no_access"
 	NoteNoGitHubRemote PRNote = "no_github_remote"
 	NoteOffline        PRNote = "offline"
 	NoteRateLimited    PRNote = "rate_limited"
 )
 
 // PRNotes lists every note.
-var PRNotes = []PRNote{NoteGHMissing, NoteGHSignedOut, NoteNoGitHubRemote, NoteOffline, NoteRateLimited}
+var PRNotes = []PRNote{NoteGHMissing, NoteGHSignedOut, NoteNoAccess, NoteNoGitHubRemote, NoteOffline, NoteRateLimited}
 
 // noteOf returns the note of an error from the github package.
 func noteOf(err error) PRNote {
@@ -38,6 +40,8 @@ func noteOf(err error) PRNote {
 		return NoteGHMissing
 	case errors.Is(err, github.ErrSignedOut):
 		return NoteGHSignedOut
+	case errors.Is(err, github.ErrNoAccess):
+		return NoteNoAccess
 	case errors.Is(err, github.ErrRateLimited):
 		return NoteRateLimited
 	}
@@ -48,9 +52,11 @@ func noteOf(err error) PRNote {
 type cachedPR struct {
 	PR     *github.PR `json:"pr"`
 	Pushed bool       `json:"pushed"`
-	// Stage is the stage from the GitHub state alone, with no local checks.
-	// The next refresh of the same PR reads it as the last stage.
-	Stage      Stage  `json:"stage"`
+	// Stage is the stage of the PR from the GitHub state alone, with no
+	// local checks. It is empty with no PR. The next refresh of the same PR
+	// reads it as the last stage.
+	Stage Stage `json:"stage"`
+	// CompareURL is the compare page of a branch that is on GitHub.
 	CompareURL string `json:"compare_url,omitempty"`
 }
 
@@ -65,14 +71,24 @@ func decodeCached(row store.PRState) cachedPR {
 }
 
 // addPRState adds the cached ship state of the worktree and its stage. A
-// worktree whose folder is gone gets no ship state.
+// worktree whose folder is gone gets no ship state. When the stage comes
+// from the local checks (see [StageInput.UsesPR]), the worktree shows no PR.
 func (st *Status) addPRState(row store.PRState) {
 	c := decodeCached(row)
-	st.Stage = StageOf(StageInput{PR: c.PR, Pushed: c.Pushed, Missing: st.Missing, Changed: st.Changed, Unpushed: st.Unpushed, Last: c.Stage})
+	in := StageInput{PR: c.PR, Pushed: c.Pushed, Missing: st.Missing, Changed: st.Changed, Unpushed: st.Unpushed, Last: c.Stage}
+	if c.PR != nil && isDone(c.PR) && !st.Missing {
+		// When git cannot read the head, it stays empty and does not match.
+		if head, err := git(st.Worktree.Path, "rev-parse", "HEAD"); err == nil {
+			in.Head = head
+		}
+	}
+	st.Stage = StageOf(in)
 	if st.Missing {
 		return
 	}
-	st.PR = c.PR
+	if in.UsesPR() {
+		st.PR = c.PR
+	}
 	st.PRNote = PRNote(row.Note)
 	if !row.CheckedAt.IsZero() {
 		at := row.CheckedAt
@@ -88,8 +104,10 @@ func (st *Status) addPRState(row store.PRState) {
 // at the same time as those of the other repos. It skips a worktree whose
 // folder is gone, and a repo whose origin is not on GitHub gets no query.
 // When a query fails, the cache keeps the last state, and the note says why.
-// RefreshPRs fails only when it cannot write the cache.
-func RefreshPRs(s *store.Store, ws []store.Worktree) error {
+//
+// When ctx ends, gh stops, and RefreshPRs writes nothing and returns the
+// error of ctx. Else it fails only when it cannot write the cache.
+func RefreshPRs(ctx context.Context, s *store.Store, ws []store.Worktree) error {
 	cache, err := s.PRStates()
 	if err != nil {
 		return err
@@ -110,9 +128,12 @@ func RefreshPRs(s *store.Store, ws []store.Worktree) error {
 	errs := make([]error, len(repos))
 	var wg sync.WaitGroup
 	for i, repo := range repos {
-		wg.Go(func() { results[i], errs[i] = refreshRepo(client, clientErr, repo, byRepo[repo], cache) })
+		wg.Go(func() { results[i], errs[i] = refreshRepo(ctx, client, clientErr, repo, byRepo[repo], cache) })
 	}
 	wg.Wait()
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("the refresh stopped: %w", err)
+	}
 	if err := errors.Join(errs...); err != nil {
 		return err
 	}
@@ -124,24 +145,34 @@ func RefreshPRs(s *store.Store, ws []store.Worktree) error {
 	return nil
 }
 
-// repoRefresh is the result of the refresh of one repo: new rows, or a note
-// for rows that keep their state.
+// repoRefresh is the result of the refresh of one repo: new rows, and the
+// rows that keep their state and get the note of a failed query.
 type repoRefresh struct {
 	rows []store.PRState
 	note PRNote
 	keep []store.PRKey
 }
 
+// write writes the result to the PR cache. The store skips the row of a
+// worktree that `loam worktree rm` removed while the refresh ran.
 func (r repoRefresh) write(s *store.Store) error {
-	if r.note != "" {
+	if len(r.rows) > 0 {
+		if err := s.SavePRStates(r.rows); err != nil {
+			return err
+		}
+	}
+	if len(r.keep) > 0 {
 		return s.NotePRStates(string(r.note), r.keep)
 	}
-	return s.SavePRStates(r.rows)
+	return nil
 }
 
 // refreshRepo asks GitHub about the worktrees of one repo. clientErr is the
-// error of [github.NewClient]. It fails only when it cannot encode a cache row.
-func refreshRepo(client *github.Client, clientErr error, repoPath string, ws []store.Worktree, cache map[store.PRKey]store.PRState) (repoRefresh, error) {
+// error of [github.NewClient]. When the second query fails, a worktree with
+// no PR, or with a merged or closed PR, still gets its new state, with the
+// note. A worktree with an open PR keeps its state. refreshRepo fails only
+// when it cannot encode a cache row.
+func refreshRepo(ctx context.Context, client *github.Client, clientErr error, repoPath string, ws []store.Worktree, cache map[store.PRKey]store.PRState) (repoRefresh, error) {
 	keys := make([]store.PRKey, len(ws))
 	for i, w := range ws {
 		keys[i] = store.PRKey{Repo: w.Repo, Branch: w.Branch}
@@ -162,29 +193,47 @@ func refreshRepo(client *github.Client, clientErr error, repoPath string, ws []s
 	for i, w := range ws {
 		branches[i] = w.Branch
 	}
-	got, err := client.Fetch(context.Background(), ghRepo, branches)
+	var r repoRefresh
+	got, err := client.Fetch(ctx, ghRepo, branches)
 	if err != nil {
-		return repoRefresh{note: noteOf(err), keep: keys}, nil
+		r.note = noteOf(err)
 	}
 	now := time.Now()
-	rows := make([]store.PRState, len(ws))
 	for i, w := range ws {
-		b := got[w.Branch]
-		last := StageNone
-		if old := decodeCached(cache[keys[i]]); old.PR != nil && b.PR != nil && old.PR.Number == b.PR.Number {
-			last = old.Stage
+		b, ok := got[w.Branch]
+		if !ok {
+			r.keep = append(r.keep, keys[i])
+			continue
 		}
-		c := cachedPR{PR: b.PR, Pushed: b.Pushed, Stage: StageOf(StageInput{PR: b.PR, Pushed: b.Pushed, Last: last})}
-		if c.Stage == StagePushedNoPR {
-			c.CompareURL = ghRepo.CompareURL(strings.TrimPrefix(w.Base, remote+"/"), w.Branch)
+		c := cachedPR{PR: b.PR, Pushed: b.Pushed}
+		if b.PR != nil {
+			last := StageNone
+			if old := decodeCached(cache[keys[i]]); old.PR != nil && old.PR.Number == b.PR.Number {
+				last = old.Stage
+			}
+			c.Stage = prStage(b.PR, last)
+		}
+		if b.Pushed {
+			c.CompareURL = ghRepo.CompareURL(compareBase(w), w.Branch)
 		}
 		data, err := json.Marshal(c)
 		if err != nil {
 			return repoRefresh{}, err
 		}
-		rows[i] = store.PRState{PRKey: keys[i], Data: string(data), CheckedAt: now}
+		r.rows = append(r.rows, store.PRState{PRKey: keys[i], Data: string(data), CheckedAt: now, Note: string(r.note)})
 	}
-	return repoRefresh{rows: rows}, nil
+	return r, nil
+}
+
+// compareBase returns the base of the compare page of a worktree: the branch
+// of origin that the worktree started from. It is empty for a local base, or
+// none, because GitHub may not have that branch. Then GitHub compares with
+// its default branch.
+func compareBase(w store.Worktree) string {
+	if base, ok := strings.CutPrefix(w.Base, remote+"/"); ok {
+		return base
+	}
+	return ""
 }
 
 // githubRepo returns the GitHub repo of the origin remote of a repo. It
