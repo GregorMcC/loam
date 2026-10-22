@@ -1,0 +1,308 @@
+import Foundation
+import Testing
+
+@testable import LoamKit
+
+/// Ticket 115: the app model opens the New worktree sheet, checks the branch as you type, and makes the worktree
+/// through `loam`. The fake `loam` logs its arguments. The check prints `check.json`, `worktree new` prints the
+/// fixture, and the list is the `worktree_list` fixture (made-up example/widgets data).
+@MainActor
+@Suite struct NewWorktreeFlowTests {
+    let plotID = "plotaaaaab"
+    let linear = "lnkaaaaaaa"
+
+    @MainActor final class Rig {
+        let dir: URL
+        let model: AppModel
+
+        init(dir: URL, model: AppModel) {
+            self.dir = dir
+            self.model = model
+        }
+
+        var sheet: NewWorktreeModel { model.newWorktreeSheet }
+
+        func args() -> [String] {
+            ((try? String(contentsOf: dir.appendingPathComponent("args.log"), encoding: .utf8)) ?? "").split(separator: "\n").map(String.init)
+        }
+
+        func checks() -> [String] { args().filter { $0.hasPrefix("worktree new") && $0.contains("--dry-run") } }
+        func makes() -> [String] { args().filter { $0.hasPrefix("worktree new") && !$0.contains("--dry-run") } }
+        func write(_ name: String, _ data: Data) throws { try data.write(to: dir.appendingPathComponent(name)) }
+        func touch(_ name: String, _ text: String = "") throws { try Data(text.utf8).write(to: dir.appendingPathComponent(name)) }
+
+        /// The answer of the next checks.
+        func check(_ edit: (inout WorktreeCheck) -> Void = { _ in }) throws {
+            var check = try JSONDecoder().decode(WorktreeCheck.self, from: Fixtures.data("worktree_new_dry_run"))
+            edit(&check)
+            try write("check.json", JSONEncoder().encode(check))
+        }
+
+        /// Waits for the read of the plot and the check after it.
+        func settle() async {
+            await sheet.reading?.value
+            await sheet.checking?.value
+        }
+    }
+
+    func rig() async throws -> Rig {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("newworktree-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        for name in ["worktree_list", "worktree_new", "worktree_edit", "error_invalid", "error_stale_worktree"] {
+            try Fixtures.data(name).write(to: dir.appendingPathComponent("\(name).json"))
+        }
+        var show = try #require(try JSONSerialization.jsonObject(with: Fixtures.data("show")) as? [String: Any])
+        show["repos"] = [["id": "repoaaaaaa", "path": "/tmp/example/widgets", "note": "", "main": true, "version": 1]]
+        show["links"] = [["id": linear, "kind": "linear", "label": "ENG-482 Link kinds for Figma", "note": "", "position": 1,
+                          "target": "https://linear.app/example/issue/ENG-482/link-kinds-for-figma", "version": 3]]
+        try JSONSerialization.data(withJSONObject: show).write(to: dir.appendingPathComponent("show.json"))
+        let d = dir.path
+        try FakeScript.install("""
+            #!/bin/sh
+            echo "$@" >> '\(d)/args.log'
+            case "$1 $2" in
+              "show "*) cat '\(d)/show.json';;
+              "worktree new")
+                case "$*" in
+                  *--dry-run*) [ -f '\(d)/fail-check' ] && { cat '\(d)/error_invalid.json'; exit 2; }
+                    cat '\(d)/check.json';;
+                  *) while [ -f '\(d)/hold-new' ]; do sleep 0.01; done
+                    [ -f '\(d)/fail-new' ] && { cat '\(d)/error_invalid.json'; exit 2; }
+                    touch '\(d)/made'
+                    cat '\(d)/worktree_new.json';;
+                esac;;
+              "worktree edit") [ -f '\(d)/fail-edit' ] && { cat '\(d)/error_stale_worktree.json'; exit 10; }
+                cat '\(d)/worktree_edit.json';;
+              "worktree list") cat '\(d)/worktree_list.json';;
+              *) exit 1;;
+            esac
+            """, at: dir.appendingPathComponent("loam"))
+        let model = AppModel(client: LoamClient(binary: dir.appendingPathComponent("loam"), environment: [:]))
+        model.shell = "/bin/zsh"
+        model.apply([PlotSummary(id: plotID, name: "Widgets", what: "", createdAt: "2026-01-01T00:00:00Z")])
+        let rig = Rig(dir: dir, model: model)
+        rig.sheet.checkDelay = .milliseconds(5)
+        try rig.check()
+        return rig
+    }
+
+    var linearLink: PlotLink {
+        PlotLink(id: linear, label: "ENG-482 Link kinds for Figma",
+                 target: "https://linear.app/example/issue/ENG-482/link-kinds-for-figma", note: "", position: 1, version: 3,
+                 kind: .linear, exists: nil)
+    }
+
+    // MARK: Open and check
+
+    @Test func openingReadsThePlotAndChecksTheBranchFromTheLink() async throws {
+        let rig = try await rig()
+        #expect(rig.model.openNewWorktree(plot: plotID, from: linearLink))
+        #expect(rig.sheet.isOpen && rig.sheet.phase == .loading)
+        #expect(rig.sheet.branch == "eng-482-link-kinds-for-figma", "the fields are filled before the plot is back")
+        await rig.settle()
+        #expect(rig.sheet.phase == .ready)
+        #expect(rig.sheet.repoID == "repoaaaaaa")
+        #expect(rig.args().first == "show \(plotID) --json")
+        #expect(rig.checks() == [
+            "worktree new \(plotID) repoaaaaaa eng-482-link-kinds-for-figma --dry-run --goal Link kinds for Figma --link \(linear) --json",
+        ])
+        #expect(rig.sheet.branchState == .new)
+        #expect(rig.sheet.bases == ["origin/main", "main"])
+        #expect(rig.sheet.seedLine?.hasPrefix("- web-fix-login") == true)
+    }
+
+    @Test func thePlusChecksTheEmptyNameForTheBases() async throws {
+        let rig = try await rig()
+        #expect(rig.model.openNewWorktree(plot: plotID))
+        await rig.settle()
+        #expect(rig.checks() == ["worktree new \(plotID) repoaaaaaa  --dry-run --json"])
+        #expect(rig.sheet.branchState == .empty)
+        #expect(rig.sheet.bases == ["origin/main", "main"])
+    }
+
+    @Test func aBurstOfKeysAsksTheCoreOnce() async throws {
+        let rig = try await rig()
+        rig.sheet.checkDelay = .milliseconds(60)
+        rig.model.openNewWorktree(plot: plotID)
+        await rig.settle()
+        let before = rig.checks().count
+        for text in ["f", "fi", "fix", "fix-", "fix-l"] { rig.sheet.setBranch(text) }
+        await rig.sheet.checking?.value
+        let asked = Array(rig.checks().dropFirst(before))
+        #expect(asked == ["worktree new \(plotID) repoaaaaaa fix-l --dry-run --json"])
+        #expect(rig.sheet.branchState == .new)
+    }
+
+    @Test func aFailedCheckShowsTheMessageAndBlocksStart() async throws {
+        let rig = try await rig()
+        rig.model.openNewWorktree(plot: plotID, from: linearLink)
+        try rig.touch("fail-check")
+        await rig.settle()
+        guard case .failed(let message) = rig.sheet.branchState else {
+            Issue.record("the state is \(rig.sheet.branchState)")
+            return
+        }
+        #expect(message.contains("choose a number"))
+        #expect(!rig.sheet.canStart)
+        await rig.model.startNewWorktree()
+        #expect(rig.makes().isEmpty)
+    }
+
+    @Test func aPlotThatCannotBeReadFails() async throws {
+        let rig = try await rig()
+        try rig.touch("show.json", "not json")
+        rig.model.openNewWorktree(plot: plotID)
+        await rig.sheet.reading?.value
+        if case .failed = rig.sheet.phase {} else { Issue.record("the phase is \(rig.sheet.phase)") }
+        #expect(rig.checks().isEmpty && !rig.sheet.canStart)
+    }
+
+    @Test func aCloseDropsTheLateAnswers() async throws {
+        let rig = try await rig()
+        rig.model.openNewWorktree(plot: plotID, from: linearLink)
+        rig.model.closeNewWorktree()
+        await rig.settle()
+        #expect(!rig.sheet.isOpen)
+        #expect(rig.sheet.phase == .loading, "the read of the old open did not fill the closed sheet")
+        #expect(rig.sheet.repos.isEmpty)
+    }
+
+    // MARK: Start
+
+    @Test func startSessionMakesTheWorktreeWithTheGoalAndTheLinkAndOpensASession() async throws {
+        let rig = try await rig()
+        rig.model.openNewWorktree(plot: plotID, from: linearLink)
+        await rig.settle()
+        await rig.model.startNewWorktree()
+        #expect(rig.makes() == [
+            "worktree new \(plotID) repoaaaaaa eng-482-link-kinds-for-figma --goal Link kinds for Figma --link \(linear) "
+                + "--json --actor app",
+        ])
+        #expect(!rig.sheet.isOpen)
+        #expect(rig.model.workspace.paneCount(of: .plot(plotID)) == 1, "a seeded session opens in the new worktree")
+        let pane = try #require(rig.model.workspace.focusedPane)
+        #expect(rig.model.workspace.spec(of: pane)?.worktree?.id == "wtreaaaaab")
+    }
+
+    @Test func aBaseThatYouChoseGoesToTheNewBranchOnly() async throws {
+        let rig = try await rig()
+        rig.model.openNewWorktree(plot: plotID)
+        await rig.settle()
+        rig.sheet.setBranch("fix-login")
+        rig.sheet.chooseBase("main")
+        await rig.sheet.checking?.value
+        #expect(rig.checks().last == "worktree new \(plotID) repoaaaaaa fix-login --dry-run --base main --json")
+        await rig.model.startNewWorktree()
+        #expect(rig.makes() == ["worktree new \(plotID) repoaaaaaa fix-login --base main --json --actor app"])
+
+        // A branch that exists takes no base: the core refuses one.
+        try rig.check { $0.branchExists = true }
+        rig.model.openNewWorktree(plot: plotID)
+        await rig.settle()
+        rig.sheet.setBranch("link-labels")
+        rig.sheet.chooseBase("main")
+        await rig.sheet.checking?.value
+        #expect(rig.sheet.branchState == .exists)
+        await rig.model.startNewWorktree()
+        #expect(rig.makes().last == "worktree new \(plotID) repoaaaaaa link-labels --json --actor app")
+    }
+
+    @Test func aPastedIssueGoesToTheWorktreeAsAUrl() async throws {
+        let rig = try await rig()
+        rig.model.openNewWorktree(plot: plotID)
+        await rig.settle()
+        rig.sheet.chooseLink(.pasted)
+        rig.sheet.setPastedURL(" https://github.com/example/widgets/issues/57 ")
+        await rig.sheet.checking?.value
+        #expect(rig.sheet.branch == "57")
+        await rig.model.startNewWorktree()
+        #expect(rig.makes() == ["worktree new \(plotID) repoaaaaaa 57 --link https://github.com/example/widgets/issues/57 --json --actor app"])
+    }
+
+    @Test func startDoesNothingWhileTheCheckBlocks() async throws {
+        let rig = try await rig()
+        rig.model.openNewWorktree(plot: plotID)
+        await rig.settle()
+        // Empty branch.
+        await rig.model.startNewWorktree()
+        // A bad name.
+        try rig.check { $0.validName = false; $0.nameError = "bad name"; $0.seedLine = nil }
+        rig.sheet.setBranch("a b")
+        await rig.sheet.checking?.value
+        await rig.model.startNewWorktree()
+        // A worktree that is there.
+        try rig.check { $0.worktreeExists = true }
+        rig.sheet.setBranch("a-b")
+        await rig.sheet.checking?.value
+        await rig.model.startNewWorktree()
+        // The answer is not back.
+        try rig.check()
+        rig.sheet.checkDelay = .seconds(30)
+        rig.sheet.setBranch("a-b-c")
+        await rig.model.startNewWorktree()
+        rig.sheet.checking?.cancel()
+        #expect(rig.makes().isEmpty)
+        #expect(rig.sheet.isOpen)
+    }
+
+    @Test func aFailureKeepsTheSheetOpenWithTheMessage() async throws {
+        let rig = try await rig()
+        rig.model.openNewWorktree(plot: plotID, from: linearLink)
+        await rig.settle()
+        try rig.touch("fail-new")
+        await rig.model.startNewWorktree()
+        #expect(rig.sheet.isOpen && !rig.sheet.isStarting)
+        #expect(rig.sheet.startError?.contains("choose a number") == true)
+        #expect(rig.model.workspace.paneCount(of: .plot(plotID)) == 0)
+        // The fields stay, so you can fix them and start again.
+        #expect(rig.sheet.branch == "eng-482-link-kinds-for-figma" && rig.sheet.canStart)
+    }
+
+    @Test func theSheetStaysWhileTheWorktreeIsMade() async throws {
+        let rig = try await rig()
+        rig.model.openNewWorktree(plot: plotID, from: linearLink)
+        await rig.settle()
+        try rig.touch("hold-new")
+        let starting = Task { await rig.model.startNewWorktree() }
+        while !rig.sheet.isStarting { try await Task.sleep(for: .milliseconds(2)) }
+        rig.model.closeNewWorktree()
+        #expect(rig.sheet.isOpen, "a worktree that is made now cannot stop")
+        // A second Start does not make a second worktree.
+        await rig.model.startNewWorktree()
+        try FileManager.default.removeItem(at: rig.dir.appendingPathComponent("hold-new"))
+        await starting.value
+        #expect(rig.makes().count == 1)
+        #expect(!rig.sheet.isOpen)
+    }
+
+    @Test func noSheetOpensOverAMerge() async throws {
+        let rig = try await rig()
+        rig.model.landSheet.beginMerging()
+        #expect(!rig.model.openNewWorktree(plot: plotID))
+        #expect(!rig.sheet.isOpen)
+    }
+
+    // MARK: Goal
+
+    @Test func aGoalEditExpectsTheVersionOfTheRow() async throws {
+        let rig = try await rig()
+        await rig.model.reloadWorktrees()
+        let message = await rig.model.setWorktreeGoal("wtreaaaaab", to: "  Fix the login form on phones ")
+        #expect(message == nil)
+        #expect(rig.args().contains("worktree edit \(plotID) wtreaaaaab --goal Fix the login form on phones --expect worktree:wtreaaaaab=0 --json --actor app"))
+    }
+
+    @Test func aGoalThatChangedMeanwhileIsNotOverwritten() async throws {
+        let rig = try await rig()
+        await rig.model.reloadWorktrees()
+        try rig.touch("fail-edit")
+        let message = await rig.model.setWorktreeGoal("wtreaaaaab", to: "Mine")
+        #expect(message == "The goal changed meanwhile. Loam shows the new goal.")
+    }
+
+    @Test func aWorktreeThatIsGoneHasNoGoalToSet() async throws {
+        let rig = try await rig()
+        #expect(await rig.model.setWorktreeGoal("nope", to: "x") == "The worktree is gone.")
+        #expect(rig.args().allSatisfy { !$0.hasPrefix("worktree edit") })
+    }
+}

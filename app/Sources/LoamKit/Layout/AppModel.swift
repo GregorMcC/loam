@@ -84,6 +84,8 @@ public final class AppModel {
     /// after a merge (ticket 113). The window reads the terminal. The default says yes, so with no terminal to read,
     /// Loam asks.
     @ObservationIgnored public var paneRunsAProcess: (PaneID) -> Bool = { _ in true }
+    /// The New worktree sheet (ticket 115).
+    @ObservationIgnored public let newWorktreeSheet = NewWorktreeModel()
     /// Asks the question of a close that ends a session in a turn, and returns true on the confirm button. The window
     /// shows it as a sheet. The default says no, so a land with no window never stops a session.
     @ObservationIgnored public var confirmClose: (ClosePrompt) async -> Bool = { _ in false }
