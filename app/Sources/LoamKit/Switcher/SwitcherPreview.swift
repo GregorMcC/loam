@@ -137,7 +137,7 @@ public struct SwitcherPreview: Equatable, Sendable {
         if detail != nil || !panes.isEmpty { rows.append(Row(label: "Panes", value: .text("\(panes.count)"))) }
         rows += attentionRows(panes)
         if let last = context.changes.filter({ $0.plotID == id }).max(by: { $0.id < $1.id }) {
-            let text = "\(context.actorText(last)): \(ChangeRules.summary(last, linkLabels: detail?.linkLabels ?? [:])), \(context.clock(last))"
+            let text = "\(context.actorText(last)): \(ChangeRules.summary(last)), \(context.clock(last))"
             rows.append(Row(label: "Last change", value: .text(text)))
         }
         if let detail, !detail.repos.isEmpty {

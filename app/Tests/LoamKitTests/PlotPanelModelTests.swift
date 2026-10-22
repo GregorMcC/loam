@@ -337,12 +337,14 @@ import Testing
     }
 
     @Test func failedLinkActionsShowTheirErrorByTheLinks() async throws {
-        let (m, _) = try model([("show_links", 0), ("error_generic", 1), ("show_links", 0), ("error_generic", 1)])
+        let (m, fake) = try model([("show_links", 0), ("error_generic", 1), ("show_links", 0), ("error_generic", 1)])
         await m.load(plotID: "plotaaaaab")
         await m.moveLink(id: "linkaaaaad", to: 1)
         #expect(m.linkError != nil)
         #expect(m.linkError == m.errorMessage)
         await m.removeLink(id: "linkaaaaab")
+        #expect(fake.args().last?.hasPrefix("link rm plotaaaaab linkaaaaab") == true)
+        #expect(m.linkError != nil)
         #expect(m.linkError == m.errorMessage)
     }
 
@@ -353,7 +355,7 @@ import Testing
         #expect(m.linkError == "A link needs a target.")
     }
 
-    @Test func aLaterErrorOrSuccessClearsTheLinkError() async throws {
+    @Test func anotherErrorReplacesTheLinkError() async throws {
         let (m, _) = try model([("show_links", 0), ("error_generic", 1), ("show_links", 0), ("error_generic", 1)])
         await m.load(plotID: "plotaaaaab")
         await m.moveLink(id: "linkaaaaad", to: 1)
@@ -362,7 +364,26 @@ import Testing
         await m.save(.why)
         #expect(m.errorMessage != nil)
         #expect(m.linkError == nil)
-        m.errorMessage = nil
+    }
+
+    @Test func aLaterSuccessClearsTheLinkError() async throws {
+        let (m, fake) = try model([("show_links", 0), ("error_generic", 1), ("show_links", 0), ("set", 0)])
+        await m.load(plotID: "plotaaaaab")
+        await m.moveLink(id: "linkaaaaad", to: 1)
+        #expect(m.linkError != nil)
+        m.edit(.why, to: "x")
+        await m.save(.why)
+        #expect(fake.args().last?.hasPrefix("set plotaaaaab why") == true)
+        #expect(m.errorMessage == nil)
         #expect(m.linkError == nil)
+    }
+
+    @Test func aMoveWhileOneIsInFlightIsIgnored() async throws {
+        let (m, fake) = try model([("show_links", 0), ("link_move", 0), ("show_links", 0)])
+        await m.load(plotID: "plotaaaaab")
+        async let first: Void = m.moveLink(id: "linkaaaaad", to: 3)
+        async let second: Void = m.moveLink(id: "linkaaaaad", to: 2)
+        _ = await (first, second)
+        #expect(fake.args().filter { $0.hasPrefix("link move") }.count == 1)
     }
 }

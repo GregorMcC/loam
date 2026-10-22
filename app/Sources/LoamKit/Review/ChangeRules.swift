@@ -211,8 +211,7 @@ public enum ChangeRules {
     /// One line for the log, such as "Edited What, Where it stands", "Added link", or
     /// "Set the goal of fix-login". `worktreeNames` maps a worktree ID to its folder name.
     /// A worktree that it does not name, such as one that was removed, is "a worktree".
-    public static func summary(_ change: Change, worktreeNames: [String: String] = [:],
-                               linkLabels: [String: String] = [:]) -> String {
+    public static func summary(_ change: Change, worktreeNames: [String: String] = [:]) -> String {
         if isCreation(change) { return "Created the plot" }
         if let target = change.undoOf { return "Undid change \(target)" }
         var parts: [String] = []
