@@ -50,6 +50,10 @@ _Avoid_: status, phase
 One line that says what a worktree is for. The seed lists it, so a session in that worktree knows its task.
 _Avoid_: task, title
 
+**Link key**:
+The short ID of the issue that the link of a worktree points at: the issue ID for Linear, such as ENG-482, or # and the number for GitHub, such as #57. A link that is not an issue has no key. A PR body puts "Fixes" and the key, so the merge closes the issue.
+_Avoid_: issue number, ticket ID
+
 **Land**:
 To merge the pull request of a worktree and tidy up after it: remove the worktree, delete its branch, and move Where it stands on.
 _Avoid_: finish, complete
@@ -69,7 +73,7 @@ _Avoid_: history, audit trail
 ### Sessions
 
 **Seed**:
-What a seeded session receives from its plot at start: the brief, the repos, and the links. A seed never holds page content.
+What a seeded session receives from its plot at start: the brief, the repos, the worktrees with their goals, and the links. A seed never holds page content.
 _Avoid_: context, prompt, preload
 
 **Seeded session**:

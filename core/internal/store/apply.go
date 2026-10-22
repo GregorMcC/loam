@@ -50,6 +50,8 @@ type applier struct {
 	rec    recorder
 	added  []string
 	undoOf int64 // set by Undo: the change this one reverts
+	// warnings are for a person to read, such as a goal over the soft limit.
+	warnings []string
 }
 
 func validateName(name string) error {
@@ -127,6 +129,12 @@ func checkExpect(q queryer, cur Plot, expect map[string]int64) error {
 					si.Repo = &cur.Repos[i]
 				}
 			}
+		case IsWorktreeItem(item):
+			for i := range cur.worktrees {
+				if WorktreeItem(cur.worktrees[i].ID) == item {
+					si.Worktree = &cur.worktrees[i]
+				}
+			}
 		}
 		stale = append(stale, si)
 	}
@@ -171,6 +179,8 @@ func (a *applier) apply(e Edit) error {
 		return a.removeRepo(e)
 	case OpSetMainRepo:
 		return a.setMainRepo(e)
+	case OpSetGoal:
+		return a.setGoal(e)
 	}
 	return fmt.Errorf("unknown edit %q: %w", e.Op, ErrInvalid)
 }
@@ -390,6 +400,35 @@ func (a *applier) setMainRepo(e Edit) error {
 		return err
 	}
 	a.rec.set(e.Item, "main", S("0"), S("1"))
+	return nil
+}
+
+func (a *applier) getWorktree(item string) (Worktree, error) {
+	id, err := idOf(item, worktreePrefix)
+	if err != nil {
+		return Worktree{}, err
+	}
+	w, err := scanWorktree(a.w.conn.QueryRowContext(context.Background(), `SELECT `+worktreeSelect+` FROM worktrees WHERE id = ? AND plot_id = ?`, id, a.plotID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Worktree{}, fmt.Errorf("worktree %q: %w", id, ErrNotFound)
+	}
+	return w, err
+}
+
+// setGoal sets the goal of a worktree of the plot. A goal over
+// [GoalWordLimit] saves, with a warning.
+func (a *applier) setGoal(e Edit) error {
+	w, err := a.getWorktree(e.Item)
+	if err != nil {
+		return err
+	}
+	if err := a.w.exec(`UPDATE worktrees SET goal = ? WHERE id = ?`, e.Value, w.ID); err != nil {
+		return err
+	}
+	a.rec.set(e.Item, "goal", S(w.Goal), S(e.Value))
+	if warning := GoalWarning(e.Value); warning != "" {
+		a.warnings = append(a.warnings, warning)
+	}
 	return nil
 }
 

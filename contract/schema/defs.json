@@ -89,9 +89,10 @@
         "links": { "type": "array", "items": { "$ref": "#/$defs/plotLink" } },
         "repos": { "type": "array", "items": { "$ref": "#/$defs/repo" } },
         "versions": {
-          "description": "Item to version. Items are name, what, why, where, link:<id>, and repo:<id>.",
+          "description": "Item to version. Items are name, what, why, where, link:<id>, repo:<id>, and worktree:<id>. A worktree item is 0 until a change sets its goal.",
           "type": "object",
-          "propertyNames": { "pattern": "^(name|what|why|where|link:[a-z2-7]{10}|repo:[a-z2-7]{10})$" },
+          "propertyNames": { "pattern": "^(name|what|why|where|link:[a-z2-7]{10}|repo:[a-z2-7]{10}|worktree:[a-z2-7]{10})$" },
+          "patternProperties": { "^worktree:": { "$ref": "#/$defs/worktreeVersion" } },
           "additionalProperties": { "$ref": "#/$defs/changeId" },
           "required": ["name", "what", "why", "where"]
         },
@@ -127,7 +128,7 @@
       "additionalProperties": false,
       "required": ["item", "field", "old", "new"],
       "properties": {
-        "item": { "type": "string", "pattern": "^(name|what|why|where|link:[a-z2-7]{10}|repo:[a-z2-7]{10})$" },
+        "item": { "type": "string", "pattern": "^(name|what|why|where|link:[a-z2-7]{10}|repo:[a-z2-7]{10}|worktree:[a-z2-7]{10})$" },
         "field": { "type": "string", "minLength": 1 },
         "old": { "$ref": "#/$defs/nullableString" },
         "new": { "$ref": "#/$defs/nullableString" }
@@ -164,7 +165,7 @@
     "worktree": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "plot_id", "repo", "name", "branch", "base", "path", "setup_done", "created_at"],
+      "required": ["id", "plot_id", "repo", "name", "branch", "base", "path", "setup_done", "created_at", "goal", "link", "version"],
       "properties": {
         "id": { "$ref": "#/$defs/id" },
         "plot_id": { "$ref": "#/$defs/id" },
@@ -174,7 +175,37 @@
         "base": { "description": "The branch that a new branch started from. It is empty for a branch that existed.", "type": "string" },
         "path": { "type": "string" },
         "setup_done": { "type": "boolean" },
-        "created_at": { "$ref": "#/$defs/time" }
+        "created_at": { "$ref": "#/$defs/time" },
+        "goal": { "description": "One line that says what the worktree is for. It is empty when none is set.", "type": "string" },
+        "link": {
+          "description": "The link that the work started from, or null.",
+          "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/worktreeLink" }]
+        },
+        "version": { "$ref": "#/$defs/worktreeVersion" }
+      }
+    },
+    "worktreeVersion": {
+      "description": "The ID of the change that last set the goal of a worktree, or 0 when no change has set it.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "worktreeLink": {
+      "description": "The link of a worktree. It belongs to the worktree, not to the links of the plot.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target", "label", "key", "link_id"],
+      "properties": {
+        "target": { "type": "string", "minLength": 1 },
+        "label": { "type": "string" },
+        "key": {
+          "description": "The ID of a Linear issue, such as ENG-482, or # and the number of a GitHub issue, such as #57. It is empty for any other link.",
+          "type": "string",
+          "pattern": "^(|#[0-9]+|[A-Z][A-Z0-9]*-[0-9]+)$"
+        },
+        "link_id": {
+          "description": "The ID of the plot link that the link was copied from. It is empty for a URL that was given directly.",
+          "anyOf": [{ "const": "" }, { "$ref": "#/$defs/id" }]
+        }
       }
     },
     "worktreeStatus": {

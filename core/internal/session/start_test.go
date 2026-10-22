@@ -152,7 +152,8 @@ func TestStartSettingsFile(t *testing.T) {
 	if err := json.Unmarshal(b, &s); err != nil {
 		t.Fatal(err)
 	}
-	wantAllow := []string{"mcp__loam__list_plots", "mcp__loam__get_plot", "mcp__loam__get_changes", "mcp__loam__add_link", "mcp__loam__update_link", "mcp__loam__list_worktrees"}
+	wantAllow := []string{"mcp__loam__list_plots", "mcp__loam__get_plot", "mcp__loam__get_changes", "mcp__loam__add_link", "mcp__loam__update_link", "mcp__loam__list_worktrees",
+		"mcp__loam__set_worktree_goal"}
 	if !slices.Equal(s.Permissions.Allow, wantAllow) {
 		t.Errorf("allow %v", s.Permissions.Allow)
 	}

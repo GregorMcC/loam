@@ -57,7 +57,7 @@
           "type": "array",
           "minItems": 1,
           "items": {
-            "description": "exists is false when the item is gone. A stale link or repo has link or repo with the current object. A stale name, what, why, or where has value, which is left out when it is empty.",
+            "description": "exists is false when the item is gone. A stale link, repo, or worktree has link, repo, or worktree with the current object. A stale name, what, why, or where has value, which is left out when it is empty.",
             "type": "object",
             "additionalProperties": false,
             "required": ["item", "expected", "current", "exists"],
@@ -68,7 +68,8 @@
               "exists": { "type": "boolean" },
               "value": { "type": "string" },
               "link": { "$ref": "defs.json#/$defs/link" },
-              "repo": { "$ref": "defs.json#/$defs/repo" }
+              "repo": { "$ref": "defs.json#/$defs/repo" },
+              "worktree": { "$ref": "defs.json#/$defs/worktree" }
             }
           }
         }

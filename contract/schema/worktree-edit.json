@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam worktree edit --json",
+  "description": "change_id is 0 when the edit changed nothing. worktree is the worktree after the edit.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["change_id", "plot", "worktree"],
+  "properties": {
+    "change_id": { "type": "integer", "minimum": 0 },
+    "plot": { "$ref": "defs.json#/$defs/id" },
+    "worktree": { "$ref": "defs.json#/$defs/worktree" }
+  }
+}

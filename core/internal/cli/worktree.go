@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/GregorMcC/loam/core/internal/store"
@@ -22,23 +23,28 @@ func newWorktreeCmd() *cobra.Command {
 		Short: "Make, list, or remove the git worktrees of a plot",
 		Long: "A worktree is a separate checkout of one repo of a plot, on its own branch.\n" +
 			"Loam keeps worktrees in <loam home>/worktrees/<plot-id>/<repo>-<name>/.\n" +
-			"Making or removing a worktree is not a change in the change log.",
+			"Making or removing a worktree is not a change in the change log. A goal edit is a change, and you can undo it.\n" +
+			"The seed of the plot lists each worktree with its goal.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
-	c.AddCommand(newWorktreeNewCmd(), newWorktreeListCmd(), newWorktreeRmCmd())
+	c.AddCommand(newWorktreeNewCmd(), newWorktreeEditCmd(), newWorktreeListCmd(), newWorktreeRmCmd())
 	return c
 }
 
 func newWorktreeNewCmd() *cobra.Command {
-	var base string
+	var base, goal, link string
+	var dryRun bool
 	c := &cobra.Command{
-		Use:   "new <plot> <repo> <name> [--base <branch>]",
+		Use:   "new <plot> <repo> <name> [--base <branch>] [--goal <text>] [--link <link-id or URL>] [--dry-run]",
 		Short: "Make a worktree of a repo of a plot",
 		Long: "Make a worktree. <repo> is a repo ID or a path. <name> is the branch name.\n" +
 			"If the branch exists, the worktree uses it. Otherwise Loam fetches from origin and starts a new branch from --base, or from the default branch of origin. A local --base branch wins over origin/<branch>.\n" +
 			"Loam copies the files of the repo settings (--copy) and the files that .worktreeinclude lists.\n" +
-			"It does not run the setup command. loam start --worktree runs it.",
+			"It does not run the setup command. loam start --worktree runs it.\n" +
+			"--goal is one line that says what the worktree is for. The soft limit is 20 words.\n" +
+			"--link is the link that the work starts from: the ID of a link of the plot, or the URL of a Linear issue or a GitHub issue. The link stays with the worktree. A URL does not go into the plot's links. Loam never fetches the issue.\n" +
+			"--dry-run changes nothing and never asks origin: it reads the last fetched state. It reports whether the name is a good branch name, whether the branch exists, the default base, and the bases to choose from.",
 		Args: cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := openStore()
@@ -50,7 +56,11 @@ func newWorktreeNewCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			res, err := worktree.Create(s, worktree.CreateOptions{PlotID: p.ID, Repo: args[1], Name: args[2], Base: base})
+			o := worktree.CreateOptions{PlotID: p.ID, Repo: args[1], Name: args[2], Base: base, Goal: goal, Link: link}
+			if dryRun {
+				return checkWorktree(cmd, s, o)
+			}
+			res, err := worktree.Create(s, o)
 			if err != nil {
 				return err
 			}
@@ -67,6 +77,12 @@ func newWorktreeNewCmd() *cobra.Command {
 			}
 			out := cmd.OutOrStdout()
 			fmt.Fprintf(out, "Worktree %s on branch %s: %s\n", filepath.Base(res.Worktree.Path), res.Worktree.Branch, res.Worktree.Path)
+			if g := oneLine(res.Worktree.Goal); g != "" {
+				fmt.Fprintf(out, "Goal: %s\n", g)
+			}
+			if l := res.Worktree.Link; l != nil {
+				fmt.Fprintf(out, "Link: %s (%s)\n", oneLine(l.Key+" "+l.Label), l.Target)
+			}
 			if n := len(res.Copied); n > 0 {
 				fmt.Fprintf(out, "Copied %d file(s).\n", n)
 			}
@@ -75,6 +91,101 @@ func newWorktreeNewCmd() *cobra.Command {
 		},
 	}
 	c.Flags().StringVar(&base, "base", "", "start a new branch from this branch, not from the default branch of origin")
+	c.Flags().StringVar(&goal, "goal", "", "one line that says what the worktree is for")
+	c.Flags().StringVar(&link, "link", "", "the ID of a link of the plot, or the URL of a Linear issue or a GitHub issue")
+	c.Flags().BoolVar(&dryRun, "dry-run", false, "change nothing and do not ask origin: check the name and list the bases")
+	return c
+}
+
+// checkWorktree runs the dry run of worktree new and prints what it found.
+func checkWorktree(cmd *cobra.Command, s *store.Store, o worktree.CreateOptions) error {
+	res, err := worktree.Check(s, o)
+	if err != nil {
+		return err
+	}
+	if w := store.GoalWarning(o.Goal); w != "" {
+		printWarnings(cmd, []string{w})
+	}
+	if JSON(cmd) {
+		return printJSON(cmd, res)
+	}
+	out := cmd.OutOrStdout()
+	switch {
+	case !res.ValidName:
+		fmt.Fprintf(out, "%s.\n", res.NameError)
+	case res.WorktreeExists:
+		fmt.Fprintf(out, "The plot already has the worktree %s.\n", res.Folder)
+	case res.BranchExists:
+		fmt.Fprintf(out, "The worktree %s can use the branch %s, which exists.\n", res.Folder, res.Name)
+	case res.DefaultBase != "":
+		fmt.Fprintf(out, "The worktree %s can start a new branch %s from %s.\n", res.Folder, res.Name, res.DefaultBase)
+	default:
+		fmt.Fprintf(out, "The worktree %s can start a new branch %s. The last fetch did not record the default branch of origin, so give --base.\n", res.Folder, res.Name)
+	}
+	if len(res.Bases) > 0 {
+		fmt.Fprintf(out, "Bases: %s\n", strings.Join(res.Bases, ", "))
+	}
+	return nil
+}
+
+func newWorktreeEditCmd() *cobra.Command {
+	var goal, repo string
+	var expect []string
+	c := &cobra.Command{
+		Use:   "edit <plot> <worktree> --goal <text> [--repo <repo>] [--expect worktree:<id>=<version>]",
+		Short: "Set the goal of a worktree",
+		Long: "Set the goal of a worktree: one line that says what it is for. <worktree> is an ID, a folder name, or a name.\n" +
+			"A goal edit is a change in the change log, so loam undo can put the old goal back. An empty --goal clears the goal.\n" +
+			"A goal over the soft limit of 20 words saves, with a warning.",
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !cmd.Flags().Changed("goal") {
+				return fmt.Errorf("give --goal: %w", store.ErrInvalid)
+			}
+			exp, err := parseExpect(expect)
+			if err != nil {
+				return err
+			}
+			s, err := openStore()
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+			p, err := resolvePlot(s, args[0])
+			if err != nil {
+				return err
+			}
+			w, err := worktree.Find(s, p.ID, repo, args[1])
+			if err != nil {
+				return err
+			}
+			res, err := commit(s, store.Change{PlotID: p.ID, Actor: cliActor(cmd), Expect: exp,
+				Edits: []store.Edit{{Op: store.OpSetGoal, Item: store.WorktreeItem(w.ID), Value: goal}}})
+			if err != nil {
+				return staleDetail(err)
+			}
+			printWarnings(cmd, res.Warnings)
+			if w, err = s.GetWorktree(w.ID); err != nil {
+				return err
+			}
+			if JSON(cmd) {
+				return printJSON(cmd, struct {
+					ChangeID int64          `json:"change_id"`
+					Plot     string         `json:"plot"`
+					Worktree store.Worktree `json:"worktree"`
+				}{res.ChangeID, p.ID, w})
+			}
+			if res.ChangeID == 0 {
+				fmt.Fprintln(cmd.OutOrStdout(), "No change.")
+				return nil
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Set the goal of %s.\n", filepath.Base(w.Path))
+			return nil
+		},
+	}
+	c.Flags().StringVar(&goal, "goal", "", "the new goal: one line that says what the worktree is for")
+	c.Flags().StringVar(&repo, "repo", "", "the repo of the worktree, when two repos have a worktree with that name")
+	addExpectFlag(c, &expect)
 	return c
 }
 
@@ -141,6 +252,9 @@ func newWorktreeListCmd() *cobra.Command {
 			out := cmd.OutOrStdout()
 			for _, st := range list {
 				fmt.Fprintf(out, "%s  %s  %s\n", filepath.Base(st.Worktree.Path), st.Worktree.Branch, describe(st))
+				if about := goalText(st.Worktree); about != "" {
+					fmt.Fprintf(out, "    %s\n", about)
+				}
 			}
 			return nil
 		},
@@ -185,6 +299,31 @@ func describe(st worktree.Status) string {
 	}
 	return text
 }
+
+// goalText is the goal of a worktree and its link key, such as "Link kinds
+// for Figma (ENG-482)". A link that is not an issue shows its label. It is ""
+// for a worktree with no goal and no link.
+func goalText(w store.Worktree) string {
+	ref := ""
+	if w.Link != nil {
+		ref = w.Link.Key
+		if ref == "" {
+			ref = oneLine(w.Link.Label)
+		}
+	}
+	goal := oneLine(w.Goal)
+	switch {
+	case goal == "":
+		return ref
+	case ref == "":
+		return goal
+	}
+	return fmt.Sprintf("%s (%s)", goal, ref)
+}
+
+// oneLine joins the lines of a text, such as a goal, so that it keeps the
+// layout of the text output. The JSON keeps the text as it is.
+func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
 
 // prStageText is the stage of a worktree with a PR, for the words after "PR #12".
 func prStageText(st worktree.Status) string {
@@ -249,6 +388,7 @@ func newWorktreeRmCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			printWarnings(cmd, res.Warnings)
 			if JSON(cmd) {
 				return printJSON(cmd, res)
 			}

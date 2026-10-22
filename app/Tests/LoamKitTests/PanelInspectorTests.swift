@@ -54,6 +54,16 @@ private let linkAdd = [ChangeEntry(item: "link:x", field: "label", old: nil, new
         #expect(ChangeRules.sentence(change(you, entries: two)) == "set What, Why")
     }
 
+    @Test func goalEditSentence() {
+        let goal = [ChangeEntry(item: "worktree:wtreaaaaab", field: "goal", old: "", new: "Link kinds for Figma")]
+        #expect(ChangeRules.sentence(change(seeded, entries: goal)) == "set the goal of a worktree")
+        let names = ["wtreaaaaab": "eng-482-link-kinds-for-figma"]
+        #expect(ChangeRules.actorName(seeded) + " " + ChangeRules.sentence(change(seeded, entries: goal), worktreeNames: names)
+            == "Claude set the goal of eng-482-link-kinds-for-figma")
+        #expect(ChangeRules.summary(change(you, entries: goal), worktreeNames: names) == "Set the goal of eng-482-link-kinds-for-figma")
+        #expect(ChangeRules.entryViews(change(seeded, entries: goal)).map(\.title) == ["Worktree goal"])
+    }
+
     @Test func sourceOfAChange() {
         #expect(ChangeRules.source(seeded, paneName: nil) == "seeded session")
         #expect(ChangeRules.source(seeded, paneName: "claude \u{00B7} app") == "claude \u{00B7} app")

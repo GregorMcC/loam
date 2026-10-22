@@ -19,7 +19,8 @@
 //     records of sessions.
 //
 // A version is the ID of the change that last set an item. The items are
-// [ItemName], [ItemWhat], [ItemWhy], [ItemWhere], [LinkItem] and [RepoItem].
+// [ItemName], [ItemWhat], [ItemWhy], [ItemWhere], [LinkItem], [RepoItem], and
+// [WorktreeItem], whose one field is the goal of the worktree.
 package store
 
 import (

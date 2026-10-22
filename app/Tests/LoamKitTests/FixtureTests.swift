@@ -46,6 +46,8 @@ func decodeFixture(schema: String, data: Data) throws {
     case "changes": _ = try d.decode(ChangesResponse.self, from: data)
     case "undo": _ = try d.decode(UndoResult.self, from: data)
     case "worktree-new": _ = try d.decode(WorktreeNewResult.self, from: data)
+    case "worktree-new-dry-run": _ = try d.decode(WorktreeCheck.self, from: data)
+    case "worktree-edit": _ = try d.decode(WorktreeEditResult.self, from: data)
     case "worktree-list": _ = try d.decode([WorktreeStatus].self, from: data)
     case "worktree-rm": _ = try d.decode(WorktreeRmResult.self, from: data)
     case "delete": _ = try d.decode(DeleteResult.self, from: data)
@@ -120,6 +122,30 @@ func decodeFixture(schema: String, data: Data) throws {
         #expect(rm.branchNote == nil)
         let del = try JSONDecoder().decode(DeleteResult.self, from: Fixtures.data("delete"))
         #expect(del.claudeFiles.count == 1)
+    }
+
+    @Test func worktreeGoalDecodes() throws {
+        let made = try JSONDecoder().decode(WorktreeNewResult.self, from: Fixtures.data("worktree_new"))
+        #expect(made.worktree.goal == "Fix the login form")
+        #expect(made.worktree.link?.key == "#57")
+        #expect(made.worktree.link?.linkID == "")
+        #expect(made.worktree.version == 0)
+        let check = try JSONDecoder().decode(WorktreeCheck.self, from: Fixtures.data("worktree_new_dry_run"))
+        #expect(check.validName)
+        #expect(check.nameError == nil)
+        #expect(check.defaultBase == "origin/main")
+        #expect(check.bases.first == "origin/main")
+        let edit = try JSONDecoder().decode(WorktreeEditResult.self, from: Fixtures.data("worktree_edit"))
+        #expect(edit.changeID > 0)
+        #expect(edit.worktree.version == edit.changeID)
+        #expect(edit.worktree.link == nil)
+        // A stale goal edit carries the current worktree.
+        let env = try JSONDecoder().decode(ErrorEnvelope.self, from: Fixtures.data("error_stale_worktree"))
+        guard case .stale(let details, _) = LoamError.from(exitCode: 10, message: env.error.message, details: env.error.details?.data) else {
+            Issue.record("not a stale error")
+            return
+        }
+        #expect(details?.items.first?.worktree?.goal == "Fix the login form on phones")
     }
 
     @Test func prStateDecodes() throws {

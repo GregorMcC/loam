@@ -1,10 +1,11 @@
 // Package mcpserver is the stdio MCP server behind `loam mcp`. It gives a
-// Claude session the tools: three read tools, two worktree tools, and the write tools.
+// Claude session the tools: three read tools, the worktree tools, and the write tools.
 //
 // One server process serves one Claude Code session. The process remembers the
-// item versions that its last get_plot returned for each plot. A write passes
-// those versions to the store as expectations, so a stale write fails and
-// Claude never handles a version number.
+// item versions that its last get_plot returned for each plot, and the goal
+// versions of the worktrees that list_worktrees and create_worktree returned.
+// A write passes those versions to the store as expectations, so a stale write
+// fails and Claude never handles a version number.
 package mcpserver
 
 import (
@@ -42,12 +43,17 @@ type Server struct {
 	getenv func(string) string
 
 	mu       sync.Mutex
-	versions map[string]map[string]int64 // plot ID -> item -> version
+	versions map[string]map[string]int64 // plot ID -> item -> version, from get_plot
+	// goals are the goal versions of the worktrees that Claude read with
+	// list_worktrees or create_worktree: plot ID -> worktree:<id> -> version.
+	// They are apart from versions: get_plot does not show the goals, and
+	// list_worktrees does not show the plot.
+	goals map[string]map[string]int64
 }
 
 // New builds the MCP server with its tools registered.
 func New(o Options) *mcp.Server {
-	s := &Server{st: o.Store, pid: o.PID, getenv: o.Getenv, versions: map[string]map[string]int64{}}
+	s := &Server{st: o.Store, pid: o.PID, getenv: o.Getenv, versions: map[string]map[string]int64{}, goals: map[string]map[string]int64{}}
 	if s.pid == 0 {
 		s.pid = os.Getppid()
 	}
@@ -109,26 +115,67 @@ func (s *Server) actor() (store.Actor, error) {
 	return s.st.SessionActor(id)
 }
 
+// remember keeps the versions of a plot that get_plot returned. The goals of
+// the worktrees are not in them, because get_plot does not show the goals.
 func (s *Server) remember(p store.Plot) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.versions[p.ID] = maps.Clone(p.Versions)
+	v := maps.Clone(p.Versions)
+	maps.DeleteFunc(v, func(item string, _ int64) bool { return store.IsWorktreeItem(item) })
+	s.versions[p.ID] = v
+}
+
+// rememberGoals adds the goal versions of worktrees that Claude read. The
+// other worktrees keep the version that Claude read.
+func (s *Server) rememberGoals(plotID string, ws ...store.Worktree) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	known := s.goals[plotID]
+	if known == nil {
+		known = map[string]int64{}
+		s.goals[plotID] = known
+	}
+	for _, w := range ws {
+		known[store.WorktreeItem(w.ID)] = w.Version
+	}
+}
+
+// forget drops what Claude read of a plot, so the next write needs a new read.
+func (s *Server) forget(plotID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.versions, plotID)
+	delete(s.goals, plotID)
+}
+
+// readOf returns the remembered versions that hold an item, or nil when
+// Claude has not read them, and the tool that reads them: list_worktrees
+// for the goal of a worktree, and get_plot for any other item. Hold s.mu.
+func (s *Server) readOf(plotID, item string) (map[string]int64, string) {
+	if store.IsWorktreeItem(item) {
+		return s.goals[plotID], "list_worktrees"
+	}
+	return s.versions[plotID], "get_plot"
 }
 
 // expectations returns the remembered versions of the named items. It fails
-// when Claude has not read the plot, or has not seen an item.
+// when Claude has not read the plot, or has not seen an item. A write with no
+// items, such as add_link, needs a get_plot.
 func (s *Server) expectations(plotID string, items ...string) (map[string]int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	known, ok := s.versions[plotID]
-	if !ok {
+	if _, ok := s.versions[plotID]; !ok && len(items) == 0 {
 		return nil, fmt.Errorf("call get_plot for plot %s before you change it", plotID)
 	}
 	exp := make(map[string]int64, len(items))
 	for _, it := range items {
+		known, tool := s.readOf(plotID, it)
+		if known == nil {
+			return nil, fmt.Errorf("call %s for plot %s before you change it", tool, plotID)
+		}
 		v, ok := known[it]
 		if !ok {
-			return nil, fmt.Errorf("%s is not in the last get_plot result for plot %s: call get_plot again", it, plotID)
+			return nil, fmt.Errorf("%s is not in the last %s result for plot %s: call %s again", it, tool, plotID, tool)
 		}
 		exp[it] = v
 	}
@@ -140,17 +187,16 @@ func (s *Server) expectations(plotID string, items ...string) (map[string]int64,
 func (s *Server) afterWrite(res *store.Result, set []string, removed []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	known := s.versions[res.Plot.ID]
-	if known == nil {
-		return
-	}
 	for _, it := range append(append([]string{}, set...), res.Added...) {
-		if v, ok := res.Plot.Versions[it]; ok {
+		known, _ := s.readOf(res.Plot.ID, it)
+		if v, ok := res.Plot.Versions[it]; ok && known != nil {
 			known[it] = v
 		}
 	}
 	for _, it := range removed {
-		delete(known, it)
+		if known, _ := s.readOf(res.Plot.ID, it); known != nil {
+			delete(known, it)
+		}
 	}
 }
 
@@ -210,9 +256,19 @@ func fail(err error) (*mcp.CallToolResult, any, error) {
 	text := err.Error()
 	if errors.As(err, &stale) {
 		b, _ := json.MarshalIndent(stale.Items, "", "  ")
-		text = fmt.Sprintf("%s. Nothing was saved. Call get_plot to read the current plot, then try again. Current values:\n%s", stale.Error(), b)
+		text = fmt.Sprintf("%s. Nothing was saved. %s Current values:\n%s", stale.Error(), readAgain(stale.Items), b)
 	}
 	return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: text}}}, nil, nil
+}
+
+// readAgain tells Claude which tool reads the stale items again.
+func readAgain(items []store.StaleItem) string {
+	for _, it := range items {
+		if store.IsWorktreeItem(it.Item) {
+			return "Call list_worktrees to read the current goals, then try again."
+		}
+	}
+	return "Call get_plot to read the current plot, then try again."
 }
 
 // plotView is the plot as Claude sees it. It has no versions and no revision.
