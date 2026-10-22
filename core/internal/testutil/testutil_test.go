@@ -140,6 +140,36 @@ func TestFakeClaudeHookModeRaisesTheNeedsYouHooks(t *testing.T) {
 	}
 }
 
+// A test sees each prompt that the session got, and the title of its folder.
+func TestFakeClaudeHookModeRecordsThePromptsAndSetsTheTitle(t *testing.T) {
+	testutil.FakeClaude(t)
+	work := filepath.Join(t.TempDir(), "native-panel")
+	if err := os.Mkdir(work, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	prompts := filepath.Join(t.TempDir(), "prompts.txt")
+	cmd := exec.Command("claude", "--session-id", "s1", "--settings", hookSettings(t, filepath.Join(t.TempDir(), "hooks.log")))
+	cmd.Dir = work
+	cmd.Env = append(os.Environ(), "LOAM_FAKE_CLAUDE_HOOKS=1", "LOAM_FAKE_CLAUDE_TURN=10ms", "LOAM_FAKE_CLAUDE_PROMPTS="+prompts,
+		`LOAM_FAKE_CLAUDE_TITLES={"native-panel":"✳ Native panel spacing","other":"✳ Other"}`)
+	cmd.Stdin = strings.NewReader("Fix the checks.\n/question\nblue\n\nRun `gh pr checks 139`.\n/exit\n")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	b, err := os.ReadFile(prompts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A command and the answer to a question are not prompts.
+	if got, want := string(b), "Fix the checks.\nRun `gh pr checks 139`.\n"; got != want {
+		t.Fatalf("prompts %q, want %q", got, want)
+	}
+	if !strings.Contains(string(out), "\x1b]2;✳ Native panel spacing\x07") || strings.Contains(string(out), "Other") {
+		t.Fatalf("the output has not the one title:\n%q", out)
+	}
+}
+
 func TestFakeClaudeHookModeResumesWithTheGivenID(t *testing.T) {
 	testutil.FakeClaude(t)
 	log := filepath.Join(t.TempDir(), "hooks.log")
