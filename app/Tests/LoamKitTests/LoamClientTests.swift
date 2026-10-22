@@ -203,6 +203,30 @@ struct FakeLoam {
         ])
     }
 
+    /// Ticket 115: the New worktree sheet checks the name as you type, makes the worktree with a goal and a link,
+    /// and edits the goal later.
+    @Test func worktreeCheckNewAndEditPassTheirFlags() async throws {
+        let fake = try FakeLoam([("worktree_new_dry_run", 0), ("worktree_new_dry_run", 0), ("worktree_new", 0), ("worktree_edit", 0)])
+        let client = fake.client()
+        let check = try await client.worktreeCheck(plot: "Loam", repo: "web", name: "fix-login", base: "origin/main",
+                                                   goal: "Fix the login form",
+                                                   link: "https://github.com/example/widgets/issues/57")
+        #expect(check.seedLine == "- web-fix-login: Fix the login form (example/widgets#57, from origin/main)")
+        // An empty goal and an empty link are left out.
+        _ = try await client.worktreeCheck(plot: "Loam", repo: "web", name: "", goal: "", link: "")
+        _ = try await client.worktreeNew(plot: "Loam", repo: "web", name: "fix-login", goal: "Fix the login form",
+                                         link: "lnk1")
+        let edit = try await client.worktreeEdit(plot: "Loam", worktree: "wtaaaaaaaa", goal: "Fix it", expect: 3)
+        #expect(edit.changeID == 27)
+        #expect(fake.args() == [
+            "worktree new Loam web fix-login --dry-run --base origin/main --goal Fix the login form "
+                + "--link https://github.com/example/widgets/issues/57 --json",
+            "worktree new Loam web  --dry-run --json",
+            "worktree new Loam web fix-login --goal Fix the login form --link lnk1 --json --actor app",
+            "worktree edit Loam wtaaaaaaaa --goal Fix it --expect worktree:wtaaaaaaaa=3 --json --actor app",
+        ])
+    }
+
     @Test func aBlockedLandThrowsNotReady() async throws {
         let fake = try FakeLoam([("error_not_ready", 16)])
         do {
