@@ -293,12 +293,14 @@ type Status struct {
 	Stage Stage `json:"stage"`
 	// PR is the pull request of the branch from the last refresh, or nil. It
 	// is nil too when the stage comes from the local checks after new work on
-	// a merged or closed PR (see [StageInput.UsesPR]).
+	// a merged or closed PR (see [StageInput.UsesPR]), and with the note
+	// gh_missing or gh_signed_out (see [PRNote.hidesShipState]).
 	PR *github.PR `json:"pr"`
 	// PRNote says why the ship state is missing or old.
 	PRNote PRNote `json:"pr_note"`
 	// PRCheckedAt is when the ship state came from GitHub. It is nil when
-	// GitHub never answered for the branch.
+	// GitHub never answered for the branch, and with the note gh_missing or
+	// gh_signed_out.
 	PRCheckedAt *time.Time `json:"pr_checked_at,omitempty"`
 	// CompareURL is the GitHub page that compares the branch with its base.
 	// It is set only for [StagePushedNoPR].

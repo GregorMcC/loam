@@ -202,7 +202,7 @@
           "description": "Why the ship state is missing or old: the result of the last refresh. Empty after a refresh that got an answer.",
           "enum": ["gh_missing", "gh_signed_out", "no_access", "no_github_remote", "offline", "rate_limited", ""]
         },
-        "pr_checked_at": { "description": "When the ship state came from GitHub. It is left out when GitHub never answered.", "$ref": "#/$defs/time" },
+        "pr_checked_at": { "description": "When the ship state came from GitHub. It is left out when GitHub never answered, and with the note gh_missing or gh_signed_out.", "$ref": "#/$defs/time" },
         "compare_url": { "description": "The GitHub compare page of the branch. Only for the stage pushed_no_pr.", "type": "string" }
       }
     },

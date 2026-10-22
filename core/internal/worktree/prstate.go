@@ -49,6 +49,11 @@ func noteOf(err error) PRNote {
 	return NoteOffline
 }
 
+// hidesShipState reports whether the note means that Loam cannot ask GitHub
+// until the person fixes gh: gh is missing or signed out. The last state can
+// then stay old for a long time, so the list shows the local state.
+func (n PRNote) hidesShipState() bool { return n == NoteGHMissing || n == NoteGHSignedOut }
+
 // cachedPR is the data of a row of the PR cache.
 type cachedPR struct {
 	PR     *github.PR `json:"pr"`
@@ -74,8 +79,15 @@ func decodeCached(row store.PRState) cachedPR {
 // addPRState adds the cached ship state of the worktree and its stage. A
 // worktree whose folder is gone gets no ship state. When the stage comes
 // from the local checks (see [StageInput.UsesPR]), the worktree shows no PR.
+// With a note that only the person can fix (see [PRNote.hidesShipState]),
+// the worktree shows its local stage, and the cache keeps the last state for
+// the next refresh.
 func (st *Status) addPRState(row store.PRState) {
+	note := PRNote(row.Note)
 	c := decodeCached(row)
+	if note.hidesShipState() {
+		c = cachedPR{}
+	}
 	in := StageInput{PR: c.PR, Pushed: c.Pushed, Missing: st.Missing, Changed: st.Changed, Unpushed: st.Unpushed,
 		LocalFailed: st.localFailed, Last: c.Stage}
 	if c.PR != nil && isDone(c.PR) && !st.Missing {
@@ -88,8 +100,8 @@ func (st *Status) addPRState(row store.PRState) {
 	if in.UsesPR() {
 		st.PR = c.PR
 	}
-	st.PRNote = PRNote(row.Note)
-	if !row.CheckedAt.IsZero() {
+	st.PRNote = note
+	if !note.hidesShipState() && !row.CheckedAt.IsZero() {
 		at := row.CheckedAt
 		st.PRCheckedAt = &at
 	}

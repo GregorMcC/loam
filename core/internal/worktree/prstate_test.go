@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/GregorMcC/loam/core/internal/store"
@@ -185,5 +186,70 @@ func TestListShowsMergedWhenGitHubAddedCommitsToThePR(t *testing.T) {
 		if st := got[name]; st.Stage != want {
 			t.Errorf("%s: got %q, want %q (%+v)", name, st.Stage, want, st)
 		}
+	}
+}
+
+// With gh missing or signed out, Loam cannot ask GitHub until you fix gh, so
+// the list shows the local state of each worktree. The cache keeps the last
+// state for the next refresh that gets an answer. Other failures keep
+// showing the last state.
+func TestListShowsLocalStateWhenGHIsMissingOrSignedOut(t *testing.T) {
+	e := setup(t)
+	wt := e.create("fix-login", "").Worktree
+	commit(t, wt.Path, "fix.txt", "f\n")
+	e.onGitHub(`{"refs": ["fix-login"], "pulls": [
+	  {"number": 14, "title": "Fix login", "url": "https://github.com/example/widgets/pull/14", "state": "OPEN",
+	   "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN", "baseRefName": "main", "headRefName": "fix-login",
+	   "headRefOid": "1111111111111111111111111111111111111111", "commits": {"totalCount": 1}}
+	], "details": {"14": {"checks": []}}}`)
+	refresh := func() {
+		t.Helper()
+		if err := worktree.RefreshPRs(context.Background(), e.s, e.worktrees()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	refresh()
+	if st := e.listed()["fix-login"]; st.Stage != worktree.StageReadyToMerge || st.PR == nil {
+		t.Fatalf("before: %+v", st)
+	}
+
+	gh := os.Getenv("LOAM_GH")
+	for _, c := range []struct {
+		name string
+		fail func()
+		note worktree.PRNote
+		want worktree.Stage
+	}{
+		{"offline keeps the last state", func() { t.Setenv("LOAM_FAKE_GH_FAIL", "offline") }, worktree.NoteOffline, worktree.StageReadyToMerge},
+		{"signed out", func() { t.Setenv("LOAM_FAKE_GH_FAIL", "signed_out") }, worktree.NoteGHSignedOut, worktree.StageNotPushed},
+		{"missing", func() { t.Setenv("LOAM_GH", filepath.Join(t.TempDir(), "no-gh")) }, worktree.NoteGHMissing, worktree.StageNotPushed},
+	} {
+		c.fail()
+		refresh()
+		st := e.listed()["fix-login"]
+		if st.PRNote != c.note || st.Stage != c.want {
+			t.Errorf("%s: got note %q, stage %q", c.name, st.PRNote, st.Stage)
+		}
+		if local := c.want == worktree.StageNotPushed; local && (st.PR != nil || st.PRCheckedAt != nil || st.CompareURL != "") {
+			t.Errorf("%s: shows ship state: %+v", c.name, st)
+		}
+	}
+
+	// gh works again while GitHub checks the PR. Only the last stage in the
+	// cache can give Ready to merge now, so the cache kept it.
+	t.Setenv("LOAM_GH", gh)
+	t.Setenv("LOAM_FAKE_GH_FAIL", "")
+	file := os.Getenv("LOAM_FAKE_GH_STATE")
+	b, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checking := strings.Replace(string(b), `"mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN"`, `"mergeable": "UNKNOWN", "mergeStateStatus": "UNKNOWN"`, 1)
+	if err := os.WriteFile(file, []byte(checking), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	refresh()
+	if st := e.listed()["fix-login"]; st.PRNote != "" || st.Stage != worktree.StageReadyToMerge || st.PR == nil || st.PRCheckedAt == nil {
+		t.Fatalf("after gh works again: %+v", st)
 	}
 }
