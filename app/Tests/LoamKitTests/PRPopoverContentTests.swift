@@ -633,34 +633,56 @@ private func text(_ parts: [StatusLine.Part]) -> String { parts.map(\.text).join
     let closed = CGSize(width: 360, height: 200)
     let grown = CGSize(width: 360, height: 600)
 
-    @Test func aNewOpenHasNoSizeUntilItIsMeasured() {
+    /// A list that opens in the card makes it taller (ticket 116). The side that the card had stays.
+    @Test func aCardThatGrowsKeepsItsSideWhileItsListIsOpen() {
         var measure = PopoverMeasure()
-        #expect(measure.frame(open: 1, anchor: anchor, in: container).size == .zero)
-        measure.measure(closed, open: 1, anchor: anchor, in: container)
-        #expect(measure.frame(open: 1, anchor: anchor, in: container).size == closed)
-        // The size of open 1 does not show for open 2, so the new card never stands in the old place.
-        #expect(measure.frame(open: 2, anchor: anchor, in: container).size == .zero)
+        #expect(measure.measure(closed, open: 1, listOpen: false, anchor: anchor, in: container) == .below)
+        #expect(measure.measure(grown, open: 1, listOpen: true, anchor: anchor, in: container) == .below)
+        // A card that opens at this size takes the other side.
+        #expect(PopoverPlacement.side(size: grown, anchor: anchor, in: container) == .above)
+        // The window moves the control while the list is open, and the card stays.
+        let lower = anchor.offsetBy(dx: 0, dy: 100)
+        #expect(measure.measure(grown, open: 1, listOpen: true, anchor: lower, in: container) == .below)
     }
 
-    /// A list that opens in the card makes it taller (ticket 116). The side of the first size stays.
-    @Test func aCardThatGrowsKeepsTheSideOfItsFirstSize() {
+    /// A refresh or a note makes the card taller with its list closed. The card picks its side on each layout, as it
+    /// did in ticket 109, so it does not cover the control when the other side has room.
+    @Test func aCardThatGrowsWithItsListClosedTakesTheSideThatFits() {
         var measure = PopoverMeasure()
-        measure.measure(closed, open: 1, anchor: anchor, in: container)
-        measure.measure(grown, open: 1, anchor: anchor, in: container)
-        let frame = measure.frame(open: 1, anchor: anchor, in: container)
-        #expect(frame == PopoverPlacement.frame(size: grown, anchor: anchor, side: .below, in: container))
-        // A card that opens at this size takes the other side.
-        #expect(PopoverPlacement.frame(size: grown, anchor: anchor, in: container) != frame)
-        // The list closes again, and the card goes back to its place.
-        measure.measure(closed, open: 1, anchor: anchor, in: container)
-        #expect(measure.frame(open: 1, anchor: anchor, in: container).minY == anchor.maxY + PopoverPlacement.gap)
+        #expect(measure.measure(closed, open: 1, listOpen: false, anchor: anchor, in: container) == .below)
+        #expect(measure.measure(grown, open: 1, listOpen: false, anchor: anchor, in: container) == .above)
+        #expect(measure.measure(closed, open: 1, listOpen: false, anchor: anchor, in: container) == .below)
+    }
+
+    /// A window that gets shorter moves the control and the room around it.
+    @Test func aCardWithItsListClosedFollowsItsControl() {
+        var measure = PopoverMeasure()
+        #expect(measure.measure(closed, open: 1, listOpen: false, anchor: anchor, in: container) == .below)
+        let low = CGRect(x: 100, y: 600, width: 40, height: 20)
+        #expect(measure.measure(closed, open: 1, listOpen: false, anchor: low, in: container) == .above)
+    }
+
+    /// The list opens at the side that the card had on screen, also when the window moved the control after the last
+    /// size of the card.
+    @Test func theListOpensOnTheSideThatTheCardHad() {
+        var measure = PopoverMeasure()
+        _ = measure.measure(closed, open: 1, listOpen: false, anchor: anchor, in: container)
+        let low = CGRect(x: 100, y: 600, width: 40, height: 20)
+        _ = measure.measure(closed, open: 1, listOpen: false, anchor: low, in: container)
+        #expect(measure.measure(grown, open: 1, listOpen: true, anchor: low, in: container) == .above)
     }
 
     @Test func aNewOpenPicksItsSideAgain() {
         var measure = PopoverMeasure()
-        measure.measure(closed, open: 1, anchor: anchor, in: container)
+        #expect(measure.measure(closed, open: 1, listOpen: false, anchor: anchor, in: container) == .below)
         // The second open is a tall card at the same control: it goes above.
-        measure.measure(grown, open: 2, anchor: anchor, in: container)
-        #expect(measure.frame(open: 2, anchor: anchor, in: container) == PopoverPlacement.frame(size: grown, anchor: anchor, in: container))
+        #expect(measure.measure(grown, open: 2, listOpen: false, anchor: anchor, in: container) == .above)
+    }
+
+    /// A list that is open at the first size of an open has no earlier side to keep.
+    @Test func aListThatIsOpenAtTheStartOfAnOpenPicksTheSideThatFits() {
+        var measure = PopoverMeasure()
+        _ = measure.measure(closed, open: 1, listOpen: false, anchor: anchor, in: container)
+        #expect(measure.measure(grown, open: 2, listOpen: true, anchor: anchor, in: container) == .above)
     }
 }

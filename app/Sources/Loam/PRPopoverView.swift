@@ -14,8 +14,6 @@ struct PRPopoverView: View {
     /// Return, or a click on the primary button.
     let runPrimary: (PRPrimaryAction) -> Void
     @FocusState private var focused: Bool
-    /// The size of the card once it is laid out, and the side of the control that it stands on.
-    @State private var measured = PopoverMeasure()
     @Environment(\.colorScheme) private var scheme
 
     static let width: CGFloat = 360
@@ -23,24 +21,14 @@ struct PRPopoverView: View {
 
     var body: some View {
         let model = app.prPopover
-        GeometryReader { proxy in
-            ZStack(alignment: .topLeading) {
-                Color.clear
-                    .contentShape(Rectangle())
-                    .onTapGesture { app.closePullRequest() }
-                if let status = model.worktreeID.flatMap({ app.worktreeStatus($0) }) {
-                    let open = model.openCount
-                    let bounds = CGRect(origin: .zero, size: proxy.size)
-                    let frame = measured.frame(open: open, anchor: place.anchor, in: bounds)
-                    card(PRPopoverContent(status, attemptedAt: model.attemptedAt), status: status,
-                         maxHeight: PopoverPlacement.maxHeight(in: bounds))
-                        .onGeometryChange(for: CGSize.self, of: \.size) {
-                            measured.measure($0, open: open, anchor: place.anchor, in: bounds)
-                        }
-                        .id(open)
-                        // The card has no size until it is laid out once, and it would show in the wrong place.
-                        .opacity(frame.size == .zero ? 0 : 1)
-                        .offset(x: frame.minX, y: frame.minY)
+        ZStack {
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture { app.closePullRequest() }
+            if let status = model.worktreeID.flatMap({ app.worktreeStatus($0) }) {
+                PopoverLayout(anchor: place.anchor, open: model.openCount, listOpen: model.showsPassedChecks) {
+                    card(PRPopoverContent(status, attemptedAt: model.attemptedAt), status: status)
+                        .id(model.openCount)
                 }
             }
         }
@@ -70,9 +58,8 @@ struct PRPopoverView: View {
 
     // MARK: Card
 
-    /// `maxHeight` is the tallest card that the window holds. The passed checks scroll when the card would be taller.
-    private func card(_ content: PRPopoverContent, status: WorktreeStatus, maxHeight: CGFloat) -> some View {
-        HeightCap(maxHeight: maxHeight) { cardContent(content, status: status) }
+    private func card(_ content: PRPopoverContent, status: WorktreeStatus) -> some View {
+        cardContent(content, status: status)
             .background(LoamColor.horizonB, in: RoundedRectangle(cornerRadius: Self.radius))
             .overlay(RoundedRectangle(cornerRadius: Self.radius).strokeBorder(LoamColor.inkHairline))
             .clipShape(RoundedRectangle(cornerRadius: Self.radius))
@@ -182,7 +169,8 @@ struct PRPopoverView: View {
                     CheckRowView(check: check, kind: .failed, index: index)
                 }
                 if !content.passedChecks.isEmpty {
-                    PassedChecksView(title: content.passedTitle, checks: content.passedChecks)
+                    PassedChecksView(title: content.passedTitle, checks: content.passedChecks, isOpen: app.prPopover.showsPassedChecks,
+                                     onToggle: app.prPopover.togglePassedChecks)
                 }
             }
             .padding(.horizontal, -8)
@@ -246,23 +234,35 @@ struct PRPopoverView: View {
     }
 }
 
-/// Gives its one child at most `maxHeight` of room, and is as tall as the child. A flexible frame would do the
-/// first and then grow to the room. The card hugs its content, and only a list of passed checks that is too tall
-/// for `maxHeight` shrinks and scrolls.
-private struct HeightCap: Layout {
-    let maxHeight: CGFloat
+/// Places the card of the popover. It reads the size of the card and puts the card at its frame in the same layout
+/// pass, so a card that grows, such as one with a list that opens, is never laid out at its new size and its old
+/// place (ticket 116). The card is as tall as its content and at most as tall as the window holds
+/// (`PopoverPlacement.maxHeight`), so only a list of passed checks that is too tall for it shrinks and scrolls.
+private struct PopoverLayout: Layout {
+    /// Where the popover opens from, in the space of this layout.
+    let anchor: CGRect
+    /// The number of the open, and whether the passed checks show. They say which side of the anchor the card
+    /// stands on (`PopoverMeasure`).
+    let open: Int
+    let listOpen: Bool
 
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        guard let child = subviews.first else { return .zero }
-        return child.sizeThatFits(capped(proposal))
+    func makeCache(subviews: Subviews) -> PopoverMeasure { PopoverMeasure() }
+
+    /// The cache keeps the side of the card from one pass to the next. The default would make a new cache whenever
+    /// the anchor or the list changes.
+    func updateCache(_ cache: inout PopoverMeasure, subviews: Subviews) {}
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout PopoverMeasure) -> CGSize {
+        proposal.replacingUnspecifiedDimensions(by: .zero)
     }
 
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(width: bounds.width, height: bounds.height))
-    }
-
-    private func capped(_ proposal: ProposedViewSize) -> ProposedViewSize {
-        ProposedViewSize(width: proposal.width, height: min(proposal.height ?? maxHeight, maxHeight))
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout PopoverMeasure) {
+        guard let card = subviews.first else { return }
+        let container = CGRect(origin: .zero, size: bounds.size)
+        let size = card.sizeThatFits(ProposedViewSize(width: container.width, height: PopoverPlacement.maxHeight(in: container)))
+        let side = cache.measure(size, open: open, listOpen: listOpen, anchor: anchor, in: container)
+        let frame = PopoverPlacement.frame(size: size, anchor: anchor, side: side, in: container)
+        card.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY), proposal: ProposedViewSize(size))
     }
 }
 
@@ -336,12 +336,13 @@ private struct CheckRowView: View {
 /// The row "12 passed" and the list that it opens in place, under the row (ticket 116, board 2.1). A click on the row
 /// opens the list and turns the chevron down, and a second click closes it. The list scrolls inside the card when
 /// the card is taller than the window allows (`PopoverPlacement.maxHeight`). The row takes no keys: Escape still
-/// closes the popover with the list open. The list is closed on each open of the popover, because each open is a
-/// new card.
+/// closes the popover with the list open. `PRPopoverModel.showsPassedChecks` says whether the list shows, because
+/// the placement of the card needs it too.
 private struct PassedChecksView: View {
     let title: String
     let checks: [PRPopoverContent.CheckRow]
-    @State private var isOpen = false
+    let isOpen: Bool
+    let onToggle: () -> Void
     @State private var hovering = false
 
     var body: some View {
@@ -364,7 +365,7 @@ private struct PassedChecksView: View {
     }
 
     private var toggle: some View {
-        Button { isOpen.toggle() } label: {
+        Button(action: onToggle) {
             HStack(spacing: 8) {
                 PassedGlyph()
                 Text(title)

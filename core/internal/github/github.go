@@ -128,7 +128,9 @@ type PR struct {
 	FailedChecks []Check `json:"failed_checks"`
 	// PassedChecks are the checks that passed, in the order of GitHub. A
 	// skipped or neutral check passed too, so the list is as long as
-	// Checks.Passed. Like FailedChecks, it is a list and never null.
+	// Checks.Passed. A cache row from before Loam stored the passed checks
+	// gives an empty list until the next refresh. Like FailedChecks, it is a
+	// list and never null.
 	PassedChecks []Check `json:"passed_checks"`
 }
 

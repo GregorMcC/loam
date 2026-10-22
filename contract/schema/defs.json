@@ -303,7 +303,7 @@
         "checks": { "$ref": "#/$defs/checkCounts" },
         "failed_checks": { "description": "The failed checks of the first 100 checks.", "type": "array", "items": { "$ref": "#/$defs/check" } },
         "passed_checks": {
-          "description": "The passed checks of the first 100 checks, in the order of GitHub. A skipped or neutral check passed too, so the list is as long as checks.passed. MCP list_worktrees leaves it out.",
+          "description": "The passed checks of the first 100 checks, in the order of GitHub. A skipped or neutral check passed too, so the list is as long as checks.passed. A cache row from before Loam stored the passed checks gives an empty list until the next refresh. MCP list_worktrees leaves it out.",
           "type": "array",
           "items": { "$ref": "#/$defs/check" }
         }

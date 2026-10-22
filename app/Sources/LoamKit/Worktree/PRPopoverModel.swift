@@ -51,6 +51,9 @@ public final class PRPopoverModel {
     public private(set) var attemptedAt: Date?
     /// What the last button did, or why it failed. It goes when the popover opens again.
     public private(set) var note: String?
+    /// True while the passed checks show in the card (ticket 116). The list is closed on each open, because each
+    /// open is a new card. A refresh and a button leave it as it is.
+    public private(set) var showsPassedChecks = false
     /// The worktrees whose refresh runs now (`AppModel.refreshWorktree`), shown or not.
     private var refreshing: Set<String> = []
     /// The button that runs for each worktree. One runs at a time for a worktree.
@@ -77,6 +80,7 @@ public final class PRPopoverModel {
         openCount += 1
         attemptedAt = nil
         note = nil
+        showsPassedChecks = false
         if !wasOpen { onOpenChange?(true) }
         onOpen?()
     }
@@ -88,6 +92,7 @@ public final class PRPopoverModel {
         worktreeID = nil
         attemptedAt = nil
         note = nil
+        showsPassedChecks = false
         onOpenChange?(false)
     }
 
@@ -95,6 +100,12 @@ public final class PRPopoverModel {
     public func say(_ line: String) {
         guard isOpen else { return }
         note = line
+    }
+
+    /// Opens the passed checks in the card, or closes them. Does nothing when the popover is closed.
+    public func togglePassedChecks() {
+        guard isOpen else { return }
+        showsPassedChecks.toggle()
     }
 
     // MARK: Refresh
@@ -158,8 +169,8 @@ public enum PopoverPlacement {
     }
 
     /// The frame on `side` of the anchor. It stays inside the container, and at the top and the left edge
-    /// when the container is too small. A popover that grows keeps its side, so it does not jump over the
-    /// anchor: it moves only as far as it needs to stay inside.
+    /// when the container is too small. A popover that is too tall for its side stays on it and moves only as far
+    /// as it needs to stay inside, so it does not jump to the other side.
     public static func frame(size: CGSize, anchor: CGRect, side: Side, in container: CGRect) -> CGRect {
         let y = side == .below ? anchor.maxY + gap : anchor.minY - gap - size.height
         return CGRect(origin: CGPoint(x: clamp(anchor.minX, size.width, container.minX, container.maxX),
@@ -176,30 +187,22 @@ public enum PopoverPlacement {
     }
 }
 
-/// What the window knows of the card of the open PR popover: its size, and the side of the control that it
-/// stands on. The card is measured once it is laid out, and again each time its size changes, such as when a
-/// list opens in it (ticket 116).
+/// What the window knows of the card of the open PR popover: the side of its control that it stands on (ticket 116).
+/// With its passed list closed, the card takes the side that `PopoverPlacement.side(size:anchor:in:)` picks on each
+/// layout, as in ticket 109. A list that opens makes the card taller, and the card keeps the side it had while the
+/// list is open, so it does not jump over its control to the other side.
 public struct PopoverMeasure: Equatable, Sendable {
     private var open = 0
-    private var size = CGSize.zero
     private var side = PopoverPlacement.Side.below
 
     public init() {}
 
-    /// Takes the size of the card of open number `open`. The first size of an open picks the side, with the
-    /// lists of the card closed, and the side stays for the open: a list that opens makes the card taller, and
-    /// the card must not jump over its control to the other side. A new open picks again.
-    public mutating func measure(_ size: CGSize, open: Int, anchor: CGRect, in container: CGRect) {
-        if self.open != open { side = PopoverPlacement.side(size: size, anchor: anchor, in: container) }
+    /// The side for the card of open number `open`, when the card is `size` and its control is at `anchor`. With the
+    /// list closed, the side is the one that the rule picks for this size. With the list open, it is the side from
+    /// the last layout with the list closed. A new open picks again, because each open is a new card.
+    public mutating func measure(_ size: CGSize, open: Int, listOpen: Bool, anchor: CGRect, in container: CGRect) -> PopoverPlacement.Side {
+        if self.open != open || !listOpen { side = PopoverPlacement.side(size: size, anchor: anchor, in: container) }
         self.open = open
-        self.size = size
-    }
-
-    /// Where the card of open number `open` goes. A size from an earlier open does not count, so a new card
-    /// never shows for one frame in the place that the last card had. Each open is a new card, so it is measured
-    /// again, and until then the frame has no size.
-    public func frame(open: Int, anchor: CGRect, in container: CGRect) -> CGRect {
-        guard self.open == open else { return PopoverPlacement.frame(size: .zero, anchor: anchor, side: .below, in: container) }
-        return PopoverPlacement.frame(size: size, anchor: anchor, side: side, in: container)
+        return side
     }
 }

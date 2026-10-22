@@ -494,6 +494,32 @@ import Testing
         await idle(model)
     }
 
+    /// The passed checks show in the card only on a click of their row (ticket 116), and each open is a new card, so
+    /// the list is closed on each open and when the popover closes.
+    @Test func thePassedChecksOpenOnARequestAndCloseWithTheOpen() async throws {
+        let rig = try await rig()
+        let model = rig.model
+        model.prPopover.togglePassedChecks()
+        #expect(!model.prPopover.showsPassedChecks)  // No popover is open.
+        model.openPullRequest(nativePanel)
+        await idle(model)
+        #expect(!model.prPopover.showsPassedChecks)
+        model.prPopover.togglePassedChecks()
+        #expect(model.prPopover.showsPassedChecks)
+        await model.rerunFailedChecks()
+        #expect(model.prPopover.showsPassedChecks)  // A button and its refresh leave the list open.
+        model.prPopover.togglePassedChecks()
+        #expect(!model.prPopover.showsPassedChecks)
+        model.prPopover.togglePassedChecks()
+        model.openPullRequest("wtreaaaaag")
+        #expect(!model.prPopover.showsPassedChecks)
+        model.prPopover.togglePassedChecks()
+        model.closePullRequest()
+        model.openPullRequest(nativePanel)
+        #expect(!model.prPopover.showsPassedChecks)
+        await idle(model)
+    }
+
     // MARK: The chip and the pane header
 
     func workspaceRef(_ id: String, in model: AppModel) throws -> WorktreeRef {
