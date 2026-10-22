@@ -279,6 +279,29 @@ import Testing
         #expect(session.typedSinceSubmit)
     }
 
+    /// A question with several parts ends on a submit screen, and a Return there sends the answers, not the
+    /// composer. After the first answer key, a Return does nothing until the next hook event.
+    @Test func aReturnLaterInTheSameDialogDoesNotArmTheSubmit() {
+        var session = session()
+        session.input(.key, now: t0)  // Draft D.
+        session.apply(paneEvent("Notification", "s1", notification: "elicitation_dialog"), now: t0)
+        session.input(.pick, now: t0.addingTimeInterval(1))
+        session.input(.pick, now: t0.addingTimeInterval(2))
+        session.input(.submit, now: t0.addingTimeInterval(3))
+        #expect(session.pendingSubmit == nil && session.typedSinceReturn)
+        session.apply(paneEvent("UserPromptSubmit", "s1"), now: t0.addingTimeInterval(4))
+        #expect(session.typedSinceSubmit)
+        session.input(.submit, now: t0.addingTimeInterval(5))
+        #expect(session.pendingSubmit == t0.addingTimeInterval(5))
+    }
+
+    /// Outside a dialog, Escape is a key like any other.
+    @Test func anEscapeOutsideADialogCounts() {
+        var session = session()
+        session.input(.escape, now: t0)
+        #expect(session.typedSinceSubmit && session.typedSinceReturn && !session.dialogAnswered)
+    }
+
     // MARK: The stash
 
     /// ⌃S stashes the draft. Claude Code puts it back into the composer when you submit, so the submit of the next

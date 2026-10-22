@@ -16,7 +16,9 @@ import Foundation
 ///     into the composer at the next submit, or after `/clear`.
 ///   - A paste, a drop, or text from dictation or a picker (`.text`) sets both, also while `dialogOpen`. The
 ///     dialog may have closed before Loam knows, and too careful is fine.
-///   - A submit Return (`.submit`) clears `typedSinceReturn` and sets `pendingSubmit` to now.
+///   - A submit Return (`.submit`) clears `typedSinceReturn` and sets `pendingSubmit` to now. While
+///     `dialogAnswered`, it does nothing, because it can still be a key of the dialog, such as the Return on the
+///     submit screen of a question with several parts.
 ///   - While `dialogOpen`, the dialog takes the keys. The first answer key closes it for Loam and sets
 ///     `dialogAnswered`: a Return or a digit picks an option and is not input, and an Escape denies and counts as
 ///     input, because it can stop a turn and put a queued prompt back into the composer. Other keys do nothing.
@@ -188,6 +190,7 @@ public struct PaneSession: Codable, Equatable, Sendable {
         }
         switch input {
         case .submit:
+            guard !dialogAnswered else { return }
             typedSinceReturn = false
             pendingSubmit = now
         case .stash:
