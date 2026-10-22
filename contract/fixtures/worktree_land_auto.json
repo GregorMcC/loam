@@ -87,6 +87,7 @@
     "base": "origin/main",
     "branch": "sign-commits",
     "created_at": "2026-01-01T00:00:00Z",
+    "goal": "",
     "id": "wtreaaaaan",
     "land": {
       "auto": true,
@@ -96,11 +97,13 @@
       "method": "squash",
       "pr": 23
     },
+    "link": null,
     "name": "sign-commits",
     "path": "/tmp/loam-contract/loamhome/worktrees/plotaaaaab/web-sign-commits",
     "plot_id": "plotaaaaab",
     "repo": "/tmp/loam-contract/repos/web",
-    "setup_done": false
+    "setup_done": false,
+    "version": 0
   },
   "worktree_removed": false
 }
