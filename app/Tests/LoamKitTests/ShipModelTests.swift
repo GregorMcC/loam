@@ -348,7 +348,7 @@ private func settle() async { try? await Task.sleep(for: .milliseconds(200)) }
 
     // MARK: Text for a pane
 
-    @Test func textWaitsForThePaneToHaveATerminal() {
+    @Test func textWaitsForThePaneToHaveATerminal() throws {
         let model = AppModel(client: LoamClient())
         model.apply([plot(plotB)])
         model.activate(plot: plotB)
@@ -361,7 +361,7 @@ private func settle() async { try? await Task.sleep(for: .milliseconds(200)) }
             typed.append(text)
             return true
         }
-        model.type("gh auth login", into: pane)
+        try model.type("gh auth login", into: pane)
         model.deliverUnsentText()
         #expect(typed.isEmpty)
         ready = true
@@ -371,7 +371,7 @@ private func settle() async { try? await Task.sleep(for: .milliseconds(200)) }
         #expect(typed == ["gh auth login"])
     }
 
-    @Test func textForAPaneThatClosedIsDropped() {
+    @Test func textForAPaneThatClosedIsDropped() throws {
         let model = AppModel(client: LoamClient())
         model.apply([plot(plotB)])
         model.activate(plot: plotB)
@@ -379,7 +379,7 @@ private func settle() async { try? await Task.sleep(for: .milliseconds(200)) }
         let pane = model.workspace.focusedPane!
         var typed: [String] = []
         model.typeIntoPane = { _, _ in false }
-        model.type("gh auth login", into: pane)
+        try model.type("gh auth login", into: pane)
         model.closePane(pane)
         model.typeIntoPane = { _, text in typed.append(text); return true }
         model.deliverUnsentText()
@@ -398,9 +398,9 @@ private func settle() async { try? await Task.sleep(for: .milliseconds(200)) }
         return (model, model.workspace.focusedPane!, typed)
     }
 
-    @Test func textForAShellWaitsForItsFirstTitle() async {
+    @Test func textForAShellWaitsForItsFirstTitle() async throws {
         let (model, pane, typed) = shellModel()
-        model.typeAtPrompt("gh auth login", into: pane)
+        try model.typeAtPrompt("gh auth login", into: pane)
         model.deliverUnsentText()
         await settle()
         #expect(typed.value.isEmpty)
@@ -409,27 +409,55 @@ private func settle() async { try? await Task.sleep(for: .milliseconds(200)) }
         #expect(typed.value == ["gh auth login"])
     }
 
-    @Test func textForAShellWaitsNoLongerThanTheLimit() async {
+    @Test func textForAShellWaitsNoLongerThanTheLimit() async throws {
         let (model, pane, typed) = shellModel(wait: .milliseconds(50))
-        model.typeAtPrompt("gh auth login", into: pane)
+        try model.typeAtPrompt("gh auth login", into: pane)
         #expect(typed.value.isEmpty)
         await waitUntil("the text is typed") { !typed.value.isEmpty }
         #expect(typed.value == ["gh auth login"])
     }
 
-    @Test func aShellThatClosesBeforeItsPromptGetsNoText() async {
+    @Test func aShellThatClosesBeforeItsPromptGetsNoText() async throws {
         let (model, pane, typed) = shellModel(wait: .milliseconds(50))
-        model.typeAtPrompt("gh auth login", into: pane)
+        try model.typeAtPrompt("gh auth login", into: pane)
         model.closePane(pane)
         await settle()
         #expect(typed.value.isEmpty)
     }
 
-    @Test func aShellThatShowedItsPromptGetsTheTextAtOnce() {
+    @Test func aShellThatShowedItsPromptGetsTheTextAtOnce() throws {
         let (model, pane, typed) = shellModel()
         model.setTerminalTitle("user@host:~", of: pane)
-        model.typeAtPrompt("gh auth login", into: pane)
+        try model.typeAtPrompt("gh auth login", into: pane)
         #expect(typed.value == ["gh auth login"])
+    }
+
+    /// Loam types text as a paste and presses no Return. A program with no bracketed paste reads a line
+    /// break inside the text as Return, so the model refuses such text where the caller can see it.
+    @Test func textWithALineBreakInsideIsRefusedAtOnce() {
+        let (model, pane, typed) = shellModel()
+        #expect(throws: PaneTextError.lineBreakInside) { try model.type("one\ntwo", into: pane) }
+        #expect(throws: PaneTextError.lineBreakInside) { try model.typeAtPrompt("one\ntwo", into: pane) }
+        model.deliverUnsentText()
+        #expect(typed.value.isEmpty)
+    }
+
+    @Test func aLineBreakAtTheEndOfTheTextIsDroppedBeforeItWaits() throws {
+        let (model, pane, typed) = shellModel()
+        try model.type("gh auth login\n", into: pane)
+        #expect(typed.value == ["gh auth login"])
+    }
+
+    /// A terminal that refuses the text drops it and shows why. The text does not wait for ever.
+    @Test func textThatTheTerminalRefusesIsDroppedAndTheErrorShows() throws {
+        let (model, pane, _) = shellModel()
+        model.typeIntoPane = { _, _ in throw PaneTextError.lineBreakInside }
+        try model.type("gh auth login", into: pane)
+        #expect(model.lastError == PaneTextError.lineBreakInside.description)
+        var typed: [String] = []
+        model.typeIntoPane = { _, text in typed.append(text); return true }
+        model.deliverUnsentText()
+        #expect(typed.isEmpty)
     }
 
     // MARK: Sign in

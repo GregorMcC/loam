@@ -108,3 +108,12 @@ public enum WorktreeRules {
         return nil
     }
 }
+
+extension WorktreeStatus {
+    /// The GitHub page of the PR, for Open pull request. Nil when the row has no PR (also when `gh` is
+    /// missing or signed out, since the core then sends none), and when the address is not https.
+    public var pullRequestPage: URL? {
+        guard let pr, let url = URL(string: pr.url), url.scheme == "https" else { return nil }
+        return url
+    }
+}

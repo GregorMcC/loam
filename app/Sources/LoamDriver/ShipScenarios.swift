@@ -212,6 +212,14 @@ extension Scenarios {
         try check(app.lines(terminal).last { !$0.isEmpty }?.hasSuffix("gh auth login") == true,
                   "the last line is not the typed command: \(app.lines(terminal).suffix(4))")
         try check(terminal.allText().components(separatedBy: "gh auth login").count == 2, "the command shows more than once")
+        // Text with a line break inside it is refused: a shell would read the break as Return. Nothing
+        // is typed, and the terminal still holds the one command.
+        do {
+            _ = try terminal.pasteWithoutReturn("echo one\necho two")
+            throw DriverFailure("the terminal took text with a line break inside it")
+        } catch PaneTextError.lineBreakInside {}
+        await app.sleep(0.5)
+        try check(!terminal.allText().contains("echo one"), "the refused text shows in the terminal")
         app.screenshot("ship-sign-in-pane")
         let before = refreshes()
         try "".write(to: ghMode, atomically: true, encoding: .utf8)

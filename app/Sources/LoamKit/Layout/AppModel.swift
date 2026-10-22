@@ -67,8 +67,9 @@ public final class AppModel {
     /// The panes that Sign in opened, with their plots. The plot refreshes when one closes.
     @ObservationIgnored private var signInPanes: [PaneID: String] = [:]
     /// Types text into the terminal of a pane as a paste, with no Return. False while the pane has no
-    /// terminal. The terminal factory sets it. `type(_:into:)` keeps the text until it returns true.
-    @ObservationIgnored public var typeIntoPane: (PaneID, String) -> Bool = { _, _ in false }
+    /// terminal. The terminal factory sets it. `type(_:into:)` keeps the text until it returns true. A
+    /// terminal that refuses the text throws, and `deliverUnsentText` drops the text and reports why.
+    @ObservationIgnored public var typeIntoPane: (PaneID, String) throws -> Bool = { _, _ in false }
     @ObservationIgnored private var unsentText: [PaneID: [String]] = [:]
     /// The shells that text waits for (`typeAtPrompt`). Each holds the wait that ends at `shellWait`.
     @ObservationIgnored private var shellWaits: [PaneID: Task<Void, Never>] = [:]
@@ -1131,23 +1132,25 @@ public final class AppModel {
         await openShellTab()
         guard let pane = workspace.focusedPane, !before.contains(pane) else { return }
         signInPanes[pane] = plot
-        typeAtPrompt(Self.signInCommand, into: pane)
+        do { try typeAtPrompt(Self.signInCommand, into: pane) } catch { report(error) }
     }
 
     /// Types text into a pane as a paste with no Return, as soon as the pane has a terminal.
     /// The window builds the terminal of a new pane when it renders, so the text can wait for that.
-    public func type(_ text: String, into pane: PaneID) {
-        unsentText[pane, default: []].append(text)
+    /// Throws `PaneTextError.lineBreakInside` for text that has a line break inside it, and types
+    /// nothing. The line breaks at the end of the text are dropped (`PaneText.withoutReturn`).
+    public func type(_ text: String, into pane: PaneID) throws {
+        unsentText[pane, default: []].append(try PaneText.withoutReturn(text))
         deliverUnsentText()
     }
 
     /// Types text into a shell pane once the shell shows its first prompt. The terminal driver echoes
     /// text that comes sooner, so it would show twice. A shell with shell integration reports its title
     /// at its prompt (`setTerminalTitle`), which ends the wait. A shell that reports none gets the text
-    /// after `shellWait`.
-    public func typeAtPrompt(_ text: String, into pane: PaneID) {
-        guard terminalTitles[pane] == nil else { return type(text, into: pane) }  // It showed its prompt already.
-        unsentText[pane, default: []].append(text)
+    /// after `shellWait`. It throws for the text that `type(_:into:)` refuses.
+    public func typeAtPrompt(_ text: String, into pane: PaneID) throws {
+        guard terminalTitles[pane] == nil else { return try type(text, into: pane) }  // It showed its prompt already.
+        unsentText[pane, default: []].append(try PaneText.withoutReturn(text))
         guard shellWaits[pane] == nil else { return }
         let wait = shellWait
         shellWaits[pane] = Task { [weak self] in
@@ -1159,11 +1162,15 @@ public final class AppModel {
     }
 
     /// Types the text that waits for a pane, in the order it came, into each pane that has a terminal now.
-    /// The window calls it after each render. A shell that has not shown a prompt keeps its text.
+    /// The window calls it after each render. A shell that has not shown a prompt keeps its text. Text
+    /// that the terminal refuses is dropped, and `lastError` says why.
     public func deliverUnsentText() {
         for (pane, texts) in unsentText where shellWaits[pane] == nil {
             var rest = texts
-            while let next = rest.first, typeIntoPane(pane, next) { rest.removeFirst() }
+            while let next = rest.first {
+                do { guard try typeIntoPane(pane, next) else { break } } catch { report(error) }
+                rest.removeFirst()
+            }
             unsentText[pane] = rest.isEmpty ? nil : rest
         }
     }

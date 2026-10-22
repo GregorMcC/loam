@@ -96,7 +96,7 @@ final class TerminalPaneViewFactory: PaneViewFactory {
         onChildExited = { [weak model] in model?.paneExited($0) }
         onTitleChange = { [weak model] pane, title in model?.setTerminalTitle(title, of: pane) }
         onKeyInput = { [weak model] in model?.typed(in: $0) }
-        model.typeIntoPane = { [weak self] pane, text in self?.surfaces[pane]?.pasteWithoutReturn(text) ?? false }
+        model.typeIntoPane = { [weak self] pane, text in try self?.surfaces[pane]?.pasteWithoutReturn(text) ?? false }
     }
 
     /// Removes every socket. The app calls it at quit.

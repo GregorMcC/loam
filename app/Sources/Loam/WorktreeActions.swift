@@ -11,8 +11,8 @@ struct WorktreeActions: View {
 
     var body: some View {
         let status = model.worktreeStatus(id)
-        Button("Open pull request") { open(status?.pr) }
-            .disabled(status?.pr == nil)
+        Button("Open pull request") { open(status?.pullRequestPage) }
+            .disabled(status?.pullRequestPage == nil)
         Button("Copy branch name") { copy(status?.worktree.branch) }
         Button("Refresh") {
             if let plot = status?.worktree.plotID { Task { await model.shipRefresh.refresh(plot) } }
@@ -21,9 +21,9 @@ struct WorktreeActions: View {
         Button("Remove\u{2026}") { WorktreeDialogs.askRemove(id, model: model) }
     }
 
-    private func open(_ pr: PullRequest?) {
-        guard let pr, let url = URL(string: pr.url), url.scheme == "https" else { return }
-        NSWorkspace.shared.open(url)
+    private func open(_ page: URL?) {
+        guard let page else { return }
+        NSWorkspace.shared.open(page)
     }
 
     private func copy(_ branch: String?) {

@@ -21,8 +21,11 @@ public struct StatusLine: Equatable, Sendable {
 
     public let parts: [Part]
 
-    /// The parts as one line, with " · " between them.
-    public var text: String { parts.map(\.text).joined(separator: " \u{00B7} ") }
+    /// What stands between the parts of a line.
+    public static let separator = " \u{00B7} "
+
+    /// The parts as one line, with `separator` between them.
+    public var text: String { parts.map(\.text).joined(separator: Self.separator) }
 
     /// `now` and `timeZone` give the day and the clock of a merge time.
     public init(of status: WorktreeStatus, now: Date = Date(), timeZone: TimeZone = .current) {
@@ -52,7 +55,8 @@ public struct StatusLine: Equatable, Sendable {
         case .changesRequested:
             parts = [plain("Changes requested")] + (pr.comments > 0 ? [plain(count(pr.comments, "comment"))] : [])
         case .checksFailed:
-            parts = [Part(text: progress(checks.failed, of: checks.total, "failed"), failing: true)]
+            // The stage needs a failed check, so a PR with no checks cannot come from the core.
+            parts = [Part(text: checks.total > 0 ? progress(checks.failed, of: checks.total, "failed") : "Checks failed", failing: true)]
         case .approvalNeeded:
             parts = [plain(checks.waiting == 1 ? "1 workflow waits for approval" : "\(checks.waiting) workflows wait for approval")]
         case .draft:
@@ -93,9 +97,14 @@ public struct StatusLine: Equatable, Sendable {
         return parts.isEmpty ? [plain("Ready to merge")] : parts
     }
 
-    /// Checks running, or Checks running as the answer for a merge check that GitHub has not finished.
+    /// The summaries of GitHub for checks that have not finished.
+    private static let activeCheckStates: Set<String> = ["PENDING", "EXPECTED"]
+
+    /// Checks running, or "Checking…" when GitHub has not finished its merge check (mergeable UNKNOWN).
+    /// The core gives the stage then, and the row has no check that runs or waits and no unfinished
+    /// summary (README, "Stages"). The sidebar tooltip reads this line too (`StageMark`).
     private static func runningText(_ checks: PRCheckCounts) -> String {
-        let pending = checks.running > 0 || ["PENDING", "EXPECTED"].contains(checks.state)
+        let pending = checks.running > 0 || checks.waiting > 0 || activeCheckStates.contains(checks.state)
         guard pending else { return "Checking\u{2026}" }
         return checks.total > 0 ? progress(done(checks), of: checks.total, "done") : "Waiting for checks"
     }

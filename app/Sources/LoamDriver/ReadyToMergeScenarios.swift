@@ -162,10 +162,11 @@ extension Scenarios {
         }
         let callsBeforeLaunch = try ghCalls()
 
-        // The app gets the same fake gh. Only a refresh would call it, and this scenario starts none.
+        // The app gets the same fake gh. Only a refresh would call it. The refresh of ticket 108 is off
+        // here, so this scenario shows that the marks and the row come from the cache.
         let host = try await app.launchApp(
             client: LoamClient(binary: rig.binary, environment: rig.environment.merging(ghEnvironment) { $1 }),
-            state: rig.stateFile)
+            state: rig.stateFile) { host in host.model.shipRefresh.run = { _ in } }
         let model = host.model
         try await app.waitUntil("the plot is active") { model.workspace.activePlotID == alpha }
         try await app.waitUntil("the app lists the 4 worktrees") { model.worktrees.values.joined().count == 4 }
@@ -176,10 +177,11 @@ extension Scenarios {
         try expect(model.sidebar.readyToMerge.map(\.id) == [fixLogin.id, linkLabels.id],
                    "the ready worktrees are \(model.sidebar.readyToMerge.map(\.id))")
 
-        // The marks of the rows of the active plot: the PR number and the words of the stage.
+        // The marks of the rows of the active plot: the PR number and the status line of the stage, the
+        // same words as the Worktrees section (`StatusLine`).
         try await app.waitUntil("the marks of Alpha plot") {
-            app.text(of: "worktree-\(fixLogin.id)")?.contains("#31, Ready to merge, 1 of 1") == true
-                && app.text(of: "worktree-\(nativePanel.id)")?.contains("#32, Waiting for review") == true
+            app.text(of: "worktree-\(fixLogin.id)")?.contains("#31, 1 of 1 check passed, Approved") == true
+                && app.text(of: "worktree-\(nativePanel.id)")?.contains("#32, Review required") == true
         }
         app.screenshot("marks-and-row-night")
         NSApp.appearance = NSAppearance(named: .aqua)
@@ -202,7 +204,7 @@ extension Scenarios {
             model.workspace.activePlotID == beta && model.sidebar.selection == .worktree(linkLabels.id)
         }
         try await app.waitUntil("the marks of Beta plot") {
-            app.text(of: "worktree-\(linkLabels.id)")?.contains("#41, Ready to merge, 1 of 1") == true
+            app.text(of: "worktree-\(linkLabels.id)")?.contains("#41, 1 of 1 check passed, Approved") == true
                 && app.text(of: "worktree-\(localWork.id)")?.contains("Not pushed") == true
         }
         app.screenshot("second-ready-worktree")

@@ -21,47 +21,6 @@ private func line(_ status: WorktreeStatus, now: Date = sameDay) -> StatusLine {
     StatusLine(of: status, now: now, timeZone: utc)
 }
 
-@Suite struct StageTableTests {
-    @Test func everyStageButNoneHasOneGlyph() {
-        let stages = WorktreeStage.allCases.filter { $0 != .noStage }
-        let glyphs = stages.compactMap(\.glyph)
-        #expect(glyphs.count == stages.count)
-        #expect(Set(glyphs.map { "\($0)" }).count == stages.count)
-        #expect(WorktreeStage.noStage.glyph == nil)
-    }
-
-    @Test func theGlyphsAndTonesFollowTheStageTable() {
-        let table: [(WorktreeStage, StageGlyph, StageTone, String)] = [
-            (.merged, .symbol("arrow.triangle.merge"), .inkFaint, "Merged"),
-            (.closed, .symbol("slash.circle"), .inkFaint, "Closed"),
-            (.inMergeQueue, .symbol("list.number"), .inkMuted, "In merge queue"),
-            (.conflicts, .symbol("exclamationmark.triangle"), .rust, "Conflicts"),
-            (.changesRequested, .symbol("text.bubble"), .inkMuted, "Changes requested"),
-            (.checksFailed, .symbol("xmark.circle"), .rust, "Checks failed"),
-            (.approvalNeeded, .symbol("hand.raised"), .inkMuted, "Approval needed"),
-            (.draft, .symbol("circle.dotted"), .inkFaint, "Draft"),
-            (.behindBase, .symbol("arrow.down.circle"), .inkMuted, "Behind base"),
-            (.checksRunning, .symbol("circle.dashed"), .inkMuted, "Checks running"),
-            (.waitingForReview, .symbol("eye"), .inkMuted, "Waiting for review"),
-            (.blocked, .symbol("lock"), .inkMuted, "Blocked"),
-            (.readyToMerge, .symbol("checkmark.circle"), .ink, "Ready to merge"),
-            (.pushedNoPR, .symbol("arrow.up.circle"), .inkFaint, "Pushed, no PR"),
-            (.notPushed, .text("\u{270E}"), .inkMuted, "Not pushed"),
-        ]
-        #expect(table.map(\.0) == WorktreeStage.allCases.filter { $0 != .noStage })
-        for (stage, glyph, tone, title) in table {
-            #expect(stage.glyph == glyph, "\(stage) glyph")
-            #expect(stage.tone == tone, "\(stage) tone")
-            #expect(stage.title == title, "\(stage) title")
-        }
-    }
-
-    @Test func onlyConflictsAndChecksFailedTakeRust() {
-        let rust = WorktreeStage.allCases.filter { $0.tone == .rust }
-        #expect(rust == [.conflicts, .checksFailed])
-    }
-}
-
 @Suite struct StatusLineTests {
     @Test func eachStageHasItsLine() throws {
         let rows = try stageRows()
@@ -166,6 +125,58 @@ private func line(_ status: WorktreeStatus, now: Date = sameDay) -> StatusLine {
         #expect(line(checking).text == "Waiting for checks")
     }
 
+    /// Checks running with no check that runs or waits, and a summary that is not PENDING or EXPECTED:
+    /// GitHub has not finished its merge check, so the line says "Checking…" whatever the counts are.
+    @Test func checksRunningWithNoCheckThatRunsOrWaitsSaysChecking() throws {
+        for state in ["", "SUCCESS", "FAILURE"] {
+            var checking = try row(.checksRunning, in: try stageRows())
+            checking.pr?.mergeable = "UNKNOWN"
+            checking.pr?.checks.running = 0
+            checking.pr?.checks.waiting = 0
+            checking.pr?.checks.state = state
+            #expect(line(checking).text == "Checking\u{2026}", "state \"\(state)\"")
+        }
+        var passed = try row(.checksRunning, in: try stageRows())
+        passed.pr?.checks = PRCheckCounts(state: "SUCCESS", total: 3, passed: 3, failed: 0, running: 0, waiting: 0,
+                                          required: 3, requiredPassed: 3)
+        #expect(line(passed).text == "Checking\u{2026}")
+    }
+
+    /// A summary of PENDING or EXPECTED, a check that runs, or a check that waits keeps the count.
+    @Test func checksRunningWithAnActiveCheckKeepsItsCount() throws {
+        for state in ["PENDING", "EXPECTED"] {
+            var running = try row(.checksRunning, in: try stageRows())
+            running.pr?.checks.running = 0
+            running.pr?.checks.waiting = 0
+            running.pr?.checks.state = state
+            #expect(line(running).text == "2 of 2 checks done", "state \(state)")
+        }
+        var runs = try row(.checksRunning, in: try stageRows())
+        runs.pr?.checks.running = 1
+        runs.pr?.checks.state = "SUCCESS"
+        #expect(line(runs).text == "1 of 2 checks done")
+        var waits = try row(.checksRunning, in: try stageRows())
+        waits.pr?.checks.running = 0
+        waits.pr?.checks.waiting = 1
+        waits.pr?.checks.state = "SUCCESS"
+        #expect(line(waits).text == "1 of 2 checks done")
+    }
+
+    @Test func checksRunningCountsTheChecksThatAreDone() throws {
+        var running = try row(.checksRunning, in: try stageRows())
+        running.pr?.checks.total = 14
+        running.pr?.checks.running = 4
+        running.pr?.checks.waiting = 1
+        #expect(line(running).text == "9 of 14 checks done")
+    }
+
+    @Test func checksFailedWithNoChecksDoesNotCountThem() throws {
+        var failed = try row(.checksFailed, in: try stageRows())
+        failed.pr?.checks.total = 0
+        failed.pr?.checks.failed = 0
+        #expect(line(failed).parts == [StatusLine.Part(text: "Checks failed", failing: true)])
+    }
+
     @Test func readyToMergeNamesOnlyWhatIsKnown() throws {
         var ready = try row(.readyToMerge, in: try stageRows())
         ready.pr?.reviewDecision = ""
@@ -220,6 +231,56 @@ private func line(_ status: WorktreeStatus, now: Date = sameDay) -> StatusLine {
     }
 }
 
+/// Without `gh` the core gives the local stage and a null PR (docs/contract.md, "Ship state of worktrees"),
+/// so the app needs no rule for the note: a row shows what it is given.
+@Suite struct RowsWithoutGitHubTests {
+    /// A row as the core sends it when `gh` is missing or signed out: `pr` is null and the stage is local.
+    private func decoded(note: String, stage: String, changed: Int = 0, unpushed: Int = 0) throws -> WorktreeStatus {
+        let json = try #require(try JSONSerialization.jsonObject(with: Fixtures.data("worktree_list_stages")) as? [[String: Any]])
+        var entry = try #require(json.first { $0["stage"] as? String == "not_pushed" })
+        entry["pr"] = NSNull()
+        entry["pr_note"] = note
+        entry["stage"] = stage
+        entry["changed"] = changed
+        entry["unpushed"] = unpushed
+        return try JSONDecoder().decode(WorktreeStatus.self, from: JSONSerialization.data(withJSONObject: entry))
+    }
+
+    private let notes = ["gh_missing", "gh_signed_out"]
+
+    @Test func aRowWithNoPRShowsLocalState() throws {
+        for note in notes {
+            #expect(line(try decoded(note: note, stage: "not_pushed", changed: 2)).text == "2 changed", "\(note)")
+            #expect(line(try decoded(note: note, stage: "not_pushed", unpushed: 4)).text == "4 commits not pushed", "\(note)")
+            #expect(line(try decoded(note: note, stage: "pushed_no_pr")).text == "Pushed, no PR", "\(note)")
+            #expect(line(try decoded(note: note, stage: "")).text == "No changes", "\(note)")
+        }
+    }
+
+    @Test func aRowWithNoPRHasNoPullRequestToOpen() throws {
+        for note in notes {
+            let status = try decoded(note: note, stage: "not_pushed", changed: 2)
+            #expect(status.pr == nil && status.pullRequestPage == nil, "\(note)")
+            // The callout still shows, since the note is the row's.
+            #expect(status.prNote.flatMap(ShipNotice.init) != nil, "\(note)")
+        }
+    }
+
+    @Test func aRowWithAPRCanOpenItsPage() throws {
+        let status = try row(.checksFailed, in: try stageRows())
+        #expect(status.pullRequestPage?.absoluteString == status.pr?.url)
+        #expect(status.pullRequestPage?.scheme == "https")
+    }
+
+    @Test func onlyAnHTTPSAddressOpens() throws {
+        var status = try row(.checksFailed, in: try stageRows())
+        for address in ["http://github.com/example/widgets/pull/16", "file:///etc/passwd", "javascript:alert(1)", ""] {
+            status.pr?.url = address
+            #expect(status.pullRequestPage == nil, "\(address)")
+        }
+    }
+}
+
 @Suite struct ShipAgeTests {
     private func rows(checkedAt: [String?]) throws -> [WorktreeStatus] {
         let base = try stageRows()
@@ -264,6 +325,11 @@ private func line(_ status: WorktreeStatus, now: Date = sameDay) -> StatusLine {
         var list = try rows(checkedAt: ["2026-01-01T09:00:00Z", "2026-01-01T18:14:00Z"])
         list[0].missing = true
         #expect(ShipAge.label(for: list, now: at("2026-01-01T18:16:00Z"), timeZone: utc) == nil)
+    }
+
+    @Test func aTimeWithFractionalSecondsReads() throws {
+        let list = try rows(checkedAt: ["2026-01-01T18:02:00.250Z"])
+        #expect(ShipAge.label(for: list, now: at("2026-01-01T18:30:00Z"), timeZone: utc) == "Updated 18:02")
     }
 
     @Test func dataFromAnotherDayShowsTheDay() throws {
@@ -317,20 +383,29 @@ private func line(_ status: WorktreeStatus, now: Date = sameDay) -> StatusLine {
 }
 
 @Suite struct PaneTextTests {
-    @Test func textWithNoLineBreakStaysAsItIs() {
-        #expect(PaneText.withoutReturn("gh auth login") == "gh auth login")
-        #expect(PaneText.withoutReturn("") == "")
+    @Test func textWithNoLineBreakStaysAsItIs() throws {
+        #expect(try PaneText.withoutReturn("gh auth login") == "gh auth login")
+        #expect(try PaneText.withoutReturn("") == "")
     }
 
-    @Test func aLineBreakAtTheEndIsRemoved() {
-        #expect(PaneText.withoutReturn("gh auth login\n") == "gh auth login")
-        #expect(PaneText.withoutReturn("gh auth login\r") == "gh auth login")
-        #expect(PaneText.withoutReturn("gh auth login\r\n") == "gh auth login")
-        #expect(PaneText.withoutReturn("gh auth login\n\n\n") == "gh auth login")
-        #expect(PaneText.withoutReturn("\n") == "")
+    @Test func aLineBreakAtTheEndIsRemoved() throws {
+        #expect(try PaneText.withoutReturn("gh auth login\n") == "gh auth login")
+        #expect(try PaneText.withoutReturn("gh auth login\r") == "gh auth login")
+        #expect(try PaneText.withoutReturn("gh auth login\r\n") == "gh auth login")
+        #expect(try PaneText.withoutReturn("gh auth login\n\n\n") == "gh auth login")
+        #expect(try PaneText.withoutReturn("\n") == "")
     }
 
-    @Test func aLineBreakInsideStaysForAProgramThatTakesAPaste() {
-        #expect(PaneText.withoutReturn("one\ntwo\n") == "one\ntwo")
+    /// A program that takes no bracketed paste reads a line break as Return, so text with a line break
+    /// inside it is not typed. Ticket 110 widens this for a prompt with more than one line.
+    @Test func aLineBreakInsideIsRefused() {
+        for text in ["one\ntwo", "one\ntwo\n", "one\r\ntwo", "one\rtwo", "\none", "one\n\ntwo\n\n", "one\u{2028}two"] {
+            #expect(throws: PaneTextError.lineBreakInside, "\(text.debugDescription)") { try PaneText.withoutReturn(text) }
+        }
+    }
+
+    @Test func theRefusalSaysWhy() {
+        #expect(PaneTextError.lineBreakInside.description
+            == "Loam does not type text that has a line break inside it. A program with no bracketed paste reads it as Return.")
     }
 }

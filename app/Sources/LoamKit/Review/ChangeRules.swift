@@ -69,28 +69,36 @@ public enum ChangeRules {
         changes.first { $0.undoOf == change.id }
     }
 
-    /// The date of an RFC 3339 time. Nil when it does not parse.
+    /// The date of an RFC 3339 time. Nil when it does not parse. `clock` and `stamp` read a time with it.
     public static func date(_ at: String) -> Date? {
         wholeSeconds.date(from: at) ?? fractionalSeconds.date(from: at)
     }
 
     /// "HH:MM" of an RFC 3339 time, in `timeZone`. Falls back to the text when it does not parse.
     public static func clock(_ at: String, timeZone: TimeZone = .current) -> String {
-        guard let date = wholeSeconds.date(from: at) ?? fractionalSeconds.date(from: at) else { return at }
-        let parts = gregorian.dateComponents(in: timeZone, from: date)
-        return String(format: "%02d:%02d", parts.hour ?? 0, parts.minute ?? 0)
+        Self.date(at).map { clock(of: $0, timeZone: timeZone) } ?? at
     }
 
-    /// The time of a change for the panel: "HH:MM" on the day of `now`, else "2 Oct, HH:MM".
+    /// The time of a change for the panel: "HH:MM" on the day of `now`, else "2 Oct, HH:MM". Falls back
+    /// to the text when it does not parse.
     public static func stamp(_ at: String, now: Date = Date(), timeZone: TimeZone = .current) -> String {
-        guard let date = wholeSeconds.date(from: at) ?? fractionalSeconds.date(from: at) else { return at }
+        Self.date(at).map { stamp($0, now: now, timeZone: timeZone) } ?? at
+    }
+
+    /// The same for a time that is read already, so a caller that has the date does not parse it again.
+    public static func stamp(_ date: Date, now: Date = Date(), timeZone: TimeZone = .current) -> String {
         var calendar = gregorian
         calendar.timeZone = timeZone
-        let time = clock(at, timeZone: timeZone)
+        let time = clock(of: date, timeZone: timeZone)
         if calendar.isDate(date, inSameDayAs: now) { return time }
         let months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
         let parts = calendar.dateComponents([.day, .month], from: date)
         return "\(parts.day ?? 1) \(months[((parts.month ?? 1) - 1) % 12]), \(time)"
+    }
+
+    private static func clock(of date: Date, timeZone: TimeZone) -> String {
+        let parts = gregorian.dateComponents(in: timeZone, from: date)
+        return String(format: "%02d:%02d", parts.hour ?? 0, parts.minute ?? 0)
     }
 
     /// `clock` runs for every row of the log, so the parsers and the calendar are made once. An

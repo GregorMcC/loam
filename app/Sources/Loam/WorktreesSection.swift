@@ -5,7 +5,7 @@ import SwiftUI
 /// The Worktrees section of the plot panel (ticket 108), after Why and before Repos. A header with the
 /// age of the data and a `+` for a new worktree, the callouts about `gh`, and one row for each worktree
 /// of the plot in the order of the sidebar. The text of a row comes from `StatusLine` and the mark from
-/// the stage table (`WorktreeStage`), so the sidebar and the popover can say the same.
+/// the stage table (`WorktreeStage`), the same as the tooltip in the sidebar.
 struct WorktreesSection: View {
     let app: AppModel
     let plot: String
@@ -83,7 +83,7 @@ private struct WorktreeRowView: View {
         HoverMenuRow(menuLabel: "Worktree actions", menuID: "panel-worktree-menu-\(row.worktree.id)",
                      kind: row.missing ? "gone" : nil, minHeight: 44, trailingInset: 28) {
             HStack(spacing: 8) {
-                StageMark(stage: row.stage)
+                StageSlot(stage: row.stage)
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 5) {
                         Text(row.worktree.branch)
@@ -128,34 +128,19 @@ private struct WorktreeRowView: View {
 
 /// The mark of a stage in the 16pt slot at the leading edge. A worktree with no stage shows a dot, so
 /// the rows line up. The tooltip names the stage.
-private struct StageMark: View {
+private struct StageSlot: View {
     let stage: WorktreeStage?
 
     var body: some View {
-        mark
-            .foregroundStyle((stage?.tone ?? .inkFaint).color)
-            .frame(width: 16)
-            .help(stage?.title ?? "")
-            .accessibilityHidden(true)
-    }
-
-    @ViewBuilder private var mark: some View {
-        switch stage?.glyph {
-        case .symbol(let name)?: Image(systemName: name).font(.system(size: 13, weight: .medium))
-        case .text(let text)?: Text(text).font(.system(size: 12))
-        case nil: Text("\u{2022}").font(.system(size: 12))
+        Group {
+            if let stage, stage != .noStage {
+                StageGlyph(stage: stage, size: 13)
+            } else {
+                Text("\u{2022}").font(.system(size: 12)).foregroundStyle(LoamColor.inkFaint)
+            }
         }
-    }
-}
-
-extension StageTone {
-    /// The colour that the tone names.
-    @MainActor var color: Color {
-        switch self {
-        case .ink: LoamColor.ink
-        case .inkMuted: LoamColor.inkMuted
-        case .inkFaint: LoamColor.inkFaint
-        case .rust: LoamColor.rust
-        }
+        .frame(width: 16)
+        .help(stage?.words ?? "")
+        .accessibilityHidden(true)
     }
 }

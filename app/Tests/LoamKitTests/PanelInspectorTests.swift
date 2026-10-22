@@ -78,4 +78,41 @@ private let linkAdd = [ChangeEntry(item: "link:x", field: "label", old: nil, new
         #expect(ChangeRules.stamp("2026-10-02T09:05:00Z", now: now, timeZone: utc) == "09:05")
         #expect(ChangeRules.stamp("2026-09-30T09:05:00Z", now: now, timeZone: utc) == "30 Sep, 09:05")
     }
+
+    @Test func dateReadsWholeAndFractionalSeconds() {
+        let whole = ChangeRules.date("2026-10-02T09:05:00Z")
+        #expect(whole == ISO8601DateFormatter().date(from: "2026-10-02T09:05:00Z"))
+        #expect(ChangeRules.date("2026-10-02T09:05:00.250Z") == whole?.addingTimeInterval(0.25))
+        #expect(ChangeRules.date("2026-10-02T09:05:00+02:00") == whole?.addingTimeInterval(-2 * 3600))
+        #expect(ChangeRules.date("not a time") == nil)
+        #expect(ChangeRules.date("") == nil)
+    }
+
+    /// `clock` and `stamp` read the time with `date`, so the three agree on what parses.
+    @Test func clockAndStampAgreeWithDate() {
+        let utc = TimeZone(identifier: "UTC")!
+        let now = ISO8601DateFormatter().date(from: "2026-10-02T18:00:00Z")!
+        for at in ["2026-10-02T09:05:00Z", "2026-10-02T09:05:00.250Z", "2026-09-30T09:05:00+00:00"] {
+            #expect(ChangeRules.date(at) != nil, "\(at)")
+            #expect(ChangeRules.clock(at, timeZone: utc).count == 5, "\(at)")
+            #expect(ChangeRules.stamp(at, now: now, timeZone: utc).hasSuffix("09:05"), "\(at)")
+        }
+        for at in ["not a time", "2026-10-02", "09:05"] {
+            #expect(ChangeRules.date(at) == nil, "\(at)")
+            #expect(ChangeRules.clock(at, timeZone: utc) == at)
+            #expect(ChangeRules.stamp(at, now: now, timeZone: utc) == at)
+        }
+    }
+
+    /// A caller that has the date already (`ShipAge`) does not parse the text again.
+    @Test func stampOfADateIsTheStampOfItsText() throws {
+        let utc = TimeZone(identifier: "UTC")!
+        let now = ISO8601DateFormatter().date(from: "2026-10-02T18:00:00Z")!
+        for at in ["2026-10-02T09:05:00Z", "2026-09-30T09:05:00Z"] {
+            let date = try #require(ChangeRules.date(at))
+            #expect(ChangeRules.stamp(date, now: now, timeZone: utc) == ChangeRules.stamp(at, now: now, timeZone: utc), "\(at)")
+        }
+        let date = try #require(ChangeRules.date("2026-09-30T09:05:00Z"))
+        #expect(ChangeRules.stamp(date, now: now, timeZone: utc) == "30 Sep, 09:05")
+    }
 }
