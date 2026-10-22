@@ -290,6 +290,32 @@ import Testing
         #expect(links.map(\.position) == Array(1...links.count))
     }
 
+    @Test func failedMoveReloadsTheStoredOrder() async throws {
+        let (m, _) = try model([("show_links", 0), ("error_generic", 1), ("show_links", 0)])
+        await m.load(plotID: "plotaaaaab")
+        let stored = m.plot?.links.map(\.id)
+        await m.moveLink(id: "linkaaaaad", to: 1)
+        #expect(m.plot?.links.map(\.id) == stored)
+        #expect(m.errorMessage != nil)
+    }
+
+    @Test func staleMoveReportsAndReloadsWithoutAClash() async throws {
+        let (m, _) = try model([("show_links", 0), ("error_stale", 10), ("show_links", 0)])
+        await m.load(plotID: "plotaaaaab")
+        let stored = m.plot?.links.map(\.id)
+        await m.moveLink(id: "linkaaaaad", to: 1)
+        #expect(m.clash == nil)
+        #expect(m.errorMessage != nil)
+        #expect(m.plot?.links.map(\.id) == stored)
+    }
+
+    @Test func moveLinkSendsTheClampedPosition() async throws {
+        let (m, fake) = try model([("show_links", 0), ("link_move", 0), ("show_links", 0)])
+        await m.load(plotID: "plotaaaaab")
+        await m.moveLink(id: "linkaaaaad", to: 99)
+        #expect(fake.args()[1] == "link move plotaaaaab linkaaaaad 8 --expect links=8 --json --actor app")
+    }
+
     @Test func staleLinkEditShowsClash() async throws {
         let (m, _) = try model([("show_links", 0), ("error_stale", 10), ("show_links", 0)])
         await m.load(plotID: "plotaaaaab")

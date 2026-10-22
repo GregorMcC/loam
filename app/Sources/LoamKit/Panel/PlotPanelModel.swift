@@ -241,8 +241,8 @@ public final class PlotPanelModel {
     public func moveLink(id: String, to position: Int) async {
         guard var plot, let from = plot.links.firstIndex(where: { $0.id == id }) else { return }
         let expect = ["links": plot.versions["links"] ?? 0]
-        let link = plot.links.remove(at: from)
-        plot.links.insert(link, at: min(max(position, 1), plot.links.count + 1) - 1)
+        let position = min(max(position, 1), plot.links.count)
+        plot.links.insert(plot.links.remove(at: from), at: position - 1)
         for i in plot.links.indices { plot.links[i].position = i + 1 }
         self.plot = plot
         await perform(.linkMove(id: id, position: position), plotID: plot.id, expect: expect)
@@ -414,6 +414,8 @@ public final class PlotPanelModel {
             await load(plotID: plotID)
         } catch {
             report(error)
+            // A move reordered the rows before the write, so put back what the store holds.
+            if case .linkMove = write { await load(plotID: plotID) }
         }
     }
 
