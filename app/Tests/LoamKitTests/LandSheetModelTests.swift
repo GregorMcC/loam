@@ -10,6 +10,8 @@ import Testing
     var prompts: [ClosePrompt] = []
     /// The calls of the "close its panes" question, answered with `answer`.
     var answer = true
+    /// The question stays up while this is true.
+    var holdsTheQuestion = false
     /// The panes of the worktree that were still open when the views were told to finish closing, and how many
     /// real lands had run by then.
     var panesAtFinish: Int?
@@ -119,7 +121,11 @@ import Testing
         let record = LandRecord()
         model.onToast = { record.toasts.append(($0, $1)) }
         model.onOwnChange = { record.ownChanges.append($0) }
-        model.confirmClose = { prompt in record.prompts.append(prompt); return record.answer }
+        model.confirmClose = { prompt in
+            record.prompts.append(prompt)
+            while record.holdsTheQuestion { try? await Task.sleep(for: .milliseconds(5)) }
+            return record.answer
+        }
         let rig = Rig(dir: dir, model: model, record: record)
         try rig.plan()
         return rig
@@ -603,22 +609,24 @@ import Testing
         #expect(model.switcher.isOpen)
     }
 
+    /// What Quit needs to know when a merge ends: whether it failed. A failed merge leaves the sheet open with the message of
+    /// GitHub, so Quit stops and the person reads it. Done, and cancelled with the question, let Quit go on.
     @Test func quitWaitsForAMergeThatRuns() async throws {
         let rig = try await rig()
         let model = rig.model
-        var asked = 0
-        model.landSheet.whenMergeEnds { asked += 1 }
-        #expect(asked == 1, "with no merge, the answer is at once")
+        var ends: [Bool] = []
+        model.landSheet.whenMergeEnds { ends.append($0) }
+        #expect(ends == [false], "with no merge, the answer is at once")
         try await open(rig)
         try rig.touch("hold-land")
         let merge = Task { await model.land() }
         await waitUntil("the land started") { !rig.lands().isEmpty }
-        model.landSheet.whenMergeEnds { asked += 10 }
-        #expect(asked == 1, "the merge runs")
+        model.landSheet.whenMergeEnds { ends.append($0) }
+        #expect(ends == [false], "the merge runs")
         rig.remove("hold-land")
         await merge.value
-        #expect(asked == 11, "the merge ended")
-        // A failed merge ends too. The list has the worktree again.
+        #expect(ends == [false, false], "the merge is done")
+        // A failed merge ends too, and says so. The list has the worktree again.
         rig.remove("landed")
         await model.reloadWorktrees()
         try await open(rig)
@@ -626,11 +634,51 @@ import Testing
         try rig.touch("hold-land")
         let failing = Task { await model.land() }
         await waitUntil("the second land started") { rig.lands().count == 2 }
-        model.landSheet.whenMergeEnds { asked += 100 }
-        #expect(asked == 11)
+        model.landSheet.whenMergeEnds { ends.append($0) }
+        #expect(ends == [false, false])
         rig.remove("hold-land")
         await failing.value
-        #expect(asked == 111)
+        #expect(ends == [false, false, true], "the merge failed")
+        #expect(model.landSheet.isOpen && model.landSheet.landError != nil, "the sheet shows the message")
+        // A merge that GitHub stopped with exit 16 failed too.
+        try rig.failLand(code: 16, message: "link-labels is not ready to land: PR #22 has new commits since you looked at it")
+        try rig.touch("hold-land")
+        let stopped = Task { await model.land() }
+        await waitUntil("the third land started") { rig.lands().count == 3 }
+        model.landSheet.whenMergeEnds { ends.append($0) }
+        rig.remove("hold-land")
+        await stopped.value
+        #expect(ends == [false, false, true, true])
+        // The next merge starts from no failure.
+        rig.remove("fail-land")
+        try rig.touch("hold-land")
+        let again = Task { await model.land() }
+        await waitUntil("the fourth land started") { rig.lands().count == 4 }
+        model.landSheet.whenMergeEnds { ends.append($0) }
+        rig.remove("hold-land")
+        await again.value
+        #expect(ends == [false, false, true, true, false], "a merge that follows a failure is done, not failed")
+    }
+
+    @Test func aLandQuestionThatYouCancelEndsTheMergeWithNoFailure() async throws {
+        let rig = try await rig()
+        let model = rig.model
+        let session = try pane(in: ready, model, .session)
+        model.apply(paneEvent("SessionStart", model.workspace.session(of: session)?.sessionID ?? "", source: "startup"), to: session)
+        model.apply(paneEvent("UserPromptSubmit", model.workspace.session(of: session)?.sessionID ?? ""), to: session)
+        try await open(rig)
+        rig.record.answer = false
+        rig.record.holdsTheQuestion = true
+        let landing = Task { await model.land() }
+        await waitUntil("the question shows") { !rig.record.prompts.isEmpty }
+        #expect(model.landSheet.isMerging, "the sheet is locked while the question shows")
+        var ends: [Bool] = []
+        model.landSheet.whenMergeEnds { ends.append($0) }
+        #expect(ends.isEmpty)
+        rig.record.holdsTheQuestion = false
+        await landing.value
+        #expect(ends == [false], "Cancel is no failure, so a quit goes on")
+        #expect(rig.lands().isEmpty && model.landSheet.landError == nil)
     }
 
     @Test func aBlockAtTheMergeReadsThePlanAgain() async throws {

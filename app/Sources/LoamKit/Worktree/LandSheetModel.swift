@@ -39,8 +39,9 @@ public final class LandSheetModel {
         didSet {
             guard oldValue, !isMerging else { return }
             let waiting = mergeEndWaiters
+            let failed = lastMergeFailed
             mergeEndWaiters = []
-            for body in waiting { body() }
+            for body in waiting { body(failed) }
         }
     }
     /// Update branch runs.
@@ -49,7 +50,9 @@ public final class LandSheetModel {
     public private(set) var landError: String?
     /// The read of the plan that runs now. Tests wait for it.
     @ObservationIgnored var reading: Task<Void, Never>?
-    @ObservationIgnored private var mergeEndWaiters: [() -> Void] = []
+    @ObservationIgnored private var mergeEndWaiters: [(Bool) -> Void] = []
+    /// The last merge ended with a message of GitHub or of the core.
+    @ObservationIgnored private var lastMergeFailed = false
     /// Called when the sheet opens or closes. An open while it is open calls nothing, and the window takes the keys on
     /// the first one only.
     @ObservationIgnored public var onOpenChange: ((Bool) -> Void)?
@@ -97,10 +100,12 @@ public final class LandSheetModel {
         onOpenChange?(false)
     }
 
-    /// Runs `body` once the merge ends, however it ends: done, failed, or cancelled. At once when no merge runs. Quit uses it,
-    /// since a merge on GitHub cannot be undone, and an app that quits in the middle can leave it half done.
-    public func whenMergeEnds(_ body: @escaping () -> Void) {
-        if isMerging { mergeEndWaiters.append(body) } else { body() }
+    /// Runs `body` once the merge ends, however it ends. Its argument says whether the merge failed: it did not happen, and
+    /// the sheet shows the message. Done, and cancelled with the question about a session in a turn, are not failures. At
+    /// once, with false, when no merge runs. Quit uses it, since a merge on GitHub cannot be undone, and an app that quits
+    /// in the middle can leave it half done.
+    public func whenMergeEnds(_ body: @escaping (_ failed: Bool) -> Void) {
+        if isMerging { mergeEndWaiters.append(body) } else { body(false) }
     }
 
     /// True while open number `count` is the open that shows.
@@ -128,6 +133,7 @@ public final class LandSheetModel {
     }
 
     func beginMerging() {
+        lastMergeFailed = false
         isMerging = true
         landError = nil
     }
@@ -139,6 +145,7 @@ public final class LandSheetModel {
 
     /// The merge did not happen. The sheet stays open, with the message.
     func mergeFailed(_ message: String) {
+        lastMergeFailed = true
         isMerging = false
         landError = message
     }
