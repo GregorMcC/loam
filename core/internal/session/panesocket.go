@@ -35,7 +35,8 @@ type PaneLine struct {
 	Event     string `json:"event"`
 	SessionID string `json:"session_id"`
 	Cwd       string `json:"cwd"`
-	// Source is the source of a SessionStart.
+	// Source is the source of a SessionStart, or what started the turn of a
+	// UserPromptSubmit, such as "user" or "system".
 	Source string `json:"source,omitempty"`
 	// NotificationType is the type of a Notification.
 	NotificationType string `json:"notification_type,omitempty"`
@@ -52,7 +53,7 @@ func paneLine(h hookInput, now time.Time) (PaneLine, bool) {
 		return PaneLine{}, false
 	}
 	l := PaneLine{Event: h.Event, SessionID: h.SessionID, Cwd: h.Cwd, At: now.UTC().Format(time.RFC3339)}
-	if h.Event == "SessionStart" {
+	if h.Event == "SessionStart" || h.Event == "UserPromptSubmit" {
 		l.Source = h.Source
 	}
 	if h.Event == "Notification" {

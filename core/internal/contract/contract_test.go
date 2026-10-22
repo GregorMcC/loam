@@ -388,6 +388,7 @@ func scenario(t *testing.T) *harness {
 			filepath.Join(h.root, "repos", "core"), event, extra)
 	}
 	h.pane("pane_session_start", "pane-event", hookIn("SessionStart", `,"source":"startup"`))
+	h.pane("pane_user_prompt_submit", "pane-event", hookIn("UserPromptSubmit", `,"source":"user"`))
 	h.pane("pane_stop", "pane-event", hookIn("Stop", ""))
 	h.pane("pane_notification", "pane-event", hookIn("Notification", `,"notification_type":"agent_needs_input"`))
 

@@ -195,7 +195,7 @@ func TestPaneLiveListenerGetsEachEvent(t *testing.T) {
 		if got["event"] != ev || got["session_id"] != "s1" || got["cwd"] != "/work/here" {
 			t.Errorf("%s: line %q", ev, raw)
 		}
-		if _, has := got["source"]; has != (ev == "SessionStart") {
+		if _, has := got["source"]; has != (ev == "SessionStart" || ev == "UserPromptSubmit") {
 			t.Errorf("%s: source in line %q", ev, raw)
 		}
 		if nt, has := got["notification_type"]; has != (ev == "Notification") || has && nt != "agent_needs_input" {
@@ -268,6 +268,26 @@ func TestPaneSessionStartLineHoldsSource(t *testing.T) {
 	}
 	if got.Source != "resume" {
 		t.Errorf("source %q", got.Source)
+	}
+}
+
+// Claude Code says what started a turn: "user" for a prompt that you sent, "system" for a turn that it starts
+// by itself. Older versions send no source, and the line then has none.
+func TestPaneUserPromptSubmitLineHoldsSource(t *testing.T) {
+	setup(t)
+	path, lines := listen(t)
+	env := map[string]string{"LOAM_PANE_SOCKET": path}
+	runHook(t, hookJSON("UserPromptSubmit", `,"source":"system"`), env)
+	var got session.PaneLine
+	if err := json.Unmarshal([]byte(nextLine(t, lines)), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Event != "UserPromptSubmit" || got.Source != "system" {
+		t.Errorf("line %+v", got)
+	}
+	runHook(t, hookJSON("UserPromptSubmit", ""), env)
+	if raw := nextLine(t, lines); strings.Contains(raw, "source") {
+		t.Errorf("line %q has a source", raw)
 	}
 }
 
