@@ -8,9 +8,13 @@ import Foundation
 /// - `PermissionRequest`, `StopFailure`, and a `Notification` of a question type mean needs you.
 ///   The session moving on clears it, and so does a key in the pane (`typed()`).
 /// - `SessionEnd` means ended. A `SessionStart` after it (the `/clear` case) makes the pane idle again.
-/// - `UserPromptSubmit` and a new session (a `SessionStart` that is not a compact) forget the keys that you
-///   typed and the prompt that Loam typed (ticket 110), because Claude Code took the input. `Stop` keeps them,
-///   because Claude Code keeps the text that you typed during the turn and did not send.
+/// - The input of Claude Code (ticket 110). Loam cannot see it, so it counts what can change it. A key, a paste
+///   or a drop sets `typedSinceSubmit` and `typedSinceReturn`, except while a dialog waits (`input()`). Your
+///   Return clears `typedSinceReturn` (`pressedReturn()`). At a `UserPromptSubmit` from you (source `user`, or
+///   no source from an older Claude Code), Claude Code took what you sent, so `typedSinceSubmit` becomes
+///   `typedSinceReturn`: only the keys after your Return still count. A turn that Claude Code starts by itself
+///   (any other source) leaves your draft in the input and changes nothing. `Stop` changes nothing either.
+///   A new session (a `SessionStart` that is not a compact) starts with an empty input.
 /// - The process exit means ended for good: later events change nothing.
 /// - An event for another session ID changes nothing. Only `SessionStart` takes a new ID.
 /// - Unknown events change nothing (docs/contract.md, "Pane socket").
@@ -35,12 +39,14 @@ public struct PaneSession: Codable, Equatable, Sendable {
     /// What the session waits on while the pane needs you. Nil in every other state. Restore does
     /// not bring it back, because the prompt is gone after a quit.
     public var waitsOn: NeedsYouReason?
-    /// True when you put text into the pane since the last submit or new session (ticket 110): a key, a paste,
-    /// or a drop. Loam cannot see the input of Claude Code, so this means that the input can hold your text, and
-    /// Send to session does not type.
+    /// True when the input can hold your text (ticket 110): you put text into the pane, and Claude Code has not
+    /// taken it since. Send to session does not type then.
     public var typedSinceSubmit = false
-    /// The prompt that Send to session typed into the input since the last submit or new session (ticket 110).
-    /// It waits there until you press Return. Nil when Loam typed nothing.
+    /// True when you put text into the pane since your last Return that can send the input (ticket 110). A
+    /// `UserPromptSubmit` that comes later takes only the text before that Return.
+    public var typedSinceReturn = false
+    /// The prompt that Send to session typed into the input (ticket 110). It waits there until you press Return
+    /// and Claude Code takes it. Nil when Loam typed nothing.
     public var loamPrompt: String?
 
     public init(sessionID: String? = nil, state: PaneState = .running, started: Bool = false,
@@ -77,7 +83,10 @@ public struct PaneSession: Codable, Equatable, Sendable {
         switch event.event {
         case "UserPromptSubmit":
             set(.working)
-            emptyInput()
+            if event.source == nil || event.source == "user" {
+                typedSinceSubmit = typedSinceReturn
+                if !typedSinceReturn { loamPrompt = nil }
+            }
         case "PostToolUse": set(.working)
         case "Stop":
             set(.idle)
@@ -116,16 +125,30 @@ public struct PaneSession: Codable, Equatable, Sendable {
         set(.ended)
     }
 
-    /// You put something into the input of the pane: any key, a paste, or a drop. Send to session does not type
-    /// until Claude Code takes the input (ticket 110). Needs you stays, because an arrow key or Tab only picks an
-    /// option of a prompt (`typed()` clears it).
+    /// You put something into the input of the pane: a key, a paste, or a drop. Send to session does not type
+    /// until Claude Code takes the input (ticket 110). While a permission dialog or a question waits, the keys
+    /// go to the dialog, so they do not count. Needs you stays, because an arrow key or Tab only picks an option
+    /// of a prompt (`typed()` clears it).
     public mutating func input() {
+        guard !waitsOnDialog else { return }
         typedSinceSubmit = true
+        typedSinceReturn = true
     }
 
-    /// The input of Claude Code is empty: it took a prompt, or a new session started.
+    /// You pressed a Return that can send the input (ticket 110). A Return in a dialog answers the dialog.
+    public mutating func pressedReturn() {
+        guard !waitsOnDialog else { return }
+        typedSinceReturn = false
+    }
+
+    /// A permission dialog or a question takes the keys. After an API error and for `agent_needs_input`, the keys
+    /// go to the input.
+    private var waitsOnDialog: Bool { waitsOn == .permission || waitsOn == .question }
+
+    /// The input of Claude Code is empty: a new session started.
     private mutating func emptyInput() {
         typedSinceSubmit = false
+        typedSinceReturn = false
         loamPrompt = nil
     }
 

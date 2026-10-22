@@ -396,6 +396,11 @@ public struct Workspace: Codable, Equatable, Sendable {
         sessions[pane]?.input()
     }
 
+    /// You pressed a Return that can send the input of the pane (ticket 110).
+    public mutating func pressedReturn(in pane: PaneID) {
+        sessions[pane]?.pressedReturn()
+    }
+
     /// Send to session typed `prompt` into the input of the pane (ticket 110).
     public mutating func prompted(_ prompt: String, in pane: PaneID) {
         sessions[pane]?.loamPrompt = prompt

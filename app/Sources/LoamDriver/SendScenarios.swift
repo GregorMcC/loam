@@ -205,7 +205,8 @@ extension Scenarios {
         try await closePopover()
 
         // 5. During the turn, you paste the prompt with Edit > Paste, dictate a word, and press ⌘⌫. Each changes the
-        // input, so each reaches the input hook of the terminal. ⌘⌫ clears the line, so the later shots do not show it. The driver app is not frontmost, so its window
+        // input, so each reaches the input hook of the terminal. ⌘⌫ clears the line, so the later shots do not show it.
+        // ⌘↑ moves the view, not the input, so it does not count. The driver app is not frontmost, so its window
         // is not key and ⌘V finds no target. The Paste item sends its action to the terminal, as in the key window.
         try await app.waitUntil("the session has the keys in the turn") { hasTheKeys(session) }
         try expectSend(model.workspace.session(of: session)?.typedSinceSubmit == false, "the submit did not empty the input")
@@ -223,6 +224,9 @@ extension Scenarios {
         try await app.waitUntil("the dictated word counts") { inputs.value == 2 }
         app.press(.delete, flags: .command)
         try await app.waitUntil("command-delete counts") { inputs.value == 3 }
+        app.press(.up, flags: .command)
+        await app.sleep(0.3)
+        try expectSend(inputs.value == 3, "command-up counted as input")
         view.onInput = hook
         try expectSend(model.workspace.state(of: session) == .working, "the turn ended before the keys of the turn")
 
@@ -266,6 +270,17 @@ extension Scenarios {
         try expectSend(typed?.started == true && typed?.loamPrompt == reviewPrompt, "the pane does not hold the review prompt after its SessionStart")
         await app.sleep(1)
         try expectSend(sent() == failuresPrompt + "\n", "the new session sent a prompt: \(sent())")
+
+        // 8. You add a word to the prompt and press Return. Claude Code takes the input, so it is empty again.
+        try await app.waitUntil("the new session has the keys") { hasTheKeys(started) }
+        try app.type(" now")
+        try await app.waitUntil("the word counts") { model.workspace.session(of: started)?.typedSinceReturn == true }
+        app.press(.returnKey)
+        try await app.waitUntil("the session got the review prompt") { sent() == failuresPrompt + "\n" + reviewPrompt + " now\n" }
+        try await app.waitUntil("the submit empties the input") {
+            let input = model.workspace.session(of: started)
+            return input?.typedSinceSubmit == false && input?.loamPrompt == nil
+        }
         Log.line("RESULT prompts sent: \(sent().split(separator: "\n").count)")
     }
 }

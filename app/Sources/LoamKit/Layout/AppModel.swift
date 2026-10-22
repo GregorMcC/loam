@@ -831,12 +831,27 @@ public final class AppModel {
         workspace.typed(in: pane)
     }
 
-    /// You put something into the input of the pane: any key, a paste, or a drop. An arrow key can recall a
-    /// prompt and Tab can complete one, so they count too. Send to session does not type into the pane until Claude
-    /// Code takes the input (ticket 110). The workspace changes on the first input only.
+    /// You put something into the input of the pane: a key, a paste, or a drop. An arrow key can recall a prompt
+    /// and Tab can complete one, so they count too. Send to session does not type into the pane until Claude Code
+    /// takes the input (ticket 110). The keys of a dialog do not count. The workspace changes only on the first
+    /// input after a Return or a submit.
     public func input(in pane: PaneID) {
-        guard workspace.session(of: pane)?.typedSinceSubmit == false else { return }
+        guard var session = workspace.session(of: pane) else { return }
+        let before = session
+        session.input()
+        guard session != before else { return }
         workspace.input(in: pane)
+    }
+
+    /// You pressed a plain Return in the pane: it sends the input of Claude Code, or does nothing when the input
+    /// is empty (ticket 110). The `UserPromptSubmit` of the prompt comes later. The workspace changes only when
+    /// you typed since the last Return.
+    public func pressedReturn(in pane: PaneID) {
+        guard var session = workspace.session(of: pane) else { return }
+        let before = session
+        session.pressedReturn()
+        guard session != before else { return }
+        workspace.pressedReturn(in: pane)
     }
 
     /// Loam became frontmost or stopped being frontmost. Done, unread of the pane that you see clears.

@@ -61,11 +61,14 @@ public final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClien
     /// Loam clears "needs you" on it, because a denied permission prompt sends no hook (spec 8.4).
     public var onKeyInput: (() -> Void)?
     /// You put something into the line that the program edits, and Send to session does not type over it
-    /// (ticket 110). Each of these counts: a key that reaches the terminal, with or without the command key (an
-    /// arrow key recalls a line, Tab completes one, ⌘⌫ clears one), a read of the clipboard (⌘V, ⌘⇧V, a middle
-    /// click), text from an input method or dictation, and a drop. Text that `pasteWithoutReturn` types is not
-    /// yours, so it does not count.
+    /// (ticket 110). Each of these counts: a key with no command key (an arrow key recalls a line, Tab completes
+    /// one), ⌘⌫ and ⌘⌦ (they clear the line), a read of the clipboard (⌘V, ⌘⇧V, a middle click), text from an
+    /// input method or dictation, and a drop. Other ⌘ keys scroll, zoom or move the focus, so they do not count.
+    /// Text that `pasteWithoutReturn` types is not yours, so it does not count. `InputKey` has the rule for keys.
     public var onInput: (() -> Void)?
+    /// You pressed a plain Return, which sends the line (ticket 110). It is not input. A held Return, a Return
+    /// with a modifier, and a Return that ends a composition do not call it.
+    public var onReturn: (() -> Void)?
     public var onDesktopNotification: ((_ title: String, _ body: String) -> Void)?
     /// Called when a clipboard request shows its prompt. The driver uses it.
     public var onClipboardConfirmation: ((ClipboardConfirmation) -> Void)?
@@ -506,8 +509,14 @@ public final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClien
         // A held key that started in another view. A key held here started with a key down that is not a repeat.
         if event.isARepeat, dropsRepeats { return }
         dropsRepeats = false
+        // The input first: a key that answers a dialog must find the dialog still open, and `onKeyInput` ends it.
+        switch InputKey(keyCode: event.keyCode, mods: KeyChord.Mods(event.modifierFlags), isARepeat: event.isARepeat,
+                        composing: markedText.length > 0) {
+        case .submit: onReturn?()
+        case .input: onInput?()
+        case .none: break
+        }
         if !event.modifierFlags.contains(.command), TypingKey.clearsNeedsYou(event.characters) { onKeyInput?() }
-        onInput?()
         guard let surface else {
             interpretKeyEvents([event])
             return

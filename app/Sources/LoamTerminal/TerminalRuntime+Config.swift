@@ -270,12 +270,17 @@ extension KeyChord {
     public init?(event: NSEvent) {
         guard let characters = event.characters(byApplyingModifiers: []) ?? event.charactersIgnoringModifiers,
               let first = characters.first else { return nil }
-        var mods: Mods = []
-        let flags = event.modifierFlags
-        if flags.contains(.command) { mods.insert(.command) }
-        if flags.contains(.shift) { mods.insert(.shift) }
-        if flags.contains(.option) { mods.insert(.option) }
-        if flags.contains(.control) { mods.insert(.control) }
-        self.init(mods, String(first))
+        self.init(Mods(event.modifierFlags), String(first))
+    }
+}
+
+extension KeyChord.Mods {
+    /// The four modifiers of an event. Caps Lock, Fn and the keypad flag do not count.
+    init(_ flags: NSEvent.ModifierFlags) {
+        self = []
+        if flags.contains(.command) { insert(.command) }
+        if flags.contains(.shift) { insert(.shift) }
+        if flags.contains(.option) { insert(.option) }
+        if flags.contains(.control) { insert(.control) }
     }
 }
