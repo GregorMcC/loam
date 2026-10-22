@@ -24,7 +24,7 @@ The PR popover shows the state of the PR of one worktree and the actions that go
 - The smaller buttons are 28pt high, radius 6. They show only when they can do something.
   - Re-run failed: when a failed check has a run. It runs `loam worktree rerun`.
   - Update branch: when the PR is behind its base and is not in the merge queue. It runs `loam worktree update`.
-  - Open on GitHub: opens the PR, or the compare page of a pushed branch. The popover stays open.
+  - Open on GitHub: opens the PR, or the compare page of a pushed branch with no PR (`WorktreeStatus.githubPage`). The item of the worktree menu opens the same page. The popover stays open.
   - Copy branch name: for a worktree with no PR. The popover says "Copied the branch name."
 - Re-run failed and Update branch run one at a time for a worktree. A spinner shows in the button that runs, also in a popover that closed and opened again on the worktree during the run. The popover then says what GitHub did, in one line under the buttons, and asks GitHub about the worktree again so the card shows the new state. An error shows in that line, not in the error bar of the window.
 - A command goes on when the popover closes or shows another worktree. When it ends, the app still asks GitHub about the worktree again, and an error shows in the error bar of the window.

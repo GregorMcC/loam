@@ -95,7 +95,7 @@ public struct PRPopoverContent: Equatable, Sendable {
     /// The primary button. Nil for a stage with none, and for a button that no ticket has built.
     public let primary: PRPrimaryAction?
     public let secondary: [PRSecondaryAction]
-    /// What Open on GitHub opens: the PR, or the compare page of a pushed branch.
+    /// What Open on GitHub opens (`WorktreeStatus.githubPage`): the PR, or the compare page of a pushed branch.
     public let githubPage: URL?
 
     /// `attemptedAt` is the time of the last refresh that the app asked for, which the offline line names.
@@ -107,6 +107,7 @@ public struct PRPopoverContent: Equatable, Sendable {
         let line = StatusLine(of: status, now: now, timeZone: timeZone)
         let answered = status.prCheckedAt.flatMap(ChangeRules.date)
         let note = Self.notice(for: status, attemptedAt: attemptedAt.map(clock), answeredAt: answered.map(clock))
+        githubPage = status.githubPage
         if let pr = status.pr, let stage = status.stage, stage.comesFromPullRequest {
             self.stage = stage
             hasPullRequest = true
@@ -121,7 +122,6 @@ public struct PRPopoverContent: Equatable, Sendable {
             failedChecks = open ? pr.failedChecks.map(Self.row(of:)) : []
             stageNote = Self.stageNote(for: stage, line: line)
             primary = PRPrimaryAction(stage: stage).flatMap { built.contains($0) ? $0 : nil }
-            githubPage = status.pullRequestPage
             var buttons: [PRSecondaryAction] = []
             if open, pr.failedChecks.contains(where: { $0.runID != nil }) { buttons.append(.rerunFailed) }
             if open, pr.behindBase > 0, stage != .inMergeQueue { buttons.append(.updateBranch) }
@@ -143,7 +143,6 @@ public struct PRPopoverContent: Equatable, Sendable {
             failedChecks = []
             stageNote = nil
             primary = nil
-            githubPage = status.compareURL.flatMap(Self.httpsURL)
             secondary = (githubPage == nil ? [] : [.openOnGitHub]) + [.copyBranchName]
         }
         notice = note
@@ -188,7 +187,7 @@ public struct PRPopoverContent: Equatable, Sendable {
     // MARK: Checks
 
     private static func row(of check: FailedCheck) -> FailedCheckRow {
-        FailedCheckRow(name: check.name, duration: duration(check.duration), log: httpsURL(check.url))
+        FailedCheckRow(name: check.name, duration: duration(check.duration), log: URL(https: check.url))
     }
 
     /// "0:42", "3:10" or "1:02:05". Nil for zero, which is GitHub saying that it has no run time.
@@ -197,10 +196,5 @@ public struct PRPopoverContent: Equatable, Sendable {
         let (minutes, rest) = (seconds / 60, seconds % 60)
         guard minutes >= 60 else { return String(format: "%d:%02d", minutes, rest) }
         return String(format: "%d:%02d:%02d", minutes / 60, minutes % 60, rest)
-    }
-
-    /// An address from the core opens only when it is https.
-    private static func httpsURL(_ text: String) -> URL? {
-        URL(string: text).flatMap { $0.scheme == "https" ? $0 : nil }
     }
 }

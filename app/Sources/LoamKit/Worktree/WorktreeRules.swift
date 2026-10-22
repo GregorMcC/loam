@@ -110,12 +110,14 @@ public enum WorktreeRules {
 }
 
 extension WorktreeStatus {
-    /// The GitHub page of the PR, for Open on GitHub. Nil when the row has no PR (also when `gh` is
-    /// missing or signed out, since the core then sends none), and when the address is not https.
-    public var pullRequestPage: URL? {
-        guard let pr, let url = URL(string: pr.url), url.scheme == "https" else { return nil }
-        return url
-    }
+    /// The GitHub page of the PR. Nil when the row has no PR (also when `gh` is missing or signed out, since
+    /// the core then sends none), and when the address is not https.
+    public var pullRequestPage: URL? { pr.flatMap { URL(https: $0.url) } }
+
+    /// What Open on GitHub opens, in the worktree menu and in the PR popover: the page of the PR, else the
+    /// compare page of a branch that is pushed and has no PR. Nil when the row has neither, and when the
+    /// address is not https.
+    public var githubPage: URL? { pullRequestPage ?? compareURL.flatMap { URL(https: $0) } }
 
     /// True when `gh` is missing or signed out. GitHub cannot answer for this worktree until you fix `gh`.
     public var holdsGitHubNote: Bool { prNote == .ghMissing || prNote == .ghSignedOut }
@@ -124,4 +126,12 @@ extension WorktreeStatus {
     /// has no note. A worktree whose repo is not on GitHub has the note `no_github_remote`, so it does not
     /// show that `gh` works.
     var githubAnswered: Bool { !missing && (prNote ?? .noNote) == .noNote }
+}
+
+extension URL {
+    /// An address from the core, when it is https. Loam opens no other kind of address in the browser.
+    init?(https text: String) {
+        guard let url = URL(string: text), url.scheme == "https" else { return nil }
+        self = url
+    }
 }

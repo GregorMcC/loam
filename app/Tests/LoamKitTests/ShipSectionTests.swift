@@ -279,6 +279,26 @@ private func line(_ status: WorktreeStatus, now: Date = sameDay) -> StatusLine {
             #expect(status.pullRequestPage == nil, "\(address)")
         }
     }
+
+    /// Open on GitHub, in the worktree menu and in the PR popover, opens one page: the PR, else the compare
+    /// page of a pushed branch.
+    @Test func openOnGitHubOpensThePRElseTheComparePage() throws {
+        let rows = try stageRows()
+        let failed = try row(.checksFailed, in: rows)
+        #expect(failed.githubPage != nil && failed.githubPage == failed.pullRequestPage)
+        let pushed = try row(.pushedNoPR, in: rows)
+        #expect(pushed.pullRequestPage == nil)
+        #expect(pushed.githubPage == URL(string: "https://github.com/example/widgets/compare/main...pushed-only"))
+        #expect(try row(.notPushed, in: rows).githubPage == nil)
+    }
+
+    @Test func onlyAnHTTPSComparePageOpens() throws {
+        var pushed = try row(.pushedNoPR, in: try stageRows())
+        for address in ["http://github.com/example/widgets/compare/main...pushed-only", "file:///etc/passwd", "javascript:alert(1)", ""] {
+            pushed.compareURL = address
+            #expect(pushed.githubPage == nil, "\(address)")
+        }
+    }
 }
 
 @Suite struct ShipAgeTests {

@@ -4,7 +4,8 @@ import SwiftUI
 
 /// The actions of one worktree, built once for the hover menu and the context menu of the panel row and
 /// for the context menu of the sidebar row (ticket 108). Tickets 110 and 112 add Send failures to
-/// session and Land here. Open on GitHub opens the PR in the browser. The PR popover has the details.
+/// session and Land here. Open on GitHub opens the PR in the browser, or the compare page of a branch that
+/// is pushed and has no PR, as the PR popover does. The PR popover has the details.
 struct WorktreeActions: View {
     let model: AppModel
     let id: String
@@ -12,9 +13,9 @@ struct WorktreeActions: View {
     var body: some View {
         let status = model.worktreeStatus(id)
         Button("Open on GitHub") {
-            if let page = status?.pullRequestPage { SystemActions.open(page) }
+            if let page = status?.githubPage { SystemActions.open(page) }
         }
-        .disabled(status?.pullRequestPage == nil)
+        .disabled(status?.githubPage == nil)
         Button("Copy branch name") {
             if let branch = status?.worktree.branch { SystemActions.copy(branch) }
         }
