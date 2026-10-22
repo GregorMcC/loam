@@ -94,6 +94,20 @@ func decodeFixture(schema: String, data: Data) throws {
         #expect(plot.repos[0].main)
     }
 
+    /// Ticket 113: each repo says what the app does after a merge on GitHub. A value that the app does not know, and
+    /// a core with no setting, read as Ask, so they never remove a worktree.
+    @Test func theRepoSettingAfterAMergeDecodes() throws {
+        let plot = try JSONDecoder().decode(Plot.self, from: Fixtures.data("show_full"))
+        #expect(plot.repos[0].afterMerge == .ask)
+        func repo(_ extra: String) throws -> Repo {
+            try JSONDecoder().decode(Repo.self, from: Data(#"{"id":"repoaaaaaa","path":"/tmp/web","note":"","main":true,"version":1\#(extra)}"#.utf8))
+        }
+        #expect(try repo(#","after_merge":"remove""#).afterMerge == .remove)
+        #expect(try repo(#","after_merge":"keep""#).afterMerge == .keep)
+        #expect(try repo(#","after_merge":"archive""#).afterMerge == .ask)
+        #expect(try repo("").afterMerge == nil)
+    }
+
     @Test func setupCheckDrivesTheBanner() throws {
         let check = try JSONDecoder().decode(SetupCheck.self, from: Fixtures.data("setup_check"))
         #expect(check.needsBanner)

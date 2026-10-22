@@ -64,6 +64,25 @@ public struct Repo: Codable, Equatable, Sendable, Identifiable {
     public var setup: String?
     /// Files or globs to copy into each new worktree. Nil when empty.
     public var copy: [String]?
+    /// What the app does when a refresh finds that GitHub merged the PR of a worktree of the repo (ticket 113).
+    /// Nil from a core before ticket 113. The app reads nil as `.ask`.
+    public var afterMerge: AfterMerge?
+    enum CodingKeys: String, CodingKey {
+        case id, path, note, main, version, setup, copy
+        case afterMerge = "after_merge"
+    }
+}
+
+/// The repo setting for a merge that Loam finds on GitHub (ticket 113): ask with a callout, remove the worktree, or
+/// do nothing.
+public enum AfterMerge: String, Codable, Equatable, Sendable, CaseIterable {
+    case ask, remove, keep
+
+    /// A value that this app does not know decodes as `.ask`, so a newer core cannot make the app remove a worktree.
+    public init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = AfterMerge(rawValue: raw) ?? .ask
+    }
 }
 
 public struct Plot: Codable, Equatable, Sendable, Identifiable {
