@@ -214,7 +214,7 @@ func TestPaneLiveListenerGetsEachEvent(t *testing.T) {
 
 func TestPaneEventTableHasTheAttentionEvents(t *testing.T) {
 	for _, ev := range []string{"SessionStart", "SessionEnd", "UserPromptSubmit", "Stop",
-		"PermissionRequest", "Notification", "PostToolUse", "StopFailure"} {
+		"PermissionRequest", "Notification", "PostToolUse", "PostToolUseFailure", "StopFailure"} {
 		if !slices.Contains(session.PaneEvents(), ev) {
 			t.Errorf("the event table has no %s", ev)
 		}
@@ -225,7 +225,8 @@ func TestPaneNotificationFilter(t *testing.T) {
 	setup(t)
 	path, lines := listen(t)
 	env := map[string]string{"LOAM_PANE_SOCKET": path}
-	for _, typ := range []string{"elicitation_dialog", "elicitation_url_dialog", "agent_needs_input", "permission_prompt"} {
+	for _, typ := range []string{"elicitation_dialog", "elicitation_url_dialog", "agent_needs_input", "permission_prompt",
+		"elicitation_response", "elicitation_complete"} {
 		runHook(t, hookJSON("Notification", `,"notification_type":"`+typ+`"`), env)
 		var got session.PaneLine
 		if err := json.Unmarshal([]byte(nextLine(t, lines)), &got); err != nil {
@@ -235,12 +236,29 @@ func TestPaneNotificationFilter(t *testing.T) {
 			t.Errorf("%s: line %+v", typ, got)
 		}
 	}
-	for _, typ := range []string{"idle_prompt", "auth_success", "elicitation_complete", "elicitation_response", "something_new", ""} {
+	for _, typ := range []string{"idle_prompt", "auth_success", "something_new", ""} {
 		runHook(t, hookJSON("Notification", `,"notification_type":"`+typ+`"`), env)
 		noLine(t, lines)
 	}
 	runHook(t, hookJSON("Notification", ""), env)
 	noLine(t, lines)
+}
+
+// A tool call that throws, such as a Bash command with a non-zero exit, ends with PostToolUseFailure. Its
+// line closes a dialog in the app, and it holds no tool input and no error.
+func TestPanePostToolUseFailureLineHoldsNoToolData(t *testing.T) {
+	setup(t)
+	path, lines := listen(t)
+	runHook(t, hookJSON("PostToolUseFailure", `,"tool_name":"Bash","tool_input":{"command":"secret"},"error":"secret"`),
+		map[string]string{"LOAM_PANE_SOCKET": path})
+	raw := nextLine(t, lines)
+	var got session.PaneLine
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Event != "PostToolUseFailure" || got.SessionID != "s1" || strings.Contains(raw, "secret") {
+		t.Errorf("line %q", raw)
+	}
 }
 
 func TestPaneSubagentStopRaisesNothing(t *testing.T) {

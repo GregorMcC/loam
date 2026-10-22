@@ -625,7 +625,7 @@ For each hook event in the table, `loam hook` connects to the socket and writes 
 | `session_id` | The Claude Code session ID |
 | `cwd` | The working folder that Claude Code reports |
 | `source` | On `SessionStart`: `startup`, `resume`, `clear`, `compact`, or `fork`. On `UserPromptSubmit`: what started the turn, as Claude Code says it, such as `user` for a prompt that you sent and `system` for a turn that Claude Code starts by itself. Claude Code does not send it on `UserPromptSubmit` today, and the line then has none. No other event has it. |
-| `notification_type` | Only on `Notification`: `elicitation_dialog`, `elicitation_url_dialog`, `agent_needs_input`, or `permission_prompt` |
+| `notification_type` | Only on `Notification`: `elicitation_dialog`, `elicitation_url_dialog`, `agent_needs_input`, `permission_prompt`, `elicitation_response`, or `elicitation_complete` |
 | `at` | The time of the hook call, in UTC |
 
 | Event | When |
@@ -635,8 +635,9 @@ For each hook event in the table, `loam hook` connects to the socket and writes 
 | `UserPromptSubmit` | A turn starts: you send a prompt, or Claude Code starts the turn (see `source`). The line does not hold the prompt. |
 | `Stop` | Claude finishes its turn |
 | `PermissionRequest` | Claude asks you to allow a tool |
-| `Notification` | Claude needs your input. Only the three types above raise a line. `idle_prompt` and other types raise nothing. |
+| `Notification` | Claude needs your input, or a question closed. Only the six types above raise a line. `elicitation_response` says that you answered an MCP question, and `elicitation_complete` that a URL question ended. `idle_prompt` and other types raise nothing. |
 | `PostToolUse` | A tool call ends. The line does not hold the tool input or output. |
+| `PostToolUseFailure` | A tool call fails, such as a Bash command with a non-zero exit, or you stop it with Escape. The line does not hold the tool input or the error. |
 | `StopFailure` | A turn ends with an API error |
 
 A subagent stop (`SubagentStop`) raises nothing.

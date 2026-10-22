@@ -393,6 +393,9 @@ func scenario(t *testing.T) *harness {
 	h.pane("pane_notification", "pane-event", hookIn("Notification", `,"notification_type":"agent_needs_input"`))
 
 	h.pane("pane_notification_permission", "pane-event", hookIn("Notification", `,"notification_type":"permission_prompt"`))
+	h.pane("pane_notification_elicitation_response", "pane-event",
+		hookIn("Notification", `,"notification_type":"elicitation_response"`))
+	h.pane("pane_post_tool_use_failure", "pane-event", hookIn("PostToolUseFailure", `,"tool_name":"Bash","error":"exit 1"`))
 
 	h.run("move", "move", 0, "move", "Loam Docs", "1")
 

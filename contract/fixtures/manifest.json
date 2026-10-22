@@ -314,6 +314,22 @@
     "schema": "pane-event"
   },
   {
+    "name": "pane_notification_elicitation_response",
+    "args": [
+      "hook"
+    ],
+    "exit_code": 0,
+    "schema": "pane-event"
+  },
+  {
+    "name": "pane_post_tool_use_failure",
+    "args": [
+      "hook"
+    ],
+    "exit_code": 0,
+    "schema": "pane-event"
+  },
+  {
     "name": "move",
     "args": [
       "move",
