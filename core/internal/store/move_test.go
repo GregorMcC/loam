@@ -292,6 +292,21 @@ func TestUndoMoveAfterAddAndRemove(t *testing.T) {
 	}
 }
 
+func TestUndoRemoveAfterMoveKeepsPositionsUnique(t *testing.T) {
+	s := openStore(t)
+	p := newPlot(t, s, "p")
+	items := addLinks(t, s, p.ID, "a", "b", "c")
+	rm := apply(t, s, store.Change{PlotID: p.ID, Edits: []store.Edit{{Op: store.OpRemoveLink, Item: items["a"]}}})
+	apply(t, s, moveLink(p.ID, items["c"], 1))
+	undo(t, s, rm.ChangeID, false)
+	if got := labels(t, s, p.ID); !slices.Equal(got, []string{"a", "c", "b"}) {
+		t.Fatalf("order %v", got)
+	}
+	if got := positions(t, s, p.ID); !slices.Equal(got, []int{1, 2, 3}) {
+		t.Fatalf("positions %v", got)
+	}
+}
+
 func TestMoveLinkStale(t *testing.T) {
 	s := openStore(t)
 	p := newPlot(t, s, "p")
