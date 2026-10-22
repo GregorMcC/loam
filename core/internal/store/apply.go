@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/GregorMcC/loam/core/internal/linkkind"
@@ -117,6 +118,8 @@ func checkExpect(q queryer, cur Plot, expect map[string]int64) error {
 			si.Value = cur.Why
 		case item == ItemWhere:
 			si.Value = cur.Where
+		case item == ItemLinkOrder:
+			si.Value = *fieldValue(cur, ItemLinkOrder, "order")
 		case strings.HasPrefix(item, "link:"):
 			for i := range cur.Links {
 				if LinkItem(cur.Links[i].ID) == item {
@@ -171,6 +174,8 @@ func (a *applier) apply(e Edit) error {
 		return a.updateLink(e)
 	case OpRemoveLink:
 		return a.removeLink(e)
+	case OpMoveLink:
+		return a.moveLink(e)
 	case OpAddRepo:
 		return a.addRepo(e)
 	case OpUpdateRepo:
@@ -289,6 +294,46 @@ func (a *applier) removeLink(e Edit) error {
 	a.rec.set(e.Item, "target", S(l.Target), nil)
 	a.rec.set(e.Item, "note", S(l.Note), nil)
 	a.rec.set(e.Item, "position", S(fmt.Sprint(l.Position)), nil)
+	return nil
+}
+
+// moveLink logs one [ItemLinkOrder] entry, so a move never clashes with the undo of a link edit.
+func (a *applier) moveLink(e Edit) error {
+	l, err := a.getLink(e.Item)
+	if err != nil {
+		return err
+	}
+	pos, err := strconv.Atoi(e.Value)
+	if err != nil {
+		return fmt.Errorf("position %q is not a number: %w", e.Value, ErrInvalid)
+	}
+	old, err := a.linkIDs()
+	if err != nil {
+		return err
+	}
+	if pos < 1 || pos > len(old) {
+		return fmt.Errorf("position %d: choose a number from 1 to %d: %w", pos, len(old), ErrInvalid)
+	}
+	from := slices.Index(old, l.ID)
+	if from == pos-1 {
+		return nil
+	}
+	ids := slices.Insert(slices.Delete(slices.Clone(old), from, from+1), pos-1, l.ID)
+	return a.writeLinkOrder(old, ids)
+}
+
+func (a *applier) linkIDs() ([]string, error) {
+	return queryIDs(a.w.conn, `SELECT id FROM links WHERE plot_id = ? ORDER BY position, id`, a.plotID)
+}
+
+// writeLinkOrder sets the link positions to 1..N in the order of ids.
+func (a *applier) writeLinkOrder(old, ids []string) error {
+	for i, id := range ids {
+		if err := a.w.exec(`UPDATE links SET position = ? WHERE id = ?`, i+1, id); err != nil {
+			return err
+		}
+	}
+	a.rec.set(ItemLinkOrder, "order", S(strings.Join(old, ",")), S(strings.Join(ids, ",")))
 	return nil
 }
 
