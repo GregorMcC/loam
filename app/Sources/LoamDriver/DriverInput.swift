@@ -156,6 +156,17 @@ extension DriverApp {
         }
     }
 
+    /// A right mouse down on the event queue of the app, at a point of the window. AppKit shows the context menu of the
+    /// view there, outside of the code of the scenario, so the scenario goes on while the menu is open (ticket 113). No
+    /// mouse up follows, since a mouse up over the menu would pick the item under it.
+    func postRightMouseDown(at point: NSPoint) {
+        guard let event = NSEvent.mouseEvent(
+            with: .rightMouseDown, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)
+        else { return }
+        NSApp.postEvent(event, atStart: false)
+    }
+
     /// A key through `NSApp.sendEvent`, so the app's local event monitors see it first, as they do
     /// for a real key. A drag watches for Escape that way (ticket 98).
     func pressThroughApp(_ key: Key) {

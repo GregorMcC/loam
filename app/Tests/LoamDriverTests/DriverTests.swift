@@ -211,6 +211,15 @@ struct DriverTests {
         ])
     }
 
+    /// Ticket 113: after a merge on GitHub. A repo that asks shows a callout: Keep leaves the faded row, and Remove worktree
+    /// removes the worktree and gives Where it stands the keys. A repo set to Remove the worktree removes a clean worktree
+    /// with a toast, and asks for one with changed files.
+    @Test func actsAfterAMergeOnGitHub() async throws {
+        try await expectPass("after-merge", environment: [
+            "LOAM_DRIVER_LOAM": Self.loamBinary, "LOAM_DRIVER_FAKE_GH": Self.fakeGH,
+        ])
+    }
+
     /// Ticket 48: archive a plot with a session, unarchive it and see the session resume, and delete an archived plot.
     /// Ticket 61: an unarchive and show at once still gives one `claude` for the session.
     @Test func archivesUnarchivesAndDeletesAPlot() async throws {
