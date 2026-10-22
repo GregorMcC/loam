@@ -34,6 +34,8 @@ public struct FixPrompt: Equatable, Sendable {
 
     /// The most failed checks that a prompt names. "and 3 more" counts the rest.
     public static let namedChecks = 5
+    /// The most characters of a check name in a prompt, with the "…" at the end of a name that is cut.
+    public static let longestCheckName = 80
 
     public let kind: Kind
     public let text: String
@@ -50,27 +52,38 @@ public struct FixPrompt: Equatable, Sendable {
         let number = pr.number
         switch kind {
         case .failures:
-            let names = pr.failedChecks.map { Self.oneLine($0.name) }
+            let names = pr.failedChecks.map { Self.cut(Self.oneLine($0.name)) }
             var list = names.prefix(Self.namedChecks).joined(separator: ", ")
             if names.count > Self.namedChecks { list += ", and \(names.count - Self.namedChecks) more" }
             let failed = list.isEmpty ? "Checks failed on #\(number)." : "Checks failed on #\(number): \(list)."
             text = "\(failed) Run `gh pr checks \(number)`, read the failing logs, fix them, and push."
         case .review:
             let comments = pr.comments == 0 ? "" : ", with \(pr.comments) review \(pr.comments == 1 ? "comment" : "comments")"
-            text = "#\(number) has changes requested\(comments). Run `gh pr view \(number) --comments`, address each comment, and push."
+            text = "PR #\(number) has changes requested\(comments). Run `gh pr view \(number) --comments`, address each comment, and push."
         case .conflicts:
             let (base, head) = (Self.oneLine(pr.base), Self.oneLine(pr.head))
-            text = "#\(number) conflicts with \(base). Merge origin/\(base) into \(head), resolve the conflicts, run the tests, and push."
+            text = "PR #\(number) conflicts with \(base). Merge origin/\(base) into \(head), resolve the conflicts, run the tests, and push."
         }
     }
 
-    /// The text with each run of white space, control characters and direction marks as one space. GitHub gives the
-    /// names, and a PR from a fork can name its own checks. A control character in a name could act as a key in the
-    /// terminal, a line break as Return, and a direction mark could hide what the prompt says.
+    /// The text as one line that shows each character it has. GitHub gives the names, and a PR from a fork can name
+    /// its own checks and branches. A control character could act as a key in the terminal, and a line break as
+    /// Return. A character that shows nothing could hide words: a direction mark, a zero-width or tag character, a
+    /// byte order mark, a private use or an unassigned code point. So each run of white space and control characters
+    /// becomes one space, and the format, private use, unassigned and surrogate code points go.
     static func oneLine(_ text: String) -> String {
-        text.unicodeScalars
-            .split { $0.properties.generalCategory == .control || $0.properties.isWhitespace || $0.properties.isBidiControl }
+        let shown = text.unicodeScalars.filter { !hidden.contains($0.properties.generalCategory) }
+        return shown
+            .split { $0.properties.generalCategory == .control || $0.properties.isWhitespace }
             .map { String(String.UnicodeScalarView($0)) }
             .joined(separator: " ")
+    }
+
+    /// The general categories that show nothing: Cf, Co, Cn and Cs. Cf has the direction marks.
+    private static let hidden: Set<Unicode.GeneralCategory> = [.format, .privateUse, .unassigned, .surrogate]
+
+    /// A check name of at most `longestCheckName` characters. A longer name ends in "…".
+    static func cut(_ name: String) -> String {
+        name.count > longestCheckName ? String(name.prefix(longestCheckName - 1)) + "\u{2026}" : name
     }
 }

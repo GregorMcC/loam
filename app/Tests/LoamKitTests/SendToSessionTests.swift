@@ -42,20 +42,20 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
         var pr = try pr(.changesRequested)
         #expect(pr.comments == 3)
         #expect(FixPrompt(.review, pr: pr).text
-            == "#139 has changes requested, with 3 review comments. Run `gh pr view 139 --comments`, address each comment, and push.")
+            == "PR #139 has changes requested, with 3 review comments. Run `gh pr view 139 --comments`, address each comment, and push.")
         pr.comments = 1
-        #expect(FixPrompt(.review, pr: pr).text.hasPrefix("#139 has changes requested, with 1 review comment. Run"))
+        #expect(FixPrompt(.review, pr: pr).text.hasPrefix("PR #139 has changes requested, with 1 review comment. Run"))
         // A review with no open thread still has its own words, so the command is the same.
         pr.comments = 0
-        #expect(FixPrompt(.review, pr: pr).text == "#139 has changes requested. Run `gh pr view 139 --comments`, address each comment, and push.")
+        #expect(FixPrompt(.review, pr: pr).text == "PR #139 has changes requested. Run `gh pr view 139 --comments`, address each comment, and push.")
     }
 
     @Test func conflictsNameTheBaseAndTheBranch() throws {
         #expect(FixPrompt(.conflicts, pr: try pr(.conflicts)).text
-            == "#139 conflicts with main. Merge origin/main into native-panel, resolve the conflicts, run the tests, and push.")
+            == "PR #139 conflicts with main. Merge origin/main into native-panel, resolve the conflicts, run the tests, and push.")
         var other = try pr(.conflicts)
         other.base = "release"
-        #expect(FixPrompt(.conflicts, pr: other).text.hasPrefix("#139 conflicts with release. Merge origin/release into native-panel,"))
+        #expect(FixPrompt(.conflicts, pr: other).text.hasPrefix("PR #139 conflicts with release. Merge origin/release into native-panel,"))
     }
 
     @Test func aPromptNamesFiveFailedChecksAndCountsTheRest() throws {
@@ -82,6 +82,32 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
         let text = FixPrompt(.failures, pr: pr).text
         #expect(text.hasPrefix("Checks failed on #139: lint / swift format, a [201~b, test / macos. Run"))
         #expect(throws: Never.self) { try PaneText.withoutReturn(text) }
+    }
+
+    /// Characters that show nothing could hide words from you in the prompt: tag characters, zero-width
+    /// characters, a byte order mark, a private use or an unassigned code point.
+    @Test func aNameLosesTheCharactersThatShowNothing() throws {
+        var pr = try pr(.checksFailed)
+        let tags = "\u{E0001}\u{E0069}\u{E0067}\u{E006E}\u{E007F}"
+        pr.failedChecks = try checks(["li\u{200B}nt\(tags)", "\u{FEFF}te\u{2060}st\u{200D}", "a\u{E000}b\u{FFFF}\u{E0FFF}"])
+        #expect(FixPrompt(.failures, pr: pr).text.hasPrefix("Checks failed on #139: lint, test, ab. Run"))
+        #expect(FixPrompt.oneLine("\u{202E}\u{200B}\u{FEFF}") == "")
+    }
+
+    /// A check name can be as long as its job wants. The prompt cuts it at 80 characters. A branch name stays whole,
+    /// because the conflicts prompt tells the session to merge it.
+    @Test func aLongCheckNameIsCutAndABranchNameIsNot() throws {
+        var pr = try pr(.checksFailed)
+        let long = String(repeating: "x", count: 200)
+        pr.failedChecks = try checks([long, "lint"])
+        let cut = String(repeating: "x", count: FixPrompt.longestCheckName - 1) + "\u{2026}"
+        #expect(cut.count == 80)
+        #expect(FixPrompt(.failures, pr: pr).text.hasPrefix("Checks failed on #139: \(cut), lint. Run"))
+        var conflicts = try self.pr(.conflicts)
+        conflicts.head = long + "\u{200B}\n"
+        conflicts.base = "rel\u{E0001}ease"
+        #expect(FixPrompt(.conflicts, pr: conflicts).text
+            == "PR #139 conflicts with release. Merge origin/release into \(long), resolve the conflicts, run the tests, and push.")
     }
 
     @Test func eachPromptIsOneLineThatLoamCanType() throws {

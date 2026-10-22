@@ -20,7 +20,7 @@ extension Scenarios {
 
     /// The prompts of the two PRs, as the ticket words them.
     private static let failuresPrompt = "Checks failed on #139: lint / swiftformat, test / macos-26. Run `gh pr checks 139`, read the failing logs, fix them, and push."
-    private static let reviewPrompt = "#137 has changes requested, with 3 review comments. Run `gh pr view 137 --comments`, address each comment, and push."
+    private static let reviewPrompt = "PR #137 has changes requested, with 3 review comments. Run `gh pr view 137 --comments`, address each comment, and push."
     /// How long a turn of the fake `claude` takes. The busy steps run inside one turn.
     private static let turnSeconds = 12.0
 
@@ -228,7 +228,7 @@ extension Scenarios {
         try await app.waitUntil("a session opens in switcher-width") { model.focusedWorktree?.id == switcher.id && !model.prPopover.isOpen }
         let started = try model.workspace.focusedPane ?? { throw DriverFailure("no new pane") }()
         try expectSend(started != session && model.workspace.spec(of: started)?.kind == .session, "the new pane is not a session")
-        try await app.waitUntil("the review prompt is in the input") { screen(started).contains("#137 has changes requested") }
+        try await app.waitUntil("the review prompt is in the input") { screen(started).contains("PR #137 has changes requested") }
         try await app.waitUntil("the review toast") {
             app.text(of: "action-bar-toast")?.contains("Loam typed the review into the new session. Press Return to send.") == true
         }
