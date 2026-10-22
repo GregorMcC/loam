@@ -30,6 +30,7 @@ public enum PendingWrite: Equatable, Sendable {
     case text(BriefField, String)
     case linkEdit(id: String, label: String, target: String, note: String)
     case linkRemove(id: String)
+    case linkMove(id: String, position: Int)
     case repoNote(id: String, note: String)
     case repoRemove(id: String)
 }
@@ -236,6 +237,17 @@ public final class PlotPanelModel {
         await perform(.linkRemove(id: id), plotID: plot.id, expect: ["link:\(id)": link.version])
     }
 
+    /// Moves a link to `position`, 1-based. The list shows the new order at once, before the write.
+    public func moveLink(id: String, to position: Int) async {
+        guard var plot, let from = plot.links.firstIndex(where: { $0.id == id }) else { return }
+        let expect = ["links": plot.versions["links"] ?? 0]
+        let link = plot.links.remove(at: from)
+        plot.links.insert(link, at: min(max(position, 1), plot.links.count + 1) - 1)
+        for i in plot.links.indices { plot.links[i].position = i + 1 }
+        self.plot = plot
+        await perform(.linkMove(id: id, position: position), plotID: plot.id, expect: expect)
+    }
+
     public func addRepo(path: String, note: String = "") async {
         guard let plot else { return }
         let path = path.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -353,6 +365,7 @@ public final class PlotPanelModel {
         case .linkEdit(let id, let label, let target, let note):
             await editLink(id: id, label: label, target: target, note: note)
         case .linkRemove(let id): await removeLink(id: id)
+        case .linkMove(let id, let position): await moveLink(id: id, to: position)
         case .repoNote(let id, let note): await editRepoNote(id: id, note: note)
         case .repoRemove(let id): await removeRepo(id: id)
         }
@@ -379,6 +392,9 @@ public final class PlotPanelModel {
                 await load(plotID: plotID)
             case .linkRemove(let id):
                 _ = try await client.linkRemove(plot: plotID, link: id, expect: expect)
+                await load(plotID: plotID)
+            case .linkMove(let id, let position):
+                _ = try await client.linkMove(plot: plotID, link: id, position: position, expect: expect)
                 await load(plotID: plotID)
             case .repoNote(let id, let note):
                 _ = try await client.repoEdit(plot: plotID, repo: id, note: note, expect: expect)
@@ -413,6 +429,9 @@ public final class PlotPanelModel {
         case .linkRemove:
             return EditClash(item: item.item, title: "Link", yours: "Remove the link",
                              current: item.link.map { "\($0.label): \($0.target)" }, pending: write)
+        case .linkMove:
+            // A drag is cheap to redo, so a stale move reports and reloads rather than asking.
+            return nil
         case .repoNote(_, let note):
             return EditClash(item: item.item, title: "Repo", yours: note, current: item.repo?.note, pending: write)
         case .repoRemove:

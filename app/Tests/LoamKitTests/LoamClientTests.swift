@@ -93,6 +93,13 @@ struct FakeLoam {
         #expect(result.worktree.name == "fix-login" && !result.branchDeleted)
     }
 
+    @Test func linkMoveSendsThePositionAndTheLinkOrderVersion() async throws {
+        let fake = try FakeLoam([("link_move", 0)])
+        let result = try await fake.client().linkMove(plot: "plotaaaaab", link: "linkaaaaac", position: 3, expect: ["links": 7])
+        #expect(result.link?.position == 1)
+        #expect(fake.args() == ["link move plotaaaaab linkaaaaac 3 --expect links=7 --json --actor app"])
+    }
+
     @Test func setSendsTextOnStdinWithExpectedVersions() async throws {
         let fake = try FakeLoam([("set", 0)])
         let plot = try await fake.client().set(plot: "Loam", field: .whereItStands, text: "-dash text\nline 2", expect: ["where": 4, "name": 1])
@@ -145,7 +152,7 @@ struct FakeLoam {
         } catch let LoamError.stale(details, _) {
             #expect(details?.plotID == "plotaaaaab")
             #expect(details?.items.first?.item == "what")
-            #expect(details?.items.first?.current == 17)
+            #expect(details?.items.first?.current == 18)
         }
     }
 

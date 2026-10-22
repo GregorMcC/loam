@@ -6,6 +6,8 @@ import SwiftUI
 struct NewSinceSection: View {
     let review: ReviewModel
     let plot: String
+    /// The labels of the links of the plot, by ID, for link order rows.
+    let linkLabels: [String: String]
 
     var body: some View {
         let new = review.newChanges(plot: plot)
@@ -19,7 +21,7 @@ struct NewSinceSection: View {
                 .font(.system(size: 12, weight: .medium))
                 .padding(.horizontal, 8)
                 .accessibilityIdentifier("panel-new-since")
-                ChangeTimeline(review: review, changes: new, diffOpen: true)
+                ChangeTimeline(review: review, changes: new, diffOpen: true, linkLabels: linkLabels)
             }
             .animation(LoamAnimation.arrive, value: new.map(\.id))
         }
@@ -31,6 +33,7 @@ struct NewSinceSection: View {
 struct ChangeLogSection: View {
     let review: ReviewModel
     let plot: String
+    let linkLabels: [String: String]
     @State private var pageIndex = 0
 
     var body: some View {
@@ -40,7 +43,7 @@ struct ChangeLogSection: View {
             if page.changes.isEmpty {
                 EmptyRow(text: "No changes")
             } else {
-                ChangeTimeline(review: review, changes: page.changes, diffOpen: false)
+                ChangeTimeline(review: review, changes: page.changes, diffOpen: false, linkLabels: linkLabels)
             }
             if page.count > 1 { pager(page) }
         }
@@ -78,11 +81,12 @@ struct ChangeTimeline: View {
     let review: ReviewModel
     let changes: [Change]
     let diffOpen: Bool
+    let linkLabels: [String: String]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             ForEach(changes) { change in
-                ChangeRow(review: review, change: change, diffOpen: diffOpen)
+                ChangeRow(review: review, change: change, diffOpen: diffOpen, linkLabels: linkLabels)
                     .transition(LoamAnimation.growIn)
             }
         }
@@ -107,6 +111,7 @@ struct ChangeRow: View {
     let review: ReviewModel
     let change: Change
     let diffOpen: Bool
+    let linkLabels: [String: String]
     @State private var expanded = false
     @State private var hovering = false
     @FocusState private var undoFocused: Bool
@@ -135,7 +140,7 @@ struct ChangeRow: View {
             }
             if showDiff {
                 VStack(alignment: .leading, spacing: LoamTheme.space1) {
-                    ForEach(Array(ChangeRules.entryViews(change).enumerated()), id: \.offset) { _, entry in
+                    ForEach(Array(ChangeRules.entryViews(change, linkLabels: linkLabels).enumerated()), id: \.offset) { _, entry in
                         EntryDiffView(entry: entry)
                     }
                 }
@@ -239,6 +244,8 @@ struct EntryDiffView: View {
                 Text(text).loamText(LoamTheme.bodyStyle, LoamColor.moss).textSelection(.enabled)
             case .removed(let text):
                 Text(text).loamText(LoamTheme.bodyStyle, LoamColor.rust).strikethrough().textSelection(.enabled)
+            case .text(let text):
+                Text(text).loamText(LoamTheme.bodyStyle).textSelection(.enabled)
             }
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -267,6 +274,7 @@ struct EntryDiffView: View {
 struct UndoClashSection: View {
     let review: ReviewModel
     let prompt: UndoClashPrompt
+    let linkLabels: [String: String]
 
     var body: some View {
         CalloutCard {
@@ -276,7 +284,7 @@ struct UndoClashSection: View {
                 VStack(alignment: .leading, spacing: LoamTheme.space1) {
                     Text("\(review.actorLabel(later).text) at \(review.clock(later)):")
                         .loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
-                    ForEach(Array(ChangeRules.entryViews(later).enumerated()), id: \.offset) { _, entry in
+                    ForEach(Array(ChangeRules.entryViews(later, linkLabels: linkLabels).enumerated()), id: \.offset) { _, entry in
                         EntryDiffView(entry: entry)
                     }
                 }

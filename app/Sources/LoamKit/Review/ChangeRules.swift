@@ -124,6 +124,8 @@ public enum ChangeRules {
             case added(String)
             /// A removed item or field, in full.
             case removed(String)
+            /// A line of plain text, such as "Spec moved to 1".
+            case text(String)
         }
         /// For example "Where it stands", or "Link spec: target".
         public var title: String
@@ -136,6 +138,7 @@ public enum ChangeRules {
         case "what": return "What"
         case "why": return "Why"
         case "where": return "Where it stands"
+        case linkOrderItem: return "Link order"
         default:
             if item.hasPrefix("link:") { return "Link" }
             if item.hasPrefix("repo:") { return "Repo" }
@@ -145,6 +148,26 @@ public enum ChangeRules {
     }
 
     private static let worktreePrefix = "worktree:"
+    private static let linkOrderItem = "links"
+
+    /// The link that a move of one link explains, and its new 1-based position. For a swap of
+    /// neighbours both qualify, so it takes the one that went up. Nil when no single link explains it.
+    public static func movedLink(old: [String], new: [String]) -> (id: String, position: Int)? {
+        guard old != new, Set(old) == Set(new) else { return nil }
+        var best: (id: String, position: Int, rise: Int)?
+        for (index, id) in new.enumerated() where old.filter({ $0 != id }) == new.filter({ $0 != id }) {
+            let rise = (old.firstIndex(of: id) ?? index) - index
+            if rise > (best?.rise ?? .min) { best = (id, index + 1, rise) }
+        }
+        return best.map { ($0.id, $0.position) }
+    }
+
+    /// "Spec moved to 1" for a links order entry. `linkLabels` maps a link ID to its label.
+    private static func linkOrderText(_ entry: ChangeEntry, linkLabels: [String: String]) -> String {
+        let ids = { (text: String?) in text.map { $0.split(separator: ",").map(String.init) } ?? [] }
+        guard let moved = movedLink(old: ids(entry.old), new: ids(entry.new)) else { return "Link order changed" }
+        return "\(linkLabels[moved.id] ?? "a removed link") moved to \(moved.position)"
+    }
 
     /// The worktree ID of an item such as "worktree:k3v9q2mxa7", or nil for any other item.
     /// The one field of a worktree item is its goal.
@@ -153,10 +176,14 @@ public enum ChangeRules {
     }
 
     /// The fields to show for a change. A link or repo field `position` is not shown.
-    /// Text edits show per word. An added or removed link or repo shows in full.
-    public static func entryViews(_ change: Change) -> [EntryView] {
+    /// Text edits show per word. An added or removed link or repo shows in full. A link order entry
+    /// names the moved link from `linkLabels`, which maps a link ID to its label.
+    public static func entryViews(_ change: Change, linkLabels: [String: String] = [:]) -> [EntryView] {
         change.entries.compactMap { entry in
             guard entry.field != "position" else { return nil }
+            if entry.item == linkOrderItem {
+                return EntryView(title: itemTitle(entry.item), body: .text(linkOrderText(entry, linkLabels: linkLabels)))
+            }
             let base = itemTitle(entry.item)
             let title = entry.field == "value" ? base : "\(base) \(entry.field)"
             switch (entry.old, entry.new) {
@@ -175,7 +202,8 @@ public enum ChangeRules {
     /// One line for the log, such as "Edited What, Where it stands", "Added link", or
     /// "Set the goal of fix-login". `worktreeNames` maps a worktree ID to its folder name.
     /// A worktree that it does not name, such as one that was removed, is "a worktree".
-    public static func summary(_ change: Change, worktreeNames: [String: String] = [:]) -> String {
+    public static func summary(_ change: Change, worktreeNames: [String: String] = [:],
+                               linkLabels: [String: String] = [:]) -> String {
         if isCreation(change) { return "Created the plot" }
         if let target = change.undoOf { return "Undid change \(target)" }
         var parts: [String] = []
@@ -183,6 +211,10 @@ public enum ChangeRules {
         for entry in change.entries where entry.field != "position" && seen.insert(entry.item).inserted {
             if let id = worktreeID(entry.item) {
                 parts.append("Set the goal of \(worktreeNames[id] ?? "a worktree")")
+                continue
+            }
+            if entry.item == linkOrderItem {
+                parts.append("Moved link")
                 continue
             }
             let isStructured = entry.item.hasPrefix("link:") || entry.item.hasPrefix("repo:")
