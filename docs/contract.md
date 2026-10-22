@@ -624,13 +624,13 @@ For each hook event in the table, `loam hook` connects to the socket and writes 
 | `event` | The hook event name |
 | `session_id` | The Claude Code session ID |
 | `cwd` | The working folder that Claude Code reports |
-| `source` | On `SessionStart`: `startup`, `resume`, `clear`, or `compact`. On `UserPromptSubmit`: what started the turn, as Claude Code says it, such as `user` for a prompt that you sent and `system` for a turn that Claude Code starts by itself. An older Claude Code sends no source on `UserPromptSubmit`, and the line then has none. No other event has it. |
+| `source` | On `SessionStart`: `startup`, `resume`, `clear`, `compact`, or `fork`. On `UserPromptSubmit`: what started the turn, as Claude Code says it, such as `user` for a prompt that you sent and `system` for a turn that Claude Code starts by itself. Claude Code does not send it on `UserPromptSubmit` today, and the line then has none. No other event has it. |
 | `notification_type` | Only on `Notification`: `elicitation_dialog`, `elicitation_url_dialog`, `agent_needs_input`, or `permission_prompt` |
 | `at` | The time of the hook call, in UTC |
 
 | Event | When |
 | :- | :- |
-| `SessionStart` | A session starts, resumes, clears, or compacts |
+| `SessionStart` | A session starts, resumes, clears, compacts, or forks |
 | `SessionEnd` | A session ends |
 | `UserPromptSubmit` | A turn starts: you send a prompt, or Claude Code starts the turn (see `source`). The line does not hold the prompt. |
 | `Stop` | Claude finishes its turn |

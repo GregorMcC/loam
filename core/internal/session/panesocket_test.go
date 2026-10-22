@@ -272,7 +272,7 @@ func TestPaneSessionStartLineHoldsSource(t *testing.T) {
 }
 
 // Claude Code says what started a turn: "user" for a prompt that you sent, "system" for a turn that it starts
-// by itself. Older versions send no source, and the line then has none.
+// by itself. Claude Code does not send it today, and the line then has none.
 func TestPaneUserPromptSubmitLineHoldsSource(t *testing.T) {
 	setup(t)
 	path, lines := listen(t)

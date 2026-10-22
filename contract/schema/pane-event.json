@@ -9,7 +9,7 @@
     "event": { "enum": ["SessionStart", "SessionEnd", "UserPromptSubmit", "Stop", "PermissionRequest", "Notification", "PostToolUse", "StopFailure"] },
     "session_id": { "type": "string" },
     "cwd": { "type": "string" },
-    "source": { "description": "Only on SessionStart (startup, resume, clear, compact) and UserPromptSubmit (what started the turn, such as user or system). An older Claude Code sends none on UserPromptSubmit.", "type": "string", "minLength": 1 },
+    "source": { "description": "Only on SessionStart (startup, resume, clear, compact, fork) and UserPromptSubmit (what started the turn, such as user or system). Claude Code does not send it on UserPromptSubmit today.", "type": "string", "minLength": 1 },
     "notification_type": { "description": "Only on Notification: elicitation_dialog, elicitation_url_dialog, agent_needs_input, or permission_prompt.", "enum": ["elicitation_dialog", "elicitation_url_dialog", "agent_needs_input", "permission_prompt"] },
     "at": { "type": "string", "format": "date-time" }
   },
