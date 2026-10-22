@@ -11,7 +11,7 @@ struct WorktreeActions: View {
 
     var body: some View {
         let status = model.worktreeStatus(id)
-        Button("Open pull request") { open(status?.pullRequestPage) }
+        Button("Open on GitHub") { open(status?.pullRequestPage) }
             .disabled(status?.pullRequestPage == nil)
         Button("Copy branch name") { copy(status?.worktree.branch) }
         Button("Refresh") {
