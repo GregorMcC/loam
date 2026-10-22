@@ -29,7 +29,7 @@ public struct SwitcherPreview: Equatable, Sendable {
     /// The text under "Where it stands". Only a plot has it.
     public var whereItStands: String?
     public var rows: [Row]
-    /// The primary action in the footer: "Open plot", "Go to pane", "Open link", "Run".
+    /// The primary action in the footer: "Open plot", "Go to pane", "Show pull request", "Open link", "Run".
     public var footerAction: String
 
     /// The facts about one pane that the preview needs.
@@ -68,9 +68,12 @@ public struct SwitcherPreview: Equatable, Sendable {
         public var actorText: (Change) -> String
         public var clock: (Change) -> String
         public var home: String
+        /// The worktrees of the plots, for a worktree item.
+        public var worktrees: [WorktreeStatus]
 
         public init(plots: [String: Plot], panes: [PaneFacts], changes: [Change], checkouts: [String: [RepoCheckout]],
-                    actorText: @escaping (Change) -> String, clock: @escaping (Change) -> String, home: String) {
+                    actorText: @escaping (Change) -> String, clock: @escaping (Change) -> String, home: String,
+                    worktrees: [WorktreeStatus] = []) {
             self.plots = plots
             self.panes = panes
             self.changes = changes
@@ -78,6 +81,7 @@ public struct SwitcherPreview: Equatable, Sendable {
             self.actorText = actorText
             self.clock = clock
             self.home = home
+            self.worktrees = worktrees
         }
 
         func panes(of space: Space) -> [PaneFacts] { panes.filter { $0.space == space } }
@@ -102,6 +106,7 @@ public struct SwitcherPreview: Equatable, Sendable {
         case .home: home(item, context)
         case .plot(let id): plot(item, id: id, context)
         case .pane, .savedPane: pane(item, context)
+        case .worktree(let id): worktree(item, id: id, context)
         case .link: link(item, context)
         case .action: action(item)
         }
@@ -166,6 +171,21 @@ public struct SwitcherPreview: Equatable, Sendable {
         }
         return SwitcherPreview(icon: item.icon, title: item.title, caption: facts == nil ? "Pane" : "Pane · \(kind)",
                                whereItStands: nil, rows: rows, footerAction: "Go to pane")
+    }
+
+    /// A worktree with a PR: the plot, the PR, what its stage says, and the folder.
+    private static func worktree(_ item: SwitcherItem, id: String, _ context: Context) -> SwitcherPreview {
+        let status = context.worktrees.first { $0.worktree.id == id }
+        var rows: [Row] = []
+        if let plot = item.plotName { rows.append(Row(label: "Plot", value: .text(plot))) }
+        if let status, let pr = status.pr {
+            rows.append(Row(label: "Pull request", value: .text("\(StageMark.numberText(pr.number)) \(pr.title)")))
+            rows.append(Row(label: "Status", value: .text(StatusLine(of: status).text)))
+            rows.append(Row(label: "Folder", value: .path(abbreviate(status.worktree.path, home: context.home))))
+        }
+        let stage = status?.stage.flatMap { $0.words.isEmpty ? nil : $0.words }
+        return SwitcherPreview(icon: item.icon, title: item.title, caption: (["Worktree"] + [stage].compactMap { $0 }).joined(separator: " \u{00B7} "),
+                               whereItStands: nil, rows: rows, footerAction: "Show pull request")
     }
 
     private static func checkout(of pane: PaneFacts, _ context: Context) -> Value? {

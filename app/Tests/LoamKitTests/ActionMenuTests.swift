@@ -112,6 +112,61 @@ import Testing
     }
 }
 
+/// Ticket 109: the Worktree section of the actions menu.
+@Suite struct ActionMenuWorktreeTests {
+    private func menuChord(_ command: AppCommand) -> KeyChord? { LoamKeys.chord(for: command) }
+
+    private func sections(worktree: ActionMenu.WorktreeFacts?, hasPullRequest: Bool = true) -> [ActionSection] {
+        ActionMenu.sections(
+            paneTitle: "claude", plotName: "Loam", worktree: worktree, chord: menuChord,
+            isEnabled: { ActionMenu.isAvailable($0, hasSpace: true, hasPlot: true, hasPane: true,
+                                                hasWorktree: worktree != nil, hasPullRequest: hasPullRequest) })
+    }
+
+    @Test func aWorktreePaneAddsASectionAfterThePaneTitledWithTheBranch() {
+        let all = sections(worktree: ActionMenu.WorktreeFacts(branch: "native-panel"))
+        #expect(all.map(\.id) == ["pane", "worktree", "plot", "home"])
+        let worktree = all[1]
+        #expect(worktree.title == "native-panel")
+        #expect(worktree.items.map(\.title) == ["Show pull request", "Refresh"])
+        #expect(worktree.items.map(\.command) == [.showWorktreePullRequest, .refreshWorktree])
+        #expect(worktree.items.allSatisfy { !$0.symbol.isEmpty && $0.keys.isEmpty })
+    }
+
+    @Test func noWorktreePaneNoSection() {
+        #expect(sections(worktree: nil).map(\.id) == ["pane", "plot", "home"])
+    }
+
+    @Test func aWorktreeWithNoPRCannotOpenOne() {
+        let all = sections(worktree: ActionMenu.WorktreeFacts(branch: "local-work"), hasPullRequest: false)
+        #expect(all.first { $0.id == "worktree" }?.items.map(\.title) == ["Refresh"])
+    }
+
+    @Test func theWorktreeCommandsNeedAWorktree() {
+        for command in [AppCommand.showWorktreePullRequest, .refreshWorktree] {
+            #expect(!ActionMenu.isAvailable(command, hasSpace: true, hasPlot: true, hasPane: true))
+            #expect(!ActionMenu.isAvailable(command, hasSpace: true, hasPlot: true, hasPane: true, hasWorktree: false,
+                                            hasPullRequest: true))
+        }
+        #expect(ActionMenu.isAvailable(.refreshWorktree, hasSpace: true, hasPlot: true, hasPane: true, hasWorktree: true))
+        #expect(!ActionMenu.isAvailable(.showWorktreePullRequest, hasSpace: true, hasPlot: true, hasPane: true, hasWorktree: true))
+        #expect(ActionMenu.isAvailable(.showWorktreePullRequest, hasSpace: true, hasPlot: true, hasPane: true, hasWorktree: true,
+                                       hasPullRequest: true))
+    }
+
+    @Test func theFilterFindsTheWorktreeRows() {
+        let all = sections(worktree: ActionMenu.WorktreeFacts(branch: "native-panel"))
+        #expect(ActionMenu.filter(all, query: "refresh").map(\.id) == ["worktree"])
+        #expect(ActionMenu.filter(all, query: "pull").flatMap(\.items).map(\.title) == ["Show pull request"])
+    }
+
+    @Test func aPaneAndAWorktreeWithOneNameKeepTwoSections() {
+        let all = ActionMenu.sections(paneTitle: "native-panel", plotName: "Loam", worktree: ActionMenu.WorktreeFacts(branch: "native-panel"),
+                                      chord: menuChord, isEnabled: { _ in true })
+        #expect(all.map(\.id).prefix(2) == ["pane", "worktree"])
+    }
+}
+
 @MainActor @Suite struct ActionMenuModelTests {
     private func model() -> ActionMenuModel {
         let menu = ActionMenuModel()
@@ -171,6 +226,23 @@ import Testing
     private func change(_ id: Int, plot: String = "p1", _ actor: Actor, item: String = "where") -> Change {
         Change(id: id, plotID: plot, at: "2026-10-04T14:02:00Z", actor: actor,
                entries: [ChangeEntry(item: item, field: "value", old: item.hasPrefix("link:") ? nil : "a", new: "b")], undoOf: nil)
+    }
+
+    /// Ticket 109: the chip of the PR and the toast share the space after the pane label. The toast wins.
+    @Test func theToastWinsOverTheChipOfThePR() throws {
+        let bar = ActionBarModel()
+        let list = try JSONDecoder().decode([WorktreeStatus].self, from: Fixtures.data("worktree_list_stages"))
+        let mark = try #require(list.first { $0.stage == .checksFailed }.flatMap { StageMark($0) })
+        #expect(bar.trailing == .nothing)
+        bar.chip = mark
+        #expect(bar.trailing == .chip(mark))
+        bar.changesArrived([], activePlot: "p1")
+        bar.changesArrived([change(1, claude)], activePlot: "p1")
+        #expect(bar.trailing == .toast("Claude set Where it stands"))
+        bar.clearToast(id: bar.toastID)
+        #expect(bar.trailing == .chip(mark))
+        bar.chip = nil
+        #expect(bar.trailing == .nothing)
     }
 
     @Test func theFirstReadShowsNoToast() {

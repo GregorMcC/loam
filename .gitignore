@@ -1,5 +1,5 @@
 # The GhosttyKit xcframework link. scripts/build-ghosttykit.sh creates it.
-/app/vendor/
+/app/vendor
 /app/.build/
 .claude/worktrees/
 .DS_Store

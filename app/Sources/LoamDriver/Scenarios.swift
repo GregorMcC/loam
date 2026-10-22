@@ -49,6 +49,7 @@ enum Scenarios {
         Scenario(name: "panes", limit: 90, body: panes),
         Scenario(name: "worktrees", limit: 120, body: worktrees),
         Scenario(name: "worktrees-section", limit: 120, body: worktreesSection),
+        Scenario(name: "pr-popover", limit: 150, body: prPopover),
         Scenario(name: "archive", limit: 120, body: archive),
         Scenario(name: "restore-quit", limit: 90, body: restoreQuit),
         Scenario(name: "restore-relaunch", limit: 90, body: restoreRelaunch),

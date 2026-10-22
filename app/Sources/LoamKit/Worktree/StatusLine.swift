@@ -58,7 +58,7 @@ public struct StatusLine: Equatable, Sendable {
             // The stage needs a failed check, so a PR with no checks cannot come from the core.
             parts = [Part(text: checks.total > 0 ? progress(checks.failed, of: checks.total, "failed") : "Checks failed", failing: true)]
         case .approvalNeeded:
-            parts = [plain(checks.waiting == 1 ? "1 workflow waits for approval" : "\(checks.waiting) workflows wait for approval")]
+            parts = [plain(waitingText(checks.waiting))]
         case .draft:
             parts = [plain("Draft")] + (checks.total > 0 ? [plain(progress(done(checks), of: checks.total, "done"))] : [])
         case .behindBase:
@@ -100,6 +100,11 @@ public struct StatusLine: Equatable, Sendable {
     /// The summaries of GitHub for checks that have not finished.
     private static let activeCheckStates: Set<String> = ["PENDING", "EXPECTED"]
 
+    /// The values of `mergeable` and `merge_state` that name a conflict, and the wait of GitHub.
+    private static let conflictingState = "CONFLICTING"
+    private static let dirtyState = "DIRTY"
+    private static let unknownState = "UNKNOWN"
+
     /// Checks running, or "Checking…" when GitHub has not finished its merge check (mergeable UNKNOWN).
     /// The core gives the stage then, and the row has no check that runs or waits and no unfinished
     /// summary (README, "Stages"). The sidebar tooltip reads this line too (`StageMark`).
@@ -107,6 +112,11 @@ public struct StatusLine: Equatable, Sendable {
         let pending = checks.running > 0 || checks.waiting > 0 || activeCheckStates.contains(checks.state)
         guard pending else { return "Checking\u{2026}" }
         return checks.total > 0 ? progress(done(checks), of: checks.total, "done") : "Waiting for checks"
+    }
+
+    /// "1 workflow waits for approval".
+    private static func waitingText(_ number: Int) -> String {
+        number == 1 ? "1 workflow waits for approval" : "\(number) workflows wait for approval"
     }
 
     /// The checks that neither run nor wait. A cancelled or stale check counts as done.
@@ -135,5 +145,59 @@ public struct StatusLine: Equatable, Sendable {
     /// "2 of 14 checks failed". The noun agrees with the total.
     private static func progress(_ number: Int, of total: Int, _ verb: String) -> String {
         "\(number) of \(total) \(total == 1 ? "check" : "checks") \(verb)"
+    }
+}
+
+// MARK: The rows of the PR popover (ticket 109)
+
+/// One short phrase for each row of the popover: Checks, Review, Base and Conflicts. They are parts, so
+/// the failing words take `rust` as in the status line. They are phrases of an open PR.
+extension StatusLine {
+    /// "2 failed · 12 passed". Checks that run say how many are done: "9 of 14 done". The count of the
+    /// failed checks says "optional" when the base branch does not need them, so it does not fail.
+    public static func checks(of pr: PullRequest) -> [Part] {
+        let checks = pr.checks
+        guard checks.total > 0 else { return [plain(activeCheckStates.contains(checks.state) ? "Waiting for checks" : "No checks")] }
+        let unfinished = checks.running > 0 || checks.waiting > 0
+        var parts: [Part] = []
+        if checks.failed > 0 {
+            // A check that the merge needs fails the row. With no required check, any failed check counts.
+            let needed = pr.failedChecks.contains(where: \.required) || (checks.required ?? 0) == 0
+            parts.append(Part(text: needed ? "\(checks.failed) failed" : "\(checks.failed) optional failed", failing: needed))
+            if checks.passed > 0 { parts.append(plain("\(checks.passed) passed")) }
+            if checks.running > 0 { parts.append(plain("\(checks.running) running")) }
+        } else if unfinished {
+            parts.append(plain("\(done(checks)) of \(checks.total) done"))
+        } else {
+            parts.append(plain("\(checks.passed) of \(checks.total) passed"))
+        }
+        if checks.waiting > 0 { parts.append(plain(waitingText(checks.waiting))) }
+        return parts
+    }
+
+    /// "Approved · 1 approval", "Changes requested · 3 comments", "Review required", or "No review
+    /// required". GitHub gives no count of the approvals that a merge needs, so the phrase counts the
+    /// approvals made.
+    public static func review(of pr: PullRequest) -> [Part] {
+        let approvals = pr.approvals > 0 ? [plain(count(pr.approvals, "approval"))] : []
+        switch pr.reviewDecision {
+        case "APPROVED": return [plain("Approved")] + approvals
+        case "CHANGES_REQUESTED": return [plain("Changes requested")] + (pr.comments > 0 ? [plain(count(pr.comments, "comment"))] : [])
+        case "REVIEW_REQUIRED": return [plain("Review required")] + approvals
+        default: return approvals.isEmpty ? [plain("No review required")] : [plain("Approved")] + approvals
+        }
+    }
+
+    /// "3 commits behind main", or "Up to date with main".
+    public static func base(of pr: PullRequest) -> [Part] {
+        [plain(pr.behindBase > 0 ? "\(count(pr.behindBase, "commit")) behind \(pr.base)" : "Up to date with \(pr.base)")]
+    }
+
+    /// "Conflicts with main" fails. "Checking…" is GitHub still working it out, which is no failure.
+    public static func conflicts(of pr: PullRequest) -> [Part] {
+        if pr.mergeable == conflictingState || pr.mergeState == dirtyState {
+            return [Part(text: "Conflicts with \(pr.base)", failing: true)]
+        }
+        return [plain(pr.mergeable == unknownState ? "Checking\u{2026}" : "None")]
     }
 }

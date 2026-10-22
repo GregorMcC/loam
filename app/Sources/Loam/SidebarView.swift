@@ -452,8 +452,12 @@ private struct CheckoutRowView: View {
     let open: Bool
     /// ⌘⇧L selected the worktree, which has no pane to take the selection.
     var selected = false
+    /// Where the PR mark is, for the popover that a click on it opens (ticket 109).
+    @State private var markProbe = AnchorProbe()
 
     private var missing: Bool { row.worktree?.missing ?? false }
+    /// The mark of a worktree with a PR opens the PR popover. The ✎ mark of unpushed work opens nothing.
+    private var pullRequestMark: StageMark? { row.worktree?.mark.flatMap { $0.number == nil ? nil : $0 } }
 
     var body: some View {
         TreeRow(icon: .symbol(row.kind == .worktree ? "arrow.triangle.pull" : "arrow.triangle.branch"),
@@ -468,7 +472,7 @@ private struct CheckoutRowView: View {
             if missing {
                 Text("gone").loamText(LoamTheme.captionStyle, LoamColor.inkFaint)
             } else if let mark = row.worktree?.mark {
-                WorktreeMarkView(mark: mark)
+                WorktreeMarkView(mark: mark, probe: markProbe, opens: pullRequestMark != nil) { showPullRequest() }
             }
             if !open, !row.panes.isEmpty {
                 CountChip(text: "\(row.panes.count)")
@@ -486,7 +490,15 @@ private struct CheckoutRowView: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityAction { show() }
+        .accessibilityActions {
+            // The mark is part of the combined row, so VoiceOver and the driver reach the popover here.
+            if pullRequestMark != nil { Button("Show pull request") { showPullRequest() } }
+        }
         .accessibilityIdentifier(identifier)
+    }
+
+    private func showPullRequest() {
+        model.openPullRequest(row.id, anchor: markProbe.anchor)
     }
 
     private var identifier: String {

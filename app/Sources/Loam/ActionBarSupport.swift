@@ -7,7 +7,7 @@ import SwiftUI
 extension MainWindowController: NSMenuItemValidation {
     func installActionBar() {
         let bar = NSHostingView(rootView: ActionBarView(
-            bar: actionBar, review: model.review, app: model,
+            bar: actionBar, review: model.review, app: model, chipProbe: chipProbe,
             newSessionKeys: { [weak self] in ActionMenu.keycaps(self?.menuChord(for: .newTab)) },
             actionsKeys: { [weak self] in ActionMenu.keycaps(self?.menuChord(for: .actionsMenu)) },
             newSession: { [weak self] in self?.perform(.newTab) },
@@ -19,7 +19,13 @@ extension MainWindowController: NSMenuItemValidation {
             close: { [weak self] in self?.closeActionsMenu() }))
         menu.sizingOptions = []
         menu.isHidden = true
-        setActionHosts(bar: bar, menu: menu)
+        let popover = NSHostingView(rootView: PRPopoverView(
+            app: model, place: popoverPlace, runPrimary: { [weak self] in self?.runPrimaryAction($0) }))
+        popover.sizingOptions = []
+        popover.isHidden = true
+        setActionHosts(bar: bar, menu: menu, popover: popover)
+        model.prPopover.onOpenChange = { [weak self] open in self?.pullRequestPopoverChanged(open: open) }
+        model.prPopover.onOpen = { [weak self] in self?.placePullRequestPopover() }
         columnBottomInset(ActionBarView.height)
     }
 
@@ -27,12 +33,14 @@ extension MainWindowController: NSMenuItemValidation {
     func toggleActionsMenu() {
         if actionBar.menu.isOpen { return closeActionsMenu() }
         if model.switcher.isOpen { model.switcher.close() }
+        model.closePullRequest()  // One overlay at a time: the popover would take the clicks of the menu.
         let workspace = model.workspace
         let space = workspace.activeSpace
         let pane = workspace.focusedPane
         let sections = ActionMenu.sections(
             paneTitle: pane.map { workspace.title(of: $0, terminalTitles: model.terminalTitles) },
             plotName: workspace.activePlotID.flatMap { model.name(of: .plot($0)) },
+            worktree: model.focusedWorktree.map { ActionMenu.WorktreeFacts(branch: $0.branch) },
             inHome: space == .home,
             moveTargets: space == .home ? model.moveTargets : [],
             chord: { [weak self] in self?.menuChord(for: $0) },
@@ -106,8 +114,10 @@ extension MainWindowController: NSMenuItemValidation {
 
     private func availability(_ command: AppCommand) -> Bool {
         let workspace = model.workspace
+        let worktree = model.focusedWorktree.flatMap { model.worktreeStatus($0.id) }
         return ActionMenu.isAvailable(command, hasSpace: workspace.activeSpace != nil, hasPlot: workspace.activePlotID != nil,
-                                      hasPane: workspace.focusedPane != nil)
+                                      hasPane: workspace.focusedPane != nil, hasWorktree: worktree != nil,
+                                      hasPullRequest: worktree?.pr != nil)
     }
 
     /// The menu bar and the actions menu agree on what can run (`ActionMenu.isAvailable`).
@@ -126,15 +136,17 @@ struct ActionsContext: Equatable {
 }
 
 extension LoamSplitView {
-    /// Adds the action bar, the quick switcher and the actions menu overlay over the split view, in
-    /// its superview. The split view lays them out with its items (`layout`).
-    func install(bar: NSView, overlay: NSView, switcher: NSView, barHeight: CGFloat) {
+    /// Adds the action bar, the PR popover, the quick switcher and the actions menu overlay over the
+    /// split view, in its superview. The split view lays them out with its items (`layout`).
+    func install(bar: NSView, overlay: NSView, popover: NSView, switcher: NSView, barHeight: CGFloat) {
         self.bar = bar
         self.overlay = overlay
+        self.popover = popover
         self.switcher = switcher
         self.barHeight = barHeight
         superview?.addSubview(bar, positioned: .above, relativeTo: self)
-        superview?.addSubview(switcher, positioned: .above, relativeTo: bar)
+        superview?.addSubview(popover, positioned: .above, relativeTo: bar)
+        superview?.addSubview(switcher, positioned: .above, relativeTo: popover)
         superview?.addSubview(overlay, positioned: .above, relativeTo: switcher)
         needsLayout = true
     }

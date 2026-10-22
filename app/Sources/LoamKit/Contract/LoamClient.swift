@@ -89,6 +89,12 @@ public struct LoamClient: Sendable {
         try await read(["worktree", "list"] + (plot.map { [$0] } ?? []) + (refresh ? ["--refresh"] : []))
     }
 
+    /// `loam worktree list <plot> --refresh --worktree <id>`: asks GitHub about one worktree (an ID).
+    /// The answer is still the whole list of the plot.
+    public func refreshWorktree(plot: String, worktree: String) async throws -> [WorktreeStatus] {
+        try await read(["worktree", "list", plot, "--refresh", "--worktree", worktree])
+    }
+
     // MARK: Writes (all with `--actor app`)
 
     public func new(name: String) async throws -> Plot {

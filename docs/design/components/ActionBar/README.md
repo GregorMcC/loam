@@ -8,17 +8,27 @@ The action bar is the 40pt strip at the bottom of the window (ticket 89). It sit
   - a `/` in `ink-faint`
   - the label of the focused pane in `ink-muted`, the same label as its tab
   - the toast: a small `moss` check and the newest change of the active plot in `ink-faint`, for example "Claude set Where it stands"
-- The toast shows for 6 seconds after a change, then fades. A change that was in the log when the app started does not show. The toast hides when the bar is too narrow for it.
+  - the PR chip, for a pane that runs in a worktree with a PR (see below)
+- The toast shows for 6 seconds after a change, then fades. A change that was in the log when the app started does not show. The toast hides when the bar is too narrow for it. The toast and the chip share one place, and the toast wins while it shows.
 - Right side: "New session" with its keycaps, a 16pt vertical rule (the ink at 13%), then "Actions" with its keycaps.
 - The two buttons are text buttons: 28pt high, radius 7, `ink` text. They take the ink at 9% as a fill on hover. Actions keeps that fill while its menu is open.
 - Keycaps are 20pt, radius 5, the ink at 10%, with `ink-muted` text.
+
+## The PR chip
+
+- It is 24pt high with radius 7, the ink at 5% as a fill and the ink at 8% as a hairline. It sits 8pt after the pane label.
+- It holds the PR number in `ink-muted` ("#16"), the stage symbol (12pt), and the stage in words ("Checks failed"). The symbol and the words have the colour of the stage.
+- A pane in the main checkout, a pane in Home and a pane in a worktree with no PR have no chip. A worktree with local work that is not pushed has no PR, so it has no chip either.
+- A narrow bar drops the toast first, then the words of the chip. When the bar is still too narrow, the pane label ends in an ellipsis, so the chip and the two buttons stay in view.
+- A click on the chip opens the [PR popover](../PRPopover/README.md) above it. The chip has the accessibility label of the stage mark: the number, the stage, and the status line.
 
 ## The actions menu
 
 - ⌘J or a click on Actions opens the menu. ⌘J, Escape, or a click outside the menu closes it.
 - The menu is a card above the Actions button: 340pt wide, radius 12, on `horizon-b`, with a hairline edge and `shadow-raised`. It sits 10pt from the right end of the bar and 6pt above it.
-- The menu has two sections. The heading of each section is in `ink-faint`.
+- The menu has up to four sections. The heading of each section is in `ink-faint`.
   - The focused pane, with its label as the heading: New session, Split right, Split down, Close pane.
+  - The worktree of the focused pane, with its branch as the heading: Show pull request (only when the worktree has a PR) and Refresh. A pane that runs in no worktree has no such section. Show pull request opens the PR popover. Refresh asks GitHub about the worktree and shows no popover.
   - The active plot, with its name as the heading: Edit brief, Add link, Add repo, Archive plot.
 - Each row is 34pt high. It has a symbol in `ink-muted`, the label in `ink`, and the keycaps of the command on the right. The selected row has the ink at 9% as a fill, radius 8.
 - A search field is at the bottom, under a hairline. It has the keys when the menu opens. Each word of the query must be in the label of a row. A section with no rows left does not show.

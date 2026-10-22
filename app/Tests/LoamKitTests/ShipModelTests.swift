@@ -535,6 +535,36 @@ private func settle() async { try? await Task.sleep(for: .milliseconds(200)) }
         model.shipRefresh.stop()
     }
 
+    /// Ticket 109: a refresh of one worktree asks GitHub about that worktree only. The other rows of the answer are
+    /// what the core cached, so they prove nothing about `gh` now.
+    @Test func aRefreshOfOneWorktreeJudgesGitHubByThatWorktreeOnly() async throws {
+        let fake = try fakePrinting(try stageRows(note: "gh_signed_out"))
+        let (model, _) = await started(fake)
+        await waitUntil("both plots hold the note") { holdNote(model, [plotB, plotC]) }
+        // The asked worktree has a note that is no sign of a fix. The cached rows have none.
+        var rows = try #require(try JSONSerialization.jsonObject(with: Fixtures.data("worktree_list_stages")) as? [[String: Any]])
+        let index = try #require(rows.firstIndex { $0["worktree"].flatMap { ($0 as? [String: Any])?["id"] as? String } == "wtreaaaaah" })
+        rows[index]["pr_note"] = "no_access"
+        try reprint(JSONSerialization.data(withJSONObject: rows), from: fake)
+        let before = refreshCalls(fake).count
+        #expect(await model.refreshWorktree("wtreaaaaah"))
+        await settle()
+        #expect(refreshCalls(fake).count == before + 1, "a cached row started a refresh of another plot")
+        #expect(refreshCalls(fake).last == "worktree list plotaaaaab --refresh --worktree wtreaaaaah --json")
+        #expect(model.shipNotices(for: plotC) == [.ghSignedOut])
+        model.shipRefresh.stop()
+    }
+
+    @Test func aRefreshOfAnUnknownWorktreeAsksNoOne() async throws {
+        let fake = try fakePrinting(try stageRows(note: "gh_signed_out"))
+        let (model, _) = await started(fake)
+        let before = refreshCalls(fake).count
+        #expect(await !model.refreshWorktree("nope"))
+        await settle()
+        #expect(refreshCalls(fake).count == before)
+        model.shipRefresh.stop()
+    }
+
     @Test func anArchivedPlotThatHoldsANoteGetsNoRefreshAtAFix() async throws {
         let fake = try fakePrinting(try stageRows(note: "gh_signed_out"))
         let (model, _) = await started(fake, archived: [plotC])

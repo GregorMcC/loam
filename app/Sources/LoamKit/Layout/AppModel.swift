@@ -53,7 +53,17 @@ public final class AppModel {
         if selectedWorktree != nil { selectedWorktree = nil }
     }
     /// The worktrees of each plot with their checks, as the core last listed them.
-    public private(set) var worktrees: [String: [WorktreeStatus]] = [:] { didSet { if worktrees != oldValue { onWorkspaceChange?() } } }
+    public private(set) var worktrees: [String: [WorktreeStatus]] = [:] {
+        didSet {
+            guard worktrees != oldValue else { return }
+            closePullRequestIfGone()
+            onWorkspaceChange?()
+        }
+    }
+    /// The PR popover (ticket 109).
+    @ObservationIgnored public let prPopover = PRPopoverModel()
+    /// The refresh of one worktree that runs now, for each worktree (`refreshWorktree`).
+    @ObservationIgnored private var worktreeRefreshes: [String: Task<Bool, Never>] = [:]
     /// Panes that were saved and have not resumed, as folders. Removal refuses while one lies in the
     /// worktree. The default reads the restored panes that wait for their plot to show (ticket 29).
     @ObservationIgnored private var worktreeReads = 0
@@ -322,12 +332,52 @@ public final class AppModel {
     public func refreshWorktrees(plot: String) async {
         let applied = worktreeReadsApplied
         guard let rows = try? await client.worktrees(plot: plot, refresh: true) else { return }
+        await show(refreshed: rows, plot: plot, askedAbout: rows, readsApplied: applied)
+    }
+
+    /// Shows the answer of a refresh. `askedAbout` are the rows that the refresh asked GitHub about: they
+    /// tell whether `gh` works. `applied` is `worktreeReadsApplied` from before the refresh started.
+    private func show(refreshed rows: [WorktreeStatus], plot: String, askedAbout: [WorktreeStatus], readsApplied applied: Int) async {
         worktreeReads += 1  // A read of the cache that started before the answer must not replace it.
         worktrees[plot] = rows.isEmpty ? nil : rows
         if worktreeReadsRunning > 0 || worktreeReadsApplied != applied { await reloadWorktrees() }
-        if !rows.contains(where: \.holdsGitHubNote), rows.contains(where: \.githubAnswered) {
+        if !askedAbout.contains(where: \.holdsGitHubNote), askedAbout.contains(where: \.githubAnswered) {
             recheckGitHubNotes(except: plot)
         }
+    }
+
+    /// Asks GitHub about one worktree (`loam worktree list <plot> --refresh --worktree <id>`) and shows the
+    /// answer (ticket 109). The other rows of its plot stay as the core cached them. An ask while the refresh
+    /// of the worktree runs joins it, so a burst of opens of the PR popover runs one `loam`. `afterChange`
+    /// is for a button that changed the PR, and for Refresh in the ⌘J menu, where a push may have come a
+    /// moment ago: a refresh that started before the change cannot show it, so the ask waits for that one and
+    /// then asks again. Returns false when the worktree is unknown or the core gave no answer. The rows stay
+    /// then.
+    @discardableResult
+    public func refreshWorktree(_ id: String, afterChange: Bool = false) async -> Bool {
+        if afterChange, let running = worktreeRefreshes[id] { _ = await running.value }
+        return await worktreeRefresh(id)?.value ?? false
+    }
+
+    /// The refresh of the worktree that runs now, else a new one. Nil when the worktree is unknown.
+    @discardableResult
+    private func worktreeRefresh(_ id: String) -> Task<Bool, Never>? {
+        if let running = worktreeRefreshes[id] { return running }
+        guard let plot = worktreeStatus(id)?.worktree.plotID else { return nil }
+        let applied = worktreeReadsApplied
+        prPopover.beginRefresh(of: id)
+        let refresh = Task { [weak self] () -> Bool in
+            guard let self else { return false }
+            let rows = try? await client.refreshWorktree(plot: plot, worktree: id)
+            if let rows {
+                await show(refreshed: rows, plot: plot, askedAbout: rows.filter { $0.worktree.id == id }, readsApplied: applied)
+            }
+            worktreeRefreshes[id] = nil
+            prPopover.endRefresh(of: id, answered: rows != nil)
+            return rows != nil
+        }
+        worktreeRefreshes[id] = refresh
+        return refresh
     }
 
     /// `gh` answered for a plot, so it works again. The Ready to merge row stays hidden while any plot
@@ -400,7 +450,11 @@ public final class AppModel {
     }
 
     private func report(_ error: Error) {
-        lastError = (error as? LoamError)?.userMessage ?? String(describing: error)
+        lastError = Self.message(for: error)
+    }
+
+    private static func message(for error: Error) -> String {
+        (error as? LoamError)?.userMessage ?? String(describing: error)
     }
 
     public func apply(_ list: [PlotSummary], archived: [PlotSummary] = []) {
@@ -822,13 +876,13 @@ public final class AppModel {
         return sidebar.readyToMerge.first { $0.id == next }
     }
 
-    /// ⌘⇧L and a click on the "Ready to merge" row: goes to the next ready worktree, in any plot.
-    /// Returns false when no worktree is ready.
+    /// ⌘⇧L and a click on the "Ready to merge" row: goes to the next ready worktree, in any plot, and
+    /// opens its PR popover. Returns false when no worktree is ready.
     @discardableResult
     public func goToNextReadyWorktree() -> Bool {
         guard let row = nextReadyWorktree() else { return false }
         goToWorktree(row.id)
-        // The one place that ticket 109 extends with "and opens its PR popover".
+        openPullRequest(row.id)
         return true
     }
 
@@ -1037,6 +1091,76 @@ public final class AppModel {
     /// The checks of a worktree, from the last list.
     public func worktreeStatus(_ id: String) -> WorktreeStatus? {
         worktrees.values.joined().first { $0.worktree.id == id }
+    }
+
+    // MARK: The PR popover (ticket 109)
+
+    /// Opens the PR popover for a worktree and asks GitHub about it (`refreshWorktree`), so the popover
+    /// shows the state now. The popover shows the last state until the answer comes. A popover that is open
+    /// moves to the worktree. Returns false when the worktree is unknown.
+    @discardableResult
+    public func openPullRequest(_ id: String, anchor: PopoverAnchor = .actionBar) -> Bool {
+        guard worktreeStatus(id) != nil else { return false }
+        prPopover.open(id, anchor: anchor)
+        worktreeRefresh(id)
+        return true
+    }
+
+    public func closePullRequest() { prPopover.close() }
+
+    /// The worktree left the list (a land removed it, or the folder and the record are gone), so the
+    /// popover has nothing to show.
+    private func closePullRequestIfGone() {
+        if let id = prPopover.worktreeID, worktreeStatus(id) == nil { prPopover.close() }
+    }
+
+    /// Re-run failed: `loam worktree rerun`. The popover shows what GitHub did, then asks about the
+    /// worktree again, so the checks show as running. Does nothing when no popover is open, or while a
+    /// button runs for its worktree.
+    public func rerunFailedChecks() async {
+        await runPullRequestAction(.rerunFailed) { plot, id in
+            PRActionNote.rerun(try await self.client.worktreeRerun(plot: plot, worktree: id))
+        }
+    }
+
+    /// Update branch: `loam worktree update`. As `rerunFailedChecks`.
+    public func updateBranch() async {
+        await runPullRequestAction(.updateBranch) { plot, id in
+            PRActionNote.update(try await self.client.worktreeUpdate(plot: plot, worktree: id))
+        }
+    }
+
+    /// Runs a button for the worktree of the popover. The command goes on when the popover closes or shows
+    /// another worktree. Its note shows only in a popover that shows the worktree when it ends.
+    private func runPullRequestAction(_ action: PRSecondaryAction, _ run: (_ plot: String, _ worktree: String) async throws -> String) async {
+        guard let id = prPopover.worktreeID, let plot = worktreeStatus(id)?.worktree.plotID,
+              prPopover.begin(action, for: id) else { return }
+        do {
+            prPopover.end(id, note: try await run(plot, id))
+        } catch {
+            // The popover shows the refusal where the button is. When it no longer shows the worktree, the
+            // error bar of the window says it.
+            if !prPopover.end(id, note: Self.message(for: error)) { report(error) }
+            return
+        }
+        // GitHub changed the PR, so the app asks about it again, also when nobody sees the popover.
+        await refreshWorktree(id, afterChange: true)
+    }
+
+    // MARK: The PR of a pane
+
+    /// The PR of the worktree that the pane runs in, as the action bar chip and the pane header show it.
+    /// Nil for a pane in the main checkout or in Home, and for a worktree with no PR or with no folder. The
+    /// ✎ mark of work that is not pushed is a mark of the sidebar, not a PR.
+    public func pullRequestMark(of pane: PaneID) -> StageMark? {
+        guard let id = workspace.spec(of: pane)?.worktree?.id, let status = worktreeStatus(id), status.pr != nil,
+              let mark = StageMark(status), mark.number != nil else { return nil }
+        return mark
+    }
+
+    /// The worktree that the focused pane runs in. Nil for the main checkout and for Home.
+    public var focusedWorktree: WorktreeRef? {
+        workspace.focusedPane.flatMap { workspace.spec(of: $0)?.worktree }
     }
 
     /// The line that the "Session ended" bar adds when the pane's worktree is gone. Nil otherwise.

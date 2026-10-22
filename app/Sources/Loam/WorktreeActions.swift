@@ -4,31 +4,38 @@ import SwiftUI
 
 /// The actions of one worktree, built once for the hover menu and the context menu of the panel row and
 /// for the context menu of the sidebar row (ticket 108). Tickets 110 and 112 add Send failures to
-/// session and Land here.
+/// session and Land here. Open on GitHub opens the PR in the browser, or the compare page of a branch that
+/// is pushed and has no PR, as the PR popover does. The PR popover has the details.
 struct WorktreeActions: View {
     let model: AppModel
     let id: String
 
     var body: some View {
         let status = model.worktreeStatus(id)
-        Button("Open on GitHub") { open(status?.pullRequestPage) }
-            .disabled(status?.pullRequestPage == nil)
-        Button("Copy branch name") { copy(status?.worktree.branch) }
+        Button("Open on GitHub") {
+            if let page = status?.githubPage { SystemActions.open(page) }
+        }
+        .disabled(status?.githubPage == nil)
+        Button("Copy branch name") {
+            if let branch = status?.worktree.branch { SystemActions.copy(branch) }
+        }
         Button("Refresh") {
             if let plot = status?.worktree.plotID { Task { await model.shipRefresh.refresh(plot) } }
         }
         Divider()
         Button("Remove\u{2026}") { WorktreeDialogs.askRemove(id, model: model) }
     }
+}
 
-    private func open(_ page: URL?) {
-        guard let page else { return }
+/// The two things that a worktree menu and the PR popover do outside the app: open an address in the
+/// browser, and copy text.
+enum SystemActions {
+    static func open(_ page: URL) {
         NSWorkspace.shared.open(page)
     }
 
-    private func copy(_ branch: String?) {
-        guard let branch else { return }
+    static func copy(_ text: String) {
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(branch, forType: .string)
+        NSPasteboard.general.setString(text, forType: .string)
     }
 }

@@ -11,7 +11,7 @@ public enum SwitcherRanker {
         return (true, String(query.dropFirst()))
     }
 
-    /// `items` is in source order: plots, then panes, then links, then actions.
+    /// `items` is in source order: plots, then panes, then worktrees, then links, then actions.
     /// `useTimes` maps an item ID to its last use.
     public static func rank(_ items: [SwitcherItem], query: String, useTimes: [String: Date]) -> [SwitcherResult] {
         let (actionsOnly, text) = parse(query)
@@ -35,7 +35,7 @@ public enum SwitcherRanker {
     }
 
     /// Panes that need you, then panes that are done and unread, then plots and panes by use.
-    /// Links and actions show only after you type.
+    /// Worktrees, links and actions show only after you type.
     static func emptyQueryOrder(_ items: [SwitcherItem], useTimes: [String: Date]) -> [SwitcherResult] {
         let shown = items.enumerated().filter { $0.element.kind == .plot || $0.element.kind == .pane }
         func tier(_ item: SwitcherItem) -> Int {

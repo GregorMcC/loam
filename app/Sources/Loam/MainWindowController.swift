@@ -33,6 +33,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var actionsContext: ActionsContext?
     private(set) var barHost: NSHostingView<ActionBarView>!
     private(set) var actionsHost: NSHostingView<ActionsMenuView>!
+    /// The PR popover over the window (ticket 109), the place of its chip in the action bar, the plot and
+    /// the pane it was opened in, and the keys that the popover took from a field of the plot panel.
+    private(set) var popoverHost: NSHostingView<PRPopoverView>!
+    let chipProbe = AnchorProbe()
+    let popoverPlace = PopoverPlace()
+    var popoverContext: ActionsContext?
+    var keysBeforePopover: HeldKeys?
     let panelController: NSHostingController<PlotPanelView>
 
     init(model: AppModel, factory: PaneViewFactory) {
@@ -141,14 +148,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
-    func setActionHosts(bar: NSHostingView<ActionBarView>, menu: NSHostingView<ActionsMenuView>) {
+    func setActionHosts(bar: NSHostingView<ActionBarView>, menu: NSHostingView<ActionsMenuView>,
+                        popover: NSHostingView<PRPopoverView>) {
         barHost = bar
         actionsHost = menu
+        popoverHost = popover
         let split = splitController.splitView as? LoamSplitView
         split?.onBarLayout = { [actionBar] inset in
             if actionBar.menu.trailingInset != inset { actionBar.menu.trailingInset = inset }
         }
-        split?.install(bar: bar, overlay: menu, switcher: switcherHost, barHeight: ActionBarView.height)
+        // The split view lays out its columns first and their content after it, so the control of the popover
+        // has its new place only once the pass is over.
+        split?.onLayout = { [weak self] in DispatchQueue.main.async { self?.placePullRequestPopover() } }
+        split?.install(bar: bar, overlay: menu, popover: popover, switcher: switcherHost, barHeight: ActionBarView.height)
     }
 
     /// The room under the well: the action bar.
@@ -322,16 +334,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window?.title = model.sidebar.windowTitle
         refreshSubtitle()
         closeActionsMenuIfContextChanged()
+        closePullRequestIfContextChanged()
         // The keyboard moves to the focused pane only when the focus moved, the pane got a new view, or the
         // view in it that takes the keys changed (the Session ended bar). Most renders are for other
         // changes (a pane event, a feed update, a refresh of the ship state), and they must not take the
         // keyboard from a field that you type in, such as one in the plot panel. The same holds when a
         // session ends: the bar takes the keys only from the terminal, or when nothing holds them. The open
-        // switcher and the open actions menu keep the keyboard too.
+        // switcher, the open actions menu and the open PR popover keep the keyboard too.
         let target = tab.flatMap { paneArea.container(for: $0.focused) }?.focusTarget
         let holder = window?.firstResponder === window ? nil : window?.firstResponder
         if views.movesKeys(in: workspace, target: target, heldBy: holder), !model.switcher.isOpen, !actionBar.menu.isOpen,
-           let target {
+           !model.prPopover.isOpen, let target {
             window?.makeFirstResponder(target)
         }
         // A pane that opened with text to type (Sign in) has its terminal now.
@@ -348,8 +361,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         for id in workspace.livePaneIDs {
             guard let spec = workspace.spec(of: id), let container = paneArea.container(for: id) else { continue }
             container.update(title: workspace.title(of: id, terminalTitles: titles), state: workspace.state(of: id) ?? .running,
-                             focused: id == focused, branch: spec.worktree?.branch, attention: workspace.attention(of: id),
-                             showsHeader: workspace.showsHeader(id))
+                             focused: id == focused, branch: spec.worktree?.branch, pullRequest: model.pullRequestMark(of: id)?.label,
+                             attention: workspace.attention(of: id), showsHeader: workspace.showsHeader(id))
             let session = workspace.session(of: id)
             container.showEnded(spec.kind == .session && session?.exited == true, canResume: session?.started == true,
                               note: model.endedNote(of: id))
@@ -363,6 +376,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         if actionBar.plotName != plotName { actionBar.plotName = plotName }
         if actionBar.isHome != isHome { actionBar.isHome = isHome }
         if actionBar.paneLabel != paneLabel { actionBar.paneLabel = paneLabel }
+        let chip = focused.flatMap { model.pullRequestMark(of: $0) }
+        if actionBar.chip != chip { actionBar.chip = chip }
     }
 
     /// Home has no plot panel (ticket 99). While Home is active the panel column collapses, and
@@ -575,6 +590,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         // ⌘⇧L is a Loam key too: with no ready worktree, it does nothing, and the terminal does not get it.
         case .nextReadyWorktree: model.goToNextReadyWorktree()
         case .actionsMenu: toggleActionsMenu()
+        // The Worktree section of the actions menu (ticket 109). With no worktree pane, they do nothing.
+        case .showWorktreePullRequest:
+            guard let id = model.focusedWorktree?.id else { return false }
+            return model.openPullRequest(id)
+        case .refreshWorktree:
+            guard let id = model.focusedWorktree?.id else { return false }
+            Task { await model.refreshWorktree(id, afterChange: true) }
         case .newPlotSession:
             guard let plot = model.workspace.activePlotID else { return false }
             model.openPlotSession(plot)
@@ -647,8 +669,12 @@ final class LoamSplitView: NSSplitView {
     /// any subview of the split view itself.
     var bar: NSView?
     var overlay: NSView?
+    /// The PR popover (ticket 109), over the whole window like the actions menu.
+    var popover: NSView?
     /// Called with the room right of the bar: the plot panel, or 0.
     var onBarLayout: ((CGFloat) -> Void)?
+    /// Called after each layout pass, which can move the control that the PR popover opened from.
+    var onLayout: (() -> Void)?
     /// The quick switcher floats over everything right of the sidebar: the well and the plot panel.
     /// Inside the pane area it was clipped to the well, and the panel took the room of its preview.
     var switcher: NSView?
@@ -674,8 +700,10 @@ final class LoamSplitView: NSSplitView {
             // The actions menu lines up with the Actions button, at the right end of the bar.
             onBarLayout?(bounds.maxX - barRect.maxX)
             overlay?.frame = convert(bounds, to: container)
+            popover?.frame = convert(bounds, to: container)
             switcher?.frame = convert(switcherRect, to: container)
         }
+        onLayout?()
     }
 
     /// Everything right of the sidebar. The regions there cover it, so only the gaps show it.
