@@ -56,6 +56,9 @@ public final class PRPopoverModel {
     public private(set) var showsPassedChecks = false
     /// The goal that you edit in the card (ticket 115), or nil when no edit is open. Each open starts with none.
     public private(set) var goalDraft: String?
+    /// The version of the goal when the edit opened (`Worktree.version`). The save expects this one, so a goal that
+    /// changed during the edit is never overwritten.
+    public private(set) var goalVersion: Int?
     /// Why the last save of the goal failed.
     public private(set) var goalProblem: String?
     /// The save of the goal runs.
@@ -126,9 +129,10 @@ public final class PRPopoverModel {
     // MARK: Goal
 
     /// Opens the goal for edit with its text so far. Does nothing when the popover is closed or an edit is open.
-    func beginGoalEdit(_ current: String) {
+    func beginGoalEdit(_ current: String, version: Int?) {
         guard isOpen, goalDraft == nil else { return }
         goalDraft = current
+        goalVersion = version
         goalProblem = nil
     }
 
@@ -142,6 +146,7 @@ public final class PRPopoverModel {
     /// Closes the edit and forgets the text. A save that runs ends on its own.
     func cancelGoalEdit() {
         goalDraft = nil
+        goalVersion = nil
         goalProblem = nil
         isSavingGoal = false
     }
@@ -153,6 +158,15 @@ public final class PRPopoverModel {
 
     /// The save did not happen. The edit stays open with the message.
     func goalFailed(_ message: String) {
+        isSavingGoal = false
+        goalProblem = message
+    }
+
+    /// The goal changed during the edit. The field shows the goal as it is now, not your draft, with the version that
+    /// the next save expects. So a second Return cannot overwrite a goal that you never saw.
+    func goalChanged(to current: String, version: Int?, message: String) {
+        goalDraft = current
+        goalVersion = version
         isSavingGoal = false
         goalProblem = message
     }

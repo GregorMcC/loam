@@ -150,19 +150,49 @@ import Testing
         #expect(rig.edits() == ["worktree edit \(plotID) \(id) --goal  --expect worktree:\(id)=0 --json --actor app"])
     }
 
-    @Test func aGoalThatChangedMeanwhileKeepsTheEditOpenWithTheMessage() async throws {
+    /// The next list has another goal and version for the worktree, as after a `set_worktree_goal` by Claude.
+    func claudeSetsTheGoal(_ rig: Rig, _ goal: String, version: Int) async throws {
+        var rows = try #require(try JSONSerialization.jsonObject(with: Fixtures.data("worktree_list")) as? [[String: Any]])
+        var worktree = try #require(rows[0]["worktree"] as? [String: Any])
+        worktree["goal"] = goal
+        worktree["version"] = version
+        rows[0]["worktree"] = worktree
+        try JSONSerialization.data(withJSONObject: rows).write(to: rig.dir.appendingPathComponent("list.json"))
+        await rig.model.reloadWorktrees()
+        #expect(rig.model.worktreeStatus(id)?.worktree.version == version)
+    }
+
+    @Test func theSaveExpectsTheVersionThatTheEditOpenedWith() async throws {
         let rig = try await rig()
         rig.model.openPullRequest(id)
         rig.model.beginGoalEdit()
+        // Claude sets the goal while you type. The row has the new version now, but the edit read the old one.
+        try await claudeSetsTheGoal(rig, "Claude's goal", version: 40)
+        #expect(rig.model.prPopover.goalDraft == "Fix the login form", "the edit keeps its draft")
+        rig.model.prPopover.setGoalDraft("Mine")
+        await rig.model.saveGoalEdit()
+        #expect(rig.edits() == ["worktree edit \(plotID) \(id) --goal Mine --expect worktree:\(id)=0 --json --actor app"])
+    }
+
+    @Test func aGoalThatChangedMeanwhileShowsTheNewGoalAndNotYourDraft() async throws {
+        let rig = try await rig()
+        rig.model.openPullRequest(id)
+        rig.model.beginGoalEdit()
+        try await claudeSetsTheGoal(rig, "Claude's goal", version: 40)
         rig.model.prPopover.setGoalDraft("Mine")
         try rig.touch("fail-stale")
         await rig.model.saveGoalEdit()
-        #expect(rig.model.prPopover.goalDraft == "Mine")
+        // The field shows the goal that you never saw, with the message. A second Return must not overwrite it.
+        #expect(rig.model.prPopover.goalDraft == "Claude's goal")
         #expect(rig.model.prPopover.goalProblem == "The goal changed meanwhile. Loam shows the new goal.")
         #expect(!rig.model.prPopover.isSavingGoal)
-        // A key in the field takes the message away.
-        rig.model.prPopover.setGoalDraft("Mine again")
+        // A key in the field takes the message away, and the next save expects the version that the field shows.
+        try FileManager.default.removeItem(at: rig.dir.appendingPathComponent("fail-stale"))
+        rig.model.prPopover.setGoalDraft("Claude's goal, and mine")
         #expect(rig.model.prPopover.goalProblem == nil)
+        await rig.model.saveGoalEdit()
+        #expect(rig.edits().last == "worktree edit \(plotID) \(id) --goal Claude's goal, and mine --expect worktree:\(id)=40 --json --actor app")
+        #expect(rig.model.prPopover.goalDraft == nil)
     }
 
     @Test func anyOtherFailureKeepsTheEditOpenWithTheMessageOfTheCore() async throws {

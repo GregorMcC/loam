@@ -287,8 +287,8 @@ import Testing
     @Test func aGoalEditExpectsTheVersionOfTheRow() async throws {
         let rig = try await rig()
         await rig.model.reloadWorktrees()
-        let message = await rig.model.setWorktreeGoal("wtreaaaaab", to: "  Fix the login form on phones ")
-        #expect(message == nil)
+        let saved = await rig.model.setWorktreeGoal("wtreaaaaab", to: "  Fix the login form on phones ", expect: 0)
+        #expect(saved == .saved)
         #expect(rig.args().contains("worktree edit \(plotID) wtreaaaaab --goal Fix the login form on phones --expect worktree:wtreaaaaab=0 --json --actor app"))
     }
 
@@ -296,13 +296,13 @@ import Testing
         let rig = try await rig()
         await rig.model.reloadWorktrees()
         try rig.touch("fail-edit")
-        let message = await rig.model.setWorktreeGoal("wtreaaaaab", to: "Mine")
-        #expect(message == "The goal changed meanwhile. Loam shows the new goal.")
+        let saved = await rig.model.setWorktreeGoal("wtreaaaaab", to: "Mine", expect: 0)
+        #expect(saved == .changed)
     }
 
     @Test func aWorktreeThatIsGoneHasNoGoalToSet() async throws {
         let rig = try await rig()
-        #expect(await rig.model.setWorktreeGoal("nope", to: "x") == "The worktree is gone.")
+        #expect(await rig.model.setWorktreeGoal("nope", to: "x", expect: 0) == .failed("The worktree is gone."))
         #expect(rig.args().allSatisfy { !$0.hasPrefix("worktree edit") })
     }
 }
