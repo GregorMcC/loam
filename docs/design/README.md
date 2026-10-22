@@ -38,7 +38,7 @@ Use the product's own nouns exactly, and never their synonyms:
 | land | finish, complete |
 | seeded session | agent, plot session |
 | pane | split, surface |
-| Needs you | blocked, waiting |
+| Needs you | blocked, waiting (Blocked is only the stage where GitHub blocks a merge) |
 | Done, unread | idle, finished |
 | archive, unarchive, delete | close, hide |
 

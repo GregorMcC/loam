@@ -46,8 +46,8 @@ func TestStageRule(t *testing.T) {
 	}{
 		// One row for each stage, in the order of the rule. Each row also
 		// matches a later stage, so the order shows.
-		{"merged", worktree.StageInput{PR: done("MERGED"), Head: head, Pushed: true, Unpushed: 3}, worktree.StageMerged},
-		{"closed", worktree.StageInput{PR: done("CLOSED"), Head: head, Pushed: true}, worktree.StageClosed},
+		{"merged", worktree.StageInput{PR: done("MERGED"), HeadInPR: true, Pushed: true, Unpushed: 3}, worktree.StageMerged},
+		{"closed", worktree.StageInput{PR: done("CLOSED"), HeadInPR: true, Pushed: true}, worktree.StageClosed},
 		{"in merge queue", worktree.StageInput{PR: open(func(p *github.PR) { p.InMergeQueue, p.Mergeable = true, "CONFLICTING" })}, worktree.StageInMergeQueue},
 		{"conflicts", worktree.StageInput{PR: open(func(p *github.PR) { p.Mergeable, p.ReviewDecision = "CONFLICTING", "CHANGES_REQUESTED" })}, worktree.StageConflicts},
 		{"conflicts by merge state", worktree.StageInput{PR: open(func(p *github.PR) { p.MergeState, p.ReviewDecision = "DIRTY", "CHANGES_REQUESTED" })}, worktree.StageConflicts},
@@ -80,6 +80,7 @@ func TestStageRule(t *testing.T) {
 		// GitHub still checks whether the PR can merge. Only Conflicts, Behind
 		// base, Blocked, and Ready to merge need that check.
 		{"unknown keeps ready to merge", worktree.StageInput{PR: open(unknown), Last: worktree.StageReadyToMerge}, worktree.StageReadyToMerge},
+		{"conflicting with an unknown merge state", worktree.StageInput{PR: open(func(p *github.PR) { p.Mergeable, p.MergeState = "CONFLICTING", "UNKNOWN" })}, worktree.StageConflicts},
 		{"unknown keeps conflicts", worktree.StageInput{PR: open(unknown), Last: worktree.StageConflicts}, worktree.StageConflicts},
 		{"unknown keeps behind base", worktree.StageInput{PR: open(unknown), Last: worktree.StageBehindBase}, worktree.StageBehindBase},
 		{"unknown keeps blocked", worktree.StageInput{PR: open(unknown), Last: worktree.StageBlocked}, worktree.StageBlocked},
@@ -93,7 +94,7 @@ func TestStageRule(t *testing.T) {
 		{"unknown still shows a draft", worktree.StageInput{PR: open(func(p *github.PR) { unknown(p); p.Draft = true }), Last: worktree.StageReadyToMerge}, worktree.StageDraft},
 		{"unknown still shows checks running", worktree.StageInput{PR: open(func(p *github.PR) { unknown(p); p.Checks.Running = 1 }), Last: worktree.StageReadyToMerge}, worktree.StageChecksRunning},
 		{"unknown still shows waiting for review", worktree.StageInput{PR: open(func(p *github.PR) { unknown(p); p.ReviewDecision = "REVIEW_REQUIRED" }), Last: worktree.StageBlocked}, worktree.StageWaitingForReview},
-		{"unknown does not hide a merge", worktree.StageInput{PR: done("MERGED"), Head: head, Last: worktree.StageReadyToMerge}, worktree.StageMerged},
+		{"unknown does not hide a merge", worktree.StageInput{PR: done("MERGED"), HeadInPR: true, Last: worktree.StageReadyToMerge}, worktree.StageMerged},
 
 		// A merge state that Loam does not know is handled as UNKNOWN. An open
 		// PR never falls through to the local rows.
@@ -102,13 +103,13 @@ func TestStageRule(t *testing.T) {
 		{"an unknown merge state with a known mergeable", worktree.StageInput{PR: open(func(p *github.PR) { p.MergeState = "UNKNOWN" }), Unpushed: 1}, worktree.StageChecksRunning},
 
 		// Merged and Closed win only when the worktree has no work after the PR head.
-		{"squash merged, and GitHub deleted the branch", worktree.StageInput{PR: done("MERGED"), Head: head, Pushed: false, Unpushed: 2}, worktree.StageMerged},
-		{"merged, then new commits that are on GitHub", worktree.StageInput{PR: done("MERGED"), Head: "2222", Pushed: true, Unpushed: 1}, worktree.StagePushedNoPR},
-		{"merged, then new commits", worktree.StageInput{PR: done("MERGED"), Head: "2222", Unpushed: 1}, worktree.StageNotPushed},
-		{"merged, then changed files", worktree.StageInput{PR: done("MERGED"), Head: head, Changed: 1}, worktree.StageNotPushed},
-		{"closed, then new commits", worktree.StageInput{PR: done("CLOSED"), Head: "2222", Unpushed: 1}, worktree.StageNotPushed},
+		{"squash merged, and GitHub deleted the branch", worktree.StageInput{PR: done("MERGED"), HeadInPR: true, Pushed: false, Unpushed: 2}, worktree.StageMerged},
+		{"merged, then new commits that are on GitHub", worktree.StageInput{PR: done("MERGED"), Pushed: true, Unpushed: 1}, worktree.StagePushedNoPR},
+		{"merged, then new commits", worktree.StageInput{PR: done("MERGED"), Unpushed: 1}, worktree.StageNotPushed},
+		{"merged, then changed files", worktree.StageInput{PR: done("MERGED"), HeadInPR: true, Changed: 1}, worktree.StageNotPushed},
+		{"closed, then new commits", worktree.StageInput{PR: done("CLOSED"), Unpushed: 1}, worktree.StageNotPushed},
 		{"merged, and the local head is not known", worktree.StageInput{PR: done("MERGED"), Unpushed: 1}, worktree.StageNotPushed},
-		{"an old cache row with no PR head stays merged", worktree.StageInput{PR: &github.PR{State: "MERGED", Mergeable: "UNKNOWN"}, Head: "2222", Changed: 1}, worktree.StageMerged},
+		{"an old cache row with no PR head stays merged", worktree.StageInput{PR: &github.PR{State: "MERGED", Mergeable: "UNKNOWN"}, Changed: 1}, worktree.StageMerged},
 
 		{"a missing folder shows no stage", worktree.StageInput{PR: open(func(*github.PR) {}), Missing: true, Unpushed: 1}, worktree.StageNone},
 	} {
@@ -127,8 +128,8 @@ func TestStageInputUsesThePR(t *testing.T) {
 		want bool
 	}{
 		{"an open PR", worktree.StageInput{PR: open(func(*github.PR) {})}, true},
-		{"merged with no work after it", worktree.StageInput{PR: done("MERGED"), Head: head}, true},
-		{"merged, then new commits", worktree.StageInput{PR: done("MERGED"), Head: "2222", Unpushed: 1}, false},
+		{"merged with no work after it", worktree.StageInput{PR: done("MERGED"), HeadInPR: true}, true},
+		{"merged, then new commits", worktree.StageInput{PR: done("MERGED"), Unpushed: 1}, false},
 		{"no PR", worktree.StageInput{Pushed: true}, false},
 	} {
 		if got := c.in.UsesPR(); got != c.want {

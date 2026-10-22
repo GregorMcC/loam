@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -77,10 +78,7 @@ func (st *Status) addPRState(row store.PRState) {
 	c := decodeCached(row)
 	in := StageInput{PR: c.PR, Pushed: c.Pushed, Missing: st.Missing, Changed: st.Changed, Unpushed: st.Unpushed, Last: c.Stage}
 	if c.PR != nil && isDone(c.PR) && !st.Missing {
-		// When git cannot read the head, it stays empty and does not match.
-		if head, err := git(st.Worktree.Path, "rev-parse", "HEAD"); err == nil {
-			in.Head = head
-		}
+		in.HeadInPR = headInPR(st.Worktree.Path, c.PR.HeadOID, st.Unpushed)
 	}
 	st.Stage = StageOf(in)
 	if st.Missing {
@@ -98,6 +96,34 @@ func (st *Status) addPRState(row store.PRState) {
 		st.CompareURL = c.CompareURL
 	}
 }
+
+// headInPR reports whether the commit that the worktree in dir has checked
+// out is prHead or an earlier commit of it. GitHub can add commits to a PR,
+// such as with Update branch, so the local HEAD can be behind the PR head.
+// When the local repo does not have prHead, Loam cannot read the history of
+// the PR. Then the HEAD counts as in the PR when every local commit is on a
+// remote branch (unpushed is 0). When git fails, the HEAD is not in the PR.
+func headInPR(dir, prHead string, unpushed int) bool {
+	if !oidPattern.MatchString(prHead) {
+		return false
+	}
+	head, err := git(dir, "rev-parse", "HEAD")
+	if err != nil {
+		return false
+	}
+	if head == prHead {
+		return true
+	}
+	if _, err := git(dir, "cat-file", "-e", prHead+"^{commit}"); err != nil {
+		return unpushed == 0
+	}
+	_, err = git(dir, "merge-base", "--is-ancestor", head, prHead)
+	return err == nil
+}
+
+// oidPattern matches a full SHA-1 or SHA-256 commit ID. Loam checks a PR head
+// from the cache before it gives it to git.
+var oidPattern = regexp.MustCompile(`^[0-9a-f]{40}([0-9a-f]{24})?$`)
 
 // RefreshPRs asks GitHub for the ship state of the worktrees and writes it to
 // the PR cache. It runs the gh queries of each repo (see [github.Client.Fetch])

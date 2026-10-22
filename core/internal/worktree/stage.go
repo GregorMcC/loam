@@ -45,9 +45,10 @@ type StageInput struct {
 	Missing  bool
 	Changed  int
 	Unpushed int
-	// Head is the commit that the worktree has checked out. The rule reads
-	// it only for a merged or closed PR.
-	Head string
+	// HeadInPR is true when the commit that the worktree has checked out is
+	// the PR head or an earlier commit of the PR. The rule reads it only for
+	// a merged or closed PR.
+	HeadInPR bool
 	// Last is the stage of the last refresh of the same PR.
 	Last Stage
 }
@@ -76,9 +77,9 @@ func StageOf(in StageInput) Stage {
 // PR. Then the stage comes from the local checks, as if there were no PR, so
 // Loam never offers to tidy away work that is not in the PR.
 //
-// The worktree has no work after the PR head when it has that commit checked
-// out and has no changed files. A cache row from before Loam stored the PR
-// head has no head to compare, and its PR stage stays.
+// The worktree has no work after the PR head when its HEAD is in the PR (see
+// [StageInput.HeadInPR]) and it has no changed files. A cache row from before
+// Loam stored the PR head has no head to compare, and its PR stage stays.
 func (in StageInput) UsesPR() bool {
 	pr := in.PR
 	if pr == nil {
@@ -87,7 +88,7 @@ func (in StageInput) UsesPR() bool {
 	if !isDone(pr) || pr.HeadOID == "" {
 		return true
 	}
-	return in.Head == pr.HeadOID && in.Changed == 0
+	return in.HeadInPR && in.Changed == 0
 }
 
 // isDone reports whether a PR is merged or closed.
@@ -112,7 +113,8 @@ func prStage(pr *github.PR, last Stage) Stage {
 	switch {
 	case pr.InMergeQueue:
 		return StageInMergeQueue
-	case checked && (pr.Mergeable == "CONFLICTING" || pr.MergeState == "DIRTY"):
+	// CONFLICTING is the answer of the merge check, so it needs no merge state.
+	case pr.Mergeable == "CONFLICTING" || checked && pr.MergeState == "DIRTY":
 		return StageConflicts
 	case pr.ReviewDecision == "CHANGES_REQUESTED":
 		return StageChangesRequested

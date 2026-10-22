@@ -148,3 +148,41 @@ func TestListShowsMergedOnlyWithNoWorkAfterThePRHead(t *testing.T) {
 		t.Fatalf("new commit: %+v", st)
 	}
 }
+
+// GitHub can add commits to a PR, such as with Update branch. A worktree
+// whose HEAD is an earlier commit of the PR has no work after it, so it
+// shows Merged. When the local repo never fetched the PR head, a worktree
+// shows Merged only when no remote branch is missing one of its commits.
+func TestListShowsMergedWhenGitHubAddedCommitsToThePR(t *testing.T) {
+	e := setup(t)
+	updated := e.create("updated", "").Worktree
+	commit(t, updated.Path, "a.txt", "a\n")
+	commit(t, updated.Path, "b.txt", "b\n")
+	prHead := testutil.Git(t, updated.Path, "rev-parse", "HEAD")
+	testutil.Git(t, updated.Path, "reset", "--hard", "HEAD~1")
+	e.create("unfetched", "")
+	newWork := e.create("unfetched-new-work", "").Worktree
+	commit(t, newWork.Path, "c.txt", "c\n")
+
+	const unfetched = "2222222222222222222222222222222222222222"
+	pull := func(n int, branch, oid string) string {
+		return fmt.Sprintf(`{"number": %d, "title": "Work", "url": "https://github.com/example/widgets/pull/%d", "state": "MERGED",
+		  "mergeable": "UNKNOWN", "mergeStateStatus": "UNKNOWN", "baseRefName": "main", "headRefName": %q,
+		  "headRefOid": %q, "mergedAt": "2026-01-01T09:00:00Z", "closedAt": "2026-01-01T09:00:00Z", "commits": {"totalCount": 2}}`, n, n, branch, oid)
+	}
+	e.onGitHub(fmt.Sprintf(`{"refs": [], "pulls": [%s, %s, %s], "details": {}}`,
+		pull(21, "updated", prHead), pull(22, "unfetched", unfetched), pull(23, "unfetched-new-work", unfetched)))
+	if err := worktree.RefreshPRs(context.Background(), e.s, e.worktrees()); err != nil {
+		t.Fatal(err)
+	}
+	got := e.listed()
+	for name, want := range map[string]worktree.Stage{
+		"updated":            worktree.StageMerged,
+		"unfetched":          worktree.StageMerged,
+		"unfetched-new-work": worktree.StageNotPushed,
+	} {
+		if st := got[name]; st.Stage != want {
+			t.Errorf("%s: got %q, want %q (%+v)", name, st.Stage, want, st)
+		}
+	}
+}
