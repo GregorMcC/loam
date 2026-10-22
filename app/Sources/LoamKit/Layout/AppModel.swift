@@ -33,9 +33,8 @@ public final class AppModel {
                 terminalTitles = terminalTitles.filter { live.contains($0.key) }
             }
             // A move of the focus or of the active space ends the selection of a worktree row (ticket 107).
-            if selectedWorktree != nil,
-               storedWorkspace.focusedPane != oldValue.focusedPane || storedWorkspace.activeSpace != oldValue.activeSpace {
-                selectedWorktree = nil
+            if storedWorkspace.focusedPane != oldValue.focusedPane || storedWorkspace.activeSpace != oldValue.activeSpace {
+                endWorktreeSelection()
             }
             attentionChanged()
             onWorkspaceChange?()
@@ -43,8 +42,15 @@ public final class AppModel {
         }
     }
     /// The worktree row that ⌘⇧L selected, for a worktree that has no pane to focus (ticket 107). It stays
-    /// until the focus or the active space moves.
+    /// until the focus or the active space moves, or until an explicit focus of a pane or activation of a
+    /// plot, even when that pane or plot is the one you are in (`endWorktreeSelection`).
     public private(set) var selectedWorktree: String?
+
+    /// Ends the selection of a worktree row. A click on the focused pane or on the active plot moves
+    /// nothing in the workspace, so the workspace cannot tell that the selection is over.
+    private func endWorktreeSelection() {
+        if selectedWorktree != nil { selectedWorktree = nil }
+    }
     /// The worktrees of each plot with their checks, as the core last listed them.
     public private(set) var worktrees: [String: [WorktreeStatus]] = [:] { didSet { if worktrees != oldValue { onWorkspaceChange?() } } }
     /// Panes that were saved and have not resumed, as folders. Removal refuses while one lies in the
@@ -447,6 +453,7 @@ public final class AppModel {
     public func activateHome() { activate(.home) }
 
     private func activate(_ space: Space) {
+        endWorktreeSelection()
         // A switch with the panel open marks the plot that you leave as seen.
         if panel.visible, space != workspace.activeSpace { review.markSeen(plot: workspace.activePlotID) }
         workspace.activate(space)
@@ -750,8 +757,7 @@ public final class AppModel {
         let sidebar = self.sidebar
         guard let row = sidebar.orderedWorktrees.first(where: { $0.id == id }) else { return }
         if let pane = sidebar.tree(of: row.plotID).allCheckouts.first(where: { $0.id == id })?.panes.first {
-            goToPane(pane.id)
-            selectedWorktree = nil
+            goToPane(pane.id)  // The focus of the pane ends any selection of a worktree row.
         } else {
             if workspace.activePlotID != row.plotID { activate(plot: row.plotID) }
             selectedWorktree = id
@@ -873,6 +879,7 @@ public final class AppModel {
     public func previousTab() { if let space = workspace.activeSpace { workspace.previousTab(in: space) } }
 
     public func focus(_ pane: PaneID) {
+        endWorktreeSelection()
         let changed = workspace.spec(of: pane).flatMap { workspace.selectedTab(of: $0.space) }?.focused != pane
         workspace.focus(pane)
         if changed { useTimes?.record(SwitcherItem.paneKey(pane.uuidString)) }
@@ -900,6 +907,7 @@ public final class AppModel {
     /// Ghostty `goto_split`, in the selected tab of the active space.
     public func focusPane(_ step: AppCommand.PaneStep) {
         guard let space = workspace.activeSpace else { return }
+        endWorktreeSelection()
         switch step {
         case .next: workspace.focusNextPane(in: space)
         case .previous: workspace.focusPreviousPane(in: space)

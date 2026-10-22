@@ -236,6 +236,14 @@ struct DriverTests {
         ])
     }
 
+    /// Ticket 107: a worktree row that no repo row holds sits right under its plot. ⌘⇧L selects it, and the
+    /// row shows as selected, as a row under a repo row does.
+    @Test func selectsAWorktreeRowThatSitsUnderItsPlot() async throws {
+        try await expectPass("ready-to-merge-homeless", environment: [
+            "LOAM_DRIVER_LOAM": Self.loamBinary, "LOAM_DRIVER_FAKE_GH": Self.fakeGH,
+        ])
+    }
+
     /// Ticket 96: hover a tab that is not selected and click its `x`: the tab goes and the selection stays.
     /// The `x` of a tab with a session that is mid-turn shows the close question first.
     @Test func closesATabFromItsHoverClose() async throws {

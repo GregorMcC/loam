@@ -327,6 +327,9 @@ final class AccessibilityProbe {
     /// True when the element with this identifier is enabled.
     func isEnabled(_ id: String) -> Bool { flag(id, kAXEnabledAttribute) }
 
+    /// True when the element with this identifier is selected (the `.isSelected` trait of a SwiftUI view).
+    func isSelected(_ id: String) -> Bool { flag(id, kAXSelectedAttribute) }
+
     private func flag(_ id: String, _ attribute: String) -> Bool {
         var on = false
         _ = perform(id) { element in

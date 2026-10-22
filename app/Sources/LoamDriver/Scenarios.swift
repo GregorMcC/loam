@@ -57,6 +57,7 @@ enum Scenarios {
         Scenario(name: "move-to-plot-relaunch", limit: 90, body: moveToPlotRelaunch),
         Scenario(name: "attention", limit: 120, body: attention),
         Scenario(name: "ready-to-merge", limit: 120, body: readyToMerge),
+        Scenario(name: "ready-to-merge-homeless", limit: 90, body: readyToMergeHomeless),
         Scenario(name: "settings", limit: 60, body: settings),
         Scenario(name: "tab-close", limit: 90, body: tabClose),
         Scenario(name: "tab-drag", limit: 90, body: tabDrag),

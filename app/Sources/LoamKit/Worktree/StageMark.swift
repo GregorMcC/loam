@@ -96,8 +96,13 @@ public struct StageMark: Equatable, Sendable {
     public init?(_ status: WorktreeStatus) {
         guard !status.missing else { return nil }
         if let pr = status.pr, let stage = status.stage, stage.comesFromPullRequest {
-            var parts = [Self.numberText(pr.number), stage.words]
-            if let count = Self.checkCount(of: pr, at: stage) { parts.append(count) }
+            var parts = [Self.numberText(pr.number)]
+            if Self.isChecking(pr, at: stage) {
+                parts.append(Self.checkingWords)
+            } else {
+                parts.append(stage.words)
+                if let count = Self.checkCount(of: pr, at: stage) { parts.append(count) }
+            }
             self.init(stage: stage, number: pr.number, tooltip: parts.joined(separator: " · "),
                       spoken: parts.joined(separator: ", "))
         } else if status.changed > 0 || status.unpushed > 0 {
@@ -115,6 +120,20 @@ public struct StageMark: Equatable, Sendable {
     }
 
     private static func numberText(_ number: Int) -> String { "#\(number)" }
+
+    /// The words of Checks running while GitHub has not finished its merge check (README, "Stages").
+    private static let checkingWords = "Checking…"
+
+    /// The summaries of GitHub for checks that have not finished.
+    private static let activeCheckStates: Set<String> = ["PENDING", "EXPECTED"]
+
+    /// True for a PR at Checks running with no check that runs or waits and no unfinished summary. The
+    /// core gives the stage when GitHub still checks whether the PR can merge (mergeable UNKNOWN), and no
+    /// other stage matches. The row then says "Checking…" and has no count.
+    private static func isChecking(_ pr: PullRequest, at stage: WorktreeStage) -> Bool {
+        stage == .checksRunning && pr.checks.running == 0 && pr.checks.waiting == 0
+            && !activeCheckStates.contains(pr.checks.state)
+    }
 
     /// The check count that the README gives a status line, such as "2 of 14", for the stages that have
     /// one. Nil for any other stage, and for a PR with no checks. Ready to merge counts the required

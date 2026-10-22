@@ -153,6 +153,51 @@ import Testing
         #expect(StageMark(running)?.tooltip == "#19 · Checks running · 9 of 14")
     }
 
+    /// GitHub has not finished its merge check (mergeable UNKNOWN) and no check runs or waits: the core
+    /// gives Checks running, and the README row says "Checking…" with no count.
+    @Test func checksRunningWithNoCheckRunningSaysCheckingAndHasNoCount() throws {
+        for state in ["", "SUCCESS", "FAILURE"] {
+            var checking = try status(.checksRunning, in: listed())
+            checking.pr?.mergeable = "UNKNOWN"
+            checking.pr?.checks.running = 0
+            checking.pr?.checks.waiting = 0
+            checking.pr?.checks.state = state
+            let mark = try #require(StageMark(checking), "state \"\(state)\"")
+            #expect(mark.stage == .checksRunning && mark.symbol == WorktreeStage.checksRunning.symbol, "state \"\(state)\"")
+            #expect(mark.tooltip == "#19 · Checking…", "state \"\(state)\"")
+            #expect(mark.spoken == "#19, Checking…", "state \"\(state)\"")
+        }
+        // Checks that all passed give no count either.
+        var passed = try status(.checksRunning, in: listed())
+        passed.pr?.checks = PRCheckCounts(state: "SUCCESS", total: 3, passed: 3, failed: 0, running: 0, waiting: 0,
+                                          required: 3, requiredPassed: 3)
+        #expect(StageMark(passed)?.tooltip == "#19 · Checking…")
+        // No checks at all.
+        var none = try status(.checksRunning, in: listed())
+        none.pr?.checks = PRCheckCounts(state: "", total: 0, passed: 0, failed: 0, running: 0, waiting: 0,
+                                        required: 0, requiredPassed: 0)
+        #expect(StageMark(none)?.tooltip == "#19 · Checking…")
+    }
+
+    /// A summary of PENDING or EXPECTED, a check that runs, or a check that waits keeps the words and the count.
+    @Test func checksRunningWithAnActiveCheckKeepsItsWordsAndCount() throws {
+        for state in ["PENDING", "EXPECTED"] {
+            var running = try status(.checksRunning, in: listed())
+            running.pr?.checks.running = 0
+            running.pr?.checks.state = state
+            #expect(StageMark(running)?.tooltip?.hasPrefix("#19 · Checks running · ") == true, "state \(state)")
+        }
+        var running = try status(.checksRunning, in: listed())
+        running.pr?.checks.running = 1
+        running.pr?.checks.state = "SUCCESS"
+        #expect(StageMark(running)?.tooltip == "#19 · Checks running · 1 of 2")
+        var waiting = try status(.checksRunning, in: listed())
+        waiting.pr?.checks.running = 0
+        waiting.pr?.checks.waiting = 1
+        waiting.pr?.checks.state = "SUCCESS"
+        #expect(StageMark(waiting)?.tooltip == "#19 · Checks running · 1 of 2")
+    }
+
     @Test func theSpokenFormUsesCommasAndTheTooltipUsesDots() throws {
         let mark = try #require(StageMark(status(.checksFailed, in: listed())))
         #expect(mark.tooltip == "#16 · Checks failed · 2 of 3")
@@ -220,8 +265,11 @@ import Testing
 
     /// The last answer stays while GitHub cannot be reached: the mark shows it.
     @Test func anOldAnswerStillShowsWhileGitHubIsOffline() throws {
-        var offline = try status(.checksFailed, in: listed())
-        offline.prNote = .offline
-        #expect(StageMark(offline)?.stage == .checksFailed)
+        for note in [PRNote.offline, .rateLimited, .noAccess] {
+            var old = try status(.checksFailed, in: listed())
+            old.prNote = note
+            #expect(StageMark(old)?.stage == .checksFailed, "\(note)")
+            #expect(StageMark(old)?.tooltip == "#16 · Checks failed · 2 of 3", "\(note)")
+        }
     }
 }

@@ -271,6 +271,56 @@ import Testing
         #expect(model.sidebar.selection == .plot("b"))
     }
 
+    /// Plot a is active and the pane has the focus. ⌘⇧L selects a-ready, which has no pane, so the focus
+    /// stays on the pane while the sidebar selects the worktree row.
+    func modelWithAWorktreeSelectedOverAFocusedPane() async throws -> (model: AppModel, pane: PaneID) {
+        let model = try await appModel()
+        model.openTab(.shell)
+        let pane = try #require(model.workspace.focusedPane)
+        #expect(model.goToNextReadyWorktree())
+        #expect(model.selectedWorktree == "a-ready" && model.workspace.focusedPane == pane)
+        #expect(model.sidebar.selection == .worktree("a-ready"))
+        return (model, pane)
+    }
+
+    /// The selection of the worktree has ended, so the sidebar selects where you are, and the next ⌘⇧L
+    /// starts from there. It selects a-ready again. From the old selection it would select b-ready.
+    func expectTheSelectionEnded(_ model: AppModel, _ pane: PaneID) {
+        #expect(model.selectedWorktree == nil)
+        #expect(model.sidebar.selection == .pane(pane))
+        #expect(model.goToNextReadyWorktree())
+        #expect(model.sidebar.selection == .worktree("a-ready"))
+    }
+
+    /// A click on the row of the focused pane: the focus and the active plot stay as they are.
+    @Test func aClickOnTheRowOfTheFocusedPaneEndsTheSelectedWorktree() async throws {
+        let (model, pane) = try await modelWithAWorktreeSelectedOverAFocusedPane()
+        model.goToPane(pane)
+        expectTheSelectionEnded(model, pane)
+    }
+
+    /// A click into the terminal of the focused pane.
+    @Test func aClickIntoTheFocusedTerminalEndsTheSelectedWorktree() async throws {
+        let (model, pane) = try await modelWithAWorktreeSelectedOverAFocusedPane()
+        model.focus(pane)
+        expectTheSelectionEnded(model, pane)
+    }
+
+    /// A key that steps to another pane, in a tab with a single pane. The focus stays where it is.
+    @Test func aStepOfThePaneFocusEndsTheSelectedWorktree() async throws {
+        let (model, pane) = try await modelWithAWorktreeSelectedOverAFocusedPane()
+        model.focusPane(.next)
+        #expect(model.workspace.focusedPane == pane)
+        expectTheSelectionEnded(model, pane)
+    }
+
+    /// A click on the row of the active plot.
+    @Test func aClickOnTheActivePlotEndsTheSelectedWorktree() async throws {
+        let (model, pane) = try await modelWithAWorktreeSelectedOverAFocusedPane()
+        model.activate(plot: "a")
+        expectTheSelectionEnded(model, pane)
+    }
+
     /// The selected worktree is a row of the active plot. A worktree of another plot, or one that the
     /// list does not hold, selects nothing.
     @Test func aSelectedWorktreeCountsOnlyInTheActivePlot() throws {

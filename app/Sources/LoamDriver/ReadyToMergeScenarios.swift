@@ -18,6 +18,52 @@ extension Scenarios {
         do { try await readyToMergeSteps(app) } catch { app.dumpAccessibility(); throw error }
     }
 
+    /// A worktree row that no repo row holds sits right under its plot. The app reads the repo rows from
+    /// `loam export`, so a `loam` that fails that command leaves every worktree row under its plot. ⌘⇧L
+    /// selects the ready one, and its row must show as selected, as a row under a repo row does.
+    static func readyToMergeHomeless(_ app: DriverApp) async throws {
+        do { try await readyToMergeHomelessSteps(app) } catch { app.dumpAccessibility(); throw error }
+    }
+
+    private static func readyToMergeHomelessSteps(_ app: DriverApp) async throws {
+        guard let fakeGH = ProcessInfo.processInfo.environment["LOAM_DRIVER_FAKE_GH"] else {
+            throw DriverFailure("LOAM_DRIVER_FAKE_GH does not name the fake gh")
+        }
+        let rig = try PanelRig(outFolder: app.outFolder)
+        let state = rig.root.appendingPathComponent("gh-state.json")
+        let ghEnvironment = ["LOAM_GH": fakeGH, "LOAM_FAKE_GH_STATE": state.path]
+        try ghState(ready: true).write(to: state, atomically: true, encoding: .utf8)
+
+        let plot = try rig.newPlot("Alpha plot")
+        let web = try makeRepo(rig, named: "web")
+        try rig.loam(["repo", "add", plot, web.path])
+        let fixLogin = try makeWorktree(rig, plot: plot, repo: web, name: "fix-login")
+        let nativePanel = try makeWorktree(rig, plot: plot, repo: web, name: "native-panel")
+        try git(web, ["remote", "set-url", "origin", "https://github.com/example/widgets.git"])
+        try rig.loam(["worktree", "list", "--refresh"], extra: ghEnvironment)
+
+        let noExport = rig.root.appendingPathComponent("loam-no-export")
+        try "#!/bin/sh\nif [ \"$1\" = export ]; then exit 1; fi\nexec '\(rig.binary.path)' \"$@\"\n"
+            .write(to: noExport, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: noExport.path)
+
+        let host = try await app.launchApp(
+            client: LoamClient(binary: noExport, environment: rig.environment.merging(ghEnvironment) { $1 }), state: rig.stateFile)
+        let model = host.model
+        try await app.waitUntil("the plot is active") { model.workspace.activePlotID == plot }
+        try await app.waitUntil("the app lists the 2 worktrees") { model.worktrees.values.joined().count == 2 }
+        try await app.waitUntil("the Ready to merge row shows 1") { app.text(of: "attention-ready-to-merge") == "Ready to merge: 1" }
+        let rows = model.sidebar.tree(of: plot).checkouts
+        try expect(model.repoCheckouts.isEmpty && rows.count == 2 && rows.allSatisfy { $0.kind == .worktree },
+                   "a repo row holds a worktree: \(rows.map(\.id))")
+
+        try pressExactMenuKey("l", [.command, .shift])
+        try await app.waitUntil("⌘⇧L selects the ready worktree") { model.sidebar.selection == .worktree(fixLogin.id) }
+        try await app.waitUntil("the row shows as selected") { AccessibilityProbe.shared.isSelected("worktree-\(fixLogin.id)") }
+        try expect(!AccessibilityProbe.shared.isSelected("worktree-\(nativePanel.id)"), "the other worktree row shows as selected")
+        app.screenshot("homeless-worktree-selected")
+    }
+
     /// A passing check run and one approval, for each open PR (the second query of the core).
     private static let passingChecks = #"""
         {"baseRef": {"compare": {"behindBy": 0}}, "latestOpinionatedReviews": {"nodes": [{"state": "APPROVED"}]},
@@ -146,6 +192,11 @@ extension Scenarios {
         try await app.waitUntil("⌘⇧L selects the first") {
             model.workspace.activePlotID == alpha && model.sidebar.selection == .worktree(fixLogin.id)
         }
+        // The selected row shows as selected, and its neighbour does not.
+        try await app.waitUntil("the first row shows as selected") {
+            AccessibilityProbe.shared.isSelected("worktree-\(fixLogin.id)")
+        }
+        try expect(!AccessibilityProbe.shared.isSelected("worktree-\(nativePanel.id)"), "the other worktree row shows as selected")
         try pressExactMenuKey("l", [.command, .shift])
         try await app.waitUntil("⌘⇧L selects the second") {
             model.workspace.activePlotID == beta && model.sidebar.selection == .worktree(linkLabels.id)

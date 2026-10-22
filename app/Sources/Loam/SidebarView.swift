@@ -179,10 +179,13 @@ struct SidebarView: View {
     }
 
     /// A repo row, then its panes and its worktrees when it is open (ticket 92). A worktree row that
-    /// sits right under the plot, because its repo has no row, shows the same way.
+    /// sits right under the plot, because its repo has no row, draws as `worktreeNode` does, so ⌘⇧L can
+    /// select it (ticket 107).
     @ViewBuilder
     private func checkoutNode(_ checkout: SidebarModel.CheckoutRow, _ sidebar: SidebarModel) -> some View {
-        if checkout.panes.isEmpty && checkout.worktrees.isEmpty {
+        if checkout.kind == .worktree {
+            worktreeNode(checkout, sidebar)
+        } else if checkout.panes.isEmpty && checkout.worktrees.isEmpty {
             CheckoutRowView(row: checkout, model: model, open: false)
         } else {
             DisclosureGroup(isExpanded: checkoutOpen(checkout.id)) {
