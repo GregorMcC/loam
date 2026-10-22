@@ -484,36 +484,50 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
         #expect(record.typed.count == 1)
     }
 
-    @Test func aSessionThatDoesNotStartInTimeGetsNoPromptAndThePopoverOffersCopy() async throws {
+    /// The pane can still show the setup question. Loam does not open the popover over it, because Return would then
+    /// run Copy prompt. A toast says what happened, and a late SessionStart types nothing.
+    @Test func aSessionThatDoesNotStartInTimeGetsNoPromptAndAToast() async throws {
         let (model, record) = try await rig()
         model.sessionStartWait = .milliseconds(50)
         #expect(model.sendToSession(review)?.step == .start)
         let pane = try #require(model.workspace.focusedPane)
-        await waitUntil("the popover opens") { model.prPopover.worktreeID == review }
+        await waitUntil("the toast shows") { !record.toasts.isEmpty }
+        #expect(record.toasts == ["The session did not start in 30 seconds. Loam did not type the prompt."])
+        #expect(!model.prPopover.isOpen)
+        #expect(model.workspace.focusedPane == pane)
         #expect(model.sendPlan(for: review)?.step == .copy(.starting))
         send("SessionStart", to: pane, model, source: "startup")
         #expect(record.typed.isEmpty)
         #expect(model.sendPlan(for: review)?.step == .type(pane))
     }
 
-    @Test func aSessionThatDoesNotStartWhileYouAreElsewhereOpensNoPopover() async throws {
+    /// A second click while the first session waits copies the prompt. It starts no second session, and the first
+    /// session still gets the prompt once.
+    @Test func aSecondStartClickWhileTheSessionWaitsCopiesThePrompt() async throws {
         let (model, record) = try await rig()
-        model.sessionStartWait = .milliseconds(50)
-        model.sendToSession(review)
-        try open(in: failed, model)
-        try await Task.sleep(for: .milliseconds(200))
-        #expect(!model.prPopover.isOpen)
-        #expect(record.typed.isEmpty)
+        #expect(model.sendToSession(review)?.step == .start)
+        let pane = try #require(model.workspace.focusedPane)
+        let panes = model.workspace.allPaneIDs
+        #expect(model.openPullRequest(review))
+        #expect(model.sendToSession(review)?.step == .copy(.starting))
+        #expect(model.workspace.allPaneIDs == panes)
+        #expect(record.copied == [try prompt(review, model)])
+        send("SessionStart", to: pane, model, source: "startup")
+        #expect(record.typed.map(\.pane) == [pane])
     }
 
+    /// The wait of a pane that closes stops, so it shows no toast. The wait of the next session still runs out.
     @Test func aSessionThatClosesBeforeItStartsGetsNothing() async throws {
         let (model, record) = try await rig()
         model.sessionStartWait = .milliseconds(50)
         model.sendToSession(review)
-        let pane = try #require(model.workspace.focusedPane)
-        model.closePane(pane)
+        let closed = try #require(model.workspace.focusedPane)
+        model.closePane(closed)
+        model.sendToSession(review)
+        #expect(model.workspace.focusedPane != closed)
+        await waitUntil("the toast of the next session shows") { !record.toasts.isEmpty }
         try await Task.sleep(for: .milliseconds(200))
-        #expect(!model.prPopover.isOpen)
+        #expect(record.toasts.count == 1)
         #expect(record.typed.isEmpty)
     }
 

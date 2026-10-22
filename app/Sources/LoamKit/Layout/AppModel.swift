@@ -74,7 +74,8 @@ public final class AppModel {
     @ObservationIgnored public var onToast: ((String) -> Void)?
     /// Send to session typed a prompt into the pane and focused it. The window gives the keys to its terminal.
     @ObservationIgnored public var onPromptTyped: ((PaneID) -> Void)?
-    /// How long Start session with prompt waits for the `SessionStart` of the new session (ticket 110).
+    /// How long Start session with prompt waits for the `SessionStart` of the new session (ticket 110). The toast
+    /// after it says 30 seconds. Tests make the wait short.
     @ObservationIgnored public var sessionStartWait: Duration = .seconds(30)
     /// When each pane last had the focus, as a count that goes up. Send to session types into the session of
     /// the worktree that you focused last.
@@ -1270,12 +1271,11 @@ public final class AppModel {
     }
 
     /// No `SessionStart` came in `sessionStartWait`, such as when the setup command waits for an answer. Loam
-    /// types nothing into the session. When you are still in its pane and nothing else is open, the PR popover
-    /// opens with the Copy prompt state.
+    /// types nothing into the session, and a toast says so. The PR popover does not open, because the pane can
+    /// still show the setup question, and Return would then run Copy prompt.
     private func sessionDidNotStart(_ pane: PaneID) {
-        guard let id = startPrompts.removeValue(forKey: pane)?.worktree else { return }
-        guard workspace.focusedPane == pane, !prPopover.isOpen, !switcher.isOpen else { return }
-        openPullRequest(id)
+        guard startPrompts.removeValue(forKey: pane) != nil else { return }
+        onToast?(SendPlan.notStartedToast)
     }
 
     /// A pane that closed gets no prompt, and its focus time goes.

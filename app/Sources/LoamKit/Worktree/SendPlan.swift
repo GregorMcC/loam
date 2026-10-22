@@ -121,4 +121,7 @@ public struct SendPlan: Equatable, Sendable {
     public static func toastForNewSession(_ kind: FixPrompt.Kind) -> String {
         toast(kind, into: "the new session")
     }
+
+    /// The toast when the new session sent no `SessionStart` in the 30 seconds of `AppModel.sessionStartWait`.
+    public static let notStartedToast = "The session did not start in 30 seconds. Loam did not type the prompt."
 }
