@@ -22,7 +22,7 @@ struct WorktreesSection: View {
                     title: "Worktrees",
                     detail: ShipAge.label(for: rows, now: context.date, timeZone: timeZone).map { ($0, "panel-worktrees-age") },
                     add: ("New worktree\u{2026}", "panel-add-worktree")
-                ) { WorktreeDialogs.askNewWorktree(plot: plot, model: app) }
+                ) { app.openNewWorktree(plot: plot) }
             }
             ForEach(app.shipNotices(for: plot), id: \.self) { ShipNoticeCard(app: app, notice: $0) }
             ForEach(rows, id: \.worktree.id) {

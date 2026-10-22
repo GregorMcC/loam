@@ -26,6 +26,7 @@ extension MainWindowController {
         if model.switcher.isOpen { model.switcher.close() }
         closeActionsMenu()
         model.closeLandSheet()
+        model.closeNewWorktree()
         let workspace = model.workspace
         popoverContext = ActionsContext(space: workspace.activeSpace, pane: workspace.focusedPane)
         keysBeforePopover = keysHeldInPanel()

@@ -375,6 +375,11 @@ struct PlotPanelView: View {
     }
 
     @ViewBuilder private func linkActions(_ link: PlotLink) -> some View {
+        // Ticket 115: a Linear issue or a GitHub issue starts a worktree. The sheet takes its branch and goal from the link.
+        if link.issue != nil, let plot = model.plot?.id {
+            Button("Start work\u{2026}") { app.openNewWorktree(plot: plot, from: link) }
+            Divider()
+        }
         Button("Copy target") {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(link.target, forType: .string)

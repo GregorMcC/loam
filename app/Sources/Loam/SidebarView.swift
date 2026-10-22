@@ -402,7 +402,7 @@ private struct PlotRowView: View {
         .contextMenu {
             // Ticket 93: a session in the plot folder, not in a repo.
             Button("New session") { model.openPlotSession(row.id) }
-            Button("New worktree\u{2026}") { WorktreeDialogs.askNewWorktree(plot: row.id, model: model) }
+            Button("New worktree\u{2026}") { model.openNewWorktree(plot: row.id) }
             Divider()
             Button("Archive") { PlotDialogs.askArchive(row.id, model: model) }
         }

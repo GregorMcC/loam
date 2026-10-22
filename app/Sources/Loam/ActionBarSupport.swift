@@ -27,6 +27,7 @@ extension MainWindowController: NSMenuItemValidation {
         sheet.sizingOptions = []
         sheet.isHidden = true
         setActionHosts(bar: bar, menu: menu, popover: popover, sheet: sheet)
+        installNewWorktreeSheet()
         model.landSheet.onOpenChange = { [weak self] open in self?.landSheetChanged(open: open) }
         model.confirmClose = { [weak self] prompt in await self?.askClose(prompt) ?? false }
         model.paneClosesFinished = { [weak self] in await self?.waitForPaneCloses() }
@@ -48,6 +49,7 @@ extension MainWindowController: NSMenuItemValidation {
         if model.switcher.isOpen { model.switcher.close() }
         model.closePullRequest()  // One overlay at a time: the popover would take the clicks of the menu.
         model.closeLandSheet()
+        model.closeNewWorktree()
         let workspace = model.workspace
         let space = workspace.activeSpace
         let pane = workspace.focusedPane

@@ -19,7 +19,7 @@ public final class NewWorktreeModel {
     }
 
     /// The Link popup: none, a link of the plot, or a URL that you paste.
-    public enum LinkChoice: Equatable, Sendable {
+    public enum LinkChoice: Hashable, Sendable {
         case none
         case plot(String)
         case pasted
