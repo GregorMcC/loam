@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/GregorMcC/loam/core/internal/seed"
 	"github.com/GregorMcC/loam/core/internal/store"
 )
 
@@ -112,10 +113,15 @@ type RemoveResult struct {
 	BranchDeleted bool           `json:"branch_deleted"`
 	// BranchNote says why the local branch is still there.
 	BranchNote string `json:"branch_note,omitempty"`
+	// Warnings are for a person to read, such as a seed that was not written.
+	// They are not in the JSON: the CLI prints them on stderr.
+	Warnings []string `json:"-"`
 }
 
 // Remove removes a worktree of a plot: the folder, the git record, the local
-// branch if it is merged, and the store record. The argument is as in [Find].
+// branch if it is merged, and the store record. Then it writes the seed of
+// the plot again, because the seed lists the worktrees. The argument is as
+// in [Find].
 //
 // It refuses while a pane is open in the worktree. Without Force, it also
 // refuses a worktree with uncommitted changes or unpushed commits. It deletes
@@ -176,6 +182,9 @@ func Remove(s *store.Store, plotID, arg string, o RemoveOptions) (*RemoveResult,
 	}
 	if err := s.RemoveWorktree(w.ID); err != nil {
 		return nil, err
+	}
+	if warning := seed.AfterWorktrees(s, plotID); warning != "" {
+		res.Warnings = append(res.Warnings, warning)
 	}
 	return res, nil
 }

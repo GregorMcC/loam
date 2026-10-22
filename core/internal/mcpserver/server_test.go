@@ -143,7 +143,7 @@ func TestListToolsAndReadOnlyHints(t *testing.T) {
 	want := map[string]bool{"list_plots": true, "get_plot": true, "get_changes": true,
 		"add_link": false, "update_link": false, "remove_link": false, "set_what_why": false, "set_where_it_stands": false,
 		"create_plot": false, "rename_plot": false, "add_repo": false, "update_repo": false, "remove_repo": false, "set_main_repo": false,
-		"undo_change": false, "list_worktrees": true, "create_worktree": false}
+		"undo_change": false, "list_worktrees": true, "create_worktree": false, "set_worktree_goal": false}
 	if len(ro) != len(want) {
 		t.Fatalf("tools %v", ro)
 	}

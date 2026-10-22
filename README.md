@@ -168,6 +168,8 @@ The seed is a `CLAUDE.md` that Loam writes for the plot. It loads when the sessi
 - To change the plot, use the Loam MCP tools (`mcp__loam__*`), not the `loam` CLI. Loam records each change in the change log.
 - When the work moves on, call `set_where_it_stands` with your proposed text.
 - A link is a pointer, not content. Fetch a link only when the task needs it, through your own connectors.
+- If your folder is one of these worktrees, its goal is your task.
+- When you open a PR from a worktree with a link, put Fixes and the link key in the body, such as Fixes ENG-482 or Fixes #57.
 
 ## Brief
 ### What   ...
@@ -176,6 +178,9 @@ The seed is a `CLAUDE.md` that Loam writes for the plot. It loads when the sessi
 
 ## Repos
 - `~/Development/loam`: the Loam repo
+
+## Worktrees
+- loam-eng-482-link-kinds-for-figma: Link kinds for Figma (ENG-482, from origin/main)
 
 ## Links
 - [ghostty-org/ghostty](https://github.com/ghostty-org/ghostty): the libghostty source
@@ -236,7 +241,7 @@ loam start "Loam v1 build"                    # a seeded Claude Code session in 
 | `loam set <plot> where-it-stands "..."` | Move the brief on |
 | `loam open <plot> <link>` | Open a link: browser, Obsidian, Finder, or the default app |
 | `loam changes` / `loam undo <change-id>` | Review the change log and undo one change |
-| `loam worktree new <plot> <repo> <name>` | Make a worktree, then `loam start <plot> --worktree <name>` |
+| `loam worktree new <plot> <repo> <name> --goal "..."` | Make a worktree for one task, then `loam start <plot> --worktree <name>` |
 | `loam sessions` / `loam resume <id>` | Find and resume a seeded session |
 | `loam archive <plot>` | Put a finished plot away. `loam delete` removes an archived one. |
 

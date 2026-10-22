@@ -126,8 +126,17 @@ public enum ChangeRules {
         default:
             if item.hasPrefix("link:") { return "Link" }
             if item.hasPrefix("repo:") { return "Repo" }
+            if worktreeID(item) != nil { return "Worktree" }
             return item
         }
+    }
+
+    private static let worktreePrefix = "worktree:"
+
+    /// The worktree ID of an item such as "worktree:k3v9q2mxa7", or nil for any other item.
+    /// The one field of a worktree item is its goal.
+    public static func worktreeID(_ item: String) -> String? {
+        item.hasPrefix(worktreePrefix) ? String(item.dropFirst(worktreePrefix.count)) : nil
     }
 
     /// The fields to show for a change. A link or repo field `position` is not shown.
@@ -150,13 +159,19 @@ public enum ChangeRules {
         }
     }
 
-    /// One line for the log, such as "Edited What, Where it stands" or "Added link".
-    public static func summary(_ change: Change) -> String {
+    /// One line for the log, such as "Edited What, Where it stands", "Added link", or
+    /// "Set the goal of fix-login". `worktreeNames` maps a worktree ID to its folder name.
+    /// A worktree that it does not name, such as one that was removed, is "a worktree".
+    public static func summary(_ change: Change, worktreeNames: [String: String] = [:]) -> String {
         if isCreation(change) { return "Created the plot" }
         if let target = change.undoOf { return "Undid change \(target)" }
         var parts: [String] = []
         var seen = Set<String>()
         for entry in change.entries where entry.field != "position" && seen.insert(entry.item).inserted {
+            if let id = worktreeID(entry.item) {
+                parts.append("Set the goal of \(worktreeNames[id] ?? "a worktree")")
+                continue
+            }
             let isStructured = entry.item.hasPrefix("link:") || entry.item.hasPrefix("repo:")
             let title = isStructured ? itemTitle(entry.item).lowercased() : itemTitle(entry.item)
             let fields = change.entries.filter { $0.item == entry.item }

@@ -453,7 +453,9 @@ func scenario(t *testing.T) *harness {
 	}
 	parse(h.run("repo_add_git", "repo-add", 0, "repo", "add", loam, gitRepo, "--setup", "make setup", "--copy", ".env"), &c)
 	h.run("repo_edit_setup", "repo-edit", 0, "repo", "edit", loam, c.Repo.ID, "--setup", "npm ci")
-	h.run("worktree_new", "worktree-new", 0, "worktree", "new", loam, gitRepo, "fix-login")
+	h.run("worktree_new_dry_run", "worktree-new-dry-run", 0, "worktree", "new", loam, gitRepo, "fix-login", "--dry-run")
+	h.run("worktree_new", "worktree-new", 0, "worktree", "new", loam, gitRepo, "fix-login",
+		"--goal", "Fix the login form", "--link", "https://github.com/example/widgets/issues/57")
 	h.run("worktree_list", "worktree-list", 0, "worktree", "list", loam)
 	h.run("worktree_rm", "worktree-rm", 0, "worktree", "rm", loam, "fix-login")
 	h.run("worktree_list_empty", "worktree-list", 0, "worktree", "list", loam)
@@ -523,6 +525,15 @@ func scenario(t *testing.T) *harness {
 		t.Fatal(err)
 	}
 	h.run("repo_add_dirty", "repo-add", 0, "repo", "add", loam, dirty)
+
+	// A goal edit is a change, so it runs last too. A stale --expect gives
+	// the current worktree.
+	var edit struct {
+		Worktree struct{ ID string } `json:"worktree"`
+	}
+	parse(h.run("worktree_edit", "worktree-edit", 0, "worktree", "edit", loam, "fix-login", "--goal", "Fix the login form on phones"), &edit)
+	h.run("error_stale_worktree", "error", 10, "worktree", "edit", loam, "fix-login", "--goal", "x",
+		"--expect", "worktree:"+edit.Worktree.ID+"=0")
 	return h
 }
 

@@ -42,9 +42,7 @@ func (s *Server) registerUndo(srv *mcp.Server) {
 			return fail(err)
 		}
 		// The plot changed under the remembered versions. Claude must read it again.
-		s.mu.Lock()
-		delete(s.versions, res.Plot.ID)
-		s.mu.Unlock()
+		s.forget(res.Plot.ID)
 		seed.AfterChange(s.st, res)
 		return reply(writeOut{ChangeID: res.ChangeID, Warnings: res.Warnings})
 	})

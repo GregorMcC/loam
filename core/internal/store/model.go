@@ -11,6 +11,10 @@ import (
 // together. A longer brief saves, and the result carries a warning.
 const BriefWordLimit = 300
 
+// GoalWordLimit is the soft limit for the goal of a worktree. A longer goal
+// saves, and the result carries a warning (see [GoalWarning]).
+const GoalWordLimit = 20
+
 // Item names for the versioned parts of a plot.
 const (
 	ItemName  = "name"
@@ -24,6 +28,16 @@ func LinkItem(id string) string { return "link:" + id }
 
 // RepoItem returns the item name of a repo, for example "repo:k3v9q2mxa7".
 func RepoItem(id string) string { return "repo:" + id }
+
+// worktreePrefix starts the item name of a worktree.
+const worktreePrefix = "worktree:"
+
+// WorktreeItem returns the item name of a worktree, for example
+// "worktree:k3v9q2mxa7". Its one versioned field is the goal.
+func WorktreeItem(id string) string { return worktreePrefix + id }
+
+// IsWorktreeItem reports whether an item names a worktree.
+func IsWorktreeItem(item string) bool { return strings.HasPrefix(item, worktreePrefix) }
 
 // Plot is a full plot with the version of each item.
 type Plot struct {
@@ -41,6 +55,11 @@ type Plot struct {
 	Versions map[string]int64 `json:"versions"`
 	// Revision is the highest change ID of the plot. The seed records it.
 	Revision int64 `json:"revision"`
+
+	// worktrees are the worktrees of the plot, for the stale check and undo
+	// of a goal. They are not in the plot JSON: `loam worktree list` shows
+	// them. The seed reads them from the store when it writes, never from here.
+	worktrees []Worktree
 }
 
 // MainRepo returns the main repo, or nil when the plot has no repos.
@@ -132,6 +151,7 @@ const (
 	OpUpdateRepo  Op = "update_repo"   // Item: repo:<id>. Note.
 	OpRemoveRepo  Op = "remove_repo"   // Item: repo:<id>.
 	OpSetMainRepo Op = "set_main_repo" // Item: repo:<id>.
+	OpSetGoal     Op = "set_goal"      // Item: worktree:<id>. Value: the goal.
 )
 
 // Edit is one edit inside a change. Only the fields that the Op names are used.
@@ -232,9 +252,10 @@ type StaleItem struct {
 	// Exists is false when the item is gone now.
 	Exists bool `json:"exists"`
 	// Value is the current text of name, what, why, or where.
-	Value string `json:"value,omitempty"`
-	Link  *Link  `json:"link,omitempty"`
-	Repo  *Repo  `json:"repo,omitempty"`
+	Value    string    `json:"value,omitempty"`
+	Link     *Link     `json:"link,omitempty"`
+	Repo     *Repo     `json:"repo,omitempty"`
+	Worktree *Worktree `json:"worktree,omitempty"`
 }
 
 // StaleError is the error of a write whose expectations no longer hold.
@@ -254,4 +275,13 @@ func (e *StaleError) Error() string {
 // BriefWords counts the words in What, Why, and Where it stands.
 func BriefWords(what, why, where string) int {
 	return len(strings.Fields(what)) + len(strings.Fields(why)) + len(strings.Fields(where))
+}
+
+// GoalWarning returns the warning for a goal over [GoalWordLimit], or "" for
+// a goal within it.
+func GoalWarning(goal string) string {
+	if n := len(strings.Fields(goal)); n > GoalWordLimit {
+		return fmt.Sprintf("The goal has %d words. The soft limit is %d words. Shorten it.", n, GoalWordLimit)
+	}
+	return ""
 }

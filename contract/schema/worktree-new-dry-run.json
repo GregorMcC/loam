@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam worktree new --dry-run --json",
+  "description": "The dry run of worktree new. It changes nothing and never asks origin, so the branch checks and the default base read the last fetched state.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "folder", "valid_name", "worktree_exists", "branch_exists", "default_base", "bases"],
+  "properties": {
+    "name": { "description": "The name that was checked. It is the branch name.", "type": "string" },
+    "folder": { "description": "The folder name that the worktree would get, such as web-fix-login.", "type": "string", "minLength": 1 },
+    "valid_name": { "description": "False when the name is not a good branch name.", "type": "boolean" },
+    "name_error": { "description": "Why the name is not a good branch name. It is present only when valid_name is false.", "type": "string", "minLength": 1 },
+    "worktree_exists": { "description": "True when the plot already has the worktree, or its folder exists. worktree new would refuse it.", "type": "boolean" },
+    "branch_exists": { "description": "True when a local branch or a branch of origin has the name. It is false when the name is not valid.", "type": "boolean" },
+    "default_base": { "description": "The base of a new branch when no base is given, such as origin/main. It comes from origin/HEAD of the last fetch, and it is empty without one.", "type": "string" },
+    "bases": {
+      "description": "The branches that a new branch can start from: default_base first, then the branches of origin, then the local branches, each with the newest commit first.",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    }
+  },
+  "if": { "properties": { "valid_name": { "const": false } } },
+  "then": { "required": ["name_error"] },
+  "else": { "not": { "required": ["name_error"] } }
+}

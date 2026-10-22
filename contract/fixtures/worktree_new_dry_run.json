@@ -1,0 +1,12 @@
+{
+  "bases": [
+    "origin/main",
+    "main"
+  ],
+  "branch_exists": false,
+  "default_base": "origin/main",
+  "folder": "web-fix-login",
+  "name": "fix-login",
+  "valid_name": true,
+  "worktree_exists": false
+}

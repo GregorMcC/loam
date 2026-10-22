@@ -85,6 +85,24 @@ func TestFindPrefersOriginElseTheFirstRemote(t *testing.T) {
 	}
 }
 
+// Origin reads only origin: the remote that Loam fetches from and that a PR
+// goes to. It never falls back to another remote, as Find does.
+func TestOriginReadsOnlyOrigin(t *testing.T) {
+	both := gitRepo(t, [2]string{"upstream", "git@github.com:other/app.git"}, [2]string{"origin", "git@github.com:me/app.git"})
+	if got, ok := Origin(both); !ok || got != "https://github.com/me/app" {
+		t.Fatalf("Origin with origin = %q, %v", got, ok)
+	}
+	if got, ok := Origin(gitRepo(t, [2]string{"upstream", "git@github.com:other/app.git"})); ok {
+		t.Fatalf("Origin with upstream only = %q", got)
+	}
+	if got, ok := Origin(gitRepo(t, [2]string{"origin", "/srv/git/app.git"})); ok {
+		t.Fatalf("Origin with a local origin = %q", got)
+	}
+	if got, ok := Origin(t.TempDir()); ok {
+		t.Fatalf("Origin in a plain folder = %q", got)
+	}
+}
+
 func TestLinkEditSkipsALinkThePlotHas(t *testing.T) {
 	repo := gitRepo(t, [2]string{"origin", "git@github.com:me/app.git"})
 	e, ok := LinkEdit(store.Plot{}, repo)

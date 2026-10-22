@@ -45,9 +45,10 @@ extension ChangeRules {
         }
     }
 
-    /// What follows the actor in a timeline row: "set Where it stands", "added link", "undid change 4".
-    public static func sentence(_ change: Change) -> String {
-        let line = summary(change)
+    /// What follows the actor in a timeline row: "set Where it stands", "added link", "undid change 4",
+    /// "set the goal of fix-login". `worktreeNames` is as in `summary`.
+    public static func sentence(_ change: Change, worktreeNames: [String: String] = [:]) -> String {
+        let line = summary(change, worktreeNames: worktreeNames)
         let parts = line.components(separatedBy: ", ")
         if parts.allSatisfy({ $0.hasPrefix("Edited ") }) {
             return "set " + parts.map { String($0.dropFirst("Edited ".count)) }.joined(separator: ", ")

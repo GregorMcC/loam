@@ -115,6 +115,16 @@ CREATE TABLE pr_cache (
   PRIMARY KEY (repo_path, branch)
 );
 `,
+	// 7: the goal of a worktree, and the link that the work started from: its
+	// target, label, and issue key, and the ID of the plot link it came from,
+	// if any. A goal edit is in the change log as the item worktree:<id>.
+	`
+ALTER TABLE worktrees ADD COLUMN goal TEXT NOT NULL DEFAULT '';
+ALTER TABLE worktrees ADD COLUMN link_target TEXT NOT NULL DEFAULT '';
+ALTER TABLE worktrees ADD COLUMN link_label TEXT NOT NULL DEFAULT '';
+ALTER TABLE worktrees ADD COLUMN link_key TEXT NOT NULL DEFAULT '';
+ALTER TABLE worktrees ADD COLUMN link_id TEXT NOT NULL DEFAULT '';
+`,
 }
 
 // SchemaVersion is the schema version of this binary.

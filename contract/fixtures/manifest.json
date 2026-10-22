@@ -548,6 +548,20 @@
     "schema": "repo-edit"
   },
   {
+    "name": "worktree_new_dry_run",
+    "args": [
+      "worktree",
+      "new",
+      "plotaaaaab",
+      "/tmp/loam-contract/repos/web",
+      "fix-login",
+      "--dry-run",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "worktree-new-dry-run"
+  },
+  {
     "name": "worktree_new",
     "args": [
       "worktree",
@@ -555,6 +569,10 @@
       "plotaaaaab",
       "/tmp/loam-contract/repos/web",
       "fix-login",
+      "--goal",
+      "Fix the login form",
+      "--link",
+      "https://github.com/example/widgets/issues/57",
       "--json"
     ],
     "exit_code": 0,
@@ -667,5 +685,35 @@
     ],
     "exit_code": 0,
     "schema": "repo-add"
+  },
+  {
+    "name": "worktree_edit",
+    "args": [
+      "worktree",
+      "edit",
+      "plotaaaaab",
+      "fix-login",
+      "--goal",
+      "Fix the login form on phones",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "worktree-edit"
+  },
+  {
+    "name": "error_stale_worktree",
+    "args": [
+      "worktree",
+      "edit",
+      "plotaaaaab",
+      "fix-login",
+      "--goal",
+      "x",
+      "--expect",
+      "worktree:wtreaaaaae=0",
+      "--json"
+    ],
+    "exit_code": 10,
+    "schema": "error"
   }
 ]

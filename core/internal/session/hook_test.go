@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/GregorMcC/loam/core/internal/seed"
 	"github.com/GregorMcC/loam/core/internal/session"
 	"github.com/GregorMcC/loam/core/internal/store"
 	"github.com/GregorMcC/loam/core/internal/testutil"
@@ -36,6 +37,36 @@ func TestHookCompactPrintsSeed(t *testing.T) {
 	}
 	if got.HookSpecificOutput.HookEventName != "SessionStart" || got.HookSpecificOutput.AdditionalContext != "SEED TEXT\n" {
 		t.Errorf("got %+v", got)
+	}
+}
+
+// After /compact, the session gets the worktree lines again (ticket 114).
+func TestHookCompactPrintsTheWorktrees(t *testing.T) {
+	e := setup(t)
+	p := e.plot(t, store.PlotInput{Name: "Alpha", Repos: []store.RepoInput{{Path: "/work/app"}}})
+	if _, err := e.store.AddWorktree(store.Worktree{PlotID: p.ID, Repo: "/work/app", Name: "fix-57", Branch: "fix-57", Base: "origin/main",
+		Path: filepath.Join(e.home, "worktrees", p.ID, "app-fix-57"), Goal: "Fix the login form",
+		Link: &store.WorktreeLink{Target: "https://github.com/example/widgets/issues/57", Label: "widgets#57", Key: "#57"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := seed.Write(e.store, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	out := runHook(t, `{"session_id":"s1","hook_event_name":"SessionStart","source":"compact"}`, map[string]string{"LOAM_PLOT": p.ID})
+	var got struct {
+		HookSpecificOutput struct{ AdditionalContext string }
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("output %q: %v", out, err)
+	}
+	for _, want := range []string{
+		"## Worktrees\n\n- app-fix-57: Fix the login form (#57, from origin/main)\n",
+		"- If your folder is one of these worktrees, its goal is your task.\n",
+		"put Fixes and the link key in the body",
+	} {
+		if !strings.Contains(got.HookSpecificOutput.AdditionalContext, want) {
+			t.Errorf("the compact context misses %q:\n%s", want, got.HookSpecificOutput.AdditionalContext)
+		}
 	}
 }
 

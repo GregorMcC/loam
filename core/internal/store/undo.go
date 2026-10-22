@@ -113,6 +113,11 @@ func fieldValue(p Plot, item, field string) *string {
 			return boolStr(r.Main)
 		}
 	}
+	for _, w := range p.worktrees {
+		if WorktreeItem(w.ID) == item && field == "goal" {
+			return S(w.Goal)
+		}
+	}
 	return nil
 }
 
@@ -129,8 +134,9 @@ func same(a, b *string) bool { return (a == nil) == (b == nil) && (a == nil || *
 // an [*UndoClashError] with those changes, unless overwrite is true. An undo
 // of a link or repo add removes the item. An undo of a remove puts the item
 // back with its ID and position. Plot creation cannot be undone: Undo returns
-// [ErrInvalid]. An unknown change returns [ErrNotFound]. An undo that changes
-// nothing writes nothing and returns ChangeID 0.
+// [ErrInvalid]. An unknown change returns [ErrNotFound], and so does the undo
+// of a goal edit after its worktree was removed. An undo that changes nothing
+// writes nothing and returns ChangeID 0.
 func (s *Store) Undo(changeID int64, actor Actor, overwrite bool) (*Result, error) {
 	w, err := s.beginWrite()
 	if err != nil {
@@ -160,6 +166,13 @@ func (s *Store) Undo(changeID int64, actor Actor, overwrite bool) (*Result, erro
 	cur, err := loadPlot(w.conn, ch.PlotID)
 	if err != nil {
 		return nil, err
+	}
+	// A removal is not a change, so no undo can bring a worktree back. The
+	// undo fails before the clash check, because overwrite cannot help.
+	for _, item := range items {
+		if IsWorktreeItem(item) && fieldValue(cur, item, "goal") == nil {
+			return nil, fmt.Errorf("change %d set the goal of a worktree that was removed, so it cannot be undone: %w", changeID, ErrNotFound)
+		}
 	}
 	if !overwrite {
 		if err := s.checkClash(w, ch, cur, items); err != nil {
@@ -216,6 +229,9 @@ func (s *Store) checkClash(w *writeTx, ch ChangeRecord, cur Plot, items []string
 func (a *applier) undoItem(cur Plot, item string, es []Entry) error {
 	if isBriefItem(item) {
 		return a.set(Edit{Op: OpSet, Item: item, Value: *es[0].Old})
+	}
+	if IsWorktreeItem(item) {
+		return a.setGoal(Edit{Op: OpSetGoal, Item: item, Value: *es[0].Old})
 	}
 	added := true   // the change made the item
 	removed := true // the change removed the item

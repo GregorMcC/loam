@@ -21,7 +21,7 @@ func TestMCPCommandServesOverStdio(t *testing.T) {
 	}
 	defer cs.Close()
 	res, err := cs.ListTools(ctx, nil)
-	if err != nil || len(res.Tools) != 17 {
+	if err != nil || len(res.Tools) != 18 {
 		t.Fatalf("tools %v, err %v", res, err)
 	}
 }

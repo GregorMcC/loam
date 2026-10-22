@@ -69,15 +69,8 @@ func Label(webURL string) string {
 // remote. It returns false when the folder is not a git repo, has no
 // remote, or the remote has no web page.
 func Find(repoPath string) (string, bool) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	git, cancel := gitIn(repoPath)
 	defer cancel()
-	git := func(args ...string) string {
-		out, err := exec.CommandContext(ctx, "git", append([]string{"-C", repoPath}, args...)...).Output()
-		if err != nil {
-			return ""
-		}
-		return strings.TrimSpace(string(out))
-	}
 	name := "origin"
 	if !strings.Contains("\n"+git("remote")+"\n", "\norigin\n") {
 		name, _, _ = strings.Cut(git("remote"), "\n")
@@ -86,6 +79,30 @@ func Find(repoPath string) (string, bool) {
 		return "", false
 	}
 	return WebURL(git("remote", "get-url", name))
+}
+
+// Origin returns the web page of the repo's origin remote, the remote that
+// Loam fetches from and that a PR goes to. Unlike [Find], it never reads
+// another remote. It returns false when the folder is not a git repo, has no
+// origin, or origin has no web page.
+func Origin(repoPath string) (string, bool) {
+	git, cancel := gitIn(repoPath)
+	defer cancel()
+	return WebURL(git("remote", "get-url", "origin"))
+}
+
+// gitIn returns a function that runs git in repoPath and returns its trimmed
+// output, or "" when git fails. The commands share one 5 second limit. Call
+// cancel when done.
+func gitIn(repoPath string) (git func(args ...string) string, cancel context.CancelFunc) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	return func(args ...string) string {
+		out, err := exec.CommandContext(ctx, "git", append([]string{"-C", repoPath}, args...)...).Output()
+		if err != nil {
+			return ""
+		}
+		return strings.TrimSpace(string(out))
+	}, cancel
 }
 
 // LinkEdit returns the edit that adds the repo's remote as a link of p. It

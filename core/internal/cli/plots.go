@@ -95,7 +95,7 @@ func staleDetail(err error) error {
 		switch {
 		case !it.Exists:
 			parts = append(parts, fmt.Sprintf("%s is gone", it.Item))
-		case it.Link != nil || it.Repo != nil:
+		case it.Link != nil || it.Repo != nil || it.Worktree != nil:
 			parts = append(parts, fmt.Sprintf("%s is now at version %d", it.Item, it.Current))
 		default:
 			parts = append(parts, fmt.Sprintf("%s is now at version %d: %q", it.Item, it.Current, it.Value))

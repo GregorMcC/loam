@@ -1,9 +1,19 @@
 // Package seed renders a plot's seed CLAUDE.md from the store and writes it
 // to <LOAM_HOME>/plots/<id>/CLAUDE.md.
 //
-// Every write path calls [AfterChange] after a change commits. `loam start` calls
-// [Write] before it starts a session. The store is the source. Loam never
-// reads the content of a seed back. It reads only the revision on line 1.
+// Every write path calls [AfterChange] after a change commits. A worktree add
+// or remove calls [AfterWorktrees]. `loam start` calls [Write] before it
+// starts a session. The store is the source. Loam never reads the content of
+// a seed back. It reads only the revision on line 1.
+//
+// The revision is the highest change ID of the plot, and a write never
+// replaces a seed with a higher revision. A worktree add or remove is not a
+// change, so it keeps the revision. The worktree lines therefore never come
+// from the plot that the caller read: each write reads the worktrees from the
+// store while it holds the lock of the plot folder. A write with the same
+// revision then always holds the worktrees as they are, and a write that is
+// skipped for an older revision loses nothing, because the newer seed was
+// written after it with the worktrees of its own time.
 package seed
 
 import (
@@ -11,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -42,7 +53,8 @@ func Write(s *store.Store, plotID string) error {
 
 // WritePlot writes the seed of a plot that the caller already read, for
 // example Result.Plot from a change. It never replaces a seed with a newer
-// revision. A seed with the same revision is written again.
+// revision. A seed with the same revision is written again. It reads the
+// worktrees of the plot from the store, under the lock.
 func WritePlot(s *store.Store, p store.Plot) error {
 	path := Path(s, p.ID)
 	dir := filepath.Dir(path)
@@ -63,12 +75,16 @@ func WritePlot(s *store.Store, p store.Plot) error {
 	if cur, err := ReadRevision(path); err == nil && cur > p.Revision {
 		return nil
 	}
+	worktrees, err := s.ListWorktrees(p.ID)
+	if err != nil {
+		return err
+	}
 	tmp, err := os.CreateTemp(dir, ".CLAUDE.md.*")
 	if err != nil {
 		return err
 	}
 	defer os.Remove(tmp.Name())
-	if _, err := tmp.WriteString(Render(p)); err != nil {
+	if _, err := tmp.WriteString(Render(p, worktrees)); err != nil {
 		tmp.Close()
 		return err
 	}
@@ -90,9 +106,23 @@ func AfterChange(s *store.Store, res *store.Result) {
 		return
 	}
 	if err := WritePlot(s, res.Plot); err != nil {
-		res.Warnings = append(res.Warnings, "the seed was not written: "+err.Error())
+		res.Warnings = append(res.Warnings, notWritten(err))
 	}
 }
+
+// AfterWorktrees writes the seed of a plot after a worktree add or remove
+// committed. Neither is a change, so the revision stays, and the write with
+// the same revision lists the worktrees as they are now. A failed write
+// returns a warning, as for [AfterChange]. It returns "" on success.
+func AfterWorktrees(s *store.Store, plotID string) string {
+	if err := Write(s, plotID); err != nil {
+		return notWritten(err)
+	}
+	return ""
+}
+
+// notWritten is the warning for a seed that a write path could not write.
+func notWritten(err error) string { return "the seed was not written: " + err.Error() }
 
 // ReadRevision returns the revision on the first line of a seed file. It
 // returns an error when the file is missing or has no revision line.
@@ -113,8 +143,8 @@ func ReadRevision(path string) (int64, error) {
 	return strconv.ParseInt(strings.TrimSuffix(strings.TrimPrefix(line, revisionPrefix), revisionSuffix), 10, 64)
 }
 
-// Render returns the seed text of a plot.
-func Render(p store.Plot) string {
+// Render returns the seed text of a plot and its worktrees, oldest first.
+func Render(p store.Plot, worktrees []store.Worktree) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s%d%s\n", revisionPrefix, p.Revision, revisionSuffix)
 	fmt.Fprintf(&b, "# Plot: %s\n\n", oneLine(p.Name))
@@ -126,6 +156,12 @@ func Render(p store.Plot) string {
 	b.WriteString("- When the work moves on, call `set_where_it_stands` with your proposed text.\n")
 	b.WriteString("- A link is a pointer, not content. Fetch a link only when the task needs it, through your own connectors. If you have no connector for a link, tell me.\n")
 	b.WriteString("- You can read repos and local links directly.\n")
+	if len(worktrees) > 0 {
+		b.WriteString("- If your folder is one of these worktrees, its goal is your task.\n")
+	}
+	if slices.ContainsFunc(worktrees, func(w store.Worktree) bool { return w.Link != nil && w.Link.Key != "" }) {
+		b.WriteString("- When you open a PR from a worktree with a link, put Fixes and the link key in the body, such as Fixes ENG-482 or Fixes #57.\n")
+	}
 
 	parts := []struct{ title, text string }{{"What", p.What}, {"Why", p.Why}, {"Where it stands", p.Where}}
 	var brief strings.Builder
@@ -144,6 +180,12 @@ func Render(p store.Plot) string {
 			fmt.Fprintf(&b, "- `%s`%s\n", noControl(r.Path), noteSuffix(r.Note))
 		}
 	}
+	if len(worktrees) > 0 {
+		b.WriteString("\n## Worktrees\n\n")
+		for _, w := range worktrees {
+			b.WriteString(worktreeLine(w))
+		}
+	}
 	if len(p.Links) > 0 {
 		b.WriteString("\n## Links\n\n")
 		for _, l := range p.Links {
@@ -155,6 +197,27 @@ func Render(p store.Plot) string {
 		}
 	}
 	return b.String()
+}
+
+// worktreeLine is the seed line of a worktree: its folder name, its goal,
+// and in brackets the link key and the base. A part that is empty is left
+// out, such as "- loam-native-panel: Native panel spacing (from origin/main)".
+func worktreeLine(w store.Worktree) string {
+	line := "- " + oneLine(noControl(filepath.Base(w.Path)))
+	if goal := oneLine(noControl(w.Goal)); goal != "" {
+		line += ": " + goal
+	}
+	var about []string
+	if w.Link != nil && w.Link.Key != "" {
+		about = append(about, oneLine(w.Link.Key))
+	}
+	if base := oneLine(w.Base); base != "" {
+		about = append(about, "from "+base)
+	}
+	if len(about) > 0 {
+		line += " (" + strings.Join(about, ", ") + ")"
+	}
+	return line + "\n"
 }
 
 func noteSuffix(note string) string {

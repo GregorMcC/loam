@@ -216,6 +216,7 @@ public struct StaleItem: Codable, Equatable, Sendable {
     public var value: String?
     public var link: Link?
     public var repo: Repo?
+    public var worktree: Worktree?
 }
 
 public struct StaleDetails: Codable, Equatable, Sendable {
@@ -257,10 +258,31 @@ public struct Worktree: Codable, Equatable, Sendable, Identifiable {
     public var path: String
     public var setupDone: Bool
     public var createdAt: String
+    /// One line that says what the worktree is for. Empty when none is set.
+    /// Nil from a core before ticket 114.
+    public var goal: String?
+    /// The link that the work started from. Nil when there is none.
+    public var link: WorktreeLink?
+    /// The change that last set the goal, or 0. Pass it as
+    /// `--expect worktree:<id>=<version>`.
+    public var version: Int?
     enum CodingKeys: String, CodingKey {
-        case id, repo, name, branch, base, path
+        case id, repo, name, branch, base, path, goal, link, version
         case plotID = "plot_id", setupDone = "setup_done", createdAt = "created_at"
     }
+}
+
+/// The link of a worktree. It belongs to the worktree, not to the links of the plot.
+public struct WorktreeLink: Codable, Equatable, Sendable {
+    public var target: String
+    public var label: String
+    /// The issue key for "Fixes" in a PR body: "ENG-482" for a Linear issue. For a GitHub
+    /// issue, "#57" when the issue is in the repo of origin, else "owner/repo#57". Empty for
+    /// any other link. Show it as it is: the seed shows the same key.
+    public var key: String
+    /// The plot link it was copied from. Empty for a URL given directly.
+    public var linkID: String
+    enum CodingKeys: String, CodingKey { case target, label, key, linkID = "link_id" }
 }
 
 public struct WorktreeStatus: Codable, Equatable, Sendable {
@@ -420,6 +442,36 @@ public struct WorktreeNewResult: Codable, Equatable, Sendable {
     public var worktree: Worktree
     /// Files copied into the worktree, relative to the repo.
     public var copied: [String]
+}
+
+/// `loam worktree new --dry-run --json`. It changes nothing.
+public struct WorktreeCheck: Codable, Equatable, Sendable {
+    public var name: String
+    /// The folder name that the worktree would get, such as web-fix-login.
+    public var folder: String
+    public var validName: Bool
+    /// Why the name is not a good branch name. Nil when it is valid.
+    public var nameError: String?
+    public var worktreeExists: Bool
+    public var branchExists: Bool
+    /// The base of a new branch when none is given. Empty when it is not known.
+    public var defaultBase: String
+    /// The default base first, then the branches of origin, then the local branches.
+    public var bases: [String]
+    enum CodingKeys: String, CodingKey {
+        case name, folder, bases
+        case validName = "valid_name", nameError = "name_error", worktreeExists = "worktree_exists"
+        case branchExists = "branch_exists", defaultBase = "default_base"
+    }
+}
+
+/// `loam worktree edit --json`.
+public struct WorktreeEditResult: Codable, Equatable, Sendable {
+    /// 0 when the edit changed nothing.
+    public var changeID: Int
+    public var plot: String
+    public var worktree: Worktree
+    enum CodingKeys: String, CodingKey { case changeID = "change_id", plot, worktree }
 }
 
 public struct WorktreeRmResult: Codable, Equatable, Sendable {

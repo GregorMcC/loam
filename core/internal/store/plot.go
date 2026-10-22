@@ -50,6 +50,17 @@ FROM repos r LEFT JOIN repo_settings s ON s.path = r.path WHERE r.plot_id = ? OR
 		return Plot{}, err
 	}
 
+	if err := scanRows(q, func(rows *sql.Rows) error {
+		w, err := scanWorktree(rows)
+		if err != nil {
+			return err
+		}
+		p.worktrees = append(p.worktrees, w)
+		return nil
+	}, `SELECT `+worktreeSelect+` FROM worktrees WHERE plot_id = ? ORDER BY created_at, rowid`, id); err != nil {
+		return Plot{}, err
+	}
+
 	all := map[string]int64{}
 	if err := scanRows(q, func(rows *sql.Rows) error {
 		var item string
@@ -75,6 +86,9 @@ FROM repos r LEFT JOIN repo_settings s ON s.path = r.path WHERE r.plot_id = ? OR
 		it := RepoItem(p.Repos[i].ID)
 		p.Repos[i].Version = all[it]
 		p.Versions[it] = all[it]
+	}
+	for _, w := range p.worktrees {
+		p.Versions[WorktreeItem(w.ID)] = w.Version
 	}
 	return p, nil
 }
@@ -165,7 +179,7 @@ func (s *Store) finish(a *applier, actor Actor) (*Result, error) {
 		return nil, err
 	}
 	entries := a.rec.entries()
-	res := &Result{Added: a.added}
+	res := &Result{Added: a.added, Warnings: a.warnings}
 	if len(entries) > 0 {
 		r, err := a.w.conn.ExecContext(context.Background(),
 			`INSERT INTO changes(plot_id, at, actor_kind, session_id, loam_started, undo_of) VALUES (?, ?, ?, ?, ?, ?)`,
