@@ -224,10 +224,13 @@ final class DriverApp: NSObject, NSApplicationDelegate {
     /// Replaces the driver window with the real app window, and loads the plots.
     /// `client` and `state` point at a temp store. With `terminals`, the panes are
     /// terminal surfaces on the driver's runtime. Without it, they are placeholders.
-    func launchApp(client: LoamClient, state: AppStateFile, terminals: Bool = false) async throws -> AppHost {
+    /// `prepare` runs before the launch, so a scenario can set what the launch reads.
+    func launchApp(client: LoamClient, state: AppStateFile, terminals: Bool = false,
+                   prepare: (AppHost) -> Void = { _ in }) async throws -> AppHost {
         guard let hostFactory else { throw DriverFailure("this build has no app host") }
         let host = hostFactory(client, state, terminals ? runtime : nil)
         self.host = host
+        prepare(host)
         AccessibilityProbe.shared.start()
         window.orderOut(nil)
         window = host.window

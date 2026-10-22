@@ -79,6 +79,9 @@ public final class PlotPanelModel {
     /// An action from the actions menu (ticket 89) that the panel view runs when it shows: edit the
     /// brief, or open the add link or add repo row. The view sets it back to nil.
     public var request: PanelRequest?
+    /// Runs when you finish or cancel an editor of the panel (Return, Escape, or Cancel in the add and edit
+    /// rows). The window sets it, to give the keyboard back to the focused pane.
+    @ObservationIgnored public var onEditorClosed: (() -> Void)?
     /// The plot that `request` is for. A hidden panel keeps its last plot until it shows again.
     public var requestPlot: String?
     /// The request, once its plot has loaded. Before that, the panel shows the plot it had.

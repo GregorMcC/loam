@@ -24,6 +24,8 @@ final class TerminalPaneViewFactory: PaneViewFactory {
     private var views: [ObjectIdentifier: (pane: PaneID, launch: UUID, server: PaneSocketServer?)] = [:]
     /// The launch token of the newest view of each pane.
     private var launches: [PaneID: UUID] = [:]
+    /// The terminal of the newest view of each pane, for text that the app types into a pane.
+    private var surfaces: [PaneID: TerminalSurfaceView] = [:]
 
     init(runtime: TerminalRuntime, sockets: PaneSocketFolder = PaneSocketFolder()) {
         self.runtime = runtime
@@ -64,6 +66,7 @@ final class TerminalPaneViewFactory: PaneViewFactory {
             view.onTitleChange = { [weak self] title in if current() { self?.onTitleChange?(id, title) } }
             view.onKeyInput = { [weak self] in if current() { self?.onKeyInput?(id) } }
             views[ObjectIdentifier(view)] = (id, launch, server)
+            surfaces[id] = view
             return view
         } catch {
             server?.close()
@@ -77,6 +80,7 @@ final class TerminalPaneViewFactory: PaneViewFactory {
         // The socket closes after the process, so the session's last hooks still reach it.
         let entry = views.removeValue(forKey: ObjectIdentifier(view))
         if let entry, launches[entry.pane] == entry.launch { launches[entry.pane] = nil }
+        if let entry, surfaces[entry.pane] === view { surfaces[entry.pane] = nil }
         let server = entry?.server
         guard let surface = view as? TerminalSurfaceView else { server?.close(); return completion() }
         surface.close { _ in
@@ -92,6 +96,7 @@ final class TerminalPaneViewFactory: PaneViewFactory {
         onChildExited = { [weak model] in model?.paneExited($0) }
         onTitleChange = { [weak model] pane, title in model?.setTerminalTitle(title, of: pane) }
         onKeyInput = { [weak model] in model?.typed(in: $0) }
+        model.typeIntoPane = { [weak self] pane, text in try self?.surfaces[pane]?.pasteWithoutReturn(text) ?? false }
     }
 
     /// Removes every socket. The app calls it at quit.

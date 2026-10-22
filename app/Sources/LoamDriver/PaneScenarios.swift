@@ -157,6 +157,75 @@ extension Scenarios {
         try check(invocation()?.args.starts(with: ["--session-id", third]) == true, "claude did not get the new ID")
         try check(model.review.paneLookup?(first)?.id == seeded, "the review lost the pane of the first session")
 
+        // 7b. Hiding the plot panel gives the keys back to the pane. You type in Where it stands, and ⌘I hides
+        // the panel: the keys must not stay in the hidden field.
+        try await app.waitUntil("the new terminal has the keys") { app.window.firstResponder is TerminalSurfaceView }
+        try app.pressMenuKey("i")
+        try await app.waitUntil("the panel shows") { app.exists("panel-whereItStands") }
+        try app.fill("panel-whereItStands", with: "dra")
+        try check(AccessibilityProbe.shared.isFocused("panel-whereItStands"), "the field has no focus")
+        try app.pressMenuKey("i")
+        try await app.waitUntil("the panel hides") { !model.panel.visible }
+        try check(app.window.firstResponder === (try surface(seeded)), "the keys stayed in the hidden panel")
+        await app.sleep(0.5)  // The hidden panel must not take them back.
+        try check(app.window.firstResponder === (try surface(seeded)), "the hidden panel took the keys back")
+
+        // 7c. A session ends while you type in the panel: the field keeps the keys. The Session ended bar
+        // would read "n" as New session and Return as Resume. Hiding the panel then gives the keys to the bar.
+        try app.pressMenuKey("i")
+        try await app.waitUntil("the panel shows again") { model.panel.visible && app.exists("panel-whereItStands") }
+        try app.fill("panel-whereItStands", with: "dra")
+        try check(AccessibilityProbe.shared.isFocused("panel-whereItStands"), "the field has no focus again")
+        let beforeEnd = model.workspace.launch(of: seeded)
+        // The text goes to the terminal of the pane, not to the first responder.
+        try check(try surface(seeded).perform(action: "text:/exit\\x0d"), "the terminal took no text")
+        try await app.waitUntil("the session ended") { app.exists("pane-ended-\(seeded.uuidString)") }
+        await app.sleep(0.5)
+        try check(AccessibilityProbe.shared.isFocused("panel-whereItStands"), "the Session ended bar took the keys from the field")
+        try app.type("n")
+        app.press(.returnKey)
+        await app.sleep(0.5)
+        try check(model.workspace.launch(of: seeded) == beforeEnd && session(seeded)?.exited == true, "a key in the field started a session")
+        try check(app.text(of: "panel-whereItStands")?.hasPrefix("dran") == true,
+                  "the keys did not go into the field: \(app.text(of: "panel-whereItStands") ?? "nothing")")
+        try app.click("panel-revert-whereItStands")
+        try await app.waitUntil("Revert drops the draft") { !app.exists("panel-revert-whereItStands") }
+        try app.pressMenuKey("i")
+        try await app.waitUntil("the panel hides again") { !model.panel.visible }
+        let endedBar = try surface(seeded).superview?.subviews.first { $0.accessibilityIdentifier() == "pane-ended-\(seeded.uuidString)" }
+        try check(endedBar != nil && app.window.firstResponder === endedBar, "the bar has no keys after the panel hid")
+        app.press(.returnKey)  // The bar has the keys, so Return resumes.
+        try await app.waitUntil("the pane resumed") { model.workspace.launch(of: seeded) == beforeEnd + 1 }
+        try await app.waitUntil("SessionStart of the resume") { session(seeded)?.started == true }
+        try await app.waitUntil("the resumed terminal has the keys") { app.window.firstResponder === (try? surface(seeded)) }
+
+        // 7d. Closing an editor of the panel gives the keys back to the pane: Escape in Add link and in Add
+        // repo, and Return in Add link.
+        // SwiftUI clears the focus of a closed field a moment later, so the keys come back to the pane and stay.
+        func keysReturn(_ what: String) async throws {
+            try await app.waitUntil("\(what) gives the keys to the pane") { app.window.firstResponder === (try? surface(seeded)) }
+            await app.sleep(0.3)
+            try check(app.window.firstResponder === (try surface(seeded)), "the keys left the pane after \(what)")
+        }
+        try app.pressMenuKey("i")
+        try await app.waitUntil("the panel shows for the editors") { model.panel.visible && app.exists("panel-add-link-open") }
+        for (name, open, field) in [("Add link", "panel-add-link-open", "panel-new-link-target"),
+                                    ("Add repo", "panel-add-repo-open", "panel-new-repo")] {
+            try app.click(open)
+            try await app.waitUntil("\(name) has the focus") { AccessibilityProbe.shared.isFocused(field) }
+            app.press(.escape)
+            try await app.waitUntil("Escape closes \(name)") { !app.exists(field) }
+            try await keysReturn("Escape in \(name)")
+        }
+        try app.click("panel-add-link-open")
+        try await app.waitUntil("Add link has the focus again") { AccessibilityProbe.shared.isFocused("panel-new-link-target") }
+        try app.fill("panel-new-link-target", with: "https://example.com/keys")
+        app.press(.returnKey)
+        try await app.waitUntil("Return closes Add link") { !app.exists("panel-new-link-target") }
+        try await keysReturn("Return in Add link")
+        try app.pressMenuKey("i")
+        try await app.waitUntil("the panel hides for the last time") { !model.panel.visible }
+
         // 8. /exit, then ⌘W closes the ended pane. The shell tab stays.
         try await app.waitUntil("the new terminal has the keys") { app.window.firstResponder is TerminalSurfaceView }
         try app.type("/exit")

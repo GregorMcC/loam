@@ -147,6 +147,22 @@ struct DriverTests {
         return out.path
     }()
 
+    /// The core's fake `gh`, built from ../core: LOAM_DRIVER_FAKE_GH, else a build in a temp folder.
+    static let fakeGH: String = {
+        if let path = ProcessInfo.processInfo.environment["LOAM_DRIVER_FAKE_GH"] { return path }
+        let core = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("core")
+        let out = FileManager.default.temporaryDirectory.appendingPathComponent("loam-driver-fakegh-\(UUID().uuidString)")
+        let build = Process()
+        build.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        build.arguments = ["go", "build", "-o", out.path, "./internal/testutil/fakegh"]
+        build.currentDirectoryURL = core
+        do { try build.run() } catch { fatalError("go build did not start: \(error)") }
+        build.waitUntilExit()
+        if build.terminationStatus != 0 { fatalError("go build of the fake gh failed with \(build.terminationStatus)") }
+        return out.path
+    }()
+
     /// Ticket 28: a seeded pane and a shell pane, the pane socket, /clear, and "Session ended" with resume, new, and close.
     @Test func runsSeededAndShellPanesAndShowsSessionEnded() async throws {
         try await expectPass("panes", environment: [
@@ -159,6 +175,14 @@ struct DriverTests {
     @Test func runsAPaneInAWorktreeAndRefusesToRemoveItWhileOpen() async throws {
         try await expectPass("worktrees", environment: [
             "LOAM_DRIVER_LOAM": Self.loamBinary, "LOAM_DRIVER_FAKE_CLAUDE": Self.fakeClaude,
+        ])
+    }
+
+    /// Ticket 108: the Worktrees section reads the ship state from a refresh, in the order of the core. A Stop of a
+    /// session makes one refresh. `gh` missing and signed out show a callout. A refresh writes no change marker.
+    @Test func showsTheWorktreesSectionAndRefreshesItsShipState() async throws {
+        try await expectPass("worktrees-section", environment: [
+            "LOAM_DRIVER_LOAM": Self.loamBinary, "LOAM_DRIVER_FAKE_CLAUDE": Self.fakeClaude, "LOAM_DRIVER_FAKE_GH": Self.fakeGH,
         ])
     }
 
@@ -211,22 +235,6 @@ struct DriverTests {
             "LOAM_DRIVER_LOAM": Self.loamBinary, "LOAM_DRIVER_FAKE_CLAUDE": Self.fakeClaude,
         ])
     }
-
-    /// The core's fake `gh`, built from ../core: LOAM_DRIVER_FAKE_GH, else a build in a temp folder.
-    static let fakeGH: String = {
-        if let path = ProcessInfo.processInfo.environment["LOAM_DRIVER_FAKE_GH"] { return path }
-        let core = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("core")
-        let out = FileManager.default.temporaryDirectory.appendingPathComponent("loam-driver-fakegh-\(UUID().uuidString)")
-        let build = Process()
-        build.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        build.arguments = ["go", "build", "-o", out.path, "./internal/testutil/fakegh"]
-        build.currentDirectoryURL = core
-        do { try build.run() } catch { fatalError("go build did not start: \(error)") }
-        build.waitUntilExit()
-        if build.terminationStatus != 0 { fatalError("go build of the fake gh failed with \(build.terminationStatus)") }
-        return out.path
-    }()
 
     /// Ticket 107: two plots with a worktree each that is ready to merge. The Ready to merge row counts 2,
     /// ⌘⇧L selects the first, then the second, then the first again, and the row goes while gh is missing.

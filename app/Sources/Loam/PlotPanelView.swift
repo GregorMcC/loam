@@ -2,8 +2,8 @@ import AppKit
 import LoamKit
 import SwiftUI
 
-/// The plot panel (spec 8.6 and 8.7, tickets 72 and 87): the brief, repos, links, and changes of the
-/// active plot, as a calm inspector. It is the sibling of the glass sidebar: plain sections with
+/// The plot panel (spec 8.6 and 8.7, tickets 72 and 87): the brief, worktrees, repos, links, and changes
+/// of the active plot, as a calm inspector. It is the sibling of the glass sidebar: plain sections with
 /// sentence-case headings, property rows, a raised "Where it stands" card, and rows with a neutral
 /// hover. It renders `PlotPanelModel` and `ReviewModel`. Every write goes through the models and
 /// `loam`. The callouts (an error, a clash, a missing link, and the changes that are new since you
@@ -43,6 +43,7 @@ struct PlotPanelView: View {
                         whereItStands
                         plainBrief(.what)
                         plainBrief(.why)
+                        WorktreesSection(app: app, plot: plot.id, timeZone: review.timeZone)
                         repos(plot)
                         links(plot)
                         ChangeLogSection(review: review, plot: plot.id)
@@ -273,7 +274,7 @@ struct PlotPanelView: View {
                 .textFieldStyle(.roundedBorder)
                 .focused($focus, equals: .newRepo)
                 .onSubmit(addRepo)
-                .onKeyPress(.escape) { closeEditors(); return .handled }
+                .onKeyPress(.escape) { finishEditing(); return .handled }
                 .accessibilityIdentifier("panel-new-repo")
             ForEach(Array(suggestions.enumerated()), id: \.element.id) { index, suggestion in
                 RepoSuggestionRow(suggestion: suggestion, returnAdds: returnPicksFirst && index == 0) {
@@ -299,7 +300,7 @@ struct PlotPanelView: View {
             await model.addRepo(path: path)
             addBusy = false
             // Close the row only if it is still the open one, so an editor opened meanwhile stays.
-            if model.errorMessage == nil, adding == .repo { closeEditors() }
+            if model.errorMessage == nil, adding == .repo { finishEditing() }
         }
     }
 
@@ -360,7 +361,7 @@ struct PlotPanelView: View {
         .labelsHidden()
         .textFieldStyle(.roundedBorder)
         .onSubmit(addLink)
-        .onKeyPress(.escape) { closeEditors(); return .handled }
+        .onKeyPress(.escape) { finishEditing(); return .handled }
         .task { focus = .newTarget }
     }
 
@@ -373,7 +374,7 @@ struct PlotPanelView: View {
         Task {
             await model.addLink(label: label, target: target)
             addBusy = false
-            if model.errorMessage == nil, adding == .link { closeEditors() }
+            if model.errorMessage == nil, adding == .link { finishEditing() }
         }
     }
 
@@ -394,7 +395,7 @@ struct PlotPanelView: View {
                 .accessibilityIdentifier("panel-edit-link-target")
             TextField("Note", text: $linkNote, prompt: Text("Note"))
             TrailingButtons {
-                Button("Cancel", action: closeEditors)
+                Button("Cancel", action: finishEditing)
                     .accessibilityIdentifier("panel-edit-link-cancel")
                 Button("Save") { saveLink(link) }
                     .loamPrimaryButton()
@@ -405,7 +406,7 @@ struct PlotPanelView: View {
         .labelsHidden()
         .textFieldStyle(.roundedBorder)
         .onSubmit { saveLink(link) }
-        .onKeyPress(.escape) { closeEditors(); return .handled }
+        .onKeyPress(.escape) { finishEditing(); return .handled }
         .task { focus = .linkLabel }
     }
 
@@ -418,7 +419,7 @@ struct PlotPanelView: View {
         Task {
             await model.editLink(id: link.id, label: label, target: target, note: note)
             addBusy = false
-            if model.errorMessage == nil, model.clash == nil, editingLink == link.id { closeEditors() }
+            if model.errorMessage == nil, model.clash == nil, editingLink == link.id { finishEditing() }
         }
     }
 
@@ -431,7 +432,7 @@ struct PlotPanelView: View {
                 .disabled(addBusy)
                 .accessibilityIdentifier("\(id)-choose")
             Spacer()
-            Button("Cancel", action: closeEditors)
+            Button("Cancel", action: finishEditing)
                 .accessibilityIdentifier("panel-add-cancel")
             Button("Add", action: add)
                 .loamPrimaryButton()
@@ -481,6 +482,15 @@ struct PlotPanelView: View {
     private func open(_ row: AddRow) {
         closeEditors()
         adding = row
+    }
+
+    /// Closes the editors as you end them (Return, Escape, Cancel), and gives the keyboard back to the
+    /// focused pane. A close for another reason, such as a new editor that opens, leaves the keyboard.
+    /// SwiftUI clears the focus of the closed field in its next update, and that resigns the first
+    /// responder of any view. So the keyboard goes back in the next turn, after it.
+    private func finishEditing() {
+        closeEditors()
+        Task { model.onEditorClosed?() }
     }
 
     /// Closes the add rows and the link editor, and clears what they held.
@@ -609,9 +619,11 @@ struct PropertyRow<Value: View>: View {
 }
 
 /// A section heading: sentence case, 12pt, medium, `ink-faint`. With `add`, a `+` at the trailing edge
-/// opens an inline add row.
+/// opens an inline add row. With `detail`, a note in 11.5pt stands before it.
 struct PanelSectionHeader: View {
     let title: String
+    /// A short note before the `+`, such as the age of the data ("Updated 18:02"), with its identifier.
+    var detail: (text: String, id: String)?
     var add: (label: String, id: String)?
     var action: () -> Void = {}
     @State private var hovering = false
@@ -622,6 +634,12 @@ struct PanelSectionHeader: View {
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(LoamColor.inkFaint)
             Spacer()
+            if let detail {
+                Text(detail.text)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(LoamColor.inkFaint)
+                    .accessibilityIdentifier(detail.id)
+            }
             if let add {
                 Button(action: action) {
                     Image(systemName: "plus")
@@ -686,14 +704,32 @@ struct EmptyRow: View {
 
 /// A banner at the top of the panel, as the prototype's Needs you banner: a wash, radius 10, and a dot.
 struct CalloutCard<Content: View>: View {
-    enum Tone { case attention, error }
+    /// `neutral` is for a note that asks for no action now, such as a missing tool (ticket 105): the
+    /// raised card colour with an `ink-muted` dot and a hairline.
+    enum Tone { case attention, error, neutral }
     var tone: Tone = .attention
     @ViewBuilder let content: () -> Content
+
+    private var dot: Color {
+        switch tone {
+        case .attention: LoamColor.needsYou
+        case .error: LoamColor.rust
+        case .neutral: LoamColor.inkMuted
+        }
+    }
+
+    private var wash: Color {
+        switch tone {
+        case .attention: LoamColor.needsYouWash
+        case .error: LoamColor.rustWash
+        case .neutral: PanelStyle.card
+        }
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Circle()
-                .fill(tone == .error ? LoamColor.rust : LoamColor.needsYou)
+                .fill(dot)
                 .frame(width: 7, height: 7)
                 .padding(.top, 5)
                 .accessibilityHidden(true)
@@ -703,8 +739,12 @@ struct CalloutCard<Content: View>: View {
         .padding(.leading, 12)
         .padding(.trailing, 9)
         .padding(.vertical, 9)
-        .background(tone == .error ? LoamColor.rustWash : LoamColor.needsYouWash,
-                    in: RoundedRectangle(cornerRadius: LoamTheme.radiusMd))
+        .background(wash, in: RoundedRectangle(cornerRadius: LoamTheme.radiusMd))
+        .overlay {
+            if tone == .neutral {
+                RoundedRectangle(cornerRadius: LoamTheme.radiusMd).strokeBorder(LoamColor.hairline)
+            }
+        }
     }
 }
 
@@ -748,13 +788,16 @@ struct CalloutText: View {
     }
 }
 
-/// A 32pt row with a neutral fill on hover. At the trailing edge it shows its kind ("Main", "GitHub")
-/// and, while the pointer or the keyboard is on it, an `ellipsis` menu in place of the kind. Its context
-/// menu holds the same actions.
+/// A row of `minHeight` (32pt) with a neutral fill on hover. At the trailing edge it shows its kind
+/// ("Main", "GitHub") and, while the pointer or the keyboard is on it, an `ellipsis` menu in place of
+/// the kind. Its context menu holds the same actions.
 struct HoverMenuRow<Content: View, Actions: View>: View {
     let menuLabel: String
     let menuID: String
     var kind: String?
+    var minHeight: CGFloat = 32
+    /// The room at the trailing edge for the kind and the menu.
+    var trailingInset: CGFloat = 56
     @ViewBuilder let content: () -> Content
     @ViewBuilder let actions: () -> Actions
     @State private var hovering = false
@@ -765,7 +808,7 @@ struct HoverMenuRow<Content: View, Actions: View>: View {
         let active = hovering || menuFocused
         ZStack(alignment: .trailing) {
             content()
-                .padding(.trailing, 56)
+                .padding(.trailing, trailingInset)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let kind {
                 Text(kind)
@@ -791,7 +834,7 @@ struct HoverMenuRow<Content: View, Actions: View>: View {
             .accessibilityIdentifier(menuID)
         }
         .padding(.horizontal, 8)
-        .frame(minHeight: 32)
+        .frame(minHeight: minHeight)
         .background(RoundedRectangle(cornerRadius: LoamTheme.radiusSm).fill(LoamColor.hoverFill).opacity(active ? 1 : 0))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }

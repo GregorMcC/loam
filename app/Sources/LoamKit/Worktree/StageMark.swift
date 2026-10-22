@@ -67,6 +67,11 @@ extension WorktreeStage {
         }
     }
 
+    /// The point size of the ✎ of Not pushed, next to a symbol of `symbolSize` points. The ✎ is text and
+    /// it is drawn one point smaller than a symbol, so the two look as big as each other: 11 pt next to
+    /// the 12 pt symbols of the sidebar, 12 pt next to the 13 pt symbols of the Worktrees section.
+    public static func pencilSize(symbolSize: CGFloat) -> CGFloat { symbolSize - 1 }
+
     /// True for a stage that comes from a pull request. Pushed, no PR and Not pushed come from git,
     /// and no stage shows nothing.
     public var comesFromPullRequest: Bool {
@@ -82,9 +87,13 @@ public struct StageMark: Equatable, Sendable {
     public var stage: WorktreeStage
     /// The PR number. Nil for the ✎ mark.
     public var number: Int?
-    /// The words for a tooltip, such as "#16 · Checks failed · 2 of 3". Nil for the ✎ mark, which has none.
-    public var tooltip: String?
-    /// The same words for VoiceOver and the driver, with commas.
+    /// The words for a tooltip: the PR number, the stage in words, then the status line of the Worktrees
+    /// section, such as "#16 · Checks failed · 2 of 14 checks failed". `StatusLine` writes the line, so the
+    /// two say the same. A part of the line that repeats the stage words is left out. The ✎ mark has no
+    /// number or stage words, so its tooltip is the status line alone, such as "2 changed".
+    public var tooltip: String
+    /// The same words for VoiceOver and the driver, with commas. The symbol is hidden from VoiceOver, so
+    /// these words are the only place that says the stage, or for the ✎ mark, the local work.
     public var spoken: String
 
     /// The number as the row shows it, such as "#16". Nil for the ✎ mark.
@@ -92,27 +101,25 @@ public struct StageMark: Equatable, Sendable {
     public var symbol: String? { stage.symbol }
     public var tone: StageTone { stage.tone }
 
-    /// The mark of a worktree. Nil when its folder is gone, and when it has nothing to show.
-    public init?(_ status: WorktreeStatus) {
+    /// The mark of a worktree. Nil when its folder is gone, and when it has nothing to show. `now` and
+    /// `timeZone` give the day and the clock of a merge time in the status line.
+    public init?(_ status: WorktreeStatus, now: Date = Date(), timeZone: TimeZone = .current) {
         guard !status.missing else { return nil }
         if let pr = status.pr, let stage = status.stage, stage.comesFromPullRequest {
-            var parts = [Self.numberText(pr.number)]
-            if Self.isChecking(pr, at: stage) {
-                parts.append(Self.checkingWords)
-            } else {
-                parts.append(stage.words)
-                if let count = Self.checkCount(of: pr, at: stage) { parts.append(count) }
-            }
-            self.init(stage: stage, number: pr.number, tooltip: parts.joined(separator: " · "),
-                      spoken: parts.joined(separator: ", "))
+            let line = StatusLine(of: status, now: now, timeZone: timeZone)
+            let words = [Self.numberText(pr.number), stage.words] + line.parts.map(\.text).filter { $0 != stage.words }
+            self.init(stage: stage, number: pr.number, tooltip: words.joined(separator: StatusLine.separator),
+                      spoken: words.joined(separator: ", "))
         } else if status.changed > 0 || status.unpushed > 0 {
-            self.init(stage: .notPushed, number: nil, tooltip: nil, spoken: WorktreeStage.notPushed.words)
+            let words = StatusLine(of: status, now: now, timeZone: timeZone).parts.map(\.text)
+            self.init(stage: .notPushed, number: nil, tooltip: words.joined(separator: StatusLine.separator),
+                      spoken: words.joined(separator: ", "))
         } else {
             return nil
         }
     }
 
-    private init(stage: WorktreeStage, number: Int?, tooltip: String?, spoken: String) {
+    private init(stage: WorktreeStage, number: Int?, tooltip: String, spoken: String) {
         self.stage = stage
         self.number = number
         self.tooltip = tooltip
@@ -120,39 +127,4 @@ public struct StageMark: Equatable, Sendable {
     }
 
     private static func numberText(_ number: Int) -> String { "#\(number)" }
-
-    /// The words of Checks running while GitHub has not finished its merge check (README, "Stages").
-    private static let checkingWords = "Checking…"
-
-    /// The summaries of GitHub for checks that have not finished.
-    private static let activeCheckStates: Set<String> = ["PENDING", "EXPECTED"]
-
-    /// True for a PR at Checks running with no check that runs or waits and no unfinished summary. The
-    /// core gives the stage when GitHub still checks whether the PR can merge (mergeable UNKNOWN), and no
-    /// other stage matches. The row then says "Checking…" and has no count.
-    private static func isChecking(_ pr: PullRequest, at stage: WorktreeStage) -> Bool {
-        stage == .checksRunning && pr.checks.running == 0 && pr.checks.waiting == 0
-            && !activeCheckStates.contains(pr.checks.state)
-    }
-
-    /// The check count that the README gives a status line, such as "2 of 14", for the stages that have
-    /// one. Nil for any other stage, and for a PR with no checks. Ready to merge counts the required
-    /// checks when the PR has some ("14 of 14 required checks passed"), else all checks.
-    private static func checkCount(of pr: PullRequest, at stage: WorktreeStage) -> String? {
-        let checks = pr.checks
-        guard checks.total > 0 else { return nil }
-        switch stage {
-        case .checksFailed:
-            return "\(checks.failed) of \(checks.total)"
-        case .checksRunning:
-            return "\(checks.total - checks.running - checks.waiting) of \(checks.total)"
-        case .readyToMerge:
-            if let required = checks.required, required > 0 {
-                return "\(checks.requiredPassed ?? 0) of \(required)"
-            }
-            return "\(checks.passed) of \(checks.total)"
-        default:
-            return nil
-        }
-    }
 }

@@ -126,6 +126,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             guard let self, self.model.workspace.livePaneIDs.contains(pane) else { return }
             self.render()
         }
+        model.panel.onEditorClosed = { [weak self] in self?.giveKeysBackFromPanel() }
         connectSwitcher()
         installActionBar()
         collapseObservation = sidebarItem.observe(\.isCollapsed, options: [.new]) { [weak self] _, _ in
@@ -321,10 +322,20 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window?.title = model.sidebar.windowTitle
         refreshSubtitle()
         closeActionsMenuIfContextChanged()
-        // The open switcher keeps the keyboard. A pane event or a feed update must not move it to the terminal.
-        if !model.switcher.isOpen, !actionBar.menu.isOpen, let focused = tab?.focused, let container = paneArea.container(for: focused) {
-            window?.makeFirstResponder(container.focusTarget)
+        // The keyboard moves to the focused pane only when the focus moved, the pane got a new view, or the
+        // view in it that takes the keys changed (the Session ended bar). Most renders are for other
+        // changes (a pane event, a feed update, a refresh of the ship state), and they must not take the
+        // keyboard from a field that you type in, such as one in the plot panel. The same holds when a
+        // session ends: the bar takes the keys only from the terminal, or when nothing holds them. The open
+        // switcher and the open actions menu keep the keyboard too.
+        let target = tab.flatMap { paneArea.container(for: $0.focused) }?.focusTarget
+        let holder = window?.firstResponder === window ? nil : window?.firstResponder
+        if views.movesKeys(in: workspace, target: target, heldBy: holder), !model.switcher.isOpen, !actionBar.menu.isOpen,
+           let target {
+            window?.makeFirstResponder(target)
         }
+        // A pane that opened with text to type (Sign in) has its terminal now.
+        model.deliverUnsentText()
     }
 
     /// The pane headers and the tab labels. A terminal title change runs only this (ticket 71), so it
@@ -463,8 +474,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         if !show { model.panel.request = nil }  // A request the panel could not run does not wait for the next show.
         model.setPanelVisible(show)
         panelItem.animator().isCollapsed = !show
-        if show { Task { await model.reloadPanel() } }
+        if show { Task { await model.reloadPanel() } } else { giveKeysBackFromPanel() }
     }
+
+    /// Gives the keyboard back to the focused pane when the plot panel holds it or nothing does: after the panel
+    /// hides, and after you finish an editor in it (`PlotPanelModel.onEditorClosed`). A render does not do it,
+    /// since it moves the keys only when the focus or the view changed. A hidden panel keeps the keys of its
+    /// field, and a closed field leaves them with the window.
+    private func giveKeysBackFromPanel() {
+        let holder = window?.firstResponder
+        guard holder === window || (holder as? NSView)?.isDescendant(of: panelController.view) == true else { return }
+        focusActivePane()
+    }
+
     /// ⌘W closes the focused pane. It asks first when the session in it is mid-turn.
     @objc func closePane(_ sender: Any?) {
         guard let pane = model.workspace.focusedPane else {
@@ -585,6 +607,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let controller = settingsWindow ?? SettingsWindowController(settings: model.settings, terminal: model.terminalConfig)
         settingsWindow = controller
         controller.show()
+        // You may have installed `gh` or signed in on the way here (ticket 108).
+        Task { await model.checkGitHub() }
     }
 
     // MARK: Ghostty config

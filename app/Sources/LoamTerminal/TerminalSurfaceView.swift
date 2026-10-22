@@ -840,7 +840,20 @@ extension TerminalSurfaceView {
         return true
     }
 
-    /// Sends text to the program as a paste.
+    /// Types text into the program as a paste and never presses Return (ADR 0007: Loam sends nothing for
+    /// you). A program that takes no bracketed paste reads a line break as Return, so the line breaks at
+    /// the end of the text are dropped, and text with a line break inside it is refused
+    /// (`PaneText.withoutReturn` throws, and nothing is typed). Returns false when the terminal is
+    /// closed, so the caller can keep the text.
+    @discardableResult
+    public func pasteWithoutReturn(_ text: String) throws -> Bool {
+        let text = try PaneText.withoutReturn(text)
+        guard surface != nil else { return false }
+        sendText(text)
+        return true
+    }
+
+    /// Sends text to the program as a paste. Text with nothing in it sends nothing.
     func sendText(_ text: String) {
         guard let surface else { return }
         let length = text.utf8.count
