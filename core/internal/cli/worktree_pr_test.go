@@ -155,16 +155,18 @@ func TestWorktreeListRefreshKeepsTheStageWhileGitHubChecks(t *testing.T) {
 }
 
 // A failed refresh keeps the cached state and its time, and sets a note.
+// With gh missing or signed out, the list shows the local state instead.
 func TestWorktreeListRefreshNotes(t *testing.T) {
 	for _, c := range []struct {
-		note worktree.PRNote
-		fail func(t *testing.T)
+		note  worktree.PRNote
+		fail  func(t *testing.T)
+		local bool
 	}{
-		{worktree.NoteGHSignedOut, func(t *testing.T) { t.Setenv("LOAM_FAKE_GH_FAIL", "signed_out") }},
-		{worktree.NoteRateLimited, func(t *testing.T) { t.Setenv("LOAM_FAKE_GH_FAIL", "rate_limited") }},
-		{worktree.NoteOffline, func(t *testing.T) { t.Setenv("LOAM_FAKE_GH_FAIL", "offline") }},
-		{worktree.NoteNoAccess, func(t *testing.T) { t.Setenv("LOAM_FAKE_GH_FAIL", "forbidden") }},
-		{worktree.NoteGHMissing, func(t *testing.T) { t.Setenv("LOAM_GH", filepath.Join(t.TempDir(), "gh")) }},
+		{worktree.NoteGHSignedOut, func(t *testing.T) { t.Setenv("LOAM_FAKE_GH_FAIL", "signed_out") }, true},
+		{worktree.NoteRateLimited, func(t *testing.T) { t.Setenv("LOAM_FAKE_GH_FAIL", "rate_limited") }, false},
+		{worktree.NoteOffline, func(t *testing.T) { t.Setenv("LOAM_FAKE_GH_FAIL", "offline") }, false},
+		{worktree.NoteNoAccess, func(t *testing.T) { t.Setenv("LOAM_FAKE_GH_FAIL", "forbidden") }, false},
+		{worktree.NoteGHMissing, func(t *testing.T) { t.Setenv("LOAM_GH", filepath.Join(t.TempDir(), "gh")) }, true},
 	} {
 		t.Run(string(c.note), func(t *testing.T) {
 			prCLI(t)
@@ -172,8 +174,13 @@ func TestWorktreeListRefreshNotes(t *testing.T) {
 			c.fail(t)
 			got := listJSON(t, "alpha", "--refresh")
 			st := got["fix-login"]
-			if st.PRNote != c.note || st.PR == nil || st.PR.Number != 15 || st.Stage != worktree.StageReadyToMerge ||
-				st.PRCheckedAt == nil || !st.PRCheckedAt.Equal(*first.PRCheckedAt) {
+			switch {
+			case c.local:
+				if st.PRNote != c.note || st.PR != nil || st.Stage != worktree.StageNone || st.PRCheckedAt != nil {
+					t.Fatalf("local: %+v", st)
+				}
+			case st.PRNote != c.note || st.PR == nil || st.PR.Number != 15 || st.Stage != worktree.StageReadyToMerge ||
+				st.PRCheckedAt == nil || !st.PRCheckedAt.Equal(*first.PRCheckedAt):
 				t.Fatalf("%+v", st)
 			}
 			// The note stays for a plain list, until a refresh gets an answer.
