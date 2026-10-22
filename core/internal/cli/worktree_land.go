@@ -23,9 +23,9 @@ func newWorktreeLandCmd() *cobra.Command {
 		Long: "Merge the pull request (PR) of a worktree on GitHub, through the GitHub CLI (gh). <worktree> is an ID, a folder name, or a name.\n" +
 			"The command asks GitHub for the PR first, and stops when GitHub does not answer. It reads the merge methods that the repo allows, the default method, and the merge queue of the base branch.\n" +
 			"Then it runs the checks: checks, review, behind_base, conflicts, github, local_changes, and unpushed_commits. It exits with code 16 when a check blocks: a failed check, changes requested, conflicts, a draft, uncommitted changes, or commits that are not pushed. Behind base blocks when the base branch needs the PR up to date. When GitHub blocks the merge for another reason, the github check blocks a merge now, but not --auto.\n" +
-			"The merge names the PR head that Loam checked, so GitHub refuses it when the PR has a new commit. After the merge, the command deletes the branch on GitHub, then removes the worktree as loam worktree rm does. It refuses while a pane is open in the worktree.\n" +
-			"With --auto, or a merge queue, GitHub merges later. The command records the land on the worktree and keeps the worktree. A later land keeps what the recorded land keeps.\n" +
-			"For a PR that is merged, the command skips the merge and does what comes after it. It exits with code 16 when the worktree has work that is not in the PR.\n" +
+			"The merge names the PR head that Loam checked, so GitHub refuses it when the PR has a new commit. After the merge, the command deletes the branch on GitHub, then removes the worktree as loam worktree rm does. It refuses while a pane is open in the worktree. When gh merges at once with --auto and a pane is open, it deletes nothing and removes nothing, and records the land.\n" +
+			"With --auto, or a merge queue, GitHub merges later. The command records the land on the worktree and keeps the worktree. A later land of the same PR keeps what the recorded land keeps. A recorded land of another PR is stale, and the command clears it.\n" +
+			"For a PR that is merged, the command skips the merge and does what comes after it. When the local repo does not have the PR head, it fetches it from GitHub first. It exits with code 16 when the worktree has work that is not in the PR, or when it cannot fetch the PR head.\n" +
 			"--dry-run changes nothing. It prints the plan and each check. It exits with code 0 when a check blocks.\n" +
 			"It exits with code 17 when gh is missing or signed out, or the origin of the repo is not on GitHub.",
 		Args: cobra.ExactArgs(2),
@@ -71,6 +71,9 @@ func newWorktreeLandCmd() *cobra.Command {
 // printLandPlan prints the plan of a dry run.
 func printLandPlan(out io.Writer, res *worktree.LandResult) {
 	fmt.Fprintf(out, "PR #%d %s: %s\n", res.PR.Number, res.PR.Title, stageWord(res.Stage))
+	if res.LandNote != "" {
+		fmt.Fprintln(out, res.LandNote)
+	}
 	switch {
 	case res.Merged:
 		fmt.Fprintln(out, "The PR is merged. Land does what comes after the merge.")
@@ -102,6 +105,9 @@ func printLandPlan(out io.Writer, res *worktree.LandResult) {
 // printLand prints what a land did.
 func printLand(out io.Writer, res *worktree.LandResult) {
 	pr := res.PR
+	if res.LandNote != "" {
+		fmt.Fprintln(out, res.LandNote)
+	}
 	switch {
 	case res.Merged && pr.State == "MERGED":
 		fmt.Fprintf(out, "PR #%d is merged.\n", pr.Number)

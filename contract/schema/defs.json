@@ -183,7 +183,7 @@
         },
         "version": { "$ref": "#/$defs/worktreeVersion" },
         "land": {
-          "description": "A land that waits for GitHub: an auto merge, or a merge queue. It is left out when no land waits.",
+          "description": "A land that waits: for GitHub (an auto merge, or a merge queue), or after a merge, for the panes of the worktree to close. It is left out when no land waits.",
           "$ref": "#/$defs/pendingLand"
         }
       }
@@ -213,7 +213,7 @@
       }
     },
     "pendingLand": {
-      "description": "The options of a land that waits for GitHub to merge the PR.",
+      "description": "The options of a land that waits for GitHub to merge the PR, or for the panes of the worktree to close.",
       "type": "object",
       "additionalProperties": false,
       "required": ["pr", "method", "auto", "merge_queue", "keep_worktree", "keep_remote_branch"],

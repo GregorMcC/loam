@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/GregorMcC/loam/core/internal/github"
 	"github.com/GregorMcC/loam/core/internal/store"
@@ -105,7 +106,7 @@ type NotReadyError struct {
 	reasons []string
 	folder  string
 	// cleared says that the land cleared the land that the worktree
-	// recorded. It is empty when the land changed nothing.
+	// recorded for another PR. It is empty when the land changed nothing.
 	cleared string
 }
 
@@ -169,6 +170,10 @@ type LandOptions struct {
 type LandResult struct {
 	// Worktree is the worktree with the land that it records after the land.
 	Worktree store.Worktree `json:"worktree"`
+	// LandNote says that the worktree recorded a land of another PR. That
+	// land is stale: its keeps do not apply, and a land that is not a dry run
+	// clears it.
+	LandNote string `json:"land_note,omitempty"`
 	// PR is the PR as the refresh before the merge found it.
 	PR    *github.PR `json:"pr"`
 	Stage Stage      `json:"stage"`
@@ -221,11 +226,13 @@ type LandResult struct {
 // Land checked, so GitHub refuses it when the PR has a new commit.
 //
 // With an auto merge or a merge queue, GitHub merges later. Land records its
-// options on the worktree and keeps the worktree. A later land keeps what the
-// recorded options keep: its own options can only add keeps. For a PR that is
-// merged, Land skips the merge and does what comes after it, unless the
-// worktree has work after the PR head (see [CheckWorkAfterPR]). For a merged
-// or closed PR, it clears the land that the worktree records.
+// options on the worktree and keeps the worktree. A later land of the same PR
+// keeps what the recorded options keep: its own options can only add keeps. A
+// recorded land of another PR is stale: Land clears it, and its keeps do not
+// apply. For a PR that is merged, Land skips the merge and does what comes
+// after it (see [LandResult.tidy]), unless the worktree has work after the PR
+// head (see [CheckWorkAfterPR]). A land that a check blocks keeps the land
+// that the worktree records. The tidy up and a land of a closed PR clear it.
 //
 // It fails with [ErrGHUnavailable] when gh is missing or signed out, or the
 // origin of the repo is not on GitHub.
@@ -237,31 +244,46 @@ func Land(ctx context.Context, s *store.Store, plotID, arg string, o LandOptions
 	if err != nil {
 		return nil, err
 	}
-	if w.Land != nil {
-		o.KeepWorktree = o.KeepWorktree || w.Land.KeepWorktree
-		o.KeepRemoteBranch = o.KeepRemoteBranch || w.Land.KeepRemoteBranch
-	}
 	t, err := openTarget(ctx, s, w)
 	if err != nil {
 		return nil, err
 	}
 	res := &LandResult{Worktree: w, PR: t.pr, Stage: t.stage, Methods: []github.MergeMethod{}, Checks: []LandCheck{},
 		Auto: o.Auto, DryRun: o.DryRun}
+	// cleared says that this land cleared a stale land of another PR.
+	var cleared string
+	switch {
+	case w.Land == nil:
+	case w.Land.PR != t.pr.Number:
+		if o.DryRun {
+			res.LandNote = fmt.Sprintf("The worktree records a land of PR #%d, but the branch has PR #%d now. Its keeps do not apply, and a land clears it.", w.Land.PR, t.pr.Number)
+			break
+		}
+		if err := s.SetPendingLand(w.ID, nil); err != nil {
+			return nil, err
+		}
+		cleared = fmt.Sprintf("Loam cleared the land of PR #%d that the worktree recorded: the branch has PR #%d now", w.Land.PR, t.pr.Number)
+		res.LandNote = cleared + "."
+		w.Land, t.w.Land, res.Worktree.Land = nil, nil, nil
+	default:
+		o.KeepWorktree = o.KeepWorktree || w.Land.KeepWorktree
+		o.KeepRemoteBranch = o.KeepRemoteBranch || w.Land.KeepRemoteBranch
+	}
 	switch t.pr.State {
 	case "MERGED":
 		res.Merged = true
 		st := Inspect(w)
 		res.Changed, res.Unpushed = st.Changed, st.Unpushed
-		res.Checks = []LandCheck{workAfterPR(t.pr, st)}
+		res.Checks = []LandCheck{workAfterPR(ctx, w, t.pr, st)}
 		res.Ready = !res.Checks[0].Blocks
 		if o.DryRun {
 			return res, nil
 		}
 		if !res.Ready {
+			// The recorded land stays: a land after the work is saved
+			// applies its keeps.
 			e := notReady(w, t.pr, st, res.Checks)
-			if e.cleared, err = clearPendingLand(s, w); err != nil {
-				return nil, err
-			}
+			e.cleared = cleared
 			return nil, e
 		}
 		if !o.KeepWorktree {
@@ -269,19 +291,28 @@ func Land(ctx context.Context, s *store.Store, plotID, arg string, o LandOptions
 				return nil, err
 			}
 		}
-		if err := res.tidy(ctx, s, t, o); err != nil {
+		rec := &store.PendingLand{PR: t.pr.Number}
+		if w.Land != nil {
+			r := *w.Land
+			rec = &r
+		}
+		rec.KeepWorktree, rec.KeepRemoteBranch = o.KeepWorktree, o.KeepRemoteBranch
+		if err := res.tidy(ctx, s, t, o, rec); err != nil {
 			return nil, err
 		}
 		return res, nil
 	case "CLOSED":
 		msg := fmt.Sprintf("PR #%d of %s is closed without a merge", t.pr.Number, w.Branch)
 		if !o.DryRun {
-			cleared, err := clearPendingLand(s, w)
+			c, err := clearPendingLand(s, w)
 			if err != nil {
 				return nil, err
 			}
-			if cleared != "" {
-				msg += ". " + cleared
+			if c == "" {
+				c = cleared
+			}
+			if c != "" {
+				msg += ". " + c
 			}
 		}
 		return nil, errors.New(msg + ". Reopen the PR on GitHub to land it")
@@ -319,7 +350,9 @@ func Land(ctx context.Context, s *store.Store, plotID, arg string, o LandOptions
 		return res, nil
 	}
 	if !res.Ready {
-		return nil, notReady(w, t.pr, st, res.Checks)
+		e := notReady(w, t.pr, st, res.Checks)
+		e.cleared = cleared
+		return nil, e
 	}
 	if direct && !o.KeepWorktree {
 		if err := refuseOpenPanes(w, o.OpenPanes); err != nil {
@@ -349,8 +382,9 @@ func Land(ctx context.Context, s *store.Store, plotID, arg string, o LandOptions
 	case err != nil:
 		res.MergeNote = fmt.Sprintf("GitHub took the land of PR #%d, but Loam could not read the PR again (%v). Run loam worktree land again to finish it.", t.pr.Number, err)
 	case after.pr.State == "MERGED":
+		// gh can merge a clean PR at once, also with --auto.
 		res.Merged = true
-		if err := res.tidy(ctx, s, after, o); err != nil {
+		if err := res.tidy(ctx, s, after, o, pending); err != nil {
 			return nil, err
 		}
 		return res, nil
@@ -371,7 +405,30 @@ func Land(ctx context.Context, s *store.Store, plotID, arg string, o LandOptions
 // removes the worktree, unless the options keep them. A step that fails is a
 // note. The land waits for GitHub no more, so tidy clears the land that the
 // worktree records. A removal deletes the record with its land.
-func (res *LandResult) tidy(ctx context.Context, s *store.Store, t *target, o LandOptions) error {
+//
+// First, when it removes the worktree, tidy checks the open panes. With a pane
+// open, or when it cannot read the open panes, it deletes nothing and removes
+// nothing. It records rec, the land with its options, so a land again with no
+// flags finishes it, and the note says what to do.
+func (res *LandResult) tidy(ctx context.Context, s *store.Store, t *target, o LandOptions, rec *store.PendingLand) error {
+	if !o.KeepWorktree {
+		folder := filepath.Base(t.w.Path)
+		n, err := panesIn(t.w, o.OpenPanes)
+		switch {
+		case err != nil:
+			res.WorktreeNote = fmt.Sprintf("Kept the worktree %s and the branch on GitHub: %v. Then run loam worktree land again.", folder, err)
+		case n > 0:
+			res.WorktreeNote = fmt.Sprintf("Kept the worktree %s and the branch on GitHub: %d pane(s) are open in %s. Close the panes of %s, then run loam worktree land again.",
+				folder, n, folder, folder)
+		}
+		if res.WorktreeNote != "" {
+			if err := s.SetPendingLand(t.w.ID, rec); err != nil {
+				return err
+			}
+			res.Worktree.Land = rec
+			return nil
+		}
+	}
 	if !o.KeepRemoteBranch {
 		err := t.client.DeleteBranch(ctx, t.repo, t.pr.Head, t.pr.HeadOID)
 		switch {
@@ -418,19 +475,48 @@ func clearPendingLand(s *store.Store, w store.Worktree) (string, error) {
 
 // workAfterPR runs the check of a land of a merged PR: whether the worktree
 // has work after the PR head, which the PR does not have. It is the rule of
-// the stage Merged (see [StageInput.UsesPR]): the HEAD of the worktree is in
-// the PR (see [headInPR]), and no file has changes. When the local repo does
-// not have the PR head, Loam cannot tell, and the check blocks.
-func workAfterPR(pr *github.PR, st Status) LandCheck {
+// [Remove] (see [workInPR]): no file has changes, and HEAD and the branch tip
+// are one commit, which is the PR head or an earlier commit of the PR. When
+// the local repo does not have the PR head, the check fetches it first (see
+// [fetchPRHead]). When git cannot read the worktree, or the fetch fails, Loam
+// cannot tell, and the state is unknown.
+func workAfterPR(ctx context.Context, w store.Worktree, pr *github.PR, st Status) LandCheck {
 	c := LandCheck{Name: CheckWorkAfterPR, State: StateNone}
 	switch {
 	case st.localFailed:
 		c.State = StateUnknown
-	case st.Changed > 0 || !headInPR(st.Worktree.Path, pr.HeadOID):
+	case st.Changed > 0:
+		c.State = StateFound
+	case !fetchPRHead(ctx, w.Repo, pr):
+		c.State = StateUnknown
+	case !workInPR(w, st, branchTip(w), pr.HeadOID):
 		c.State = StateFound
 	}
 	c.Blocks = c.State != StateNone
 	return c
+}
+
+// prFetchTimeout stops the fetch of a PR head.
+const prFetchTimeout = time.Minute
+
+// fetchPRHead reports whether the local repo has the head commit of the PR.
+// When it does not, it fetches refs/pull/<number>/head from origin first.
+// GitHub keeps that ref after it deletes the branch of the PR. The fetch
+// updates no ref and writes no FETCH_HEAD: it only adds the commits.
+func fetchPRHead(ctx context.Context, repo string, pr *github.PR) bool {
+	if !oidPattern.MatchString(pr.HeadOID) {
+		return false
+	}
+	if hasCommit(repo, pr.HeadOID) {
+		return true
+	}
+	ctx, cancel := context.WithTimeout(ctx, prFetchTimeout)
+	defer cancel()
+	ref := fmt.Sprintf("refs/pull/%d/head", pr.Number)
+	if _, err := gitContext(ctx, repo, "fetch", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules", remote, ref); err != nil {
+		return false
+	}
+	return hasCommit(repo, pr.HeadOID)
 }
 
 // landChecks runs the checks of a land on an open PR with its stage, and on
@@ -547,8 +633,11 @@ func blockReason(c LandCheck, pr *github.PR, st Status) string {
 		}
 		return fmt.Sprintf("%d commit(s) are not pushed", st.Unpushed)
 	case CheckWorkAfterPR:
-		if c.State == StateUnknown {
+		switch {
+		case c.State == StateUnknown && st.localFailed:
 			return "git could not check the worktree: " + st.Error
+		case c.State == StateUnknown:
+			return "Loam could not read the PR head from GitHub. Run git fetch, then land again"
 		}
 		return fmt.Sprintf("the worktree has work that is not in the merged PR #%d. Open a new PR for that work, or remove the worktree with loam worktree rm", pr.Number)
 	}

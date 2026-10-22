@@ -121,17 +121,30 @@ func headInPR(dir, prHead string) bool {
 		return false
 	}
 	head, err := git(dir, "rev-parse", "HEAD")
-	if err != nil {
+	return err == nil && commitInPR(dir, head, prHead)
+}
+
+// commitInPR reports whether commit is prHead or an earlier commit of it, in
+// the repo or worktree in dir. When the local repo does not have prHead, Loam
+// cannot read the history of the PR, and only prHead is in the PR. When git
+// fails, the commit is not in the PR.
+func commitInPR(dir, commit, prHead string) bool {
+	if !oidPattern.MatchString(prHead) {
 		return false
 	}
-	if head == prHead {
+	if commit == prHead {
 		return true
 	}
-	if _, err := git(dir, "cat-file", "-e", prHead+"^{commit}"); err != nil {
+	if !hasCommit(dir, prHead) {
 		return false
 	}
-	_, err = git(dir, "merge-base", "--is-ancestor", head, prHead)
+	_, err := git(dir, "merge-base", "--is-ancestor", commit, prHead)
 	return err == nil
+}
+
+// hasCommit reports whether the repo in dir has the commit.
+func hasCommit(dir, oid string) bool {
+	return gitOK(dir, "cat-file", "-e", oid+"^{commit}")
 }
 
 // oidPattern matches a full SHA-1 or SHA-256 commit ID. Loam checks a PR head

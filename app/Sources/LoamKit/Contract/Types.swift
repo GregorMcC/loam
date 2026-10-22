@@ -287,7 +287,9 @@ public struct WorktreeLink: Codable, Equatable, Sendable {
     enum CodingKeys: String, CodingKey { case target, label, key, linkID = "link_id" }
 }
 
-/// The options of `loam worktree land` for a land that waits for GitHub: an auto merge, or a merge queue.
+/// The options of `loam worktree land` for a land that waits for GitHub (an auto merge, or a merge
+/// queue), or after a merge, for the panes of the worktree to close. It belongs to the PR `pr`
+/// only: a land of another PR does not apply it.
 public struct PendingLand: Codable, Equatable, Sendable {
     /// The number of the PR.
     public var pr: Int
@@ -529,6 +531,9 @@ public struct LandCheck: Codable, Equatable, Sendable {
 public struct LandResult: Codable, Equatable, Sendable {
     /// The worktree, with the land that it records after the land.
     public var worktree: Worktree
+    /// Says that the worktree recorded a land of another PR. That land is stale: its keeps
+    /// do not apply, and a land that is not a dry run clears it.
+    public var landNote: String?
     /// The PR before the merge.
     public var pr: PullRequest
     public var stage: WorktreeStage
@@ -563,6 +568,7 @@ public struct LandResult: Codable, Equatable, Sendable {
     public var branchNote: String?
     enum CodingKeys: String, CodingKey {
         case worktree, pr, stage, changed, unpushed, methods, method, auto, checks, ready, merged
+        case landNote = "land_note"
         case defaultMethod = "default_method", mergeQueue = "merge_queue", dryRun = "dry_run", mergeLater = "merge_later"
         case mergeNote = "merge_note", remoteBranchDeleted = "remote_branch_deleted", remoteBranchNote = "remote_branch_note"
         case worktreeRemoved = "worktree_removed", worktreeNote = "worktree_note"

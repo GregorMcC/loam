@@ -199,7 +199,12 @@ func decodeFixture(schema: String, data: Data) throws {
         #expect(blocked.checks.filter(\.blocks) == [LandCheck(name: "review", state: "changes_requested", blocks: true)])
         let land = try d.decode(LandResult.self, from: Fixtures.data("worktree_land"))
         #expect(land.merged && land.method == "rebase" && land.remoteBranchDeleted && land.worktreeRemoved)
-        #expect(land.branchNote == nil && land.worktree.land == nil)
+        #expect(land.branchNote == nil && land.worktree.land == nil && land.landNote == nil)
+        // A land that cleared a stale land of another PR says so in land_note.
+        var withNote = try #require(JSONSerialization.jsonObject(with: Fixtures.data("worktree_land")) as? [String: Any])
+        withNote["land_note"] = "Loam cleared the land of PR #12 that the worktree recorded: the branch has PR #23 now."
+        let stale = try d.decode(LandResult.self, from: JSONSerialization.data(withJSONObject: withNote))
+        #expect(stale.landNote?.hasPrefix("Loam cleared the land of PR #12") == true)
         let auto = try d.decode(LandResult.self, from: Fixtures.data("worktree_land_auto"))
         #expect(auto.mergeLater && !auto.worktreeRemoved)
         #expect(auto.worktree.land == PendingLand(pr: 23, method: "squash", auto: true, mergeQueue: false,

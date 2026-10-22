@@ -14,6 +14,8 @@
 //   - "merge_queue": true when the base branch of each PR has a merge queue.
 //   - "merge_lag": true when GitHub merges a PR, and the queries do not show
 //     the merge yet.
+//   - "auto_merges_clean": true when gh merges a PR at once with --auto when
+//     its merge state is CLEAN, as gh does.
 //   - "delete_refusals": the message of GitHub for a delete of a branch that
 //     GitHub refuses with HTTP 422, such as for a protected branch or a
 //     ruleset, by branch. The branch stays.
@@ -32,8 +34,8 @@
 //     reference does not exist, or GitHub refuses the delete
 //     ("delete_refusals").
 //   - gh pr merge <number>: merges the PR. With a merge queue, it puts the PR
-//     in the queue. With --auto, the PR stays open. --match-head-commit must
-//     be the PR head.
+//     in the queue. With --auto, the PR stays open, unless "auto_merges_clean"
+//     merges it. --match-head-commit must be the PR head.
 //   - gh pr update-branch <number>: a PR that is behind its base is clean.
 //   - gh run rerun <id> --failed: does nothing, or fails as "rerun_refusals"
 //     says.
@@ -64,6 +66,7 @@ type state struct {
 	Repository     map[string]any             `json:"repository,omitempty"`
 	MergeQueue     bool                       `json:"merge_queue,omitempty"`
 	MergeLag       bool                       `json:"merge_lag,omitempty"`
+	AutoMergeClean bool                       `json:"auto_merges_clean,omitempty"`
 	DeleteRefusals map[string]string          `json:"delete_refusals,omitempty"`
 	RerunRefusals  map[string]string          `json:"rerun_refusals,omitempty"`
 }
@@ -263,7 +266,7 @@ func merge(st *state, args []string) {
 		p["isInMergeQueue"] = true
 		p["mergeQueueEntry"] = map[string]any{"position": 1}
 		fmt.Printf("✓ Pull request example/widgets#%s will be added to the merge queue for main when ready\n", args[0])
-	case auto:
+	case auto && !(st.AutoMergeClean && p["mergeStateStatus"] == "CLEAN"):
 		fmt.Printf("✓ Pull request example/widgets#%s will be automatically merged via %s when all requirements are met\n", args[0], method)
 	case st.MergeLag:
 		fmt.Printf("✓ Merged pull request example/widgets#%s\n", args[0])

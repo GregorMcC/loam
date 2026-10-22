@@ -2,9 +2,10 @@
 //
 // It runs a fixed set of git commands: fetch, worktree add, worktree remove,
 // and branch -d. It runs branch -D only for the branch of a merged PR whose
-// tip is the PR head (see [Remove]). For a repo add, it also runs switch and
-// merge --ff-only on the normal checkout (see [SwitchToDefault]). It never
-// runs the setup command of a repo. `loam start` runs the setup command.
+// tip is the PR head or an earlier commit of the PR (see [Remove]). For a
+// repo add, it also runs switch and merge --ff-only on the normal checkout
+// (see [SwitchToDefault]). It never runs the setup command of a repo. `loam
+// start` runs the setup command.
 //
 // It reads the pull request of each branch from GitHub through gh and keeps
 // it in the PR cache (see [RefreshPRs] and [StageOf]). It acts on GitHub only
@@ -49,7 +50,12 @@ func (e *gitError) Unwrap() error { return e.err }
 
 // git runs git in dir and returns the trimmed standard output.
 func git(dir string, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
+	return gitContext(context.Background(), dir, args...)
+}
+
+// gitContext is [git] that also stops when ctx ends.
+func gitContext(ctx context.Context, dir string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "LC_ALL=C")

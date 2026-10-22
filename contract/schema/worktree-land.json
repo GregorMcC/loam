@@ -29,6 +29,11 @@
       "description": "The worktree, with the land that it records after the land.",
       "$ref": "defs.json#/$defs/worktree"
     },
+    "land_note": {
+      "description": "Says that the worktree recorded a land of another PR. That land is stale: its keeps do not apply, and a land that is not a dry run clears it.",
+      "type": "string",
+      "minLength": 1
+    },
     "pr": {
       "$ref": "defs.json#/$defs/pullRequest"
     },
