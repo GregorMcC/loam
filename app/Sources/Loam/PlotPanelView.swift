@@ -359,6 +359,11 @@ struct PlotPanelView: View {
         let order = plot.links.map(\.id)
         return VStack(alignment: .leading, spacing: LinkDrag.spacing) {
             PanelSectionHeader(title: "Links", add: ("Add link", "panel-add-link-open")) { open(.link) }
+            if let message = model.linkError {
+                CalloutCard(tone: .error) {
+                    PanelCallout(message).accessibilityIdentifier("panel-link-error")
+                }
+            }
             ForEach(Array(plot.links.enumerated()), id: \.element.id) { index, link in
                 if editingLink == link.id {
                     linkEditor(link).padding(.horizontal, 8).padding(.vertical, 4)
