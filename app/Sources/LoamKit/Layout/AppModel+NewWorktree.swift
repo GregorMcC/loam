@@ -46,9 +46,10 @@ extension AppModel {
         let sheet = newWorktreeSheet
         sheet.checking?.cancel()
         sheet.checking = nil
-        guard sheet.isOpen, let request = sheet.request else { return }
+        // A name that starts with a hyphen is refused in the sheet. `loam` would read it as a flag.
+        guard sheet.isOpen, let request = sheet.request, !request.name.hasPrefix("-") else { return }
         let open = sheet.openCount
-        let revision = sheet.inputRevision
+        let stamp = sheet.stamp
         sheet.checking = Task { [weak self] in
             try? await Task.sleep(for: sheet.checkDelay)
             guard !Task.isCancelled, let self, sheet.isCurrent(open) else { return }
@@ -56,22 +57,29 @@ extension AppModel {
                 let result = try await client.worktreeCheck(plot: request.plot, repo: request.repo, name: request.name,
                                                             base: request.base, goal: request.goal, link: request.link)
                 guard !Task.isCancelled, sheet.isCurrent(open) else { return }
-                sheet.checked(result, revision: revision)
+                sheet.checked(result, stamp: stamp)
             } catch {
                 guard !Task.isCancelled, sheet.isCurrent(open) else { return }
-                sheet.checkFailed(Self.message(for: error), revision: revision)
+                sheet.checkFailed(Self.message(for: error), stamp: stamp)
             }
+            // A Return that waited for this answer starts now, if the answer allows it.
+            if sheet.takeQueuedStart() { await self.startNewWorktree() }
         }
     }
 
     // MARK: Start
 
-    /// Start session: `loam worktree new`, then a seeded session in the new worktree (`openWorktreePane`). Does nothing
-    /// while the check blocks, so a key can never make a worktree that the sheet shows as not good. A failure leaves
-    /// the sheet open with the message of the core.
+    /// Start session: `loam worktree new`, then a seeded session in the new worktree (`openWorktreePane`). While the plot
+    /// is read or the check runs, the start waits for the answer (`queueStart`). It never makes a worktree that the sheet
+    /// shows as not good. A failure leaves the sheet open with the message of the core.
     public func startNewWorktree() async {
         let sheet = newWorktreeSheet
-        guard sheet.isOpen, sheet.canStart, let request = sheet.startRequest else { return }
+        guard sheet.isOpen, !sheet.isStarting else { return }
+        guard sheet.canStart, let request = sheet.startRequest else {
+            // The plot or the check is on its way: start when it is back. Any other reason shows in a note.
+            sheet.queueStart()
+            return
+        }
         let open = sheet.openCount
         sheet.beginStarting()
         let made: WorktreeNewResult

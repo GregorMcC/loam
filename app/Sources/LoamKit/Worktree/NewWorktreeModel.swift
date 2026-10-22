@@ -7,6 +7,10 @@ import Observation
 ///
 /// The Branch and the Goal take their text from the link, but only while you have not typed in the field. A field that
 /// you empty takes its text from the link again. A change of the link, or of the pasted URL, fills them anew.
+///
+/// An answer of the check belongs to the fields that it was asked for. A change of the name, the repo or the base makes
+/// the answer old. A change of the goal or the link does not: the branch stays good, Start stays on, and the seed line
+/// shows the new text when the next answer is back.
 @MainActor
 @Observable
 public final class NewWorktreeModel {
@@ -41,6 +45,12 @@ public final class NewWorktreeModel {
         case taken(String)
         /// The check did not run, such as when the link is gone. The text is the message of the core.
         case failed(String)
+    }
+
+    /// The state of the fields when a check starts. An answer is for the stamp that it was asked with.
+    public struct Stamp: Equatable, Sendable {
+        public var input: Int
+        public var branch: Int
     }
 
     /// The arguments of one check, and of the `worktree new` after it. Equal requests have the same answer.
@@ -83,8 +93,13 @@ public final class NewWorktreeModel {
     public private(set) var isStarting = false
     /// What went wrong when the worktree was made, in the words of the core. The sheet shows it in a `rust` callout.
     public private(set) var startError: String?
-    /// Counts the changes of the fields, so an answer for older fields is dropped.
+    /// Counts the changes of all fields.
     public private(set) var inputRevision = 0
+    /// Counts the changes of the name, the repo and the base: the fields that the answer about the branch is for.
+    public private(set) var branchRevision = 0
+    /// Return came while Start had to wait for the plot or the check. The start runs when the answer is back, and any
+    /// change of a field takes it back.
+    public private(set) var startQueued = false
     /// How long the check waits after the last change. Tests make it short.
     @ObservationIgnored public var checkDelay = Duration.milliseconds(250)
     /// The check that waits or runs now. Tests wait for it.
@@ -96,6 +111,9 @@ public final class NewWorktreeModel {
     /// Called when the sheet opens or closes. An open while it is open calls nothing.
     @ObservationIgnored public var onOpenChange: ((Bool) -> Void)?
 
+    /// The stamp of the fields as they are now.
+    public var stamp: Stamp { Stamp(input: inputRevision, branch: branchRevision) }
+
     private enum Outcome: Equatable {
         case result(WorktreeCheck)
         case failed(String)
@@ -103,7 +121,7 @@ public final class NewWorktreeModel {
 
     @ObservationIgnored private var branchEdited = false
     @ObservationIgnored private var goalEdited = false
-    private var answer: (revision: Int, outcome: Outcome)?
+    private var answer: (stamp: Stamp, outcome: Outcome)?
 
     public init() {}
 
@@ -138,7 +156,9 @@ public final class NewWorktreeModel {
         isStarting = false
         startError = nil
         answer = nil
+        startQueued = false
         inputRevision += 1
+        branchRevision += 1
         checking?.cancel()
         checking = nil
         reading?.cancel()
@@ -151,6 +171,7 @@ public final class NewWorktreeModel {
         guard isOpen else { return }
         plotID = nil
         isStarting = false
+        startQueued = false
         checking?.cancel()
         checking = nil
         reading?.cancel()
@@ -169,11 +190,13 @@ public final class NewWorktreeModel {
         repoID = repo.id
         phase = .ready
         fill()
-        changed()
+        // The plot is not a change that you made, so a Return that waits for it stays.
+        changed(keepingQueue: true)
     }
 
     func failedToLoad(_ message: String) {
         phase = .failed(message)
+        startQueued = false
     }
 
     // MARK: Fields
@@ -185,6 +208,7 @@ public final class NewWorktreeModel {
         baseChoice = nil
         bases = []
         defaultBase = ""
+        branchRevision += 1
         changed()
     }
 
@@ -193,6 +217,7 @@ public final class NewWorktreeModel {
         guard text != branch else { return }
         branch = text
         branchEdited = !text.isEmpty
+        branchRevision += 1
         changed()
     }
 
@@ -223,6 +248,7 @@ public final class NewWorktreeModel {
     public func chooseBase(_ base: String?) {
         guard base != baseChoice else { return }
         baseChoice = base
+        branchRevision += 1
         changed()
     }
 
@@ -266,7 +292,11 @@ public final class NewWorktreeModel {
             // A URL has no label, so only the key gives a name.
             if let issue = IssueLink(target: pastedURL) { name = StartWorkNames.branch(label: "", issue: issue) }
         }
-        if !branchEdited { branch = name }
+        // A new name is a new question for the check. The same name is not.
+        if !branchEdited, branch != name {
+            branch = name
+            branchRevision += 1
+        }
         if !goalEdited { goal = text }
     }
 
@@ -293,25 +323,34 @@ public final class NewWorktreeModel {
         return request
     }
 
-    func checked(_ result: WorktreeCheck, revision: Int) {
-        guard revision == inputRevision else { return }
-        answer = (revision, .result(result))
+    /// An answer for the name, the repo and the base as they are now. An answer for a goal or a link that is older still
+    /// counts for the branch, and its seed line stands until the next answer.
+    func checked(_ result: WorktreeCheck, stamp: Stamp) {
+        guard stamp.branch == branchRevision else { return }
+        answer = (stamp, .result(result))
         bases = result.bases
         defaultBase = result.defaultBase
         seedLine = result.seedLine
     }
 
-    func checkFailed(_ message: String, revision: Int) {
-        guard revision == inputRevision else { return }
-        answer = (revision, .failed(message))
+    func checkFailed(_ message: String, stamp: Stamp) {
+        guard stamp.branch == branchRevision else { return }
+        answer = (stamp, .failed(message))
         seedLine = nil
     }
 
+    /// The words of the core for a name that starts with a hyphen. The core refuses it, and `loam` would read it as a
+    /// flag, so it never goes to the core.
+    static func hyphenProblem(_ name: String) -> String { "\"\(name)\" is not a good worktree name. Use a branch name" }
+
     public var branchState: BranchState {
-        if branch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return .empty }
-        guard let answer, answer.revision == inputRevision else { return .checking }
+        let name = branch.trimmingCharacters(in: .whitespacesAndNewlines)
+        if name.isEmpty { return .empty }
+        if name.hasPrefix("-") { return .invalid(Self.hyphenProblem(name)) }
+        guard let answer, answer.stamp.branch == branchRevision else { return .checking }
         switch answer.outcome {
-        case .failed(let message): return .failed(message)
+        // A failure may be about the link or the goal, so it holds only for the fields that it was asked for.
+        case .failed(let message): return answer.stamp.input == inputRevision ? .failed(message) : .checking
         case .result(let check):
             if !check.validName { return .invalid(check.nameError ?? "This is not a good branch name.") }
             if check.worktreeExists { return .taken(check.folder) }
@@ -328,9 +367,10 @@ public final class NewWorktreeModel {
         }
     }
 
-    private func changed() {
+    private func changed(keepingQueue: Bool = false) {
         inputRevision += 1
         startError = nil
+        if !keepingQueue { startQueued = false }
         onInput?()
     }
 
@@ -338,7 +378,26 @@ public final class NewWorktreeModel {
 
     func beginStarting() {
         isStarting = true
+        startQueued = false
         startError = nil
+    }
+
+    /// Return came, and Start cannot run yet. The start waits when the plot is read or the check runs, and is then queued,
+    /// so Return is never a key that does nothing. A name, a worktree or a URL that is wrong needs no wait: its note is
+    /// on the sheet. Returns true when the start is queued.
+    @discardableResult
+    func queueStart() -> Bool {
+        guard isOpen, !isStarting, !pastedURLIsWrong else { return false }
+        if case .failed = phase { return false }
+        guard branchState == .checking else { return false }
+        startQueued = true
+        return true
+    }
+
+    /// True once when a start is queued. The caller starts then, if the answer allows it.
+    func takeQueuedStart() -> Bool {
+        defer { startQueued = false }
+        return startQueued
     }
 
     /// The worktree was not made. The sheet stays open, with the message.

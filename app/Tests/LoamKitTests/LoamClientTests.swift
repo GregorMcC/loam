@@ -219,11 +219,23 @@ struct FakeLoam {
         let edit = try await client.worktreeEdit(plot: "Loam", worktree: "wtaaaaaaaa", goal: "Fix it", expect: 3)
         #expect(edit.changeID == 27)
         #expect(fake.args() == [
-            "worktree new Loam web fix-login --dry-run --base origin/main --goal Fix the login form "
-                + "--link https://github.com/example/widgets/issues/57 --json",
-            "worktree new Loam web  --dry-run --json",
-            "worktree new Loam web fix-login --goal Fix the login form --link lnk1 --json --actor app",
+            "worktree new --dry-run --base origin/main --goal Fix the login form "
+                + "--link https://github.com/example/widgets/issues/57 --json -- Loam web fix-login",
+            "worktree new --dry-run --json -- Loam web ",
+            "worktree new --goal Fix the login form --link lnk1 --json --actor app -- Loam web fix-login",
             "worktree edit Loam wtaaaaaaaa --goal Fix it --expect worktree:wtaaaaaaaa=3 --json --actor app",
+        ])
+    }
+
+    /// The branch name is typed text. It goes after `--`, so "-h" is a name and not the help flag, and "-x" is not a flag.
+    @Test func aBranchNameThatStartsWithAHyphenIsNotAFlag() async throws {
+        let fake = try FakeLoam([("worktree_new_dry_run", 0), ("worktree_new", 0)])
+        let client = fake.client()
+        _ = try await client.worktreeCheck(plot: "Loam", repo: "web", name: "-h", goal: "--help")
+        _ = try await client.worktreeNew(plot: "Loam", repo: "web", name: "-x", goal: "--help")
+        #expect(fake.args() == [
+            "worktree new --dry-run --goal --help --json -- Loam web -h",
+            "worktree new --goal --help --json --actor app -- Loam web -x",
         ])
     }
 

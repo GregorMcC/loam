@@ -111,7 +111,7 @@ public struct NewWorktreeContent: Equatable {
         }
 
         seedText = model.seedLine ?? Self.seedWaiting
-        primaryTitle = model.isStarting ? "Starting\u{2026}" : "Start session"
+        primaryTitle = model.isStarting || model.startQueued ? "Starting\u{2026}" : "Start session"
     }
 
     /// The name of a repo: its folder.

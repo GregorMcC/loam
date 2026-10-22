@@ -104,7 +104,7 @@ import Testing
         #expect(rig.sheet.repoID == "repoaaaaaa")
         #expect(rig.args().first == "show \(plotID) --json")
         #expect(rig.checks() == [
-            "worktree new \(plotID) repoaaaaaa eng-482-link-kinds-for-figma --dry-run --goal Link kinds for Figma --link \(linear) --json",
+            "worktree new --dry-run --goal Link kinds for Figma --link \(linear) --json -- \(plotID) repoaaaaaa eng-482-link-kinds-for-figma",
         ])
         #expect(rig.sheet.branchState == .new)
         #expect(rig.sheet.bases == ["origin/main", "main"])
@@ -115,7 +115,7 @@ import Testing
         let rig = try await rig()
         #expect(rig.model.openNewWorktree(plot: plotID))
         await rig.settle()
-        #expect(rig.checks() == ["worktree new \(plotID) repoaaaaaa  --dry-run --json"])
+        #expect(rig.checks() == ["worktree new --dry-run --json -- \(plotID) repoaaaaaa "])
         #expect(rig.sheet.branchState == .empty)
         #expect(rig.sheet.bases == ["origin/main", "main"])
     }
@@ -129,7 +129,7 @@ import Testing
         for text in ["f", "fi", "fix", "fix-", "fix-l"] { rig.sheet.setBranch(text) }
         await rig.sheet.checking?.value
         let asked = Array(rig.checks().dropFirst(before))
-        #expect(asked == ["worktree new \(plotID) repoaaaaaa fix-l --dry-run --json"])
+        #expect(asked == ["worktree new --dry-run --json -- \(plotID) repoaaaaaa fix-l"])
         #expect(rig.sheet.branchState == .new)
     }
 
@@ -175,8 +175,8 @@ import Testing
         await rig.settle()
         await rig.model.startNewWorktree()
         #expect(rig.makes() == [
-            "worktree new \(plotID) repoaaaaaa eng-482-link-kinds-for-figma --goal Link kinds for Figma --link \(linear) "
-                + "--json --actor app",
+            "worktree new --goal Link kinds for Figma --link \(linear) --json --actor app "
+                + "-- \(plotID) repoaaaaaa eng-482-link-kinds-for-figma",
         ])
         #expect(!rig.sheet.isOpen)
         #expect(rig.model.workspace.paneCount(of: .plot(plotID)) == 1, "a seeded session opens in the new worktree")
@@ -191,9 +191,9 @@ import Testing
         rig.sheet.setBranch("fix-login")
         rig.sheet.chooseBase("main")
         await rig.sheet.checking?.value
-        #expect(rig.checks().last == "worktree new \(plotID) repoaaaaaa fix-login --dry-run --base main --json")
+        #expect(rig.checks().last == "worktree new --dry-run --base main --json -- \(plotID) repoaaaaaa fix-login")
         await rig.model.startNewWorktree()
-        #expect(rig.makes() == ["worktree new \(plotID) repoaaaaaa fix-login --base main --json --actor app"])
+        #expect(rig.makes() == ["worktree new --base main --json --actor app -- \(plotID) repoaaaaaa fix-login"])
 
         // A branch that exists takes no base: the core refuses one.
         try rig.check { $0.branchExists = true }
@@ -204,7 +204,7 @@ import Testing
         await rig.sheet.checking?.value
         #expect(rig.sheet.branchState == .exists)
         await rig.model.startNewWorktree()
-        #expect(rig.makes().last == "worktree new \(plotID) repoaaaaaa link-labels --json --actor app")
+        #expect(rig.makes().last == "worktree new --json --actor app -- \(plotID) repoaaaaaa link-labels")
     }
 
     @Test func aPastedIssueGoesToTheWorktreeAsAUrl() async throws {
@@ -216,7 +216,7 @@ import Testing
         await rig.sheet.checking?.value
         #expect(rig.sheet.branch == "57")
         await rig.model.startNewWorktree()
-        #expect(rig.makes() == ["worktree new \(plotID) repoaaaaaa 57 --link https://github.com/example/widgets/issues/57 --json --actor app"])
+        #expect(rig.makes() == ["worktree new --link https://github.com/example/widgets/issues/57 --json --actor app -- \(plotID) repoaaaaaa 57"])
     }
 
     @Test func startDoesNothingWhileTheCheckBlocks() async throws {
@@ -243,6 +243,71 @@ import Testing
         rig.sheet.checking?.cancel()
         #expect(rig.makes().isEmpty)
         #expect(rig.sheet.isOpen)
+    }
+
+    // MARK: Return never does nothing without a word
+
+    @Test func returnWhileThePlotIsReadStartsWhenTheCheckIsBack() async throws {
+        let rig = try await rig()
+        rig.model.openNewWorktree(plot: plotID, from: linearLink)
+        await rig.model.startNewWorktree()
+        #expect(rig.sheet.startQueued)
+        #expect(rig.makes().isEmpty)
+        await rig.settle()
+        #expect(rig.makes().count == 1)
+        #expect(!rig.sheet.isOpen && !rig.sheet.startQueued)
+    }
+
+    @Test func returnWhileTheBranchIsCheckedStartsWhenTheCheckIsGood() async throws {
+        let rig = try await rig()
+        rig.model.openNewWorktree(plot: plotID)
+        await rig.settle()
+        rig.sheet.checkDelay = .milliseconds(40)
+        rig.sheet.setBranch("fix-login")
+        await rig.model.startNewWorktree()
+        #expect(rig.sheet.startQueued && rig.makes().isEmpty)
+        await rig.sheet.checking?.value
+        #expect(rig.makes() == ["worktree new --json --actor app -- \(plotID) repoaaaaaa fix-login"])
+    }
+
+    @Test func aQueuedStartDoesNotRunWhenTheCheckRefusesTheName() async throws {
+        let rig = try await rig()
+        rig.model.openNewWorktree(plot: plotID)
+        await rig.settle()
+        try rig.check { $0.validName = false; $0.nameError = "bad name"; $0.seedLine = nil }
+        rig.sheet.checkDelay = .milliseconds(40)
+        rig.sheet.setBranch("a b")
+        await rig.model.startNewWorktree()
+        #expect(rig.sheet.startQueued)
+        await rig.sheet.checking?.value
+        #expect(rig.makes().isEmpty)
+        #expect(!rig.sheet.startQueued, "the note under the field says why")
+        #expect(rig.sheet.branchState == .invalid("bad name"))
+    }
+
+    @Test func returnRightAfterAGoalEditStartsAtOnce() async throws {
+        let rig = try await rig()
+        rig.model.openNewWorktree(plot: plotID, from: linearLink)
+        await rig.settle()
+        rig.sheet.checkDelay = .seconds(30)
+        rig.sheet.setGoal("A new goal")
+        await rig.model.startNewWorktree()
+        rig.sheet.checking?.cancel()
+        #expect(rig.makes() == [
+            "worktree new --goal A new goal --link \(linear) --json --actor app -- \(plotID) repoaaaaaa eng-482-link-kinds-for-figma",
+        ])
+    }
+
+    @Test func aNameThatStartsWithAHyphenIsNeverAsked() async throws {
+        let rig = try await rig()
+        rig.model.openNewWorktree(plot: plotID)
+        await rig.settle()
+        let before = rig.checks().count
+        rig.sheet.setBranch("-h")
+        await rig.sheet.checking?.value
+        #expect(rig.checks().count == before, "the core is not asked for a name that it refuses")
+        await rig.model.startNewWorktree()
+        #expect(rig.makes().isEmpty && !rig.sheet.startQueued)
     }
 
     @Test func aFailureKeepsTheSheetOpenWithTheMessage() async throws {

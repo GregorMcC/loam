@@ -41,7 +41,7 @@ import Testing
 
     /// Gives the answer of the check for the fields as they are now.
     func answer(_ model: NewWorktreeModel, _ result: WorktreeCheck) {
-        model.checked(result, revision: model.inputRevision)
+        model.checked(result, stamp: model.stamp)
     }
 
     // MARK: From a link
@@ -78,6 +78,15 @@ import Testing
         #expect(content.branchNote == nil)
         #expect(model.branchState == .empty)
         #expect(!model.canStart)
+    }
+
+    @Test func theMainRepoIsTheDefaultWhateverItsPlace() {
+        let model = NewWorktreeModel()
+        model.open(plot: "plotaaaaab", link: nil)
+        model.loaded(plot(repos: [Repo(id: "repoaaaaab", path: "/tmp/example/widgets-api", note: "", main: false, version: 1),
+                                  Repo(id: "repoaaaaaa", path: "/tmp/example/widgets", note: "", main: true, version: 1)]))
+        #expect(model.repoID == "repoaaaaaa")
+        #expect(model.request?.repo == "repoaaaaaa")
     }
 
     @Test func theLinkItemsAreTheLinksOfThePlot() {
@@ -177,7 +186,7 @@ import Testing
         #expect(!model.canStart)
         #expect(NewWorktreeContent(model).branchNote?.text == "A worktree or a folder named widgets-fix-login exists already.")
 
-        model.checkFailed("No link has the ID lnkaaaaaaa", revision: model.inputRevision)
+        model.checkFailed("No link has the ID lnkaaaaaaa", stamp: model.stamp)
         #expect(model.branchState == .failed("No link has the ID lnkaaaaaaa"))
         #expect(!model.canStart)
         #expect(NewWorktreeContent(model).branchNote == .init(text: "No link has the ID lnkaaaaaaa.", tone: .problem))
@@ -196,12 +205,93 @@ import Testing
     @Test func anAnswerForOlderFieldsIsDropped() {
         let model = open()
         model.setBranch("fix-logi")
-        let old = model.inputRevision
+        let old = model.stamp
         model.setBranch("fix-login")
-        model.checked(check("fix-logi", branch: true), revision: old)
-        model.checkFailed("late", revision: old)
+        model.checked(check("fix-logi", branch: true), stamp: old)
+        model.checkFailed("late", stamp: old)
         #expect(model.branchState == .checking)
         #expect(model.bases.isEmpty)
+    }
+
+    // MARK: Goal and link keep the answer for the branch (ticket 115, round 2)
+
+    @Test func aGoalChangeKeepsTheBranchAnswerAndStart() {
+        let model = open(from: linear)
+        answer(model, check("eng-482-link-kinds-for-figma"))
+        #expect(model.canStart)
+        model.setGoal("Another goal")
+        #expect(model.branchState == .new)
+        #expect(model.canStart, "Start stays on while the seed line is checked again")
+    }
+
+    @Test func aLinkChangeKeepsTheAnswerWhenTheBranchStays() {
+        let model = open()
+        model.setBranch("fix-login")
+        answer(model, check("fix-login"))
+        model.chooseLink(.plot(linear.id))
+        #expect(model.branch == "fix-login")
+        #expect(model.branchState == .new && model.canStart)
+    }
+
+    @Test func aLinkThatChangesTheBranchChecksTheNameAgain() {
+        let model = open(from: linear)
+        answer(model, check(model.branch))
+        model.chooseLink(.plot(issue.id))
+        #expect(model.branch == "57-fix-the-switcher-width")
+        #expect(model.branchState == .checking)
+        #expect(!model.canStart)
+    }
+
+    @Test func aFailureForOlderFieldsIsNotShownForNewOnes() {
+        let model = open()
+        model.setBranch("fix-login")
+        model.checkFailed("No link has the ID lnkaaaaaaa", stamp: model.stamp)
+        #expect(model.branchState == .failed("No link has the ID lnkaaaaaaa"))
+        // The failure may be about the link or the goal, so it waits for a new check.
+        model.setGoal("Fix it")
+        #expect(model.branchState == .checking)
+    }
+
+    @Test func anAnswerForAnOlderGoalStillCountsAndAnOlderNameDoesNot() {
+        let model = open()
+        model.setBranch("fix-login")
+        let old = model.stamp
+        model.setGoal("Fix it")
+        model.checked(check("fix-login", seed: "- widgets-fix-login: Fix it"), stamp: old)
+        #expect(model.branchState == .new)
+        #expect(model.seedLine == "- widgets-fix-login: Fix it")
+        model.setBranch("fix-logout")
+        model.checked(check("fix-login"), stamp: old)
+        #expect(model.branchState == .checking)
+    }
+
+    @Test func aNameThatStartsWithAHyphenIsRefusedWithTheWordsOfTheCore() {
+        let model = open()
+        model.setBranch("-x")
+        let words = "\"-x\" is not a good worktree name. Use a branch name"
+        #expect(model.branchState == .invalid(words))
+        #expect(!model.canStart)
+        #expect(NewWorktreeContent(model).branchNote == .init(text: words + ".", tone: .problem))
+        // Even an answer that says the name is good does not turn Start on.
+        answer(model, check("-x"))
+        #expect(!model.canStart)
+        model.setBranch(" -h")
+        #expect(model.branchState == .invalid("\"-h\" is not a good worktree name. Use a branch name"))
+    }
+
+    @Test func aStartThatMustWaitIsQueuedAndAnyInputTakesItBack() {
+        let model = open(from: linear)
+        #expect(model.branchState == .checking)
+        #expect(model.queueStart())
+        #expect(model.startQueued)
+        model.setGoal("Another goal")
+        #expect(!model.startQueued)
+        // Nothing to wait for: an empty name, a bad name and a wrong URL are in the notes already.
+        let plain = open()
+        #expect(!plain.queueStart())
+        plain.setBranch("a b")
+        answer(plain, check("a b", valid: false, error: "bad"))
+        #expect(!plain.queueStart() && !plain.startQueued)
     }
 
     @Test func everyChangeOfAFieldAsksForACheck() {
