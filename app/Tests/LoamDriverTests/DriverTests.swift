@@ -194,6 +194,14 @@ struct DriverTests {
         ])
     }
 
+    /// Ticket 110: the PR popover types a fix prompt into an idle session, which gets it only on Return. A busy session
+    /// and a key after the Stop show Copy prompt, and a worktree with no session starts one that gets the prompt.
+    @Test func sendsAFixPromptToTheSessionOfAWorktree() async throws {
+        try await expectPass("send-to-session", environment: [
+            "LOAM_DRIVER_LOAM": Self.loamBinary, "LOAM_DRIVER_FAKE_CLAUDE": Self.fakeClaude, "LOAM_DRIVER_FAKE_GH": Self.fakeGH,
+        ])
+    }
+
     /// Ticket 48: archive a plot with a session, unarchive it and see the session resume, and delete an archived plot.
     /// Ticket 61: an unarchive and show at once still gives one `claude` for the session.
     @Test func archivesUnarchivesAndDeletesAPlot() async throws {
