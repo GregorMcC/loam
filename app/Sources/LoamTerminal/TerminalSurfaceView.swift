@@ -60,6 +60,10 @@ public final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClien
     /// You typed in the terminal: a key with no command key that `TypingKey` counts as typing.
     /// Loam clears "needs you" on it, because a denied permission prompt sends no hook (spec 8.4).
     public var onKeyInput: (() -> Void)?
+    /// You put something into the line that the program edits: any key with no command key (an arrow key
+    /// recalls a line, Tab completes one), a paste, or a drop. Send to session does not type over it
+    /// (ticket 110). Text that `pasteWithoutReturn` types is not yours, so it does not count.
+    public var onInput: (() -> Void)?
     public var onDesktopNotification: ((_ title: String, _ body: String) -> Void)?
     /// Called when a clipboard request shows its prompt. The driver uses it.
     public var onClipboardConfirmation: ((ClipboardConfirmation) -> Void)?
@@ -493,7 +497,10 @@ public final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClien
     // MARK: Keys
 
     public override func keyDown(with event: NSEvent) {
-        if !event.modifierFlags.contains(.command), TypingKey.clearsNeedsYou(event.characters) { onKeyInput?() }
+        if !event.modifierFlags.contains(.command) {
+            if TypingKey.clearsNeedsYou(event.characters) { onKeyInput?() }
+            onInput?()
+        }
         guard let surface else {
             interpretKeyEvents([event])
             return
@@ -717,8 +724,14 @@ public final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClien
     // MARK: Edit menu
 
     @objc public func copy(_ sender: Any?) { perform(action: "copy_to_clipboard") }
-    @objc public func paste(_ sender: Any?) { perform(action: "paste_from_clipboard") }
-    @objc public func pasteAsPlainText(_ sender: Any?) { perform(action: "paste_from_clipboard") }
+    @objc public func paste(_ sender: Any?) {
+        onInput?()
+        perform(action: "paste_from_clipboard")
+    }
+    @objc public func pasteAsPlainText(_ sender: Any?) {
+        onInput?()
+        perform(action: "paste_from_clipboard")
+    }
     @objc public override func selectAll(_ sender: Any?) { perform(action: "select_all") }
 
     public func validateMenuItem(_ item: NSMenuItem) -> Bool {
@@ -836,6 +849,7 @@ extension TerminalSurfaceView {
     @discardableResult
     public func drop(_ pasteboard: NSPasteboard) -> Bool {
         guard let text = pasteboard.loamString(), !text.isEmpty else { return false }
+        onInput?()
         DispatchQueue.main.async { [weak self] in self?.sendText(text) }
         return true
     }

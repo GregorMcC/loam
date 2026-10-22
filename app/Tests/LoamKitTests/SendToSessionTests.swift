@@ -298,6 +298,21 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
         #expect(model.sendPlan(for: failed)?.step == .copy(.typed))
     }
 
+    /// An arrow key can recall a prompt and Tab can complete one. A paste or a drop puts text in. Each counts as
+    /// input until the Stop, and none of them answers a session that needs you.
+    @Test func aPasteOrAnArrowKeyCountsUntilTheStop() async throws {
+        let (model, _) = try await rig()
+        let pane = try open(in: failed, model)
+        model.input(in: pane)
+        #expect(model.sendPlan(for: failed)?.step == .copy(.typed))
+        send("Stop", to: pane, model)
+        #expect(model.sendPlan(for: failed)?.step == .type(pane))
+        send("UserPromptSubmit", to: pane, model)
+        model.apply(paneEvent("Notification", model.workspace.session(of: pane)!.sessionID!, notification: "elicitation_dialog"), to: pane)
+        model.input(in: pane)
+        #expect(model.workspace.state(of: pane) == .needsYou)
+    }
+
     /// `/clear` and a resume start with an empty input. A compact can come in the middle of a turn, while you type.
     @Test func aNewSessionInThePaneForgetsTheKeysAndACompactKeepsThem() async throws {
         let (model, _) = try await rig()

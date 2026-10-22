@@ -112,6 +112,12 @@ public struct PaneSession: Codable, Equatable, Sendable {
         set(.ended)
     }
 
+    /// You put something into the input of the pane that is not a typing key: an arrow key, Tab, a paste, or a
+    /// drop. Send to session does not type until the next `Stop` (ticket 110). Needs you stays.
+    public mutating func input() {
+        typedSinceStop = true
+    }
+
     /// The input of Claude Code is empty: a turn ended, or a new session started.
     private mutating func emptyInput() {
         typedSinceStop = false

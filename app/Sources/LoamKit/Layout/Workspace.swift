@@ -392,6 +392,11 @@ public struct Workspace: Codable, Equatable, Sendable {
         sessions[pane]?.typed() ?? false
     }
 
+    /// You put something into the input of the pane: a key, a paste, or a drop (ticket 110).
+    public mutating func input(in pane: PaneID) {
+        sessions[pane]?.input()
+    }
+
     /// Send to session typed `prompt` into the input of the pane (ticket 110).
     public mutating func prompted(_ prompt: String, in pane: PaneID) {
         sessions[pane]?.loamPrompt = prompt

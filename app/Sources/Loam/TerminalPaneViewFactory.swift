@@ -19,6 +19,8 @@ final class TerminalPaneViewFactory: PaneViewFactory {
     var onChildExited: ((PaneID) -> Void)?
     /// You typed in a pane.
     var onKeyInput: ((PaneID) -> Void)?
+    /// You put something into the input of a pane: a key, a paste, or a drop.
+    var onInput: ((PaneID) -> Void)?
 
     /// Each live view: its pane, its launch token, and its socket.
     private var views: [ObjectIdentifier: (pane: PaneID, launch: UUID, server: PaneSocketServer?)] = [:]
@@ -65,6 +67,7 @@ final class TerminalPaneViewFactory: PaneViewFactory {
             }
             view.onTitleChange = { [weak self] title in if current() { self?.onTitleChange?(id, title) } }
             view.onKeyInput = { [weak self] in if current() { self?.onKeyInput?(id) } }
+            view.onInput = { [weak self] in if current() { self?.onInput?(id) } }
             views[ObjectIdentifier(view)] = (id, launch, server)
             surfaces[id] = view
             return view
@@ -96,6 +99,7 @@ final class TerminalPaneViewFactory: PaneViewFactory {
         onChildExited = { [weak model] in model?.paneExited($0) }
         onTitleChange = { [weak model] pane, title in model?.setTerminalTitle(title, of: pane) }
         onKeyInput = { [weak model] in model?.typed(in: $0) }
+        onInput = { [weak model] in model?.input(in: $0) }
         model.typeIntoPane = { [weak self] pane, text in try self?.surfaces[pane]?.pasteWithoutReturn(text) ?? false }
     }
 
