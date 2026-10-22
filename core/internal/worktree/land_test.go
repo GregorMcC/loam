@@ -1091,12 +1091,17 @@ func TestLandReturnsTheMessageOfARefusedMerge(t *testing.T) {
 }
 
 // The app lands the commit that its sheet showed. With Head set, a land stops when the PR head is another commit by
-// the time of the refresh: it exits as not ready, merges nothing, and changes nothing.
+// the time of the refresh: it exits as not ready, merges nothing, and changes nothing. A recorded land of another PR
+// would be cleared by a land that goes on, so it shows that the stop comes first.
 func TestLandStopsWhenThePRHasNewCommits(t *testing.T) {
+	stale := store.PendingLand{PR: 12, Method: "squash", Auto: true, KeepWorktree: true, KeepRemoteBranch: true}
 	for name, o := range map[string]worktree.LandOptions{"direct": {}, "auto": {Auto: true}, "keep worktree": {KeepWorktree: true}} {
 		t.Run(name, func(t *testing.T) {
 			e := setup(t)
 			w, _ := e.landing(landState)
+			if err := e.s.SetPendingLand(w.ID, &stale); err != nil {
+				t.Fatal(err)
+			}
 			o.Head = strings.Repeat("b", 40)
 			_, err := e.land(o)
 			if !errors.Is(err, worktree.ErrNotReady) || !strings.Contains(err.Error(), "has new commits since you looked at it. Look again before you merge") {
@@ -1114,7 +1119,7 @@ func TestLandStopsWhenThePRHasNewCommits(t *testing.T) {
 			if merges(t) || !onlyQueries(t) {
 				t.Fatalf("gh got %q", ghCommands(t))
 			}
-			if got, err := e.s.GetWorktree(w.ID); err != nil || got.Land != nil || !e.branchExists("fix-login") {
+			if got, err := e.s.GetWorktree(w.ID); err != nil || got.Land == nil || *got.Land != stale || !e.branchExists("fix-login") {
 				t.Fatalf("%+v %v", got, err)
 			}
 		})
