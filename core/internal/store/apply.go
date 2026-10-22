@@ -119,7 +119,7 @@ func checkExpect(q queryer, cur Plot, expect map[string]int64) error {
 		case item == ItemWhere:
 			si.Value = cur.Where
 		case item == ItemLinkOrder:
-			si.Value = *fieldValue(cur, ItemLinkOrder, "order")
+			si.Value = *fieldValue(cur, ItemLinkOrder, FieldLinkOrder)
 		case strings.HasPrefix(item, "link:"):
 			for i := range cur.Links {
 				if LinkItem(cur.Links[i].ID) == item {
@@ -322,6 +322,7 @@ func (a *applier) moveLink(e Edit) error {
 	return a.writeLinkOrder(old, ids)
 }
 
+// linkIDs must sort as loadPlot does, or fieldValue and the logged order disagree and undo sees false clashes.
 func (a *applier) linkIDs() ([]string, error) {
 	return queryIDs(a.w.conn, `SELECT id FROM links WHERE plot_id = ? ORDER BY position, id`, a.plotID)
 }
@@ -333,7 +334,7 @@ func (a *applier) writeLinkOrder(old, ids []string) error {
 			return err
 		}
 	}
-	a.rec.set(ItemLinkOrder, "order", S(strings.Join(old, ",")), S(strings.Join(ids, ",")))
+	a.rec.set(ItemLinkOrder, FieldLinkOrder, S(strings.Join(old, ",")), S(strings.Join(ids, ",")))
 	return nil
 }
 

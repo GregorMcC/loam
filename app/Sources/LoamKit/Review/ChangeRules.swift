@@ -148,7 +148,8 @@ public enum ChangeRules {
     }
 
     private static let worktreePrefix = "worktree:"
-    private static let linkOrderItem = "links"
+    /// The plot item of the link order, `store.ItemLinkOrder` in the core.
+    public static let linkOrderItem = "links"
 
     /// The link that a move of one link explains, and its new 1-based position. For a swap of
     /// neighbours both qualify, so it takes the one that went up. Nil when no single link explains it.
@@ -156,7 +157,8 @@ public enum ChangeRules {
         guard old != new, Set(old) == Set(new) else { return nil }
         var best: (id: String, position: Int, rise: Int)?
         for (index, id) in new.enumerated() where old.filter({ $0 != id }) == new.filter({ $0 != id }) {
-            let rise = (old.firstIndex(of: id) ?? index) - index
+            guard let from = old.firstIndex(of: id) else { continue }
+            let rise = from - index
             if rise > (best?.rise ?? .min) { best = (id, index + 1, rise) }
         }
         return best.map { ($0.id, $0.position) }

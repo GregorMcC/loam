@@ -169,7 +169,7 @@ func TestMoveLink(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := []store.Entry{{Item: store.ItemLinkOrder, Field: "order", Old: store.S(oldIDs), New: store.S(linkIDs(t, s, p.ID))}}
+			want := []store.Entry{{Item: store.ItemLinkOrder, Field: store.FieldLinkOrder, Old: store.S(oldIDs), New: store.S(linkIDs(t, s, p.ID))}}
 			if ch[0].ID != r.ChangeID || !entriesEqual(ch[0].Entries, want) {
 				t.Fatalf("entries %+v", ch[0].Entries)
 			}
@@ -271,7 +271,7 @@ func TestUndoMoveRestoresOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ch[0].ID != u.ChangeID || len(ch[0].Entries) != 1 || ch[0].Entries[0].Item != store.ItemLinkOrder || ch[0].Entries[0].Field != "order" {
+	if ch[0].ID != u.ChangeID || len(ch[0].Entries) != 1 || ch[0].Entries[0].Item != store.ItemLinkOrder || ch[0].Entries[0].Field != store.FieldLinkOrder {
 		t.Fatalf("undo entries %+v", ch[0].Entries)
 	}
 }

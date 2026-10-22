@@ -86,9 +86,6 @@ func fieldValue(p Plot, item, field string) *string {
 	case ItemWhere:
 		return S(p.Where)
 	case ItemLinkOrder:
-		if field != "order" {
-			return nil
-		}
 		ids := make([]string, len(p.Links))
 		for i, l := range p.Links {
 			ids[i] = l.ID
