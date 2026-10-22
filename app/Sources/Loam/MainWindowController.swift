@@ -550,6 +550,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         case .quickSwitcherActions: model.switcher.open(actionsOnly: true)
         // ⌘L is a Loam key: with no pane to go to, it does nothing, and the terminal does not get it.
         case .nextPaneThatNeedsYou: model.goToNextPaneThatNeedsYou()
+        // ⌘⇧L is a Loam key too: with no ready worktree, it does nothing, and the terminal does not get it.
+        case .nextReadyWorktree: model.goToNextReadyWorktree()
         case .actionsMenu: toggleActionsMenu()
         case .newPlotSession:
             guard let plot = model.workspace.activePlotID else { return false }

@@ -77,6 +77,7 @@ func makeMainMenu(target: MainWindowController) -> NSMenu {
     item(go, "Actions", .actionsMenu)
     go.addItem(.separator())
     item(go, "Next Pane That Needs You", .nextPaneThatNeedsYou)
+    item(go, "Next Worktree Ready to Merge", .nextReadyWorktree)
 
     let plots = submenu("Plot")
     // The plot's own actions (ticket 89). The actions menu (⌘J) lists them from here.

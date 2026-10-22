@@ -105,6 +105,7 @@ extension Scenarios {
             ("p", .command, .quickSwitcher, "⌘P (bound to new_split in the config)"),
             ("p", [.command, .shift], .quickSwitcherActions, "⌘⇧P"),
             ("l", .command, .nextPaneThatNeedsYou, "⌘L"),
+            ("l", [.command, .shift], .nextReadyWorktree, "⌘⇧L"),
             ("n", .command, .newPlot, "⌘N"),
             ("b", .command, .toggleSidebar, "⌘B"),
             ("i", .command, .togglePlotPanel, "⌘I"),

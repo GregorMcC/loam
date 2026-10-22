@@ -9,6 +9,8 @@ public enum AppCommand: Hashable, Sendable {
     /// ⌘J: the actions menu of the bottom bar (ticket 89).
     case actionsMenu
     case nextPaneThatNeedsYou
+    /// ⌘⇧L: the next worktree with a PR that is ready to merge, in any plot (ticket 107). It pairs with ⌘L.
+    case nextReadyWorktree
     case selectPlot(Int)
     /// ⌃0: Home, the space for tabs with no plot (ticket 99).
     case selectHome
@@ -93,6 +95,7 @@ public enum LoamKeys {
         FixedKey(KeyChord([.command, .shift], "p"), .quickSwitcherActions, "Quick Switcher Actions",
                  ghosttyAction: "toggle_command_palette"),
         FixedKey(KeyChord(.command, "l"), .nextPaneThatNeedsYou, "Next Pane That Needs You"),
+        FixedKey(KeyChord([.command, .shift], "l"), .nextReadyWorktree, "Next Worktree Ready to Merge"),
         // ⌘K stays Ghostty's clear screen, so the actions menu takes ⌘J (ticket 89).
         FixedKey(KeyChord(.command, "j"), .actionsMenu, "Actions"),
         FixedKey(KeyChord(.command, "n"), .newPlot, "New Plot", ghosttyAction: "new_window"),
