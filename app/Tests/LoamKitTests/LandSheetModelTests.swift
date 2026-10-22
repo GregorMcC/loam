@@ -29,6 +29,9 @@ import Testing
     let failed = "wtreaaaaah"
     /// pushed-only, no PR.
     let noPR = "wtreaaaaap"
+    /// The PR head of the plan that the fixture `worktree_land_dry_run` holds. Each land names it with `--head`, so a
+    /// commit that GitHub got after the sheet read the PR is never merged unseen.
+    let head = "2222222222222222222222222222222222222222"
 
     struct Rig {
         let dir: URL
@@ -170,8 +173,8 @@ import Testing
         #expect(!rig.model.openLandSheet(noPR))
         #expect(!rig.model.openLandSheet("nope"))
         #expect(!rig.model.landSheet.isOpen)
-        #expect(rig.args().isEmpty == false)  // Only the list ran.
-        #expect(rig.dryRuns().isEmpty)
+        #expect(!rig.args().isEmpty && rig.args().allSatisfy { $0.hasPrefix("worktree list") }, "only the list ran")
+        #expect(rig.dryRuns().isEmpty && rig.lands().isEmpty)
     }
 
     @Test func openingClosesThePullRequestPopover() async throws {
@@ -304,7 +307,7 @@ import Testing
         let rig = try await rig()
         try await open(rig)
         await rig.model.land()
-        #expect(rig.lands() == ["worktree land \(plotID) \(ready) --method squash --json --actor app"])
+        #expect(rig.lands() == ["worktree land \(plotID) \(ready) --method squash --head \(head) --json --actor app"])
         #expect(rig.dryRuns().count == 1, "no second read for a land that went through")
     }
 
@@ -330,7 +333,7 @@ import Testing
         rig.model.landSheet.removesWorktree = false
         rig.model.landSheet.deletesBranch = false
         await rig.model.land()
-        #expect(rig.lands() == ["worktree land \(plotID) \(ready) --method squash --keep-worktree --keep-remote-branch --json --actor app"])
+        #expect(rig.lands() == ["worktree land \(plotID) \(ready) --method squash --keep-worktree --keep-remote-branch --head \(head) --json --actor app"])
     }
 
     @Test func keepingTheWorktreeClosesNoPane() async throws {
@@ -359,7 +362,7 @@ import Testing
         #expect(!live.contains(first) && !live.contains(second) && live.contains(other))
         #expect(record.panesAtFinish == 0 && record.landsAtFinish == 0, "the panes were gone before the land ran")
         let notOpen = try #require(model.worktreeStatus(failed)?.worktree.path)
-        #expect(rig.lands() == ["worktree land \(plotID) \(ready) --method squash --open-pane \(notOpen) --json --actor app"],
+        #expect(rig.lands() == ["worktree land \(plotID) \(ready) --method squash --head \(head) --open-pane \(notOpen) --json --actor app"],
                 "the land names only the panes that stay")
         #expect(record.prompts.isEmpty, "a shell pane asks nothing")
     }
@@ -443,14 +446,14 @@ import Testing
         try await open(rig)
         await model.land()
         #expect(rig.lands().count == 1)
+        #expect(!model.workspace.allPaneIDs.contains(pane), "the pane closed before the land, as you asked")
         #expect(model.landSheet.isOpen && !model.landSheet.isMerging)
         #expect(model.landSheet.landError == message)
         #expect(rig.record.toasts.isEmpty, "a failed land says nothing in the toast")
         #expect(rig.calls("set").isEmpty, "Where it stands did not move on")
         #expect(model.worktreeStatus(ready) != nil, "the worktree stays")
         #expect(model.landSheet.plan != nil && model.landContent?.canMerge == true)
-        _ = pane  // The pane closed before the land, as you asked. Merge again finds nothing to close.
-        // Press Merge again once GitHub allows it.
+        // Press Merge again once GitHub allows it. There is no pane left to close.
         rig.remove("fail-land")
         await model.land()
         #expect(rig.lands().count == 2)
@@ -469,6 +472,151 @@ import Testing
         await model.land()
         #expect(model.landSheet.landError != nil)
         #expect(model.landSheet.method == .rebase && !model.landSheet.deletesBranch && model.landSheet.whereText == "Merged #22. My words.")
+    }
+
+    /// gh stops before GitHub answers (exit 1). GitHub may have the land, and the core says to land again. The sheet
+    /// stays open with Merge on, and a second press runs the land again with the same commit.
+    @Test func aLandThatGhStoppedCanBePressedAgain() async throws {
+        let rig = try await rig()
+        let model = rig.model
+        let message = "gh stopped before GitHub answered, so GitHub may have the land of PR #22 (context deadline exceeded). "
+            + "Run loam worktree land again to finish it"
+        try rig.failLand(code: 1, message: message)
+        try await open(rig)
+        await model.land()
+        #expect(model.landSheet.landError == message)
+        #expect(model.landSheet.isOpen && !model.landSheet.isMerging && model.landContent?.canMerge == true)
+        #expect(rig.dryRuns().count == 1, "only a block of the core reads the plan again")
+        rig.remove("fail-land")
+        await model.land()
+        #expect(rig.lands().count == 2 && Set(rig.lands()).count == 1, "the same land, with the same commit")
+        #expect(!model.landSheet.isOpen && rig.record.toasts.map(\.text) == ["Merged #22. Removed the worktree link-labels."])
+    }
+
+    @Test func theLandNamesTheCommitThatTheSheetShowedAndTheNewOneAfterAnUpdate() async throws {
+        let rig = try await rig()
+        try rig.plan {
+            $0.pr.behindBase = 3
+            $0.checks[2] = LandCheck(name: "behind_base", state: "behind", blocks: false)
+        }
+        try await open(rig)
+        let updated = String(repeating: "4", count: 40)
+        try rig.plan { $0.pr.headOID = updated }  // GitHub has a new head after the update.
+        await rig.model.updateBranchFromLandSheet()
+        await rig.model.land()
+        #expect(rig.lands().count == 1 && rig.lands()[0].contains("--head \(updated)"), "\(rig.lands())")
+    }
+
+    /// The core stops a land whose PR has a commit that the sheet did not show (exit 16). The sheet reads the plan again.
+    /// Until that plan is back, Merge is off, so the old plan cannot merge a PR that changed.
+    @Test func theSheetStaysLockedUntilThePlanAfterABlockIsBack() async throws {
+        let rig = try await rig()
+        let model = rig.model
+        try await open(rig)
+        let message = "link-labels is not ready to land: PR #22 has new commits since you looked at it. Look again before you merge"
+        try rig.failLand(code: 16, message: message)
+        let newHead = String(repeating: "5", count: 40)
+        try rig.plan { $0.pr.headOID = newHead }
+        try rig.touch("hold-dry")
+        let merge = Task { await model.land() }
+        await waitUntil("the plan is read again") { rig.dryRuns().count == 2 && model.landSheet.landError != nil }
+        #expect(model.landSheet.phase == .loading && model.landContent == nil, "the old plan is gone")
+        #expect(!model.landSheet.isMerging, "Cancel works, but Merge does nothing")
+        // Presses run in a task: a press that reached the land would wait for the held plan, and the test must fail, not hang.
+        let presses = Task { await model.land(); await model.land() }
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(rig.lands().count == 1, "no press merged while the new plan is out")
+        rig.remove("hold-dry")
+        await presses.value
+        await merge.value
+        await waitUntil("the new plan is back") { model.landSheet.plan != nil }
+        #expect(model.landSheet.landError == message)
+        #expect(model.landContent?.canMerge == true)
+        rig.remove("fail-land")
+        await model.land()
+        #expect(rig.lands().count == 2 && rig.lands()[1].contains("--head \(newHead)"), "the second land names the new commit")
+    }
+
+    /// A plan that cannot be read after a block is not a plan to merge.
+    @Test func aPlanThatCannotBeReadAfterABlockLeavesMergeOff() async throws {
+        let rig = try await rig()
+        let model = rig.model
+        try await open(rig)
+        try rig.failLand(code: 16, message: "link-labels is not ready to land: PR #22 has new commits since you looked at it")
+        try rig.touch("fail-dry")
+        await model.land()
+        guard case .failed = model.landSheet.phase else {
+            Issue.record("the phase is \(model.landSheet.phase)")
+            return
+        }
+        await model.land()
+        #expect(rig.lands().count == 1)
+    }
+
+    @Test func aWorktreeThatLeavesDuringAFailedMergeClosesTheSheet() async throws {
+        let rig = try await rig()
+        let model = rig.model
+        try await open(rig)
+        try rig.touch("hold-land")
+        try rig.failLand(code: 1, message: "could not merge PR #22: Pull request is not mergeable")
+        let merge = Task { await model.land() }
+        await waitUntil("the land started") { !rig.lands().isEmpty }
+        // Someone removed the worktree while the merge runs: the list loses it. The sheet stays while the merge runs.
+        try rig.touch("landed")
+        await model.reloadWorktrees()
+        #expect(model.worktreeStatus(ready) == nil && model.landSheet.isOpen && model.landSheet.isMerging)
+        rig.remove("hold-land")
+        await merge.value
+        #expect(!model.landSheet.isOpen, "a sheet for a worktree that is gone has nothing to merge")
+    }
+
+    // MARK: A merge that runs
+
+    @Test func nothingElseOpensWhileAMergeRuns() async throws {
+        let rig = try await rig()
+        let model = rig.model
+        try await open(rig)
+        try rig.touch("hold-land")
+        let merge = Task { await model.land() }
+        await waitUntil("the land started") { !rig.lands().isEmpty }
+        model.switcher.open()
+        #expect(!model.switcher.isOpen, "the quick switcher stays shut: its commands would change the window under the merge")
+        model.switcher.open(actionsOnly: true)
+        #expect(!model.switcher.isOpen)
+        rig.remove("hold-land")
+        await merge.value
+        model.switcher.open()
+        #expect(model.switcher.isOpen)
+    }
+
+    @Test func quitWaitsForAMergeThatRuns() async throws {
+        let rig = try await rig()
+        let model = rig.model
+        var asked = 0
+        model.landSheet.whenMergeEnds { asked += 1 }
+        #expect(asked == 1, "with no merge, the answer is at once")
+        try await open(rig)
+        try rig.touch("hold-land")
+        let merge = Task { await model.land() }
+        await waitUntil("the land started") { !rig.lands().isEmpty }
+        model.landSheet.whenMergeEnds { asked += 10 }
+        #expect(asked == 1, "the merge runs")
+        rig.remove("hold-land")
+        await merge.value
+        #expect(asked == 11, "the merge ended")
+        // A failed merge ends too. The list has the worktree again.
+        rig.remove("landed")
+        await model.reloadWorktrees()
+        try await open(rig)
+        try rig.failLand(code: 1, message: "could not merge PR #22: nope")
+        try rig.touch("hold-land")
+        let failing = Task { await model.land() }
+        await waitUntil("the second land started") { rig.lands().count == 2 }
+        model.landSheet.whenMergeEnds { asked += 100 }
+        #expect(asked == 11)
+        rig.remove("hold-land")
+        await failing.value
+        #expect(asked == 111)
     }
 
     @Test func aBlockAtTheMergeReadsThePlanAgain() async throws {
@@ -611,7 +759,7 @@ import Testing
         let content = try await open(rig)
         #expect(content.primaryTitle == "Merge when ready")
         await rig.model.land()
-        #expect(rig.lands() == ["worktree land \(plotID) \(ready) --method squash --auto --open-pane \(path) --json --actor app"])
+        #expect(rig.lands() == ["worktree land \(plotID) \(ready) --method squash --auto --head \(head) --open-pane \(path) --json --actor app"])
         #expect(rig.model.workspace.paneIDs(of: .plot(plotID)).contains(pane), "the tidy up comes later")
         #expect(rig.record.prompts.isEmpty)
         #expect(rig.record.toasts.map(\.text) == ["#22 will merge when its checks pass."])

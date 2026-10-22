@@ -155,16 +155,18 @@ public struct LoamClient: Sendable {
     /// and removes the worktree. `method` nil takes the default method of the repo. `openPanes` are as in
     /// `worktreeRemove`. With `dryRun`, the core changes nothing and returns the plan, also when a check
     /// blocks. Without it, a check that blocks throws `.notReady`. Throws `.ghUnavailable` when gh cannot
-    /// act on the repo.
+    /// act on the repo. `head` is the PR head that the caller looked at (`--head`): a land that merges throws
+    /// `.notReady` when GitHub has another head, so a commit that came after the plan is never merged unseen.
     public func worktreeLand(plot: String, worktree: String, method: MergeMethod? = nil, auto: Bool = false,
                              keepWorktree: Bool = false, keepRemoteBranch: Bool = false, dryRun: Bool = false,
-                             openPanes: [String] = []) async throws -> LandResult {
+                             head: String? = nil, openPanes: [String] = []) async throws -> LandResult {
         var args = ["worktree", "land", plot, worktree]
         if let method { args += ["--method", method.rawValue] }
         if auto { args.append("--auto") }
         if keepWorktree { args.append("--keep-worktree") }
         if keepRemoteBranch { args.append("--keep-remote-branch") }
         if dryRun { args.append("--dry-run") }
+        if let head { args += ["--head", head] }
         return try await write(args + openPanes.flatMap { ["--open-pane", $0] })
     }
 

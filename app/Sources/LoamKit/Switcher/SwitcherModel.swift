@@ -51,7 +51,8 @@ public final class SwitcherModel {
 
     /// ⌘P opens on all items. ⌘⇧P opens with `>` typed.
     public func open(actionsOnly: Bool = false) {
-        guard app != nil else { return }
+        // A merge that runs keeps its sheet, and the commands of the switcher would change the window under it.
+        guard let app, !app.landSheet.isMerging else { return }
         isOpen = true
         openCount += 1
         links = []

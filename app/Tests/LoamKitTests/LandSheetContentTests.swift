@@ -156,6 +156,20 @@ import Testing
         #expect(content.footer == "Fix the 2 items in rust before you merge.")
     }
 
+    /// The core can block for a check that this app has no row for (a newer core). The footer must not count rows that
+    /// do not exist, and it must say something true.
+    @Test func aPlanThatIsNotReadyWithNoBlockingRowSaysSoInTheFooter() throws {
+        var plan = try ready()
+        plan.checks.append(LandCheck(name: "a_check_of_a_later_core", state: "odd", blocks: true))
+        plan.ready = false
+        let content = sheet(plan)
+        #expect(content.blockingCount == 0 && !content.canMerge)
+        #expect(content.footer == "Loam cannot merge this PR yet. Open the PR on GitHub to see why.")
+        var one = try with("checks", "failed", blocks: true)
+        one.checks.append(LandCheck(name: "a_check_of_a_later_core", state: "odd", blocks: true))
+        #expect(sheet(one).blockingCount == 1 && sheet(one).footer == "Fix the item in rust before you merge.")
+    }
+
     @Test func aDraftBlocksAndOpensGitHub() throws {
         let plan = try with("github", "draft", blocks: true) { $0.stage = .draft }
         let content = sheet(plan)

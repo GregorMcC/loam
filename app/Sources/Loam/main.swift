@@ -92,6 +92,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let controller = windowController, !readyToQuit else { return .terminateNow }
         guard !quitting else { return .terminateCancel }
         quitting = true
+        // A merge on GitHub cannot be undone, and an app that quits in the middle can leave it half done. Quit waits for
+        // the end of the merge, then asks again, so the usual question and the safe close of the panes run.
+        if controller.model.landSheet.isMerging {
+            controller.model.landSheet.whenMergeEnds { [weak self] in
+                DispatchQueue.main.async {
+                    self?.quitting = false
+                    NSApp.reply(toApplicationShouldTerminate: false)
+                    NSApp.terminate(nil)
+                }
+            }
+            return .terminateLater
+        }
         guard controller.quitPrompt != nil else {
             controller.closeEveryPane { NSApp.reply(toApplicationShouldTerminate: true) }
             return .terminateLater

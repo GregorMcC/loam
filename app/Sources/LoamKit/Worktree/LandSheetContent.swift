@@ -139,8 +139,11 @@ public struct LandSheetContent: Equatable, Sendable {
         let numberText = StageMark.numberText(pr.number)
         footer = if isMerged {
             "\(numberText) is merged on GitHub already."
-        } else if blockingCount > 0 || !plan.ready {
-            blockingCount == 1 ? "Fix the item in rust before you merge." : "Fix the \(max(blockingCount, 2)) items in rust before you merge."
+        } else if blockingCount > 0 {
+            blockingCount == 1 ? "Fix the item in rust before you merge." : "Fix the \(blockingCount) items in rust before you merge."
+        } else if !plan.ready {
+            // The core blocks for a check that this sheet has no row for, such as a check of a later core.
+            "Loam cannot merge this PR yet. Open the PR on GitHub to see why."
         } else if mergeQueue {
             "The queue merges \(numberText) after its checks pass on \(pr.base)."
         } else if waiting {
@@ -184,10 +187,16 @@ public struct LandSheetContent: Equatable, Sendable {
         stage == wanted ? (.send(wanted), nil) : (nil, hint)
     }
 
+    /// One row for one check of the core. A check that blocks makes the row blocking, whatever `tone` the state suggests.
+    private static func row(_ id: String, _ check: LandCheck, _ tone: Tone, _ symbol: String, _ title: String, _ value: String = "",
+                            action: RowAction? = nil, hint: String? = nil) -> Row {
+        Row(id: id, tone: check.blocks ? .blocking : tone, symbol: symbol, title: title, value: value, action: action, hint: hint)
+    }
+
     private static func checks(_ check: LandCheck, pr: PullRequest, kind: FixPrompt.Kind?) -> Row {
         let counts = pr.checks
         func row(_ tone: Tone, _ symbol: String, _ title: String, _ value: String = "", action: RowAction? = nil, hint: String? = nil) -> Row {
-            Row(id: "checks", tone: check.blocks ? .blocking : tone, symbol: symbol, title: title, value: value, action: action, hint: hint)
+            Self.row("checks", check, tone, symbol, title, value, action: action, hint: hint)
         }
         switch check.state {
         case "passed": return row(.good, "checkmark.circle", "Checks pass", "\(counts.passed) of \(counts.total)")
@@ -203,7 +212,7 @@ public struct LandSheetContent: Equatable, Sendable {
 
     private static func review(_ check: LandCheck, pr: PullRequest, kind: FixPrompt.Kind?) -> Row {
         func row(_ tone: Tone, _ symbol: String, _ title: String, _ value: String = "", action: RowAction? = nil, hint: String? = nil) -> Row {
-            Row(id: "review", tone: check.blocks ? .blocking : tone, symbol: symbol, title: title, value: value, action: action, hint: hint)
+            Self.row("review", check, tone, symbol, title, value, action: action, hint: hint)
         }
         switch check.state {
         case "approved": return row(.good, "checkmark.circle", "Review approved", pr.approvals > 0 ? count(pr.approvals, "approval") : "")
@@ -219,39 +228,35 @@ public struct LandSheetContent: Equatable, Sendable {
     private static func behind(_ check: LandCheck, pr: PullRequest) -> Row {
         let base = pr.base
         guard check.state == "behind" else {
-            return Row(id: "behind_base", tone: check.blocks ? .blocking : .good, symbol: "checkmark.circle",
-                       title: "Up to date with \(base)", value: "\(pr.behindBase) behind")
+            return row("behind_base", check, .good, "checkmark.circle", "Up to date with \(base)", "\(pr.behindBase) behind")
         }
         // Behind base blocks only when the base branch needs the PR up to date.
-        return Row(id: "behind_base", tone: check.blocks ? .blocking : .note, symbol: check.blocks ? "xmark.circle" : "arrow.down.circle",
-                   title: pr.behindBase > 0 ? "\(pr.behindBase) behind \(base)" : "Behind \(base)",
-                   value: check.blocks ? "GitHub needs it up to date" : "Does not block the merge", action: .updateBranch)
+        return row("behind_base", check, .note, check.blocks ? "xmark.circle" : "arrow.down.circle",
+                   pr.behindBase > 0 ? "\(pr.behindBase) behind \(base)" : "Behind \(base)",
+                   check.blocks ? "GitHub needs it up to date" : "Does not block the merge", action: .updateBranch)
     }
 
     private static func conflicts(_ check: LandCheck, pr: PullRequest, kind: FixPrompt.Kind?) -> Row {
         switch check.state {
         case "conflicting":
             let (action, hint) = fix(.conflicts, kind, hint: "Resolve the conflicts")
-            return Row(id: "conflicts", tone: .blocking, symbol: "xmark.circle", title: "Conflicts with \(pr.base)", value: "",
-                       action: action, hint: hint)
+            return row("conflicts", check, .blocking, "xmark.circle", "Conflicts with \(pr.base)", action: action, hint: hint)
         case "checking":
-            return Row(id: "conflicts", tone: check.blocks ? .blocking : .note, symbol: "circle.dashed", title: "Checking for conflicts", value: "")
+            return row("conflicts", check, .note, "circle.dashed", "Checking for conflicts")
         default:
-            return Row(id: "conflicts", tone: check.blocks ? .blocking : .good, symbol: "checkmark.circle", title: "No conflicts", value: "")
+            return row("conflicts", check, .good, "checkmark.circle", "No conflicts")
         }
     }
 
     private static func github(_ check: LandCheck) -> Row {
-        let tone: Tone = check.blocks ? .blocking : .note
         switch check.state {
         case "draft":
-            return Row(id: "github", tone: tone, symbol: "xmark.circle", title: "Draft pull request", value: "Mark it ready on GitHub",
-                       action: .openOnGitHub)
+            return row("github", check, .note, "xmark.circle", "Draft pull request", "Mark it ready on GitHub", action: .openOnGitHub)
         case "blocked":
-            return Row(id: "github", tone: tone, symbol: check.blocks ? "xmark.circle" : "exclamationmark.circle", title: "GitHub blocks the merge",
-                       value: "", action: .openOnGitHub)
+            return row("github", check, .note, check.blocks ? "xmark.circle" : "exclamationmark.circle", "GitHub blocks the merge",
+                       action: .openOnGitHub)
         default:
-            return Row(id: "github", tone: tone, symbol: "circle.dashed", title: "GitHub is checking the merge", value: "")
+            return row("github", check, .note, "circle.dashed", "GitHub is checking the merge")
         }
     }
 

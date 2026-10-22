@@ -100,13 +100,21 @@ extension AppModel {
 
         let result: LandResult
         do {
+            // The commit that the sheet showed. A PR that has another head by now stops the land (exit 16), so the
+            // merge never takes a commit that the checklist did not cover.
             result = try await client.worktreeLand(
                 plot: worktree.plotID, worktree: id, method: method, auto: content.usesAuto, keepWorktree: asked.keepWorktree,
-                keepRemoteBranch: asked.keepRemoteBranch, openPanes: openPaneFolders + savedPaneFolders())
+                keepRemoteBranch: asked.keepRemoteBranch, head: plan.pr.headOID, openPanes: openPaneFolders + savedPaneFolders())
         } catch {
             landSheet.mergeFailed(Self.message(for: error))
-            // A check that blocks now (exit 16) changed since the dry run, so the rows show it.
-            if case LoamError.notReady = error { await readLandPlan(id, open: open) }
+            if case LoamError.notReady = error {
+                // A check that blocks now, or a new commit (exit 16), changed the PR since the dry run. The old plan
+                // goes, so Merge stays off until the rows show what GitHub says now.
+                landSheet.readingAgain()
+                await readLandPlan(id, open: open)
+            }
+            // The worktree can be gone by now, such as when it was removed while the merge ran.
+            followLandSheet()
             return
         }
 
@@ -165,7 +173,7 @@ extension AppModel {
         guard let id = landSheet.worktreeID, !landSheet.isMerging else { return }
         if sendPlan(for: id)?.prompt.kind != kind { await refreshWorktree(id) }
         guard sendPlan(for: id)?.prompt.kind == kind else {
-            landSheet.mergeFailed("The pull request changed since the sheet read it. Close the sheet and open it again.")
+            landSheet.showError("The pull request changed since the sheet read it. Close the sheet and open it again.")
             return
         }
         closeLandSheet()

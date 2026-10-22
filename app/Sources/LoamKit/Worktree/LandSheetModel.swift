@@ -35,13 +35,21 @@ public final class LandSheetModel {
     /// The version of Where it stands when the sheet read it. The save expects it, so a change meanwhile is not lost.
     public private(set) var whereVersion: Int?
     /// A merge runs. The checklist locks, and Cancel is off.
-    public private(set) var isMerging = false
+    public private(set) var isMerging = false {
+        didSet {
+            guard oldValue, !isMerging else { return }
+            let waiting = mergeEndWaiters
+            mergeEndWaiters = []
+            for body in waiting { body() }
+        }
+    }
     /// Update branch runs.
     public private(set) var isUpdating = false
     /// What went wrong, in the words of the core or of GitHub. The sheet shows it in a `rust` callout.
     public private(set) var landError: String?
     /// The read of the plan that runs now. Tests wait for it.
     @ObservationIgnored var reading: Task<Void, Never>?
+    @ObservationIgnored private var mergeEndWaiters: [() -> Void] = []
     /// Called when the sheet opens or closes. An open while it is open calls nothing, and the window takes the keys on
     /// the first one only.
     @ObservationIgnored public var onOpenChange: ((Bool) -> Void)?
@@ -89,6 +97,12 @@ public final class LandSheetModel {
         onOpenChange?(false)
     }
 
+    /// Runs `body` once the merge ends, however it ends: done, failed, or cancelled. At once when no merge runs. Quit uses it,
+    /// since a merge on GitHub cannot be undone, and an app that quits in the middle can leave it half done.
+    public func whenMergeEnds(_ body: @escaping () -> Void) {
+        if isMerging { mergeEndWaiters.append(body) } else { body() }
+    }
+
     /// True while open number `count` is the open that shows.
     func isCurrent(_ count: Int) -> Bool { worktreeID != nil && count == openCount }
 
@@ -107,6 +121,12 @@ public final class LandSheetModel {
         phase = .failed(message)
     }
 
+    /// The plan is read again, such as after the core stopped a merge. Until the new plan is back there is no plan, so
+    /// Merge cannot run on the old one.
+    func readingAgain() {
+        phase = .loading
+    }
+
     func beginMerging() {
         isMerging = true
         landError = nil
@@ -120,6 +140,11 @@ public final class LandSheetModel {
     /// The merge did not happen. The sheet stays open, with the message.
     func mergeFailed(_ message: String) {
         isMerging = false
+        landError = message
+    }
+
+    /// A problem that is not a merge: a row button that does not match, for example.
+    func showError(_ message: String) {
         landError = message
     }
 
