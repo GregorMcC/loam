@@ -1,8 +1,8 @@
 import LoamKit
 import SwiftUI
 
-// The chrome of a sheet over the window (ticket 115): a dim scrim and a card on `horizon-a` with `radius-lg` and
-// `shadow-switcher`, as the Land sheet draws them (ticket 112, boards 3.1 to 3.3). The New worktree sheet uses it.
+// The chrome of a sheet over the window: a dim scrim and a card on `horizon-a` with `radius-lg` and `shadow-switcher`
+// (ticket 112, boards 3.1 to 3.3). The Land sheet and the New worktree sheet (ticket 115) use it.
 
 /// The dim layer behind a sheet. A click on it closes the sheet.
 struct SheetScrim: View {

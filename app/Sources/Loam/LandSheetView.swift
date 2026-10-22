@@ -16,23 +16,15 @@ struct LandSheetView: View {
     /// The window of the sheet. The Return handlers read its first responder, so they do not depend on `@FocusState`,
     /// which can be a short time behind the window, or on the key window, which an inactive app does not have.
     @State private var window = WindowRef()
-    @Environment(\.colorScheme) private var scheme
 
     enum Field: Hashable { case sheet, editor }
 
     static let width: CGFloat = 560
-    private static let radius = LoamTheme.radiusLg
 
     var body: some View {
         let sheet = app.landSheet
         ZStack(alignment: .top) {
-            Color(nsColor: LoamTheme.scrim)
-                .opacity(LoamTheme.scrimAlpha(dark: scheme == .dark))
-                .ignoresSafeArea()
-                .contentShape(Rectangle())
-                .onTapGesture { app.closeLandSheet() }
-                .opacity(arrived ? 1 : 0)
-                .accessibilityHidden(true)
+            SheetScrim(arrived: arrived) { app.closeLandSheet() }
             if sheet.isOpen {
                 card(sheet)
                     .padding(.top, 8)
@@ -111,19 +103,7 @@ struct LandSheetView: View {
             if let error = sheet.landError { problem(error, id: "land-sheet-error") }
             footer(sheet, content, pr: pr)
         }
-        .padding(EdgeInsets(top: 20, leading: 20, bottom: 18, trailing: 20))
-        .frame(width: Self.width)
-        .background(LoamColor.horizonA, in: RoundedRectangle(cornerRadius: Self.radius))
-        .overlay(RoundedRectangle(cornerRadius: Self.radius).strokeBorder(LoamColor.inkHairline))
-        // Night has a light line inside the top edge (`shadow-switcher`).
-        .overlay(alignment: .top) {
-            Color.white.opacity(LoamTheme.shadowSwitcherEdgeAlpha(dark: scheme == .dark))
-                .frame(height: 1)
-                .padding(.horizontal, Self.radius)
-                .allowsHitTesting(false)
-        }
-        .shadow(color: Color(nsColor: LoamTheme.shadowSwitcher).opacity(LoamTheme.shadowSwitcherAlpha(dark: scheme == .dark)),
-                radius: 32, y: 24)
+        .sheetCard(width: Self.width)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(content?.title ?? pr.map(LandSheetContent.title(of:)) ?? "Land")
         .accessibilityIdentifier("land-sheet")
@@ -376,7 +356,7 @@ struct LandSheetView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("land-sheet-footer")
             Button("Cancel") { app.closeLandSheet() }
-                .buttonStyle(SheetButtonStyle())
+                .buttonStyle(SheetCancelButtonStyle())
                 .disabled(sheet.isMerging)
                 .accessibilityIdentifier("land-sheet-cancel")
             Button { merge() } label: {
@@ -397,23 +377,5 @@ struct LandSheetView: View {
     private func primaryTitle(_ sheet: LandSheetModel, _ content: LandSheetContent?, pr: PullRequest?) -> String {
         if sheet.isMerging { return "Merging\u{2026}" }
         return content?.primaryTitle ?? pr.map { "Merge #\($0.number)" } ?? "Merge"
-    }
-}
-
-/// Cancel (the `.bc` of the boards): 28 pt high, radius 6, a fill and an `edge` border.
-private struct SheetButtonStyle: ButtonStyle {
-    @Environment(\.isEnabled) private var enabled
-
-    func makeBody(configuration: Configuration) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 6)
-        configuration.label
-            .font(.system(size: 13, weight: .medium))
-            .foregroundStyle(LoamColor.ink)
-            .padding(.horizontal, 14)
-            .frame(height: 28)
-            .background(configuration.isPressed ? LoamColor.inkSelected : LoamColor.inkFill, in: shape)
-            .overlay(shape.strokeBorder(LoamColor.edge))
-            .opacity(enabled ? 1 : 0.45)
-            .contentShape(shape)
     }
 }
