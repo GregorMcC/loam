@@ -74,6 +74,10 @@ public struct SidebarModel: Equatable, Sendable {
         public var unpushed: Int
         /// The PR number and stage symbol, else the ✎ mark for local work, else nil (ticket 107).
         public var mark: StageMark? = nil
+        /// The key of the issue that the work started from, such as "ENG-482". Nil when none (ticket 115).
+        public var linkKey: String? = nil
+        /// What the worktree is for. The tooltip of the row. Nil when none (ticket 115).
+        public var goal: String? = nil
 
         /// The worktree has a PR at the Ready to merge stage.
         public var isReadyToMerge: Bool { mark?.stage == .readyToMerge }
@@ -231,7 +235,9 @@ public struct SidebarModel: Equatable, Sendable {
             list.map {
                 WorktreeRow(id: $0.worktree.id, plotID: $0.worktree.plotID, name: $0.worktree.name,
                             branch: $0.worktree.branch, repo: $0.worktree.repo, paneCount: panesIn[$0.worktree.id] ?? 0,
-                            missing: $0.missing, changed: $0.changed, unpushed: $0.unpushed, mark: StageMark($0))
+                            missing: $0.missing, changed: $0.changed, unpushed: $0.unpushed, mark: StageMark($0),
+                            linkKey: $0.worktree.link.flatMap { $0.key.isEmpty ? nil : $0.key },
+                            goal: $0.worktree.goal.flatMap { $0.isEmpty ? nil : $0 })
             }
         }
         self.collapsed = collapsed

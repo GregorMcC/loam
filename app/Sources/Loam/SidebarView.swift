@@ -469,6 +469,13 @@ private struct CheckoutRowView: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
+            if !missing, let key = row.worktree?.linkKey {
+                Text(key)
+                    .font(.system(size: 11))
+                    .foregroundStyle(LoamColor.inkFaint)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
             if missing {
                 Text("gone").loamText(LoamTheme.captionStyle, LoamColor.inkFaint)
             } else if let mark = row.worktree?.mark {
@@ -478,7 +485,8 @@ private struct CheckoutRowView: View {
                 CountChip(text: "\(row.panes.count)")
             }
         }
-        .help(row.worktree?.mark?.tooltip ?? "")
+        // The goal says what the work is for (ticket 115). A worktree with no goal keeps the tooltip of its mark.
+        .help(row.worktree?.goal ?? row.worktree?.mark?.tooltip ?? "")
         .onTapGesture { show() }
         .contextMenu {
             Button("New pane") { newPane() }

@@ -87,7 +87,7 @@ private struct WorktreeRowView: View {
     @State private var probe = AnchorProbe()
 
     var body: some View {
-        let line = StatusLine(of: row, timeZone: timeZone)
+        let line = StatusLine(of: row, timeZone: timeZone, includesLinkKey: true)
         let faded = row.stage == .merged && !row.missing
         HoverMenuRow(menuLabel: "Worktree actions", menuID: "panel-worktree-menu-\(row.worktree.id)",
                      kind: row.missing ? "gone" : nil, minHeight: 44, trailingInset: 28) {
