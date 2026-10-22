@@ -21,6 +21,9 @@
 //     ruleset, by branch. The branch stays.
 //   - "rerun_refusals": the message of GitHub for a run that GitHub does not
 //     run again, by run ID.
+//   - "merge_refusal": the message of GitHub for a merge that it refuses, such
+//     as "Pull request is not mergeable". The PR stays open. A state file with no
+//     "merge_refusal" merges again, so a test can fail a merge and then retry it.
 //
 // The fake answers these commands:
 //
@@ -69,6 +72,7 @@ type state struct {
 	AutoMergeClean bool                       `json:"auto_merges_clean,omitempty"`
 	DeleteRefusals map[string]string          `json:"delete_refusals,omitempty"`
 	RerunRefusals  map[string]string          `json:"rerun_refusals,omitempty"`
+	MergeRefusal   string                     `json:"merge_refusal,omitempty"`
 }
 
 func main() {
@@ -260,6 +264,9 @@ func merge(st *state, args []string) {
 		case "--repo":
 			i++
 		}
+	}
+	if st.MergeRefusal != "" {
+		fail(1, "GraphQL: "+st.MergeRefusal+" (mergePullRequest)")
 	}
 	switch {
 	case st.MergeQueue:

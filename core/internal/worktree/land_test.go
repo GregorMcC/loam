@@ -1090,6 +1090,23 @@ func TestLandReturnsTheMessageOfARefusedMerge(t *testing.T) {
 	}
 }
 
+// The state of the fake gh can hold the message of a refusal ("merge_refusal"), so a test of the app
+// does not need a call number. The merge fails with that message, and the worktree stays.
+func TestLandReturnsTheMessageOfARefusalInTheState(t *testing.T) {
+	e := setup(t)
+	w, _ := e.landing(func(head string) string {
+		return strings.Replace(landState(head), `"refs": [`, `"merge_refusal": "Pull request is not mergeable: required reviews are missing", "refs": [`, 1)
+	})
+	_, err := e.land(worktree.LandOptions{})
+	if err == nil || !strings.Contains(err.Error(), "could not merge PR #15: ") ||
+		!strings.Contains(err.Error(), "Pull request is not mergeable: required reviews are missing") {
+		t.Fatalf("%v", err)
+	}
+	if got, err := e.s.GetWorktree(w.ID); err != nil || got.Land != nil || !e.branchExists("fix-login") {
+		t.Fatalf("%+v %v", got, err)
+	}
+}
+
 // Remove deletes the local branch with -D when the PR cache says that the
 // PR merged, and the branch tip is the PR head. A squash merge leaves the
 // commits off main, so -d refuses.
