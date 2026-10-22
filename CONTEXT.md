@@ -34,6 +34,26 @@ _Avoid_: primary repo, default repo
 A separate git checkout of one repo of a plot, on its own branch, that Loam made for that plot. It outlives the panes that use it, and several panes can share it.
 _Avoid_: task, workspace, branch
 
+**Pull request**:
+The GitHub pull request whose head is the branch of a worktree. Use the short form "PR" only where space is short, such as a chip or a status line.
+_Avoid_: merge request
+
+**Ship state**:
+How far a worktree is from merged: its pull request, the checks, and the review. Loam shows it as one stage. It is information, not an alert state.
+_Avoid_: PR status, CI status
+
+**Stage**:
+The one step of ship state that Loam shows for a worktree, from Not pushed to Merged. The core checks the stages in a fixed order, and the first one that applies wins (ADR 0007 lists them).
+_Avoid_: status, phase
+
+**Goal**:
+One line that says what a worktree is for. The seed lists it, so a session in that worktree knows its task.
+_Avoid_: task, title
+
+**Land**:
+To merge the pull request of a worktree and tidy up after it: remove the worktree, delete its branch, and move Where it stands on.
+_Avoid_: finish, complete
+
 **Plot folder**:
 The folder that Loam keeps for each plot, outside every repo. It holds the plot's seed. A plot with no repos starts its seeded sessions there. Loam owns only the seed; other files in the folder are yours.
 _Avoid_: plot directory, workspace
