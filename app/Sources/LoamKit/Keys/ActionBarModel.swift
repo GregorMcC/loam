@@ -18,7 +18,8 @@ public final class ActionBarModel {
     /// The PR of the worktree that the focused pane runs in. Nil for a pane in the main checkout or in Home,
     /// and for a worktree with no PR.
     public var chip: StageMark?
-    /// The last change of the active plot, such as "Claude set Where it stands". Nil when none shows.
+    /// The last change of the active plot, such as "Claude set Where it stands", or a line from the app
+    /// (`show`). Nil when none shows.
     public private(set) var toast: String?
     /// Counts the toasts, so a fade-out timer clears only its own toast.
     public private(set) var toastID = 0
@@ -52,6 +53,13 @@ public final class ActionBarModel {
         guard let seen = lastChangeID else { return }
         guard let change = changes.filter({ $0.id > seen && $0.plotID == activePlot }).max(by: { $0.id < $1.id }) else { return }
         toast = ChangeRules.actorName(change.actor) + " " + ChangeRules.sentence(change)
+        toastID += 1
+    }
+
+    /// Shows a line from the app as the toast, such as "Loam typed the failures into ✳ Native panel spacing.
+    /// Press Return to send." (ticket 110). It fades as the toast of a change does.
+    public func show(_ line: String) {
+        toast = line
         toastID += 1
     }
 

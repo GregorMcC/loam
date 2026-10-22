@@ -1,0 +1,501 @@
+import Foundation
+import Testing
+
+@testable import LoamKit
+
+/// Ticket 110: Send to session. The worktrees come from the `worktree_list_stages` fixture (made-up
+/// example/widgets data, all in the plot `plotaaaaab`).
+private func stageRows() throws -> [WorktreeStatus] {
+    try JSONDecoder().decode([WorktreeStatus].self, from: Fixtures.data("worktree_list_stages"))
+}
+
+private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
+    try #require(try stageRows().first { $0.stage == stage })
+}
+
+// MARK: The prompts
+
+/// One prompt for each stage that a session can fix, with the values of the PR. The words are the ones of the ticket.
+@Suite struct FixPromptTests {
+    /// The PR of a stage of the fixture as PR #139 of the branch native-panel, as the ticket has it.
+    func pr(_ stage: WorktreeStage) throws -> PullRequest {
+        var pr = try #require(try row(stage).pr)
+        pr.number = 139
+        pr.head = "native-panel"
+        return pr
+    }
+
+    /// The failed check of the fixture with other names.
+    func checks(_ names: [String]) throws -> [PRCheck] {
+        let check = try #require(try row(.checksFailed).pr?.failedChecks.first)
+        return names.map { var named = check; named.name = $0; return named }
+    }
+
+    @Test func checksFailedNamesTheFailedChecksAndTheCommand() throws {
+        var pr = try pr(.checksFailed)
+        pr.failedChecks = try checks(["lint / swiftformat", "test / macos-26"])
+        #expect(FixPrompt(.failures, pr: pr).text
+            == "Checks failed on #139: lint / swiftformat, test / macos-26. Run `gh pr checks 139`, read the failing logs, fix them, and push.")
+    }
+
+    @Test func changesRequestedCountsTheReviewComments() throws {
+        var pr = try pr(.changesRequested)
+        #expect(pr.comments == 3)
+        #expect(FixPrompt(.review, pr: pr).text
+            == "#139 has changes requested, with 3 review comments. Run `gh pr view 139 --comments`, address each comment, and push.")
+        pr.comments = 1
+        #expect(FixPrompt(.review, pr: pr).text.hasPrefix("#139 has changes requested, with 1 review comment. Run"))
+        // A review with no open thread still has its own words, so the command is the same.
+        pr.comments = 0
+        #expect(FixPrompt(.review, pr: pr).text == "#139 has changes requested. Run `gh pr view 139 --comments`, address each comment, and push.")
+    }
+
+    @Test func conflictsNameTheBaseAndTheBranch() throws {
+        #expect(FixPrompt(.conflicts, pr: try pr(.conflicts)).text
+            == "#139 conflicts with main. Merge origin/main into native-panel, resolve the conflicts, run the tests, and push.")
+        var other = try pr(.conflicts)
+        other.base = "release"
+        #expect(FixPrompt(.conflicts, pr: other).text.hasPrefix("#139 conflicts with release. Merge origin/release into native-panel,"))
+    }
+
+    @Test func aPromptNamesFiveFailedChecksAndCountsTheRest() throws {
+        var pr = try pr(.checksFailed)
+        pr.failedChecks = try checks((1...8).map { "job-\($0)" })
+        #expect(FixPrompt(.failures, pr: pr).text.hasPrefix("Checks failed on #139: job-1, job-2, job-3, job-4, job-5, and 3 more. Run"))
+        pr.failedChecks = try checks((1...6).map { "job-\($0)" })
+        #expect(FixPrompt(.failures, pr: pr).text.hasPrefix("Checks failed on #139: job-1, job-2, job-3, job-4, job-5, and 1 more. Run"))
+        pr.failedChecks = try checks((1...FixPrompt.namedChecks).map { "job-\($0)" })
+        #expect(FixPrompt(.failures, pr: pr).text.hasPrefix("Checks failed on #139: job-1, job-2, job-3, job-4, job-5. Run"))
+    }
+
+    @Test func checksFailedWithNoNamedCheckStillNamesTheCommand() throws {
+        var pr = try pr(.checksFailed)
+        pr.failedChecks = []
+        #expect(FixPrompt(.failures, pr: pr).text == "Checks failed on #139. Run `gh pr checks 139`, read the failing logs, fix them, and push.")
+    }
+
+    /// A PR from a fork names its own checks. A control character must not act as a key, a line break as Return, or a
+    /// direction mark hide the words.
+    @Test func aNameWithAControlCharacterOrALineBreakStaysOneLine() throws {
+        var pr = try pr(.checksFailed)
+        pr.failedChecks = try checks(["lint\n/ swift\tformat", "a\u{1B}[201~b\u{7}", "\u{202E}test  /\r\nmacos"])
+        let text = FixPrompt(.failures, pr: pr).text
+        #expect(text.hasPrefix("Checks failed on #139: lint / swift format, a [201~b, test / macos. Run"))
+        #expect(throws: Never.self) { try PaneText.withoutReturn(text) }
+    }
+
+    @Test func eachPromptIsOneLineThatLoamCanType() throws {
+        for kind in FixPrompt.Kind.allCases {
+            let stage: WorktreeStage = switch kind {
+            case .failures: .checksFailed
+            case .review: .changesRequested
+            case .conflicts: .conflicts
+            }
+            let text = FixPrompt(kind, pr: try pr(stage)).text
+            #expect(try PaneText.withoutReturn(text) == text, "\(kind)")
+        }
+    }
+
+    @Test func theStageGivesTheKind() throws {
+        for status in try stageRows() {
+            let expected: FixPrompt.Kind? = switch status.stage {
+            case .checksFailed: .failures
+            case .changesRequested: .review
+            case .conflicts: .conflicts
+            default: nil
+            }
+            #expect(FixPrompt(status)?.kind == expected, "\(String(describing: status.stage))")
+        }
+        var noPR = try row(.checksFailed)
+        noPR.pr = nil
+        #expect(FixPrompt(noPR) == nil)
+    }
+
+    @Test func eachKindHasItsButton() {
+        #expect(FixPrompt.Kind.allCases.map(\.action.title) == ["Send failures to session", "Send review to session", "Send conflicts to session"])
+    }
+}
+
+// MARK: The model
+
+/// What the model typed into a pane, copied, said in the toast, and gave the keys to.
+@MainActor final class SendRecord {
+    var typed: [(pane: PaneID, text: String)] = []
+    var copied: [String] = []
+    var toasts: [String] = []
+    var keys: [PaneID] = []
+}
+
+/// The session that gets the prompt, the rule for when Loam may type, and the model that types, copies, or starts a
+/// session.
+@MainActor
+@Suite struct SendToSessionTests {
+    let plotID = "plotaaaaab"
+    /// native-panel, #16, Checks failed.
+    let failed = "wtreaaaaah"
+    /// rename-users, #15, Changes requested.
+    let review = "wtreaaaaag"
+    /// new-api, #14, Conflicts.
+    let conflicts = "wtreaaaaaf"
+
+    /// The rows that the fake `loam` prints, for each rig.
+    static let rowsFile = "rows.json"
+
+    /// A model with the fixture rows and a fake `loam` that prints them for every list. The terminal of each pane
+    /// takes text at once.
+    func rig() async throws -> (model: AppModel, record: SendRecord) {
+        let (model, record, _) = try await rigWithRows()
+        return (model, record)
+    }
+
+    /// The rig, and the file of rows that the fake `loam` prints, so a test can change the rows.
+    func rigWithRows() async throws -> (model: AppModel, record: SendRecord, rows: URL) {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("send-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let rows = dir.appendingPathComponent(Self.rowsFile)
+        try Fixtures.data("worktree_list_stages").write(to: rows)
+        try FakeScript.install("#!/bin/sh\ncat '\(rows.path)'\n", at: dir.appendingPathComponent("loam"))
+        let model = AppModel(client: LoamClient(binary: dir.appendingPathComponent("loam"), environment: [:]))
+        model.shell = "/bin/zsh"
+        model.apply([PlotSummary(id: plotID, name: "Widgets", what: "", createdAt: "2026-01-01T00:00:00Z")])
+        await model.reloadWorktrees()
+        let record = SendRecord()
+        model.typeIntoPane = { pane, text in record.typed.append((pane, text)); return true }
+        model.copyText = { record.copied.append($0) }
+        model.onToast = { record.toasts.append($0) }
+        model.onPromptTyped = { record.keys.append($0) }
+        return (model, record, rows)
+    }
+
+    func worktree(_ id: String, in model: AppModel) throws -> Worktree {
+        try #require(model.worktreeStatus(id)?.worktree)
+    }
+
+    /// Opens a pane in the worktree. A session pane starts, so it is idle.
+    @discardableResult
+    func open(_ kind: PaneSpec.Kind = .session, in id: String, _ model: AppModel, title: String? = nil) throws -> PaneID {
+        model.openWorktreePane(try worktree(id, in: model), kind: kind)
+        let pane = try #require(model.workspace.focusedPane)
+        if kind == .session { send("SessionStart", to: pane, model, source: "startup") }
+        if let title { model.setTerminalTitle(title, of: pane) }
+        return pane
+    }
+
+    func send(_ name: String, to pane: PaneID, _ model: AppModel, source: String? = nil) {
+        model.apply(paneEvent(name, model.workspace.session(of: pane)?.sessionID ?? "", source: source), to: pane)
+    }
+
+    func prompt(_ id: String, _ model: AppModel) throws -> String {
+        try #require(model.worktreeStatus(id).flatMap(FixPrompt.init)?.text)
+    }
+
+    // MARK: The session that gets the prompt
+
+    @Test func theTargetIsTheSessionPaneOfTheWorktree() async throws {
+        let (model, _) = try await rig()
+        try open(.shell, in: failed, model)
+        try open(in: review, model)
+        #expect(model.sendPlan(for: failed)?.step == .start, "a shell pane or a session of another worktree is no target")
+        let session = try open(in: failed, model)
+        #expect(model.sendPlan(for: failed)?.step == .type(session))
+    }
+
+    @Test func ofTwoSessionsTheTargetIsTheOneYouFocusedLast() async throws {
+        let (model, _) = try await rig()
+        let first = try open(in: failed, model)
+        let second = try open(in: failed, model)
+        #expect(model.sendPlan(for: failed)?.step == .type(second))
+        try open(.shell, in: review, model)  // A pane of another worktree does not change the choice.
+        #expect(model.sendPlan(for: failed)?.step == .type(second))
+        model.focus(first)
+        #expect(model.sendPlan(for: failed)?.step == .type(first))
+        model.closePane(first)
+        #expect(model.sendPlan(for: failed)?.step == .type(second))
+    }
+
+    @Test func aSessionThatEndedIsNoTarget() async throws {
+        let (model, _) = try await rig()
+        let pane = try open(in: failed, model)
+        send("SessionEnd", to: pane, model)
+        #expect(model.sendPlan(for: failed)?.step == .start)
+        let other = try open(in: failed, model)
+        model.paneExited(other)
+        #expect(model.sendPlan(for: failed)?.step == .start)
+    }
+
+    @Test func aStageWithNoPromptHasNoPlan() async throws {
+        let (model, _) = try await rig()
+        #expect(model.sendPlan(for: "wtreaaaaao") == nil)  // Ready to merge.
+        #expect(model.sendPlan(for: "nope") == nil)
+        #expect(model.sendPlan(for: conflicts)?.prompt.kind == .conflicts)
+    }
+
+    // MARK: The rule for when Loam may type
+
+    /// The rule on its own, for each state of a pane.
+    @Test func theRuleForEachPaneState() {
+        let pane = PaneID()
+        let expected: [PaneState: SendPlan.Step] = [
+            .running: .copy(.starting), .idle: .type(pane), .working: .copy(.busy), .needsYou: .copy(.busy), .ended: .start,
+        ]
+        for state in [PaneState.running, .idle, .working, .needsYou, .ended] {
+            #expect(SendPlan.step(for: pane, session: PaneSession(state: state), prompt: "Fix it.") == expected[state], "\(state)")
+        }
+        var typed = PaneSession(state: .idle)
+        typed.typedSinceStop = true
+        #expect(SendPlan.step(for: pane, session: typed, prompt: "Fix it.") == .copy(.typed))
+        var prompted = PaneSession(state: .idle)
+        prompted.loamPrompt = "Fix it."
+        #expect(SendPlan.step(for: pane, session: prompted, prompt: "Fix it.") == .type(pane))
+        #expect(SendPlan.step(for: pane, session: prompted, prompt: "Fix the other thing.") == .copy(.prompted))
+    }
+
+    /// The keys before a Stop do not count after it, and a Stop for another session changes nothing.
+    @Test func theSessionCountsTheKeysUntilTheStop() {
+        var session = PaneSession(sessionID: "s1", state: .idle, started: true)
+        session.typed()
+        session.loamPrompt = "Fix it."
+        #expect(session.typedSinceStop)
+        session.apply(paneEvent("Stop", "other"))
+        #expect(session.typedSinceStop && session.loamPrompt == "Fix it.")
+        session.apply(paneEvent("UserPromptSubmit", "s1"))
+        #expect(session.typedSinceStop)
+        session.apply(paneEvent("Stop", "s1"))
+        #expect(!session.typedSinceStop && session.loamPrompt == nil)
+        session.typed()
+        #expect(session.typedSinceStop)
+    }
+
+    @Test func loamTypesOnlyIntoAnIdleSession() async throws {
+        let (model, _) = try await rig()
+        model.openWorktreePane(try worktree(failed, in: model))
+        let pane = try #require(model.workspace.focusedPane)
+        #expect(model.workspace.state(of: pane) == .running)
+        #expect(model.sendPlan(for: failed)?.step == .copy(.starting))
+        send("SessionStart", to: pane, model, source: "startup")
+        #expect(model.workspace.state(of: pane) == .idle)
+        #expect(model.sendPlan(for: failed)?.step == .type(pane))
+        send("UserPromptSubmit", to: pane, model)
+        #expect(model.workspace.state(of: pane) == .working)
+        #expect(model.sendPlan(for: failed)?.step == .copy(.busy))
+        model.apply(paneEvent("Notification", model.workspace.session(of: pane)!.sessionID!, notification: "elicitation_dialog"), to: pane)
+        #expect(model.workspace.state(of: pane) == .needsYou)
+        #expect(model.sendPlan(for: failed)?.step == .copy(.busy))
+        send("Stop", to: pane, model)
+        #expect(model.sendPlan(for: failed)?.step == .type(pane))
+    }
+
+    @Test func aKeyAfterTheStopMeansYouTyped() async throws {
+        let (model, _) = try await rig()
+        let pane = try open(in: failed, model)
+        model.typed(in: pane)
+        #expect(model.sendPlan(for: failed)?.step == .copy(.typed))
+        // The keys of a prompt that you sent count until the turn ends.
+        send("UserPromptSubmit", to: pane, model)
+        send("Stop", to: pane, model)
+        #expect(model.sendPlan(for: failed)?.step == .type(pane))
+        model.typed(in: pane)
+        #expect(model.sendPlan(for: failed)?.step == .copy(.typed))
+    }
+
+    /// `/clear` and a resume start with an empty input. A compact can come in the middle of a turn, while you type.
+    @Test func aNewSessionInThePaneForgetsTheKeysAndACompactKeepsThem() async throws {
+        let (model, _) = try await rig()
+        let pane = try open(in: failed, model)
+        model.typed(in: pane)
+        send("SessionStart", to: pane, model, source: "compact")
+        #expect(model.sendPlan(for: failed)?.step == .copy(.typed))
+        send("SessionEnd", to: pane, model)
+        model.apply(paneEvent("SessionStart", "next-session", source: "clear"), to: pane)
+        #expect(model.sendPlan(for: failed)?.step == .type(pane))
+    }
+
+    @Test func theWordsOfEachStep() async throws {
+        let (model, _) = try await rig()
+        let pane = try open(in: failed, model, title: "\u{2733} Native panel spacing")
+        let plan = try #require(model.sendPlan(for: failed))
+        #expect(plan.buttonTitle == "Send failures to session")
+        #expect(plan.paneName == "\u{2733} Native panel spacing")
+        #expect(plan.typeTarget == "\u{2733} Native panel spacing")
+        #expect(plan.footnote == "Loam types the prompt into the session. You press Return.")
+        #expect(plan.toast == "Loam typed the failures into \u{2733} Native panel spacing. Press Return to send.")
+        send("UserPromptSubmit", to: pane, model)
+        let busy = try #require(model.sendPlan(for: failed))
+        #expect(busy.buttonTitle == "Copy prompt")
+        #expect(busy.typeTarget == nil && busy.toast == nil)
+        #expect(busy.footnote == "The session is busy. Copy the prompt and send it when the turn ends.")
+        send("Stop", to: pane, model)
+        model.typed(in: pane)
+        #expect(model.sendPlan(for: failed)?.footnote == "You have typed in this session. Loam does not type over your text.")
+        let start = try #require(model.sendPlan(for: review))
+        #expect(start.buttonTitle == "Start session with prompt")
+        #expect(start.paneName == nil)
+        #expect(start.footnote == "No session runs in this worktree. Loam starts one and types the review prompt. You press Return.")
+        #expect(SendPlan.toast(.conflicts, into: "\u{2733} New API") == "Loam typed the conflicts into \u{2733} New API. Press Return to send.")
+        #expect(start.toast == nil)
+    }
+
+    // MARK: Send
+
+    @Test func anIdleSessionGetsThePromptTheFocusAndAToast() async throws {
+        let (model, record) = try await rig()
+        let pane = try open(in: failed, model, title: "\u{2733} Native panel spacing")
+        let shell = try open(.shell, in: review, model)
+        #expect(model.workspace.focusedPane == shell)
+        #expect(model.openPullRequest(failed))
+        let plan = model.sendToSession(failed)
+        #expect(plan?.step == .type(pane))
+        #expect(record.typed.map(\.pane) == [pane])
+        #expect(record.typed.map(\.text) == [try prompt(failed, model)])
+        #expect(model.workspace.focusedPane == pane)
+        #expect(record.keys == [pane])
+        #expect(!model.prPopover.isOpen)
+        #expect(record.toasts == ["Loam typed the failures into \u{2733} Native panel spacing. Press Return to send."])
+        #expect(record.copied.isEmpty)
+    }
+
+    /// The prompt waits in the input until you press Return. A second Send does not type it again.
+    @Test func loamTypesThePromptOnce() async throws {
+        let (model, record) = try await rig()
+        let pane = try open(in: failed, model)
+        model.sendToSession(failed)
+        try open(.shell, in: review, model)
+        #expect(model.sendPlan(for: failed)?.step == .type(pane))
+        model.sendToSession(failed)
+        #expect(record.typed.count == 1)
+        #expect(model.workspace.focusedPane == pane)
+        #expect(record.toasts.count == 2)
+        // Your Return sends it: the turn starts, and its Stop ends what Loam typed.
+        model.typed(in: pane)
+        send("UserPromptSubmit", to: pane, model)
+        send("Stop", to: pane, model)
+        model.sendToSession(failed)
+        #expect(record.typed.count == 2)
+    }
+
+    /// A check that fails later changes the prompt. The old prompt still waits in the input.
+    @Test func anotherPromptFromLoamIsNotTypedOver() async throws {
+        let (model, record, rows) = try await rigWithRows()
+        try open(in: failed, model)
+        model.sendToSession(failed)
+        var list = try JSONDecoder().decode([WorktreeStatus].self, from: Data(contentsOf: rows))
+        let i = try #require(list.firstIndex { $0.worktree.id == failed })
+        var check = try #require(list[i].pr?.failedChecks.first)
+        check.name = "test / linux"
+        list[i].pr?.failedChecks.append(check)
+        try JSONEncoder().encode(list).write(to: rows)
+        await model.reloadWorktrees()
+        #expect(model.sendPlan(for: failed)?.prompt.text.contains("test / linux") == true)
+        let plan = try #require(model.sendPlan(for: failed))
+        #expect(plan.step == .copy(.prompted))
+        #expect(plan.footnote == "This session has a prompt from Loam that you have not sent. Loam does not type over it.")
+        #expect(record.typed.count == 1)
+    }
+
+    @Test func aBusySessionCopiesThePromptAndThePopoverSaysSo() async throws {
+        let (model, record) = try await rig()
+        let pane = try open(in: failed, model)
+        send("UserPromptSubmit", to: pane, model)
+        #expect(model.openPullRequest(failed))
+        #expect(model.sendToSession(failed)?.step == .copy(.busy))
+        #expect(record.copied == [try prompt(failed, model)])
+        #expect(record.typed.isEmpty && record.toasts.isEmpty)
+        #expect(model.prPopover.isOpen && model.prPopover.note == "Copied the prompt.")
+    }
+
+    @Test func noSessionStartsOneAndTypesAfterItsSessionStart() async throws {
+        let (model, record) = try await rig()
+        try open(.shell, in: failed, model)
+        let before = Set(model.workspace.allPaneIDs)
+        #expect(model.openPullRequest(review))
+        #expect(model.sendToSession(review)?.step == .start)
+        #expect(!model.prPopover.isOpen)
+        let pane = try #require(model.workspace.focusedPane)
+        #expect(!before.contains(pane))
+        let spec = try #require(model.workspace.spec(of: pane))
+        #expect(spec.kind == .session && spec.worktree?.id == review && spec.space == .plot(plotID))
+        #expect(record.typed.isEmpty)
+        // The session runs the setup question first, and you answer it. Those keys are not in the input of Claude Code.
+        model.typed(in: pane)
+        model.setTerminalTitle("\u{2733} Rename users", of: pane)
+        send("SessionStart", to: pane, model, source: "startup")
+        #expect(record.typed.map(\.pane) == [pane])
+        #expect(record.typed.map(\.text) == [try prompt(review, model)])
+        #expect(record.toasts == ["Loam typed the review into \u{2733} Rename users. Press Return to send."])
+        // A later SessionStart, such as /clear, types nothing more.
+        send("SessionEnd", to: pane, model)
+        model.apply(paneEvent("SessionStart", "next-session", source: "clear"), to: pane)
+        #expect(record.typed.count == 1)
+    }
+
+    @Test func aSessionThatDoesNotStartInTimeGetsNoPromptAndThePopoverOffersCopy() async throws {
+        let (model, record) = try await rig()
+        model.sessionStartWait = .milliseconds(50)
+        #expect(model.sendToSession(review)?.step == .start)
+        let pane = try #require(model.workspace.focusedPane)
+        await waitUntil("the popover opens") { model.prPopover.worktreeID == review }
+        #expect(model.sendPlan(for: review)?.step == .copy(.starting))
+        send("SessionStart", to: pane, model, source: "startup")
+        #expect(record.typed.isEmpty)
+        #expect(model.sendPlan(for: review)?.step == .type(pane))
+    }
+
+    @Test func aSessionThatDoesNotStartWhileYouAreElsewhereOpensNoPopover() async throws {
+        let (model, record) = try await rig()
+        model.sessionStartWait = .milliseconds(50)
+        model.sendToSession(review)
+        try open(in: failed, model)
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(!model.prPopover.isOpen)
+        #expect(record.typed.isEmpty)
+    }
+
+    @Test func aSessionThatClosesBeforeItStartsGetsNothing() async throws {
+        let (model, record) = try await rig()
+        model.sessionStartWait = .milliseconds(50)
+        model.sendToSession(review)
+        let pane = try #require(model.workspace.focusedPane)
+        model.closePane(pane)
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(!model.prPopover.isOpen)
+        #expect(record.typed.isEmpty)
+    }
+
+    /// The Worktree actions menu and ⌘J send the failures too. When Loam cannot type, the popover opens, so you see why.
+    @Test func theMenusSendOrOpenThePopover() async throws {
+        let (model, record) = try await rig()
+        let pane = try open(in: failed, model)
+        model.sendFromMenu(failed)
+        #expect(record.typed.count == 1)
+        model.typed(in: pane)
+        model.sendFromMenu(failed)
+        #expect(model.prPopover.worktreeID == failed)
+        #expect(record.copied.isEmpty && record.typed.count == 1)
+    }
+
+    @Test func onlyChecksFailedHasTheSendFailuresItem() async throws {
+        let (model, _) = try await rig()
+        #expect(model.canSendFailures(failed))
+        #expect(!model.canSendFailures(review))
+        #expect(!model.canSendFailures(conflicts))
+        #expect(!model.canSendFailures("wtreaaaaao"))
+    }
+
+    @Test func theToastOfTheActionBarShowsTheLine() {
+        let bar = ActionBarModel()
+        bar.show("Loam typed the failures into \u{2733} Native panel spacing. Press Return to send.")
+        #expect(bar.trailing == .toast("Loam typed the failures into \u{2733} Native panel spacing. Press Return to send."))
+        let id = bar.toastID
+        bar.show("Loam typed the review into \u{2733} Rename users. Press Return to send.")
+        bar.clearToast(id: id)
+        #expect(bar.toast != nil, "the timer of the first toast does not clear the second")
+        bar.clearToast(id: bar.toastID)
+        #expect(bar.toast == nil)
+    }
+}
+
+@MainActor private func waitUntil(_ what: String, _ condition: () -> Bool) async {
+    let deadline = Date().addingTimeInterval(5)
+    while !condition(), Date() < deadline { try? await Task.sleep(for: .milliseconds(5)) }
+    #expect(condition(), "\(what) did not happen")
+}

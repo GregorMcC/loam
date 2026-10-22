@@ -8,6 +8,8 @@ import Foundation
 /// - `PermissionRequest`, `StopFailure`, and a `Notification` of a question type mean needs you.
 ///   The session moving on clears it, and so does a key in the pane (`typed()`).
 /// - `SessionEnd` means ended. A `SessionStart` after it (the `/clear` case) makes the pane idle again.
+/// - `Stop` and a new session (a `SessionStart` that is not a compact) forget the keys that you typed and
+///   the prompt that Loam typed (ticket 110), because the input of Claude Code is empty then.
 /// - The process exit means ended for good: later events change nothing.
 /// - An event for another session ID changes nothing. Only `SessionStart` takes a new ID.
 /// - Unknown events change nothing (docs/contract.md, "Pane socket").
@@ -32,6 +34,12 @@ public struct PaneSession: Codable, Equatable, Sendable {
     /// What the session waits on while the pane needs you. Nil in every other state. Restore does
     /// not bring it back, because the prompt is gone after a quit.
     public var waitsOn: NeedsYouReason?
+    /// True when you typed a key in the pane since the last `Stop` (ticket 110). Loam cannot see the input of
+    /// Claude Code, so a key means that the input can hold your text, and Send to session does not type.
+    public var typedSinceStop = false
+    /// The prompt that Send to session typed into the input since the last `Stop` (ticket 110). It waits there
+    /// until you press Return. Nil when Loam typed nothing.
+    public var loamPrompt: String?
 
     public init(sessionID: String? = nil, state: PaneState = .running, started: Bool = false,
                 exited: Bool = false, pastSessionIDs: [String] = [], folder: String? = nil, doneUnread: Bool = false) {
@@ -56,8 +64,9 @@ public struct PaneSession: Codable, Equatable, Sendable {
             sessionID = event.sessionID
             started = true
             if !event.cwd.isEmpty { folder = event.cwd }
-            // A compact can come in the middle of a turn. It keeps the state.
+            // A compact can come in the middle of a turn. It keeps the state, and the input keeps its text.
             if event.source != "compact" || state == .running || state == .ended { set(.idle) }
+            if event.source != "compact" { emptyInput() }
             return self != before
         }
         guard sessionID == nil || event.sessionID == sessionID else { return false }
@@ -66,6 +75,7 @@ public struct PaneSession: Codable, Equatable, Sendable {
         case "Stop":
             set(.idle)
             doneUnread = true
+            emptyInput()
         case "StopFailure": needsYou(.apiError)
         case "PermissionRequest": needsYou(.permission)
         case "Notification":
@@ -84,11 +94,13 @@ public struct PaneSession: Codable, Equatable, Sendable {
         return self != before
     }
 
-    /// You typed in the pane. Needs you clears (spec 8.4), because a denied permission prompt sends
-    /// no hook at all. A permission prompt or a question comes mid-turn, so the pane is working
-    /// again. After an API error the turn is over, so the pane is idle. Returns true when needs you cleared.
+    /// You typed in the pane. Send to session does not type until the next `Stop` (ticket 110). Needs you
+    /// clears (spec 8.4), because a denied permission prompt sends no hook at all. A permission prompt or a
+    /// question comes mid-turn, so the pane is working again. After an API error the turn is over, so the
+    /// pane is idle. Returns true when needs you cleared.
     @discardableResult
     public mutating func typed() -> Bool {
+        typedSinceStop = true
         guard state == .needsYou else { return false }
         set(waitsOn == .apiError ? .idle : .working)
         return true
@@ -98,6 +110,12 @@ public struct PaneSession: Codable, Equatable, Sendable {
     public mutating func processExited() {
         exited = true
         set(.ended)
+    }
+
+    /// The input of Claude Code is empty: a turn ended, or a new session started.
+    private mutating func emptyInput() {
+        typedSinceStop = false
+        loamPrompt = nil
     }
 
     /// A state that is not needs you. The `state` observer clears what the session waited on.

@@ -385,10 +385,16 @@ public struct Workspace: Codable, Equatable, Sendable {
         sessions[pane]?.processExited()
     }
 
-    /// You typed in the pane: needs you clears (spec 8.4). Returns true when it cleared.
+    /// You typed in the pane: needs you clears (spec 8.4), and Send to session does not type until the next
+    /// `Stop` (ticket 110). Returns true when needs you cleared.
     @discardableResult
     public mutating func typed(in pane: PaneID) -> Bool {
         sessions[pane]?.typed() ?? false
+    }
+
+    /// Send to session typed `prompt` into the input of the pane (ticket 110).
+    public mutating func prompted(_ prompt: String, in pane: PaneID) {
+        sessions[pane]?.loamPrompt = prompt
     }
 
     /// You looked at the pane: done, unread clears (spec 8.4). Returns true when it cleared.
