@@ -13,6 +13,9 @@ struct LandSheetView: View {
     /// False until the card has dropped in. Reset each time the sheet opens.
     @State private var arrived = false
     @State private var selection: TextSelection?
+    /// The window of the sheet. The Return handlers read its first responder, so they do not depend on `@FocusState`,
+    /// which can be a short time behind the window, or on the key window, which an inactive app does not have.
+    @State private var window = WindowRef()
     @Environment(\.colorScheme) private var scheme
 
     enum Field: Hashable { case sheet, editor }
@@ -37,14 +40,16 @@ struct LandSheetView: View {
                     .offset(y: arrived || LoamMotion.reduceMotion ? 0 : -24)
             }
         }
+        .background(WindowReader(ref: window))
         .focusable()
         .focused($focus, equals: .sheet)
         .focusEffectDisabled()
         .onKeyPress(.escape) { app.closeLandSheet(); return .handled }
         // Only a first press of Return merges, and never one that the box takes. The box returns `.ignored` while an input
-        // method has marked text, so a Return that commits that text must not reach the merge. A held Return repeats.
+        // method has marked text, so a Return that commits that text must not reach the merge. The window says whether the
+        // box has the keys (its field editor is a text view), because `focus` can be a short time behind it.
         .onKeyPress(.return, phases: .down) { _ in
-            guard focus != .editor else { return .ignored }
+            guard focus != .editor, fieldEditor == nil else { return .ignored }
             merge()
             return .handled
         }
@@ -65,6 +70,12 @@ struct LandSheetView: View {
             guard focus == .editor, app.landSheet.whereText.hasPrefix(app.landSheet.whereSentence) else { return }
             selectSentence()
         }
+    }
+
+    /// The text view that has the keys in the window of the sheet: the field editor of the Where it stands box. The sheet
+    /// itself and the terminal are not text views.
+    private var fieldEditor: NSTextView? {
+        (window.window ?? NSApp.keyWindow)?.firstResponder as? NSTextView
     }
 
     /// Return, or a click on the primary button. The model does nothing while a check blocks.
@@ -312,13 +323,16 @@ struct LandSheetView: View {
                 .font(.system(size: 13.5))
                 .lineLimit(3...6)
                 .focused($focus, equals: .editor)
-                .onKeyPress(keys: [.return], phases: .down) { press in
+                // A held Return repeats. The repeats add lines too: with no handler, the field takes a Return as a commit and
+                // selects all its text, and the next letter would replace the text.
+                .onKeyPress(keys: [.return], phases: [.down, .repeat]) { press in
                     if press.modifiers.contains(.command) {
-                        merge()
+                        // A held Command-Return merges once.
+                        if press.phase == .down { merge() }
                         return .handled
                     }
                     // During input method composition, Return commits the composed text.
-                    guard let editor = NSApp.keyWindow?.firstResponder as? NSTextView, !editor.hasMarkedText() else { return .ignored }
+                    guard let editor = fieldEditor, !editor.hasMarkedText() else { return .ignored }
                     editor.insertNewlineIgnoringFieldEditor(nil)
                     return .handled
                 }

@@ -323,33 +323,69 @@ extension Scenarios {
         try app.pressMenuKey("i")
         try await app.waitUntil("the panel closes again") { !app.exists("panel-whereItStands") }
 
-        // 6. Return in the Where it stands box only adds a line. A held Return repeats, and it never reaches the merge.
-        // rename-users is ready, so a merge here would show in the log of gh.
-        try expectLand(model.openLandSheet(rename.id), "the sheet did not open for rename-users")
-        try await app.waitUntil("the sheet shows the plan of rename-users") { sheetIsUp(25) }
-        // The sheet asks for the keys for a short time after it opens. A box that takes them before that loses them again.
-        await app.sleep(0.5)
-        try expectLand(AccessibilityProbe.shared.focus("land-sheet-where"), "the box took no focus")
-        try await app.waitUntil("the box has the keys") { host.window.firstResponder is NSTextView }
-        // The window is not the key window of an active app in a driver run, so SwiftUI learns about the focus of the box
-        // from the first key that the box takes.
-        try app.type("x")
-        await app.sleep(0.3)
-        func noMerge(_ key: String) async throws {
+        // 6. Return in the Where it stands box adds a line. It never merges, however the Return comes: once, held with
+        // repeats, or to commit text that an input method composes. rename-users is ready, so a merge here would show in
+        // the log of gh.
+        func noMerge(_ what: String) async throws {
             await app.sleep(0.6)
             try expectLand(model.landSheet.isOpen && !model.landSheet.isMerging && merges(of: 25).isEmpty,
-                           "\(key) in the box merged: gh got \(merges(of: 25))")
+                           "\(what) merged: gh got \(merges(of: 25))")
         }
+        /// The text view that has the keys in the window of the app: the field editor of the box.
+        func editor() throws -> NSTextView {
+            try host.window.firstResponder as? NSTextView ?? { throw DriverFailure("the keys are not in a text view") }()
+        }
+        func composing(_ text: String) throws {
+            try editor().setMarkedText(text, selectedRange: NSRange(location: text.count, length: 0),
+                                       replacementRange: NSRange(location: NSNotFound, length: 0))
+        }
+
+        // The keys go to the box, and a Return with composed text comes in the same pass of the run loop. SwiftUI learns
+        // about the focus of a field a short time after the window does, so for this Return its focus is still the sheet.
+        try expectLand(model.openLandSheet(rename.id), "the sheet did not open for rename-users")
+        try await app.waitUntil("the sheet shows the plan of rename-users") { sheetIsUp(25) }
+        await app.sleep(0.5)
+        try expectLand(AccessibilityProbe.shared.focus("land-sheet-where"), "the box took no focus")
+        try composing("n")
+        try expectLand(try editor().hasMarkedText(), "the box has no composed text")
+        app.press(.returnKey)
+        try await noMerge("a Return that came before the focus of SwiftUI did")
+        app.press(.escape)
+        try await sheetCloses()
+
+        // The focus is the box now. A Return adds a line. A held Return adds a line for each press and each repeat, and it
+        // does not select all, so the next letter goes to the end of the text.
+        let sentence25 = "Merged #25 Rename users."
+        try expectLand(model.openLandSheet(rename.id), "the sheet did not open again for rename-users")
+        try await app.waitUntil("the sheet shows the plan of rename-users again") { sheetIsUp(25) }
+        await app.sleep(0.5)
+        try expectLand(AccessibilityProbe.shared.focus("land-sheet-where"), "the box took no focus again")
+        try await app.waitUntil("the box has the keys") { host.window.firstResponder is NSTextView }
+        try await app.waitUntil("the sentence is selected") {
+            (host.window.firstResponder as? NSTextView)?.selectedRange() == NSRange(location: 0, length: sentence25.count)
+        }
+        let box = try editor()
+        let base = box.string
+        box.setSelectedRange(NSRange(location: (base as NSString).length, length: 0))
         app.press(.returnKey)
         try await noMerge("a Return")
+        try expectLand(box.string == base + "\n", "a Return in the box left \(box.string.debugDescription)")
+        // The repeats come 50 ms apart, so SwiftUI has the text of one before the next arrives, as with a real key.
         app.keyDown(.returnKey)
-        try await noMerge("the first press of a held Return")
         for _ in 0..<3 {
+            await app.sleep(0.05)
             app.keyDown(.returnKey, isARepeat: true)
-            try await noMerge("a repeat of a held Return")
         }
         app.keyUp(.returnKey)
-        try await noMerge("the end of a held Return")
+        try await noMerge("a held Return")
+        try expectLand(box.string == base + "\n\n\n\n\n" && box.selectedRange().length == 0,
+                       "a held Return left \(box.string.debugDescription), with \(box.selectedRange().length) selected")
+        try app.type("z")
+        try expectLand(box.string == base + "\n\n\n\n\nz", "the next letter left \(box.string.debugDescription)")
+        // Return commits composed text, and the merge does not start.
+        try composing("n")
+        app.press(.returnKey)
+        try await noMerge("a Return that commits composed text")
         app.press(.escape)
         try await sheetCloses()
 

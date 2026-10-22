@@ -4,7 +4,7 @@ The Land sheet lands one worktree: it shows what GitHub checks, merges the PR, r
 
 - Land… in the PR popover (the primary button at Ready to merge), the Land… pill on a ready row of the Worktrees section, Land… in the Worktree actions menu (hover and context menus of a row), and Land… in the ⌘J menu. Each one shows only at Ready to merge.
 - The sheet reads the PR again when it opens, so it can show a plan that is not the plan of the row. A row that was ready can show a failed check in the sheet.
-- The sheet has a state of its own. It opens for one worktree. It closes when the PR popover, the quick switcher or the actions menu opens, and when its worktree leaves the list. A merge that runs keeps it open until the merge ends. While a merge runs, ⌘P, ⌘J and the other ways to open an overlay do nothing, and Quit waits for the merge to end.
+- The sheet has a state of its own. It opens for one worktree. It closes when the PR popover, the quick switcher or the actions menu opens, and when its worktree leaves the list. A merge that runs keeps it open until the merge ends. While a merge runs, ⌘P, ⌘J, ⌘⇧L and Show Pull Request do nothing, because an overlay would take the keys from the sheet. Quit waits for the merge to end, then goes on as a quit with no merge (the question when a session is mid-turn, and the close of the panes).
 - One overlay shows at a time: the sheet closes the PR popover and the other way round.
 
 ## The card
@@ -55,7 +55,7 @@ A merge writes no change-log row. The toast and the Where it stands change recor
 ## Keys
 
 - Return merges, Escape or Cancel closes, and a click on the scrim closes. A merge that runs ignores all three.
-- Only a first press of Return merges. A held Return does not repeat the merge. A Return that the box takes never merges: the box adds a line, or commits text that an input method composes.
+- Only a first press of Return merges. A held Return does not repeat the merge. A Return that the box takes never merges: the box adds a line, or commits text that an input method composes. The sheet asks the window whether a text view has the keys, and not only the focus of SwiftUI, which can be a short time behind the window. A held Return adds a line for each repeat, and it does not select the text.
 - The sheet takes the keys when it opens. The keys go back to the focused pane when it closes.
 
 ## The Worktrees section
