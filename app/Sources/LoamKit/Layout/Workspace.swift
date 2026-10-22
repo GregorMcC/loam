@@ -403,7 +403,7 @@ public struct Workspace: Codable, Equatable, Sendable {
 
     /// Send to session typed `prompt` into the input of the pane (ticket 110).
     public mutating func prompted(_ prompt: String, in pane: PaneID) {
-        sessions[pane]?.loamPrompt = prompt
+        sessions[pane]?.prompted(prompt)
     }
 
     /// You looked at the pane: done, unread clears (spec 8.4). Returns true when it cleared.

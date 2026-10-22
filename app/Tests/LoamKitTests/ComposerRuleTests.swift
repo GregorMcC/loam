@@ -55,6 +55,16 @@ import Testing
         #expect(session.state == .idle && session.loamPrompt == "Fix it.")
     }
 
+    /// Loam types its prompt with no Return. A Return before it cannot send it, so a turn that Claude Code starts
+    /// soon after does not take it.
+    @Test func aReturnBeforeLoamTypesDoesNotSendItsPrompt() {
+        var session = session()
+        session.pressedReturn(now: t0)
+        session.prompted("Fix it.")
+        session.apply(paneEvent("UserPromptSubmit", "s1"), now: t0.addingTimeInterval(1))
+        #expect(session.loamPrompt == "Fix it." && session.pendingSubmit == nil)
+    }
+
     /// A submit with another source is a turn that Claude Code starts by itself. It keeps your Return armed for
     /// the submit of your own prompt.
     @Test func aSubmitWithAnotherSourceKeepsEverything() {

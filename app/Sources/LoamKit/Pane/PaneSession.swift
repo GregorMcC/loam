@@ -22,6 +22,8 @@ import Foundation
 ///     no pending Return it changes nothing, because a background task, a message from a peer, or an
 ///     auto-continuation starts a turn with the same line while your text stays in the composer.
 ///   - `UserPromptSubmit` with any other source changes nothing, and `pendingSubmit` stays.
+///   - Send to session types `loamPrompt` with no Return (`prompted(_:)`). A Return before it did not send it, so
+///     `pendingSubmit` ends.
 ///   - `PermissionRequest`, and a `Notification` of type `elicitation_dialog`, `elicitation_url_dialog` or
 ///     `permission_prompt`, set `dialogOpen`. `agent_needs_input` and `StopFailure` do not, because their keys
 ///     go to the composer.
@@ -165,6 +167,12 @@ public struct PaneSession: Codable, Equatable, Sendable {
         guard !dialogOpen else { return }
         typedSinceReturn = false
         pendingSubmit = now
+    }
+
+    /// Send to session typed `prompt` into the composer with no Return (see the composer rule above).
+    public mutating func prompted(_ prompt: String) {
+        loamPrompt = prompt
+        pendingSubmit = nil
     }
 
     /// A `UserPromptSubmit` from you, or one that looks the same. It takes the composer only after your Return.
