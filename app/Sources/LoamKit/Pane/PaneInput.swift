@@ -55,16 +55,31 @@ public enum PaneInput: Equatable, Sendable {
         }
     }
 
-    /// True when libghostty sends ctrl+s for this key with ⌃ only. It takes the character of the layout: the
-    /// event's own character, or the unshifted one when the event gives a control character. When that character
-    /// is not ASCII, as on Hebrew or Russian, it takes the physical key. So Loam does not trust the control
-    /// character alone: on Hebrew PC, ⌃ with the S key gives U+0001, and on Lithuanian it gives "s".
+    /// True when libghostty sends a key that Claude Code reads as ctrl+s, with ⌃ only. libghostty has two encoders.
+    /// Claude Code turns on the kitty keyboard protocol in libghostty, and an older Claude Code gets the legacy
+    /// encoder. Loam cannot see which one runs, so it counts the key when either one sends ctrl+s. On Yiddish
+    /// QWERTY, only the legacy encoder sends it. On Dvorak-QWERTY ⌘, only the kitty encoder sends it.
     static func sendsControlS(keyCode: UInt16, characters: String?, unshifted: String?) -> Bool {
         let scalars = Array((characters ?? "").unicodeScalars)
-        let text = scalars.count == 1 && scalars[0].value < 0x20 ? unshifted : characters
-        if let text, text.unicodeScalars.count == 1, text.unicodeScalars.allSatisfy(\.isASCII) {
-            return text.lowercased() == "s"
-        }
+        // The view gives libghostty the unshifted text when the event gives a control character.
+        let text = (scalars.count == 1 && scalars[0].value < 0x20 ? unshifted : characters) ?? ""
+        return legacySendsControlS(keyCode: keyCode, text: text)
+            || kittySendsControlS(keyCode: keyCode, text: text, unshifted: unshifted)
+    }
+
+    /// The legacy encoder reads the text when it is one ASCII character. When it is not, as on Hebrew or Russian,
+    /// the encoder reads the physical key.
+    static func legacySendsControlS(keyCode: UInt16, text: String) -> Bool {
+        if text.unicodeScalars.count == 1, text.unicodeScalars.allSatisfy(\.isASCII) { return text.lowercased() == "s" }
         return keyCode == sKey
+    }
+
+    /// The kitty encoder sends the unshifted character. When that character is not ASCII, Claude Code reads the
+    /// physical key that the encoder sends with it. The encoder sends that key only when the text is empty, or is
+    /// one character that is not the character of the key.
+    static func kittySendsControlS(keyCode: UInt16, text: String, unshifted: String?) -> Bool {
+        guard let key = unshifted?.unicodeScalars.first else { return false }
+        if key.isASCII { return String(key).lowercased() == "s" }
+        return keyCode == sKey && (text.isEmpty || (text.unicodeScalars.count == 1 && text != "s"))
     }
 }

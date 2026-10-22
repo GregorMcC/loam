@@ -455,17 +455,18 @@ import Testing
         #expect(key(oneKey, "1\u{20E3}") == .key)
     }
 
-    /// ⌃S stashes the draft of Claude Code. libghostty sends ctrl+s for the S character of the layout, or for the
-    /// physical S key when that character is not ASCII. Loam follows the same rule.
+    /// ⌃S stashes the draft of Claude Code. Loam counts the key when either encoder of libghostty sends ctrl+s.
     @Test func controlSIsTheStash() {
         #expect(key(0x01, "\u{13}", [.control]) == .stash)
+        #expect(key(0x01, "\u{13}", [.control], unshifted: "s") == .stash)  // U.S.
         #expect(key(0x29, "\u{13}", [.control], unshifted: "s") == .stash)  // Dvorak.
         #expect(key(0x01, "s", [.control], unshifted: "s") == .stash)  // Lithuanian, Tongan.
-        #expect(key(0x01, "s", [.control], unshifted: "\u{5E1}") == .stash)  // Yiddish QWERTY.
-        #expect(key(0x29, "s", [.control], unshifted: "\u{5E1}") == .stash)  // The character wins over the key.
-        #expect(key(0x29, "\u{13}", [.control], unshifted: "o") == .key)  // libghostty sends ctrl+o.
         #expect(key(0x01, "\u{1}", [.control], unshifted: "\u{5D3}") == .stash)  // Hebrew PC.
         #expect(key(0x01, "\u{13}", [.control], unshifted: "\u{44B}") == .stash)  // Russian.
+        #expect(key(0x01, "s", [.control], unshifted: "\u{5E1}") == .stash)  // Yiddish QWERTY: only the legacy encoder.
+        #expect(key(0x29, ";", [.control], unshifted: "s") == .stash)  // Dvorak-QWERTY ⌘: only the kitty encoder.
+        #expect(key(0x29, "s", [.control], unshifted: "\u{5E1}") == .stash)  // Only the legacy encoder: the text wins.
+        #expect(key(0x01, "\u{13}", [.control], unshifted: "o") == .key)  // The S key on Dvorak-QWERTY ⌘.
         #expect(key(0x01, "\u{F}", [.control], unshifted: "o") == .key)  // The S key on Dvorak.
         #expect(key(0x00, "\u{1}", [.control], unshifted: "a") == .key)
         #expect(key(0x00, "\u{1}", [.control], unshifted: "\u{5E9}") == .key)  // Not the S key.
@@ -474,6 +475,34 @@ import Testing
         #expect(key(0x01, "\u{13}", [.control], composing: true) == .key)
         #expect(key(0x01, "s") == .key)
         #expect(key(0x01, "s", [.command]) == .none)
+    }
+
+    /// Each encoder on its own, with the text that the view gives libghostty. The legacy encoder reads the text,
+    /// or the physical key when the text is not one ASCII character. The kitty encoder sends the unshifted
+    /// character, and adds the physical key when that character is not ASCII and the text is not the character of
+    /// the physical key. Claude Code reads the physical key only then.
+    @Test func eachEncoderSendsCtrlSForItsOwnKeys() {
+        // Hebrew PC: both encoders send ctrl+s for the S key.
+        #expect(PaneInput.legacySendsControlS(keyCode: 0x01, text: "\u{5D3}"))
+        #expect(PaneInput.kittySendsControlS(keyCode: 0x01, text: "\u{5D3}", unshifted: "\u{5D3}"))
+        #expect(!PaneInput.kittySendsControlS(keyCode: 0x00, text: "\u{5E9}", unshifted: "\u{5E9}"))
+        // Yiddish QWERTY: the text is "s", the character of the S key, so the kitty encoder sends ctrl+ס.
+        #expect(PaneInput.legacySendsControlS(keyCode: 0x01, text: "s"))
+        #expect(!PaneInput.kittySendsControlS(keyCode: 0x01, text: "s", unshifted: "\u{5E1}"))
+        // Dvorak-QWERTY ⌘: ⌃ gives ";" on the key of s, so the legacy encoder sends ctrl+;.
+        #expect(!PaneInput.legacySendsControlS(keyCode: 0x29, text: ";"))
+        #expect(PaneInput.kittySendsControlS(keyCode: 0x29, text: ";", unshifted: "s"))
+        // Not the S key: the legacy encoder reads the text "s". The kitty encoder adds the physical key, so Claude
+        // Code reads ctrl+;.
+        #expect(PaneInput.legacySendsControlS(keyCode: 0x29, text: "s"))
+        #expect(!PaneInput.kittySendsControlS(keyCode: 0x29, text: "s", unshifted: "\u{5E1}"))
+        // With no text, the legacy encoder reads the key. The kitty encoder needs the unshifted character.
+        #expect(PaneInput.legacySendsControlS(keyCode: 0x01, text: ""))
+        #expect(!PaneInput.legacySendsControlS(keyCode: 0x00, text: ""))
+        #expect(!PaneInput.kittySendsControlS(keyCode: 0x01, text: "", unshifted: nil))
+        #expect(PaneInput.kittySendsControlS(keyCode: 0x01, text: "", unshifted: "\u{44B}"))
+        // A text of two characters goes with no physical key.
+        #expect(!PaneInput.kittySendsControlS(keyCode: 0x01, text: "\u{5D3}\u{5D3}", unshifted: "\u{5D3}"))
     }
 
     /// ⌘ keys scroll, change the font size, clear the screen or move the focus, so they leave the input as it is.
