@@ -8,7 +8,7 @@ struct ActionBarView: View {
     let bar: ActionBarModel
     let review: ReviewModel
     let app: AppModel
-    /// Tells the window where the chip is, for a popover that a key opens.
+    /// Tells the window where the chip is, for a popover that the chip or a key opens.
     let chipProbe: AnchorProbe
     /// The keycaps of New session and of Actions, from the menu bar.
     let newSessionKeys: () -> [String]
@@ -88,8 +88,10 @@ struct ActionBarView: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("action-bar-toast")
             case .chip(let mark):
+                // The popover finds the chip through `chipProbe`, as for a key. A toast that hides the chip
+                // for a while does not close it.
                 PullRequestChip(mark: mark, words: words, probe: chipProbe) {
-                    if let id = app.focusedWorktree?.id { app.openPullRequest(id, anchor: chipProbe.anchor) }
+                    if let id = app.focusedWorktree?.id { app.openPullRequest(id, anchor: .actionBar) }
                 }
                 .fixedSize()
                 .layoutPriority(1)

@@ -132,11 +132,18 @@ import Testing
         #expect(!model.prPopover.isOpen)
     }
 
+    /// A control of the window, which says where it is now.
+    final class Control: PopoverAnchorControl {
+        var windowRect: CGRect? = CGRect(x: 1, y: 2, width: 3, height: 4)
+    }
+
     @Test func aSecondOpenReplacesTheFirst() async throws {
         let rig = try await rig()
         let model = rig.model
         let opens = model.prPopover.openCount
-        model.openPullRequest(nativePanel, anchor: .windowRect(CGRect(x: 1, y: 2, width: 3, height: 4)))
+        let control = Control()
+        model.openPullRequest(nativePanel, anchor: .control(control))
+        #expect(model.prPopover.anchor == .control(control) && model.prPopover.anchor != .control(Control()))
         model.openPullRequest("wtreaaaaag")
         #expect(model.prPopover.worktreeID == "wtreaaaaag")
         #expect(model.prPopover.anchor == .actionBar)
@@ -144,14 +151,20 @@ import Testing
         await idle(model)
     }
 
+    /// The window shows and hides the popover on a change, and places it at its control on each open, also
+    /// on one that moves an open popover to another worktree.
     @Test func theChangesOfOpenAndCloseReachTheWindow() async throws {
         let rig = try await rig()
         var changes: [Bool] = []
+        var places: [String?] = []
         rig.model.prPopover.onOpenChange = { changes.append($0) }
+        rig.model.prPopover.onOpen = { places.append(rig.model.prPopover.worktreeID) }
         rig.model.openPullRequest(nativePanel)
+        rig.model.openPullRequest("wtreaaaaag")
         rig.model.closePullRequest()
         rig.model.closePullRequest()
         #expect(changes == [true, false])
+        #expect(places == [nativePanel, "wtreaaaaag"])
         await idle(rig.model)
     }
 

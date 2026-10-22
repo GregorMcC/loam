@@ -8,6 +8,14 @@ struct HeldKeys {
     var selection: NSRange?
 }
 
+/// Where the open PR popover points, in the space of its overlay (the origin is the top left corner). The
+/// window measures the control of the popover after each open and after each layout pass of the split view,
+/// so the card follows the control when the window, a divider or a column moves it.
+@MainActor @Observable
+final class PopoverPlace {
+    var anchor = CGRect.zero
+}
+
 /// The window side of the PR popover (ticket 109): showing the overlay, the keys while it shows, and the
 /// place that it opens from.
 extension MainWindowController {
@@ -41,14 +49,25 @@ extension MainWindowController {
 
     // MARK: Place
 
+    /// Places the open popover at its control again: after each open, and after each layout pass of the
+    /// split view (a resize of the window, a drag of a divider, the sidebar or the plot panel that shows or
+    /// hides). A control that is gone closes the popover, such as a row of a column that hid.
+    func placePullRequestPopover() {
+        guard model.prPopover.isOpen else { return }
+        guard let rect = popoverAnchorRect() else { return model.closePullRequest() }
+        if popoverPlace.anchor != rect { popoverPlace.anchor = rect }
+    }
+
     /// The rectangle that the open popover opens from, in the space of its overlay (the origin is the top
-    /// left corner). A click gives the rectangle of the control. A key, ⌘⇧L or the switcher give the chip
-    /// of the action bar, else the left end of the bar. The chip is the PR of the focused pane, so a popover
-    /// of another worktree does not point at it.
-    func popoverAnchorRect() -> CGRect {
+    /// left corner). A clicked control says where it is now. The chip, a key, ⌘⇧L or the switcher give the
+    /// chip of the action bar, else the left end of the bar. The chip is the PR of the focused pane, so a
+    /// popover of another worktree does not point at it. Nil when the control is gone.
+    private func popoverAnchorRect() -> CGRect? {
         let windowRect: CGRect
         switch model.prPopover.anchor {
-        case .windowRect(let rect): windowRect = rect
+        case .control(let control):
+            guard let rect = control.windowRect else { return nil }
+            windowRect = rect
         case .actionBar:
             let leadsToChip = model.focusedWorktree?.id == model.prPopover.worktreeID
             windowRect = leadsToChip ? chipProbe.windowRect ?? barLeadingRect : barLeadingRect
@@ -82,11 +101,13 @@ extension MainWindowController {
     }
 
     /// The popover closed. The keys go back to the field of the panel that had them, else to the focused pane.
+    /// A field of a panel that hid, or hides now, gets no keys.
     private func giveKeysBackFromPopover() {
         popoverContext = nil
         defer { keysBeforePopover = nil }
-        guard let window, let held = keysBeforePopover, let responder = held.responder as? NSView,
-              responder.window === window, window.makeFirstResponder(responder) else { return focusActivePane() }
+        guard let window, let held = keysBeforePopover, let responder = held.responder as? NSView, responder.window === window,
+              !responder.isHiddenOrHasHiddenAncestor, !responder.visibleRect.isEmpty,
+              window.makeFirstResponder(responder) else { return focusActivePane() }
         guard let selection = held.selection else { return }
         let editor = (responder as? NSTextView) ?? window.fieldEditor(false, for: responder) as? NSTextView
         editor?.selectedRange = selection

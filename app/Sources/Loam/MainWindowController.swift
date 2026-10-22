@@ -37,6 +37,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     /// the pane it was opened in, and the keys that the popover took from a field of the plot panel.
     private(set) var popoverHost: NSHostingView<PRPopoverView>!
     let chipProbe = AnchorProbe()
+    let popoverPlace = PopoverPlace()
     var popoverContext: ActionsContext?
     var keysBeforePopover: HeldKeys?
     let panelController: NSHostingController<PlotPanelView>
@@ -156,6 +157,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         split?.onBarLayout = { [actionBar] inset in
             if actionBar.menu.trailingInset != inset { actionBar.menu.trailingInset = inset }
         }
+        // The split view lays out its columns first and their content after it, so the control of the popover
+        // has its new place only once the pass is over.
+        split?.onLayout = { DispatchQueue.main.async { [weak self] in self?.placePullRequestPopover() } }
         split?.install(bar: bar, overlay: menu, popover: popover, switcher: switcherHost, barHeight: ActionBarView.height)
     }
 
@@ -669,6 +673,8 @@ final class LoamSplitView: NSSplitView {
     var popover: NSView?
     /// Called with the room right of the bar: the plot panel, or 0.
     var onBarLayout: ((CGFloat) -> Void)?
+    /// Called after each layout pass, which can move the control that the PR popover opened from.
+    var onLayout: (() -> Void)?
     /// The quick switcher floats over everything right of the sidebar: the well and the plot panel.
     /// Inside the pane area it was clipped to the well, and the panel took the room of its preview.
     var switcher: NSView?
@@ -697,6 +703,7 @@ final class LoamSplitView: NSSplitView {
             popover?.frame = convert(bounds, to: container)
             switcher?.frame = convert(switcherRect, to: container)
         }
+        onLayout?()
     }
 
     /// Everything right of the sidebar. The regions there cover it, so only the gaps show it.

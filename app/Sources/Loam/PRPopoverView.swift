@@ -9,13 +9,19 @@ import SwiftUI
 /// press its buttons. `PRPopoverContent` says what it shows.
 struct PRPopoverView: View {
     let app: AppModel
-    /// Where the popover opens from, in the space of this view (the origin is the top left corner).
-    let anchorRect: () -> CGRect
+    /// Where the popover opens from, in the space of this view. The window keeps it at the control.
+    let place: PopoverPlace
     /// Return, or a click on the primary button.
     let runPrimary: (PRPrimaryAction) -> Void
     @FocusState private var focused: Bool
-    @State private var size = CGSize.zero
+    /// The size of the card once it is laid out, and the open that it belongs to.
+    @State private var measured = Measured()
     @Environment(\.colorScheme) private var scheme
+
+    private struct Measured {
+        var open = 0
+        var size = CGSize.zero
+    }
 
     static let width: CGFloat = 360
     private static let radius = LoamTheme.radiusMd
@@ -28,9 +34,14 @@ struct PRPopoverView: View {
                     .contentShape(Rectangle())
                     .onTapGesture { app.closePullRequest() }
                 if let status = model.worktreeID.flatMap({ app.worktreeStatus($0) }) {
-                    let frame = PopoverPlacement.frame(size: size, anchor: anchorRect(), in: CGRect(origin: .zero, size: proxy.size))
+                    // A size from an earlier open does not count, so a new card never shows for one frame in
+                    // the place that the last card had. Each open is a new card, so it is measured again.
+                    let open = model.openCount
+                    let size = measured.open == open ? measured.size : .zero
+                    let frame = PopoverPlacement.frame(size: size, anchor: place.anchor, in: CGRect(origin: .zero, size: proxy.size))
                     card(PRPopoverContent(status, attemptedAt: model.attemptedAt), status: status)
-                        .onGeometryChange(for: CGSize.self, of: \.size) { size = $0 }
+                        .onGeometryChange(for: CGSize.self, of: \.size) { measured = Measured(open: open, size: $0) }
+                        .id(open)
                         // The card has no size until it is laid out once, and it would show in the wrong place.
                         .opacity(size == .zero ? 0 : 1)
                         .offset(x: frame.minX, y: frame.minY)
@@ -47,8 +58,10 @@ struct PRPopoverView: View {
             return .handled
         }
         .task(id: model.openCount) {
-            // The hosting view becomes first responder after this view appears.
+            // The hosting view becomes first responder after this view appears. A popover that closed meanwhile
+            // takes no keys: they went back to where they were.
             for _ in 0..<5 {
+                guard app.prPopover.isOpen else { return }
                 focused = true
                 try? await Task.sleep(for: .milliseconds(30))
             }

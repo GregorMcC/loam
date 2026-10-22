@@ -20,12 +20,12 @@ extension MainWindowController: NSMenuItemValidation {
         menu.sizingOptions = []
         menu.isHidden = true
         let popover = NSHostingView(rootView: PRPopoverView(
-            app: model, anchorRect: { [weak self] in self?.popoverAnchorRect() ?? .zero },
-            runPrimary: { [weak self] in self?.runPrimaryAction($0) }))
+            app: model, place: popoverPlace, runPrimary: { [weak self] in self?.runPrimaryAction($0) }))
         popover.sizingOptions = []
         popover.isHidden = true
         setActionHosts(bar: bar, menu: menu, popover: popover)
         model.prPopover.onOpenChange = { [weak self] open in self?.pullRequestPopoverChanged(open: open) }
+        model.prPopover.onOpen = { [weak self] in self?.placePullRequestPopover() }
         columnBottomInset(ActionBarView.height)
     }
 

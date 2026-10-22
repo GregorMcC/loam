@@ -2,14 +2,32 @@ import CoreGraphics
 import Foundation
 import Observation
 
+/// A control that a popover opens from (ticket 109). It says where it is now, so the popover can follow it
+/// when the window, a divider or a column moves it.
+@MainActor
+public protocol PopoverAnchorControl: AnyObject, Sendable {
+    /// The rectangle of the control in its window, as AppKit reports it (the origin is the bottom left
+    /// corner of the window). Nil when the control is gone: out of the window, hidden, or out of view.
+    var windowRect: CGRect? { get }
+}
+
 /// Where a popover opens from (ticket 109).
 public enum PopoverAnchor: Equatable, Sendable {
-    /// A control that was clicked: its rectangle in the window, as AppKit reports it (the origin is the
-    /// bottom left corner of the window). The window turns it into the space of the overlay.
-    case windowRect(CGRect)
-    /// A key, ⌘⇧L or the switcher opened the popover, so no control was clicked. It sits over the left
-    /// end of the action bar, where the chip of the PR is.
+    /// A control that was clicked. The window asks it where it is each time it places the popover, and
+    /// closes the popover when the control is gone.
+    case control(any PopoverAnchorControl)
+    /// The chip of the action bar, or no control: a key, ⌘⇧L or the switcher opened the popover. It sits at
+    /// the chip when the chip shows the PR of the popover, else over the left end of the action bar.
     case actionBar
+
+    /// Two controls are the same anchor only when they are the same object.
+    public static func == (lhs: PopoverAnchor, rhs: PopoverAnchor) -> Bool {
+        switch (lhs, rhs) {
+        case (.control(let left), .control(let right)): left === right
+        case (.actionBar, .actionBar): true
+        default: false
+        }
+    }
 }
 
 /// The open PR popover (ticket 109): which worktree it shows, where it opens from, and what runs for
@@ -39,6 +57,9 @@ public final class PRPopoverModel {
     private var buttons: [String: PRSecondaryAction] = [:]
     /// Called when the popover opens or closes. A new open while it is open calls nothing.
     @ObservationIgnored public var onOpenChange: ((Bool) -> Void)?
+    /// Called after each open, also one that moves an open popover to another worktree or control, so the
+    /// window places the popover at its control before it draws.
+    @ObservationIgnored public var onOpen: (() -> Void)?
 
     public var isOpen: Bool { worktreeID != nil }
     /// True while the shown worktree refreshes (`loam worktree list --refresh --worktree`).
@@ -57,6 +78,7 @@ public final class PRPopoverModel {
         attemptedAt = nil
         note = nil
         if !wasOpen { onOpenChange?(true) }
+        onOpen?()
     }
 
     /// Closes the popover and forgets what this open learned. A refresh or a button that runs goes on.

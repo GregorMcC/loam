@@ -311,6 +311,52 @@ extension Scenarios {
         try await app.waitUntil("the popover opens again") { app.exists("pr-popover") }
         model.goToPane(splitPane)
         try await app.waitUntil("a move to another pane closes the popover") { !app.exists("pr-popover") && !model.prPopover.isOpen }
+        // The popover closed at once after it opened, and it does not take the keys back from the new pane.
+        try await app.waitUntil("the terminal of the new pane has the keys") { terminalHasTheKeys() }
+        await app.sleep(0.3)
+        try check(terminalHasTheKeys(), "the closed popover took the keys")
+
+        // 13. The popover follows the control that opened it: the mark of a sidebar row. A resize of the window and
+        // a drag of the sidebar divider move the mark, and the card moves with it. A hidden sidebar hides the mark, so
+        // the popover closes.
+        let sidebarRow = "worktree-\(panel.id)"
+        try app.perform("Show pull request", on: sidebarRow)
+        try await app.waitUntil("the mark opens the popover") { app.exists("pr-popover-title") && model.prPopover.worktreeID == panel.id }
+        try await app.waitUntil("the popover of the mark is done") { !model.prPopover.isRefreshing }
+        /// Where the title of the card stands from the trailing edge of the row, where the mark is.
+        func cardFromMark() -> CGPoint? {
+            guard let row = try? frame(sidebarRow), let title = try? frame("pr-popover-title") else { return nil }
+            return CGPoint(x: title.minX - row.maxX, y: title.minY - row.minY)
+        }
+        let atMark = try cardFromMark() ?? { throw DriverFailure("no card at the mark") }()
+        // The window grows or shrinks at its top edge, which moves the row, on the side that keeps the card where it is:
+        // a card above the mark keeps its room when the window is shorter, a card below when it is taller.
+        let (resizeStep, dragStep): (CGFloat, CGFloat) = (80, 40)
+        let cardAbove = atMark.y < 0
+        let rowBeforeResize = try frame(sidebarRow)
+        var resized = host.window.frame
+        resized.size.height += cardAbove ? -resizeStep : resizeStep
+        host.window.setFrame(resized, display: true)
+        try await app.waitUntil("the resize moves the row") { (try? frame(sidebarRow))?.minY != rowBeforeResize.minY }
+        try await app.waitUntil("the card follows the mark after a resize") { cardFromMark() == atMark }
+        let split = try host.window.contentViewController as? NSSplitViewController ?? { throw DriverFailure("no split view") }()
+        let sidebarWidth = split.splitViewItems.first?.viewController.view.frame.width ?? 0
+        let rowBeforeDrag = try frame(sidebarRow)
+        split.splitView.setPosition(sidebarWidth + dragStep, ofDividerAt: 0)
+        try await app.waitUntil("the divider moves the mark") { (try? frame(sidebarRow))?.maxX != rowBeforeDrag.maxX }
+        try await app.waitUntil("the card follows the mark after a drag of the divider") { cardFromMark() == atMark }
+        try app.pressMenuKey("b")
+        try await app.waitUntil("a hidden sidebar closes the popover of its mark") { !app.exists("pr-popover") && !model.prPopover.isOpen }
+        try await app.waitUntil("the terminal has the keys after the sidebar hid") { terminalHasTheKeys() }
+
+        // 14. A row of the Worktrees section that hides with the plot panel closes its popover too, and the keys go back
+        // to the terminal.
+        try app.click("panel-worktree-\(panel.id)")
+        try await app.waitUntil("the row opens the popover again") { app.exists("pr-popover") && model.prPopover.worktreeID == panel.id }
+        try await app.waitUntil("the popover of the row is done") { !model.prPopover.isRefreshing }
+        try app.pressMenuKey("i")
+        try await app.waitUntil("a hidden panel closes the popover of its row") { !app.exists("pr-popover") && !model.prPopover.isOpen }
+        try await app.waitUntil("the terminal has the keys after the panel hid") { terminalHasTheKeys() }
     }
 
     private static func openPopoverSwitcher(_ app: DriverApp) async throws {
