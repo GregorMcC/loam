@@ -10,14 +10,14 @@ This folder holds the output of the real `loam` binary for every command that ha
 | `fixtures/<name>.json` | The normalized stdout of one run |
 | `schema/<command>.json` | The JSON Schema (draft 2020-12) of one command |
 | `schema/defs.json` | Definitions that the schemas share: plot, link, repo, change, and more |
-| `schema/error.json` | The JSON error. It holds the `details` of `stale` and `undo_clash`. |
+| `schema/error.json` | The JSON error. It holds the `details` of `stale`, `undo_clash`, `link_path_missing`, and `not_ready`. |
 
 ## How the fixtures are made
 
 The test is `core/internal/contract/`. It does these steps:
 
-1. It builds `loam` and sets `LOAM_HOME`, `HOME`, and `CLAUDE_CONFIG_DIR` to temp folders. It puts a fake `claude` first on `PATH`. It points `LOAM_GH` at a fake `gh` that answers from the made-up GitHub repo in `core/internal/contract/testdata/github.json`. It never reads `~/.loam` and never calls GitHub.
-2. It runs one scenario of commands. Each command has `--json`. The scenario covers all commands in `docs/contract.md` and each exit code that the core returns today (1, 2, 10, 11, 14, 15).
+1. It builds `loam` and sets `LOAM_HOME`, `HOME`, and `CLAUDE_CONFIG_DIR` to temp folders. It puts a fake `claude` first on `PATH`. It points `LOAM_GH` at a fake `gh` that answers from the made-up GitHub repo in `core/internal/contract/testdata/github.json`, and a fake `ssh` lets git fetch from and push to that repo. It never reads `~/.loam` and never calls GitHub.
+2. It runs one scenario of commands. Each command has `--json`. The scenario covers all commands in `docs/contract.md` and each exit code that the core returns today (1, 2, 10, 11, 12, 14, 15, 16, 17).
 3. It normalizes each output. Random IDs become fixed IDs, such as `plotaaaaab`, `linkaaaaab`, and `repoaaaaab`. Every time becomes `2026-01-01T00:00:00Z`. Temp paths become `/tmp/loam-contract/...`. Change IDs are not random, so they stay.
 4. It checks the output and the fixture against the schema in the manifest.
 5. It compares the shape of the output with the shape of the fixture. The shape is the set of keys and the JSON type of each value. Values can differ.

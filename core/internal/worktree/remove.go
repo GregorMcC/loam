@@ -124,41 +124,46 @@ type RemoveResult struct {
 // in [Find].
 //
 // It refuses while a pane is open in the worktree. Without Force, it also
-// refuses a worktree with uncommitted changes or unpushed commits. It deletes
-// the branch with `git branch -d` only, and it never touches a remote branch.
+// refuses a worktree with uncommitted changes or unpushed commits. When the
+// PR cache says that the PR of the branch is merged, and the work of the
+// worktree is in the PR (see [workInPR]), no commit counts as unpushed, and
+// it deletes the branch with `git branch -D`. Else it uses `git branch -d`.
+// A land uses the same rule (see [CheckWorkAfterPR]). It never touches a
+// remote branch.
 func Remove(s *store.Store, plotID, arg string, o RemoveOptions) (*RemoveResult, error) {
 	w, err := Find(s, plotID, o.Repo, arg)
 	if err != nil {
 		return nil, err
 	}
-	panes, err := OpenPanes(AppStateDir(), o.OpenPanes)
+	n, err := panesIn(w, o.OpenPanes)
 	if err != nil {
 		return nil, err
-	}
-	n := 0
-	for _, p := range panes {
-		if inside(p.Folder, w.Path) {
-			n++
-		}
 	}
 	if n > 0 {
 		return nil, fmt.Errorf("%d pane(s) are open in %s. Close them, then remove the worktree: %w", n, filepath.Base(w.Path), ErrPanesOpen)
 	}
 
 	st := Inspect(w)
+	// Read the PR and check the work against it before the removal: a
+	// failure here leaves the worktree as it was.
+	head, err := mergedHead(s, w)
+	if err != nil {
+		return nil, err
+	}
+	inPR := workInPR(w, st, branchTip(w), head)
 	if !o.Force {
 		var why []string
 		if st.Changed > 0 {
 			why = append(why, fmt.Sprintf("%d file(s) with uncommitted changes", st.Changed))
 		}
-		if st.Unpushed > 0 {
+		if st.Unpushed > 0 && !inPR {
 			why = append(why, fmt.Sprintf("%d commit(s) that are not pushed", st.Unpushed))
 		}
 		if st.Error != "" {
 			why = append(why, "a check failed: "+st.Error)
 		}
 		if len(why) > 0 {
-			return nil, fmt.Errorf("%s has %s. Run again with --force to remove it anyway: %w", filepath.Base(w.Path), strings.Join(why, " and "), ErrUnsafe)
+			return nil, &unsafeError{folder: filepath.Base(w.Path), why: why}
 		}
 	}
 
@@ -175,9 +180,20 @@ func Remove(s *store.Store, plotID, arg string, o RemoveOptions) (*RemoveResult,
 	}
 
 	res := &RemoveResult{Worktree: w}
-	if _, err := git(w.Repo, "branch", "-d", w.Branch); err == nil {
+	// A squash or rebase merge leaves the commits of the PR off the base
+	// branch, so git branch -d refuses. When the tip is in the merged PR,
+	// GitHub has each commit of the branch, and -D loses nothing.
+	flag := "-d"
+	if inPR {
+		flag = "-D"
+	}
+	_, err = git(w.Repo, "branch", flag, w.Branch)
+	switch {
+	case err == nil:
 		res.BranchDeleted = true
-	} else {
+	case inPR:
+		res.BranchNote = fmt.Sprintf("Kept the branch %s: %v", w.Branch, err)
+	default:
 		res.BranchNote = fmt.Sprintf("Kept the branch %s. Git says it is not fully merged. Delete it yourself with git branch -D if you do not need it.", w.Branch)
 	}
 	if err := s.RemoveWorktree(w.ID); err != nil {
@@ -187,4 +203,85 @@ func Remove(s *store.Store, plotID, arg string, o RemoveOptions) (*RemoveResult,
 		res.Warnings = append(res.Warnings, warning)
 	}
 	return res, nil
+}
+
+// unsafeError is the error of a removal that would lose work. It matches
+// [ErrUnsafe].
+type unsafeError struct {
+	folder string
+	// why lists the work that the removal would lose, for a person to read.
+	why []string
+}
+
+func (e *unsafeError) Error() string {
+	return fmt.Sprintf("%s has %s. Run again with --force to remove it anyway: %v", e.folder, e.work(), ErrUnsafe)
+}
+
+// Is makes the error match [ErrUnsafe].
+func (e *unsafeError) Is(target error) bool { return target == ErrUnsafe }
+
+// work says what work the removal would lose.
+func (e *unsafeError) work() string { return strings.Join(e.why, " and ") }
+
+// panesIn counts the open panes in the worktree: the panes of state.json and
+// the extra folders.
+func panesIn(w store.Worktree, extra []string) (int, error) {
+	panes, err := OpenPanes(AppStateDir(), extra)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, p := range panes {
+		if inside(p.Folder, w.Path) {
+			n++
+		}
+	}
+	return n, nil
+}
+
+// workInPR reports whether the work of the worktree is in the PR with the
+// head prHead: no file has changes, HEAD and the branch tip are one commit,
+// and that commit is prHead or an earlier commit of the PR (see
+// [commitInPR]). For an earlier commit, the local repo must have prHead. A
+// worktree whose folder is gone has no HEAD, so its branch tip decides. It is
+// false when prHead is empty, and when git could not read the local checks.
+//
+// After a squash or rebase merge, GitHub can delete the branch, and a fetch
+// prunes it. Then no remote branch holds the commits of the PR, but GitHub
+// has them in the PR. [Remove] and a land of a merged PR use this rule.
+func workInPR(w store.Worktree, st Status, tip, prHead string) bool {
+	if tip == "" || st.Changed > 0 || st.localFailed {
+		return false
+	}
+	if !st.Missing {
+		if h, err := git(w.Path, "rev-parse", "HEAD"); err != nil || h != tip {
+			return false
+		}
+	}
+	return commitInPR(w.Repo, tip, prHead)
+}
+
+// branchTip returns the commit at the tip of the branch of the worktree, or
+// "" when git cannot read it.
+func branchTip(w store.Worktree) string {
+	tip, err := git(w.Repo, "rev-parse", "--verify", "--quiet", "refs/heads/"+w.Branch)
+	if err != nil {
+		return ""
+	}
+	return tip
+}
+
+// mergedHead returns the head of the merged PR of the branch of the worktree
+// from the PR cache. It is empty when the cache has no merged PR, or a head
+// that is not a commit ID.
+func mergedHead(s *store.Store, w store.Worktree) (string, error) {
+	cache, err := s.PRStates()
+	if err != nil {
+		return "", err
+	}
+	c := decodeCached(cache[store.PRKey{Repo: w.Repo, Branch: w.Branch}])
+	if c.PR == nil || c.PR.State != "MERGED" || !oidPattern.MatchString(c.PR.HeadOID) {
+		return "", nil
+	}
+	return c.PR.HeadOID, nil
 }

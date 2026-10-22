@@ -613,6 +613,18 @@
     "schema": "worktree-list"
   },
   {
+    "name": "error_gh_unavailable",
+    "args": [
+      "worktree",
+      "land",
+      "plotaaaaab",
+      "add-search",
+      "--json"
+    ],
+    "exit_code": 17,
+    "schema": "error"
+  },
+  {
     "name": "worktree_list_stages",
     "args": [
       "worktree",
@@ -623,6 +635,108 @@
     ],
     "exit_code": 0,
     "schema": "worktree-list"
+  },
+  {
+    "name": "worktree_land_dry_run",
+    "args": [
+      "worktree",
+      "land",
+      "plotaaaaab",
+      "link-labels",
+      "--dry-run",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "worktree-land"
+  },
+  {
+    "name": "worktree_land_dry_run_blocked",
+    "args": [
+      "worktree",
+      "land",
+      "plotaaaaab",
+      "rename-users",
+      "--dry-run",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "worktree-land"
+  },
+  {
+    "name": "error_not_ready",
+    "args": [
+      "worktree",
+      "land",
+      "plotaaaaab",
+      "new-api",
+      "--json"
+    ],
+    "exit_code": 16,
+    "schema": "error"
+  },
+  {
+    "name": "error_not_ready_draft",
+    "args": [
+      "worktree",
+      "land",
+      "plotaaaaab",
+      "try-dark-mode",
+      "--auto",
+      "--json"
+    ],
+    "exit_code": 16,
+    "schema": "error"
+  },
+  {
+    "name": "worktree_land",
+    "args": [
+      "worktree",
+      "land",
+      "plotaaaaab",
+      "link-labels",
+      "--method",
+      "rebase",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "worktree-land"
+  },
+  {
+    "name": "worktree_land_auto",
+    "args": [
+      "worktree",
+      "land",
+      "plotaaaaab",
+      "sign-commits",
+      "--auto",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "worktree-land"
+  },
+  {
+    "name": "worktree_rerun",
+    "args": [
+      "worktree",
+      "rerun",
+      "plotaaaaab",
+      "native-panel",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "worktree-rerun"
+  },
+  {
+    "name": "worktree_update",
+    "args": [
+      "worktree",
+      "update",
+      "plotaaaaab",
+      "update-deps",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "worktree-update"
   },
   {
     "name": "archive",

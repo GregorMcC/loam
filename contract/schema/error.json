@@ -11,8 +11,11 @@
       "additionalProperties": false,
       "required": ["kind", "exit_code", "message"],
       "properties": {
-        "kind": { "enum": ["error", "invalid", "stale", "undo_clash", "link_path_missing", "contract_mismatch", "unknown_plot", "ambiguous"] },
-        "exit_code": { "enum": [1, 2, 10, 11, 12, 13, 14, 15] },
+        "kind": {
+          "enum": ["error", "invalid", "stale", "undo_clash", "link_path_missing", "contract_mismatch", "unknown_plot", "ambiguous",
+            "not_ready", "gh_unavailable"]
+        },
+        "exit_code": { "enum": [1, 2, 10, 11, 12, 13, 14, 15, 16, 17] },
         "message": { "type": "string", "minLength": 1 },
         "details": { "type": "object" }
       },
@@ -42,7 +45,15 @@
         },
         { "if": { "properties": { "kind": { "const": "contract_mismatch" } } }, "then": { "properties": { "exit_code": { "const": 13 } } } },
         { "if": { "properties": { "kind": { "const": "unknown_plot" } } }, "then": { "properties": { "exit_code": { "const": 14 } } } },
-        { "if": { "properties": { "kind": { "const": "ambiguous" } } }, "then": { "properties": { "exit_code": { "const": 15 } } } }
+        { "if": { "properties": { "kind": { "const": "ambiguous" } } }, "then": { "properties": { "exit_code": { "const": 15 } } } },
+        {
+          "if": { "properties": { "kind": { "const": "not_ready" } } },
+          "then": {
+            "properties": { "exit_code": { "const": 16 }, "details": { "$ref": "#/$defs/notReadyDetails" } },
+            "required": ["details"]
+          }
+        },
+        { "if": { "properties": { "kind": { "const": "gh_unavailable" } } }, "then": { "properties": { "exit_code": { "const": 17 } } } }
       ]
     }
   },
@@ -83,6 +94,19 @@
         "plot_id": { "$ref": "defs.json#/$defs/id" },
         "link_id": { "$ref": "defs.json#/$defs/id" },
         "path": { "description": "The absolute path, with ~ expanded.", "type": "string", "minLength": 1 }
+      }
+    },
+    "notReadyDetails": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["checks"],
+      "properties": {
+        "checks": {
+          "description": "The checks that block the land, in the order of the land result.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "defs.json#/$defs/landCheck" }
+        }
       }
     },
     "undoClashDetails": {

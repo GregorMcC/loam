@@ -50,6 +50,9 @@ func decodeFixture(schema: String, data: Data) throws {
     case "worktree-edit": _ = try d.decode(WorktreeEditResult.self, from: data)
     case "worktree-list": _ = try d.decode([WorktreeStatus].self, from: data)
     case "worktree-rm": _ = try d.decode(WorktreeRmResult.self, from: data)
+    case "worktree-land": _ = try d.decode(LandResult.self, from: data)
+    case "worktree-rerun": _ = try d.decode(RerunResult.self, from: data)
+    case "worktree-update": _ = try d.decode(UpdateResult.self, from: data)
     case "delete": _ = try d.decode(DeleteResult.self, from: data)
     default: Issue.record("No Swift type for schema \(schema)")
     }
@@ -183,6 +186,58 @@ func decodeFixture(schema: String, data: Data) throws {
         let pushed = try #require(list.first { $0.stage == .pushedNoPR })
         #expect(pushed.pr == nil)
         #expect(pushed.compareURL == "https://github.com/example/widgets/compare/main...pushed-only")
+    }
+
+    @Test func landRerunAndUpdateDecode() throws {
+        let d = JSONDecoder()
+        let plan = try d.decode(LandResult.self, from: Fixtures.data("worktree_land_dry_run"))
+        #expect(plan.dryRun && plan.ready && !plan.merged)
+        #expect(plan.methods == ["squash", "rebase"] && plan.defaultMethod == "squash")
+        #expect(plan.checks.map(\.name) == ["checks", "review", "behind_base", "conflicts", "github", "local_changes", "unpushed_commits"])
+        let blocked = try d.decode(LandResult.self, from: Fixtures.data("worktree_land_dry_run_blocked"))
+        #expect(!blocked.ready)
+        #expect(blocked.checks.filter(\.blocks) == [LandCheck(name: "review", state: "changes_requested", blocks: true)])
+        let land = try d.decode(LandResult.self, from: Fixtures.data("worktree_land"))
+        #expect(land.merged && land.method == "rebase" && land.remoteBranchDeleted && land.worktreeRemoved)
+        #expect(land.branchNote == nil && land.worktree.land == nil && land.landNote == nil)
+        // A land that cleared a stale land of another PR says so in land_note.
+        var withNote = try #require(JSONSerialization.jsonObject(with: Fixtures.data("worktree_land")) as? [String: Any])
+        withNote["land_note"] = "Loam cleared the land of PR #12 that the worktree recorded: the branch has PR #23 now."
+        let stale = try d.decode(LandResult.self, from: JSONSerialization.data(withJSONObject: withNote))
+        #expect(stale.landNote?.hasPrefix("Loam cleared the land of PR #12") == true)
+        let auto = try d.decode(LandResult.self, from: Fixtures.data("worktree_land_auto"))
+        #expect(auto.mergeLater && !auto.worktreeRemoved)
+        #expect(auto.worktree.land == PendingLand(pr: 23, method: "squash", auto: true, mergeQueue: false,
+                                                  keepWorktree: false, keepRemoteBranch: false))
+        let rerun = try d.decode(RerunResult.self, from: Fixtures.data("worktree_rerun"))
+        #expect(rerun.runs.map(\.id) == [301, 302] && rerun.runs.map(\.started) == [true, false])
+        #expect(rerun.runs[0].note == nil && rerun.runs[1].note?.contains("could not re-run the run 302") == true)
+        #expect(rerun.skippedChecks.isEmpty)
+        let update = try d.decode(UpdateResult.self, from: Fixtures.data("worktree_update"))
+        #expect(update.fetched && update.fetchNote == nil)
+        let list = try d.decode([WorktreeStatus].self, from: Fixtures.data("worktree_list_stages"))
+        let failed = try #require(list.first { $0.stage == .checksFailed }?.pr)
+        #expect(failed.failedChecks.map(\.runID) == [301, 302])
+    }
+
+    @Test func notReadyCarriesTheBlockingChecks() throws {
+        let env = try JSONDecoder().decode(ErrorEnvelope.self, from: Fixtures.data("error_not_ready"))
+        let error = LoamError.from(exitCode: 16, message: env.error.message, details: env.error.details?.data)
+        guard case .notReady(let details, _) = error else {
+            Issue.record("wrong case: \(error)")
+            return
+        }
+        #expect(details?.checks == [LandCheck(name: "conflicts", state: "conflicting", blocks: true)])
+    }
+
+    @Test func aDraftBlocksTheLand() throws {
+        let env = try JSONDecoder().decode(ErrorEnvelope.self, from: Fixtures.data("error_not_ready_draft"))
+        let error = LoamError.from(exitCode: 16, message: env.error.message, details: env.error.details?.data)
+        guard case .notReady(let details, _) = error else {
+            Issue.record("wrong case: \(error)")
+            return
+        }
+        #expect(details?.checks == [LandCheck(name: "github", state: "draft", blocks: true)])
     }
 
     @Test func theNewStageAndNoteDecode() throws {

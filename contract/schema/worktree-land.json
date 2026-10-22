@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam worktree land --json",
+  "description": "What a land did, or with --dry-run, the plan. pr is the PR before the merge. methods and default_method are empty for a PR that is merged, and checks has work_after_pr only. The notes are left out when they do not apply.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "worktree",
+    "pr",
+    "stage",
+    "changed",
+    "unpushed",
+    "methods",
+    "default_method",
+    "method",
+    "merge_queue",
+    "auto",
+    "checks",
+    "ready",
+    "dry_run",
+    "merged",
+    "merge_later",
+    "remote_branch_deleted",
+    "worktree_removed",
+    "branch_deleted"
+  ],
+  "properties": {
+    "worktree": {
+      "description": "The worktree, with the land that it records after the land.",
+      "$ref": "defs.json#/$defs/worktree"
+    },
+    "land_note": {
+      "description": "Says that the worktree recorded a land of another PR. That land is stale: its keeps do not apply, and a land that is not a dry run clears it.",
+      "type": "string",
+      "minLength": 1
+    },
+    "pr": {
+      "$ref": "defs.json#/$defs/pullRequest"
+    },
+    "stage": {
+      "$ref": "defs.json#/$defs/stage"
+    },
+    "changed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "unpushed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "methods": {
+      "description": "The merge methods that the repo allows.",
+      "type": "array",
+      "items": {
+        "$ref": "defs.json#/$defs/mergeMethod"
+      }
+    },
+    "default_method": {
+      "description": "The method that GitHub offers first. Empty for a PR that is merged.",
+      "enum": ["merge", "squash", "rebase", ""]
+    },
+    "method": {
+      "description": "The merge method of the land. Empty with a merge queue, and for a PR that is merged.",
+      "enum": ["merge", "squash", "rebase", ""]
+    },
+    "merge_queue": {
+      "description": "True when the base branch has a merge queue. The land adds the PR to the queue.",
+      "type": "boolean"
+    },
+    "auto": {
+      "type": "boolean"
+    },
+    "checks": {
+      "description": "Each check, in the order of the land. A PR that is merged has work_after_pr only.",
+      "type": "array",
+      "items": {
+        "$ref": "defs.json#/$defs/landCheck"
+      }
+    },
+    "ready": {
+      "description": "True when no check blocks.",
+      "type": "boolean"
+    },
+    "dry_run": {
+      "type": "boolean"
+    },
+    "merged": {
+      "description": "True when GitHub says that the PR is merged.",
+      "type": "boolean"
+    },
+    "merge_later": {
+      "description": "True when GitHub merges later: an auto merge, or a merge queue. Also true when Loam cannot see the merge yet (merge_note).",
+      "type": "boolean"
+    },
+    "merge_note": {
+      "description": "Why Loam does not see the merge yet.",
+      "type": "string",
+      "minLength": 1
+    },
+    "remote_branch_deleted": {
+      "description": "True when the land deleted the branch on GitHub, or GitHub had deleted it.",
+      "type": "boolean"
+    },
+    "remote_branch_note": {
+      "type": "string",
+      "minLength": 1
+    },
+    "worktree_removed": {
+      "type": "boolean"
+    },
+    "worktree_note": {
+      "type": "string",
+      "minLength": 1
+    },
+    "branch_deleted": {
+      "description": "True when the land deleted the local branch.",
+      "type": "boolean"
+    },
+    "branch_note": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

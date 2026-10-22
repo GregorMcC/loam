@@ -1,0 +1,7 @@
+{
+  "error": {
+    "exit_code": 17,
+    "kind": "gh_unavailable",
+    "message": "the origin of /tmp/loam-contract/repos/web is not on GitHub"
+  }
+}

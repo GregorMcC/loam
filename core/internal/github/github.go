@@ -1,9 +1,14 @@
-// Package github reads the pull requests of branches from GitHub through the
-// gh CLI. Loam holds no credentials: gh signs in and sends each request.
+// Package github reads the pull requests of branches from GitHub, and acts
+// on them, through the gh CLI. Loam holds no credentials: gh signs in and
+// sends each request.
 //
 // [Client.Fetch] runs at most two GraphQL queries for one repo: one for the
 // pull requests and the branches on GitHub, and one for the checks and
 // reviews of the open pull requests. It reads and never writes.
+//
+// The commands that act on GitHub are [Client.Merge], [Client.RerunFailed],
+// [Client.UpdateBranch], and [Client.DeleteBranch]. `loam worktree land`,
+// `rerun`, and `update` run them, and only when you ask.
 package github
 
 import (
@@ -152,4 +157,7 @@ type Check struct {
 	Duration int `json:"duration"`
 	// Required is true when the base branch needs the check to pass before a merge.
 	Required bool `json:"required"`
+	// RunID is the GitHub Actions run of the check, which Loam can run
+	// again. It is 0 for a check that is not a job of GitHub Actions.
+	RunID int64 `json:"run_id,omitempty"`
 }

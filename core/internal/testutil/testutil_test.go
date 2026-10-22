@@ -202,3 +202,23 @@ func TestFakeClaudeHupWaitDelaysTheExitAfterEOF(t *testing.T) {
 		t.Fatalf("the process exited %v after EOF, want at least 300ms", waited)
 	}
 }
+
+// A repo whose origin is on GitHub pushes to and fetches from the local
+// remote, with no network.
+func TestFakeGitHubServesTheLocalRemote(t *testing.T) {
+	testutil.GitEnv(t)
+	repo, remote := testutil.GitRepo(t)
+	testutil.FakeGitHub(t, remote)
+	testutil.Git(t, repo, "remote", "set-url", "origin", testutil.GitHubOrigin)
+	testutil.Git(t, repo, "commit", "--allow-empty", "-m", "second")
+	testutil.Git(t, repo, "push", "origin", "main")
+	head := testutil.Git(t, repo, "rev-parse", "HEAD")
+	if got := testutil.Git(t, remote, "rev-parse", "main"); got != head {
+		t.Fatalf("the remote has %s, want %s", got, head)
+	}
+	testutil.Git(t, repo, "update-ref", "-d", "refs/remotes/origin/main")
+	testutil.Git(t, repo, "fetch", "origin")
+	if got := testutil.Git(t, repo, "rev-parse", "origin/main"); got != head {
+		t.Fatalf("fetched %s, want %s", got, head)
+	}
+}

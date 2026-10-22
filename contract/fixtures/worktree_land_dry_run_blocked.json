@@ -1,0 +1,101 @@
+{
+  "auto": false,
+  "branch_deleted": false,
+  "changed": 0,
+  "checks": [
+    {
+      "blocks": false,
+      "name": "checks",
+      "state": "passed"
+    },
+    {
+      "blocks": true,
+      "name": "review",
+      "state": "changes_requested"
+    },
+    {
+      "blocks": false,
+      "name": "behind_base",
+      "state": "up_to_date"
+    },
+    {
+      "blocks": false,
+      "name": "conflicts",
+      "state": "none"
+    },
+    {
+      "blocks": false,
+      "name": "github",
+      "state": "clear"
+    },
+    {
+      "blocks": false,
+      "name": "local_changes",
+      "state": "none"
+    },
+    {
+      "blocks": false,
+      "name": "unpushed_commits",
+      "state": "none"
+    }
+  ],
+  "default_method": "squash",
+  "dry_run": true,
+  "merge_later": false,
+  "merge_queue": false,
+  "merged": false,
+  "method": "squash",
+  "methods": [
+    "squash",
+    "rebase"
+  ],
+  "pr": {
+    "approvals": 0,
+    "base": "main",
+    "behind_base": 0,
+    "checks": {
+      "failed": 0,
+      "passed": 1,
+      "required": 1,
+      "required_passed": 1,
+      "running": 0,
+      "state": "SUCCESS",
+      "total": 1,
+      "waiting": 0
+    },
+    "comments": 3,
+    "commits": 2,
+    "draft": false,
+    "failed_checks": [],
+    "head": "rename-users",
+    "head_oid": "5555555555555555555555555555555555555555",
+    "in_merge_queue": false,
+    "merge_state": "BLOCKED",
+    "mergeable": "MERGEABLE",
+    "number": 15,
+    "queue_position": 0,
+    "review_decision": "CHANGES_REQUESTED",
+    "state": "OPEN",
+    "title": "Rename users",
+    "url": "https://github.com/example/widgets/pull/15"
+  },
+  "ready": false,
+  "remote_branch_deleted": false,
+  "stage": "changes_requested",
+  "unpushed": 0,
+  "worktree": {
+    "base": "origin/main",
+    "branch": "rename-users",
+    "created_at": "2026-01-01T00:00:00Z",
+    "goal": "",
+    "id": "wtreaaaaag",
+    "link": null,
+    "name": "rename-users",
+    "path": "/tmp/loam-contract/loamhome/worktrees/plotaaaaab/web-rename-users",
+    "plot_id": "plotaaaaab",
+    "repo": "/tmp/loam-contract/repos/web",
+    "setup_done": false,
+    "version": 0
+  },
+  "worktree_removed": false
+}

@@ -132,6 +132,8 @@ struct FakeLoam {
             (13, { if case .contractMismatch = $0 { true } else { false } }),
             (14, { if case .unknownPlot = $0 { true } else { false } }),
             (15, { if case .ambiguous = $0 { true } else { false } }),
+            (16, { if case .notReady = $0 { true } else { false } }),
+            (17, { if case .ghUnavailable = $0 { true } else { false } }),
             (99, { if case .unknown(exitCode: 99, _) = $0 { true } else { false } }),
         ]
         for (code, matches) in cases {
@@ -143,6 +145,32 @@ struct FakeLoam {
             } catch let e as LoamError {
                 #expect(matches(e), "exit \(code) gave \(e)")
             }
+        }
+    }
+
+    @Test func worktreeLandRerunAndUpdatePassTheirFlags() async throws {
+        let fake = try FakeLoam([("worktree_land_auto", 0), ("worktree_rerun", 0), ("worktree_update", 0)])
+        let client = fake.client()
+        let land = try await client.worktreeLand(plot: "Loam", worktree: "sign-commits", method: .squash, auto: true,
+                                                 keepRemoteBranch: true, openPanes: ["/p"])
+        #expect(land.mergeLater)
+        _ = try await client.worktreeRerun(plot: "Loam", worktree: "native-panel")
+        _ = try await client.worktreeUpdate(plot: "Loam", worktree: "update-deps")
+        #expect(fake.args() == [
+            "worktree land Loam sign-commits --method squash --auto --keep-remote-branch --open-pane /p --json --actor app",
+            "worktree rerun Loam native-panel --json --actor app",
+            "worktree update Loam update-deps --json --actor app",
+        ])
+    }
+
+    @Test func aBlockedLandThrowsNotReady() async throws {
+        let fake = try FakeLoam([("error_not_ready", 16)])
+        do {
+            _ = try await fake.client().worktreeLand(plot: "Loam", worktree: "new-api")
+            Issue.record("expected a throw")
+        } catch let LoamError.notReady(details, message) {
+            #expect(details?.checks.map(\.name) == ["conflicts"])
+            #expect(!message.isEmpty)
         }
     }
 

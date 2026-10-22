@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/GregorMcC/loam/core/internal/store"
+	"github.com/GregorMcC/loam/core/internal/worktree"
 )
 
 func TestClassify(t *testing.T) {
@@ -24,6 +25,8 @@ func TestClassify(t *testing.T) {
 		{"contract", fmt.Errorf("x: %w", ErrContractMismatch), 13, "contract_mismatch"},
 		{"unknown plot", fmt.Errorf("x: %w", ErrUnknownPlot), 14, "unknown_plot"},
 		{"ambiguous", fmt.Errorf("x: %w", ErrAmbiguous), 15, "ambiguous"},
+		{"not ready", fmt.Errorf("x: %w", worktree.ErrNotReady), 16, "not_ready"},
+		{"gh unavailable", fmt.Errorf("x: %w", worktree.ErrGHUnavailable), 17, "gh_unavailable"},
 		{"not found", fmt.Errorf("x: %w", store.ErrNotFound), 1, "error"},
 	}
 	for _, c := range cases {

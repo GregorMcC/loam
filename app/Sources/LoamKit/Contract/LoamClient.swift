@@ -142,6 +142,34 @@ public struct LoamClient: Sendable {
             + openPanes.flatMap { ["--open-pane", $0] })
     }
 
+    /// `loam worktree land`: merges the PR of the worktree on GitHub, then deletes the branch on GitHub
+    /// and removes the worktree. `method` nil takes the default method of the repo. `openPanes` are as in
+    /// `worktreeRemove`. With `dryRun`, the core changes nothing and returns the plan, also when a check
+    /// blocks. Without it, a check that blocks throws `.notReady`. Throws `.ghUnavailable` when gh cannot
+    /// act on the repo.
+    public func worktreeLand(plot: String, worktree: String, method: MergeMethod? = nil, auto: Bool = false,
+                             keepWorktree: Bool = false, keepRemoteBranch: Bool = false, dryRun: Bool = false,
+                             openPanes: [String] = []) async throws -> LandResult {
+        var args = ["worktree", "land", plot, worktree]
+        if let method { args += ["--method", method.rawValue] }
+        if auto { args.append("--auto") }
+        if keepWorktree { args.append("--keep-worktree") }
+        if keepRemoteBranch { args.append("--keep-remote-branch") }
+        if dryRun { args.append("--dry-run") }
+        return try await write(args + openPanes.flatMap { ["--open-pane", $0] })
+    }
+
+    /// `loam worktree rerun`: runs the failed GitHub Actions runs of the PR of the worktree again.
+    public func worktreeRerun(plot: String, worktree: String) async throws -> RerunResult {
+        try await write(["worktree", "rerun", plot, worktree])
+    }
+
+    /// `loam worktree update`: brings the PR of the worktree up to date with its base branch on GitHub,
+    /// then fetches the branch.
+    public func worktreeUpdate(plot: String, worktree: String) async throws -> UpdateResult {
+        try await write(["worktree", "update", plot, worktree])
+    }
+
     /// `loam archive`. Does nothing when the plot is archived already. It ends no session: the app does that.
     public func archive(plot: String) async throws -> Plot {
         try await write(["archive", plot])

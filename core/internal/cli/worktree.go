@@ -21,7 +21,7 @@ func init() {
 func newWorktreeCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "worktree",
-		Short: "Make, list, or remove the git worktrees of a plot",
+		Short: "Make, list, land, or remove the git worktrees of a plot",
 		Long: "A worktree is a separate checkout of one repo of a plot, on its own branch.\n" +
 			"Loam keeps worktrees in <loam home>/worktrees/<plot-id>/<repo>-<name>/.\n" +
 			"Making or removing a worktree is not a change in the change log. A goal edit is a change, and you can undo it.\n" +
@@ -29,7 +29,8 @@ func newWorktreeCmd() *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
-	c.AddCommand(newWorktreeNewCmd(), newWorktreeEditCmd(), newWorktreeListCmd(), newWorktreeRmCmd())
+	c.AddCommand(newWorktreeNewCmd(), newWorktreeEditCmd(), newWorktreeListCmd(), newWorktreeRmCmd(),
+		newWorktreeLandCmd(), newWorktreeRerunCmd(), newWorktreeUpdateCmd())
 	return c
 }
 
@@ -387,7 +388,7 @@ func newWorktreeRmCmd() *cobra.Command {
 		Long: "Remove a worktree. <worktree> is an ID, a folder name, or a name.\n" +
 			"The command refuses while a pane is open in the worktree. It reads the panes of state.json in ~/Library/Application Support/Loam, and the folders of each --open-pane. --force does not skip this check.\n" +
 			"It also refuses a worktree with uncommitted changes or commits that are not pushed, unless you give --force.\n" +
-			"It deletes the local branch with git branch -d, so a branch that is not merged stays. It never deletes a branch on the remote.",
+			"It deletes the local branch with git branch -d, so a branch that is not merged stays. After a squash or rebase merge, git sees the branch as not merged. So when the last refresh says that the PR of the branch is merged, and the branch tip is the PR head, it uses git branch -D. It never deletes a branch on the remote.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := openStore()
