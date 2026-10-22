@@ -69,6 +69,11 @@ public enum ChangeRules {
         changes.first { $0.undoOf == change.id }
     }
 
+    /// The date of an RFC 3339 time. Nil when it does not parse.
+    public static func date(_ at: String) -> Date? {
+        wholeSeconds.date(from: at) ?? fractionalSeconds.date(from: at)
+    }
+
     /// "HH:MM" of an RFC 3339 time, in `timeZone`. Falls back to the text when it does not parse.
     public static func clock(_ at: String, timeZone: TimeZone = .current) -> String {
         guard let date = wholeSeconds.date(from: at) ?? fractionalSeconds.date(from: at) else { return at }

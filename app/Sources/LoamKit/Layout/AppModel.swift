@@ -37,6 +37,7 @@ public final class AppModel {
                 endWorktreeSelection()
             }
             attentionChanged()
+            closedShipPanes()
             onWorkspaceChange?()
             saveLayout()
         }
@@ -56,6 +57,23 @@ public final class AppModel {
     /// Panes that were saved and have not resumed, as folders. Removal refuses while one lies in the
     /// worktree. The default reads the restored panes that wait for their plot to show (ticket 29).
     @ObservationIgnored private var worktreeReads = 0
+    /// The plain worktree reads that run now, and how many applied (`refreshWorktrees` reads both).
+    @ObservationIgnored private var worktreeReadsRunning = 0
+    @ObservationIgnored private var worktreeReadsApplied = 0
+    /// When the ship state of the worktrees refreshes (ticket 108). It stays idle until `launch` starts it.
+    @ObservationIgnored public let shipRefresh: ShipRefresher
+    /// The notices that you dismissed. They stay hidden until the app quits.
+    public private(set) var dismissedShipNotices: Set<ShipNotice> = []
+    /// The panes that Sign in opened, with their plots. The plot refreshes when one closes.
+    @ObservationIgnored private var signInPanes: [PaneID: String] = [:]
+    /// Types text into the terminal of a pane as a paste, with no Return. False while the pane has no
+    /// terminal. The terminal factory sets it. `type(_:into:)` keeps the text until it returns true.
+    @ObservationIgnored public var typeIntoPane: (PaneID, String) -> Bool = { _, _ in false }
+    @ObservationIgnored private var unsentText: [PaneID: [String]] = [:]
+    /// The shells that text waits for (`typeAtPrompt`). Each holds the wait that ends at `shellWait`.
+    @ObservationIgnored private var shellWaits: [PaneID: Task<Void, Never>] = [:]
+    /// The longest time that text waits for a shell to show its first prompt.
+    @ObservationIgnored public var shellWait: Duration = .seconds(3)
     /// The plot list read that runs now, and the calls asked and served (`reloadPlots`).
     @ObservationIgnored private var plotRead: Task<Void, Never>?
     @ObservationIgnored private var plotReadsWanted = 0
@@ -120,8 +138,9 @@ public final class AppModel {
     @ObservationIgnored public var windowFrame: CGRect? { didSet { if windowFrame != oldValue { saveLayout() } } }
 
     public init(client: LoamClient = LoamClient(), stateFile: AppStateFile = AppStateFile(),
-                settingsFile: SettingsFile? = nil) {
+                settingsFile: SettingsFile? = nil, shipRefresh: ShipRefresher = ShipRefresher()) {
         self.client = client
+        self.shipRefresh = shipRefresh
         // The file is in the client's LOAM_HOME, so a test store has its own settings.
         self.settings = SettingsModel(file: settingsFile ?? SettingsFile(environment: client.environment),
                                       launchBinary: client.binary.path)
@@ -141,6 +160,14 @@ public final class AppModel {
             guard let self else { return }
             panel.suggestionRoots = settings.repoFolderPaths
         }
+        shipRefresh.run = { [weak self] in await self?.refreshWorktrees(plot: $0) }
+        shipRefresh.isRefreshable = { [weak self] id in self?.plots.contains { $0.id == id } ?? false }
+        shipRefresh.activePlot = { [weak self] in self?.workspace.activePlotID }
+        shipRefresh.otherPlots = { [weak self] in
+            guard let self else { return [] }
+            return plots.map(\.id).filter { $0 != workspace.activePlotID }
+        }
+        shipRefresh.isFrontmost = { [weak self] in self?.isFrontmost() ?? false }
     }
 
     public var sidebar: SidebarModel {
@@ -197,6 +224,7 @@ public final class AppModel {
     /// keep every pane in `state.json`. The changes in an open panel count as seen (ticket 36),
     /// and the panel stays open in the saved layout.
     public func prepareForQuit() {
+        shipRefresh.stop()
         saveLayout()
         stateWriter?.suspend()
         if panel.visible { review.markSeen(plot: workspace.activePlotID) }
@@ -218,7 +246,10 @@ public final class AppModel {
             await reloadPlots()
             await review.reload()
             await reloadWorktrees()
-            if shouldStartFeed { startFeed() }
+            if shouldStartFeed {
+                startFeed()
+                shipRefresh.start()
+            }
         }
     }
 
@@ -268,12 +299,29 @@ public final class AppModel {
         }
     }
 
-    /// Reads the worktrees of every plot. A failed read keeps the last list.
+    /// Reads the worktrees of every plot, with the ship state that the core cached. A failed read keeps
+    /// the last list.
     public func reloadWorktrees() async {
         worktreeReads += 1
         let mine = worktreeReads
+        worktreeReadsRunning += 1
+        defer { worktreeReadsRunning -= 1 }
         guard let all = try? await client.worktrees(), mine == worktreeReads else { return }  // A newer read wins.
         worktrees = Dictionary(grouping: all, by: { $0.worktree.plotID })
+        worktreeReadsApplied += 1
+    }
+
+    /// Asks GitHub for the ship state of the worktrees of one plot (`loam worktree list <plot>
+    /// --refresh`) and shows the answer (ticket 108). The refresh writes no change, so the feed does
+    /// not tell the app: the answer is how the app learns. A failed refresh keeps the last rows, and
+    /// their age shows in the section. A read of the cache that ran meanwhile can know a worktree that
+    /// the answer lacks, or hold older state, so the app reads again after it.
+    public func refreshWorktrees(plot: String) async {
+        let applied = worktreeReadsApplied
+        guard let rows = try? await client.worktrees(plot: plot, refresh: true) else { return }
+        worktreeReads += 1  // A read of the cache that started before the answer must not replace it.
+        worktrees[plot] = rows.isEmpty ? nil : rows
+        if worktreeReadsRunning > 0 || worktreeReadsApplied != applied { await reloadWorktrees() }
     }
 
     /// Reads the repos of every plot (`loam export`), then the branch of each one off the main
@@ -454,11 +502,13 @@ public final class AppModel {
 
     private func activate(_ space: Space) {
         endWorktreeSelection()
+        let opens = space != workspace.activeSpace
         // A switch with the panel open marks the plot that you leave as seen.
-        if panel.visible, space != workspace.activeSpace { review.markSeen(plot: workspace.activePlotID) }
+        if panel.visible, opens { review.markSeen(plot: workspace.activePlotID) }
         workspace.activate(space)
         useTimes?.record(SwitcherItem.key(of: space))
         if panel.visible { Task { await reloadPanel() } }
+        if opens, let plot = space.plotID { Task { await shipRefresh.refresh(plot) } }
     }
 
     /// Makes the space active, unless it is a plot that is not in the list.
@@ -650,7 +700,11 @@ public final class AppModel {
 
     /// A line from the pane's socket.
     public func apply(_ event: PaneEvent, to pane: PaneID) {
-        workspace.apply(event, to: pane)
+        let accepted = workspace.apply(event, to: pane)
+        // A session that ends a turn in a plot may have pushed, or changed a PR (ticket 108).
+        if accepted, event.event == "Stop", let plot = workspace.spec(of: pane)?.space.plotID {
+            shipRefresh.stopped(in: plot)
+        }
     }
 
     // MARK: Attention (spec 8.4)
@@ -887,6 +941,12 @@ public final class AppModel {
 
     /// The terminal reports a new title for the pane.
     public func setTerminalTitle(_ title: String, of pane: PaneID) {
+        // A shell reports its title at its prompt, so text that waits for the shell can go in. It goes
+        // in on the next turn, not inside the call of the terminal that reports the title.
+        if let wait = shellWaits.removeValue(forKey: pane) {
+            wait.cancel()
+            Task { deliverUnsentText() }
+        }
         guard terminalTitles[pane] != title else { return }
         terminalTitles[pane] = title
         guard !titleChangePending else { return }
@@ -1040,6 +1100,84 @@ public final class AppModel {
             report(error)
             return false
         }
+    }
+
+    // MARK: Ship state (ticket 108)
+
+    /// The command that Sign in types into a shell. It is not sent: you read it and press Return.
+    public static let signInCommand = "gh auth login"
+
+    /// The notices for the Worktrees section of a plot, in a fixed order, without the dismissed ones.
+    public func shipNotices(for plot: String) -> [ShipNotice] {
+        ShipNotice.current(for: worktrees[plot] ?? [], dismissed: dismissedShipNotices)
+    }
+
+    public func dismiss(_ notice: ShipNotice) {
+        dismissedShipNotices.insert(notice)
+    }
+
+    /// Settings opened: asks again about `gh` for the active plot, since you may have installed it or
+    /// signed in by now. Home has no Worktrees section, so it asks nothing.
+    public func checkGitHub() async {
+        guard let plot = workspace.activePlotID else { return }
+        await shipRefresh.refresh(plot)
+    }
+
+    /// Sign in, on the callout: a shell tab in the active plot with `gh auth login` typed and not sent.
+    /// The plot refreshes when you close that pane.
+    public func signInToGitHub() async {
+        guard let plot = workspace.activePlotID else { return }
+        let before = Set(workspace.allPaneIDs)
+        await openShellTab()
+        guard let pane = workspace.focusedPane, !before.contains(pane) else { return }
+        signInPanes[pane] = plot
+        typeAtPrompt(Self.signInCommand, into: pane)
+    }
+
+    /// Types text into a pane as a paste with no Return, as soon as the pane has a terminal.
+    /// The window builds the terminal of a new pane when it renders, so the text can wait for that.
+    public func type(_ text: String, into pane: PaneID) {
+        unsentText[pane, default: []].append(text)
+        deliverUnsentText()
+    }
+
+    /// Types text into a shell pane once the shell shows its first prompt. The terminal driver echoes
+    /// text that comes sooner, so it would show twice. A shell with shell integration reports its title
+    /// at its prompt (`setTerminalTitle`), which ends the wait. A shell that reports none gets the text
+    /// after `shellWait`.
+    public func typeAtPrompt(_ text: String, into pane: PaneID) {
+        guard terminalTitles[pane] == nil else { return type(text, into: pane) }  // It showed its prompt already.
+        unsentText[pane, default: []].append(text)
+        guard shellWaits[pane] == nil else { return }
+        let wait = shellWait
+        shellWaits[pane] = Task { [weak self] in
+            try? await Task.sleep(for: wait)
+            guard !Task.isCancelled else { return }
+            self?.shellWaits[pane] = nil
+            self?.deliverUnsentText()
+        }
+    }
+
+    /// Types the text that waits for a pane, in the order it came, into each pane that has a terminal now.
+    /// The window calls it after each render. A shell that has not shown a prompt keeps its text.
+    public func deliverUnsentText() {
+        for (pane, texts) in unsentText where shellWaits[pane] == nil {
+            var rest = texts
+            while let next = rest.first, typeIntoPane(pane, next) { rest.removeFirst() }
+            unsentText[pane] = rest.isEmpty ? nil : rest
+        }
+    }
+
+    /// The text for a pane that closed never arrives. A plot whose Sign in pane closed refreshes, since
+    /// the sign-in may be done.
+    private func closedShipPanes() {
+        guard !unsentText.isEmpty || !signInPanes.isEmpty || !shellWaits.isEmpty else { return }
+        let open = Set(storedWorkspace.allPaneIDs)
+        unsentText = unsentText.filter { open.contains($0.key) }
+        for pane in shellWaits.keys where !open.contains(pane) { shellWaits.removeValue(forKey: pane)?.cancel() }
+        let closed = signInPanes.filter { !open.contains($0.key) }
+        for pane in closed.keys { signInPanes[pane] = nil }
+        for plot in Set(closed.values) { Task { await shipRefresh.refresh(plot) } }
     }
 
     // MARK: Plot lifecycle (spec section 10)

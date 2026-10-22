@@ -81,9 +81,12 @@ public struct LoamClient: Sendable {
         try await read(["export"] + (includeChanges ? ["--changes"] : []))
     }
 
-    /// The worktrees of one plot, or of every plot, with their checks. Oldest first.
-    public func worktrees(plot: String? = nil) async throws -> [WorktreeStatus] {
-        try await read(["worktree", "list"] + (plot.map { [$0] } ?? []))
+    /// The worktrees of one plot, or of every plot, with their checks. Oldest first. With `refresh`,
+    /// the core asks GitHub for the ship state first. That takes seconds and writes only the PR cache,
+    /// not `loam.changed`, so the answer is the only way the app learns of it. Without `refresh`, the
+    /// core reads the cache.
+    public func worktrees(plot: String? = nil, refresh: Bool = false) async throws -> [WorktreeStatus] {
+        try await read(["worktree", "list"] + (plot.map { [$0] } ?? []) + (refresh ? ["--refresh"] : []))
     }
 
     // MARK: Writes (all with `--actor app`)

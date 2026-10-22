@@ -86,6 +86,20 @@ struct FakeLoam {
         #expect(try String(contentsOf: fake.stdinLog, encoding: .utf8) == "-dash text\nline 2")
     }
 
+    @Test func aWorktreeListWithRefreshAsksGitHub() async throws {
+        let fake = try FakeLoam([("worktree_list_stages", 0)])
+        let rows = try await fake.client().worktrees(plot: "plotaaaaab", refresh: true)
+        #expect(rows.count == 16)
+        #expect(fake.args() == ["worktree list plotaaaaab --refresh --json"])
+    }
+
+    @Test func aWorktreeListWithoutRefreshReadsTheCache() async throws {
+        let fake = try FakeLoam([("worktree_list", 0), ("worktree_list", 0)])
+        _ = try await fake.client().worktrees(plot: "plotaaaaab")
+        _ = try await fake.client().worktrees()
+        #expect(fake.args() == ["worktree list plotaaaaab --json", "worktree list --json"])
+    }
+
     @Test func changesSinceIsARead() async throws {
         let fake = try FakeLoam([("changes_since", 0)])
         let changes = try await fake.client().changes(since: 7)
