@@ -290,11 +290,18 @@ extension Scenarios {
         try check(!app.exists("pr-popover"), "Refresh opened the popover")
         try await app.waitUntil("the terminal has the keys after the refresh") { terminalHasTheKeys() }
 
-        // 11. The header of a pane in a split tab names the branch and the PR. The new pane runs in no worktree.
+        // 11. The header of a pane in a split tab names the branch and then the PR, in a label of its own that is
+        // never cut. The new pane runs in no worktree.
         model.split(.sideBySide)
         let splitPane = try model.workspace.focusedPane ?? { throw DriverFailure("no focused pane after the split") }()
-        try await app.waitUntil("the header of the first pane") { app.text(of: "pane-branch-\(panelPane.uuidString)") == "native-panel #16" }
-        try check(!app.exists("pane-branch-\(splitPane.uuidString)"), "a pane in no worktree names a branch")
+        try await app.waitUntil("the header of the first pane") { app.text(of: "pane-branch-\(panelPane.uuidString)") == "native-panel" }
+        try check(app.text(of: "pane-pr-\(panelPane.uuidString)") == "#16", "the PR in the header reads \(app.text(of: "pane-pr-\(panelPane.uuidString)") ?? "nothing")")
+        let (branchFrame, numberFrame) = try (frame("pane-branch-\(panelPane.uuidString)"), frame("pane-pr-\(panelPane.uuidString)"))
+        // The number stands right after the branch: nearer to it than the branch stands to the title.
+        try check(numberFrame.minX >= branchFrame.maxX && numberFrame.minX - branchFrame.maxX < PaneHeaderLayout.gap,
+                  "the PR does not follow the branch: \(branchFrame) \(numberFrame)")
+        try check(!app.exists("pane-branch-\(splitPane.uuidString)") && !app.exists("pane-pr-\(splitPane.uuidString)"),
+                  "a pane in no worktree names a branch or a PR")
         app.screenshot("pr-pane-header")
 
         // 12. A popover closes when the focus moves to another pane: it belongs to the pane that opened it.

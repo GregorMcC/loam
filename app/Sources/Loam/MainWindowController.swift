@@ -357,8 +357,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         for id in workspace.livePaneIDs {
             guard let spec = workspace.spec(of: id), let container = paneArea.container(for: id) else { continue }
             container.update(title: workspace.title(of: id, terminalTitles: titles), state: workspace.state(of: id) ?? .running,
-                             focused: id == focused, branch: model.branchLabel(of: id), attention: workspace.attention(of: id),
-                             showsHeader: workspace.showsHeader(id))
+                             focused: id == focused, branch: spec.worktree?.branch, pullRequest: model.pullRequestMark(of: id)?.label,
+                             attention: workspace.attention(of: id), showsHeader: workspace.showsHeader(id))
             let session = workspace.session(of: id)
             container.showEnded(spec.kind == .session && session?.exited == true, canResume: session?.started == true,
                               note: model.endedNote(of: id))

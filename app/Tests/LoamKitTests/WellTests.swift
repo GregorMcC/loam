@@ -51,3 +51,29 @@ import Testing
         #expect(abs(mixed.redComponent * 255 - 35.5) < 0.6)
     }
 }
+
+/// Ticket 109: the pane header names the branch and then the PR number. The number is never cut.
+@Suite struct PaneHeaderLayoutTests {
+    @Test func everyLabelKeepsItsWidthWhenThereIsRoom() {
+        let widths = PaneHeaderLayout.widths(title: 60, branch: 80, number: 24, room: 400)
+        #expect(widths == PaneHeaderLayout.Widths(title: 60, branch: 80, number: 24))
+    }
+
+    @Test func aLongBranchIsCutAndTheNumberKeepsItsWidth() {
+        let room: CGFloat = 200
+        let widths = PaneHeaderLayout.widths(title: 60, branch: 300, number: 24, room: room)
+        #expect(widths.title == 60 && widths.number == 24)
+        #expect(widths.branch == room - 60 - PaneHeaderLayout.gap - 24 - PaneHeaderLayout.numberGap)
+    }
+
+    @Test func aLongTitleLeavesRoomForTheNumber() {
+        let widths = PaneHeaderLayout.widths(title: 500, branch: 80, number: 24, room: 200)
+        #expect(widths.number == 24 && widths.branch == 0)
+        #expect(widths.title == 200 - 24 - PaneHeaderLayout.numberGap)
+    }
+
+    @Test func aWorktreeWithNoPRGivesTheBranchTheRoomOfTheNumber() {
+        let widths = PaneHeaderLayout.widths(title: 60, branch: 300, number: 0, room: 200)
+        #expect(widths.number == 0 && widths.branch == 200 - 60 - PaneHeaderLayout.gap)
+    }
+}

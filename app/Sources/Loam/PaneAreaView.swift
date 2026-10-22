@@ -21,8 +21,11 @@ final class PaneContainerView: NSView {
     private let ring = PaneRingView()
     private let titleLabel = NSTextField(labelWithString: "")
     private let stateLabel = NSTextField(labelWithString: "")
-    /// The worktree branch, after the title (spec 8.1). Hidden outside a worktree.
+    /// The worktree branch, after the title (spec 8.1). Hidden outside a worktree. A long branch is cut in
+    /// the middle, as in the sidebar.
     private let branchLabel = NSTextField(labelWithString: "")
+    /// The PR number of the worktree, after the branch (ticket 109). Hidden with no PR. It is never cut.
+    private let numberLabel = NSTextField(labelWithString: "")
 
     init(paneID: PaneID, content: NSView) {
         self.paneID = paneID
@@ -33,13 +36,16 @@ final class PaneContainerView: NSView {
         header.wantsLayer = true
         headerLine.actions = ["position": NSNull(), "bounds": NSNull(), "backgroundColor": NSNull()]
         header.layer?.addSublayer(headerLine)
-        for label in [titleLabel, branchLabel, stateLabel] {
+        for label in [titleLabel, branchLabel, numberLabel, stateLabel] {
             label.font = LoamTheme.font(LoamTheme.captionStyle)
             label.lineBreakMode = .byTruncatingTail
             header.addSubview(label)
         }
+        branchLabel.lineBreakMode = .byTruncatingMiddle
         branchLabel.isHidden = true
         branchLabel.setAccessibilityIdentifier("pane-branch-\(paneID.uuidString)")
+        numberLabel.isHidden = true
+        numberLabel.setAccessibilityIdentifier("pane-pr-\(paneID.uuidString)")
         addSubview(header)
         addSubview(content)
         addSubview(ring)
@@ -76,10 +82,11 @@ final class PaneContainerView: NSView {
     }
 
     /// `attention` sets the ring and the state words: "Needs you" in amber, "Done, unread" in blue.
+    /// `pullRequest` is the PR number of the worktree, such as "#16", shown after `branch`.
     /// `showsHeader` false hides the header (`Workspace.showsHeader`, ticket 71): in a tab of one pane
     /// the tab label, the tab dot and the ring say the same, so the terminal takes the full height.
-    func update(title: String, state: PaneState, focused: Bool, branch: String? = nil, attention: PaneAttention = .none,
-                showsHeader: Bool = true) {
+    func update(title: String, state: PaneState, focused: Bool, branch: String? = nil, pullRequest: String? = nil,
+                attention: PaneAttention = .none, showsHeader: Bool = true) {
         header.isHidden = !showsHeader
         titleLabel.stringValue = title
         let label = attention == .doneUnread ? "Done, unread" : state.label
@@ -93,11 +100,16 @@ final class PaneContainerView: NSView {
         branchLabel.stringValue = branch ?? ""
         branchLabel.isHidden = branch == nil
         branchLabel.textColor = LoamTheme.inkMuted
+        let number = branch == nil ? nil : pullRequest
+        numberLabel.stringValue = number ?? ""
+        numberLabel.isHidden = number == nil
+        numberLabel.textColor = LoamTheme.inkMuted
         isFocused = focused
         ring.attention = attention
         applyColors()
         needsLayout = true
-        setAccessibilityLabel(["\(title)", branch, label].compactMap { $0 }.joined(separator: ", "))
+        let worktree = branch.map { [$0, number].compactMap { $0 }.joined(separator: " ") }
+        setAccessibilityLabel(["\(title)", worktree, label].compactMap { $0 }.joined(separator: ", "))
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -127,14 +139,21 @@ final class PaneContainerView: NSView {
         if branchLabel.isHidden {
             titleLabel.frame = CGRect(x: 8, y: 3, width: room, height: 16)
         } else {
-            // The title keeps its width and the branch takes the rest, so a long branch gets cut first.
-            let titleWidth = min(ceil(titleLabel.attributedStringValue.size().width) + 4, room)
-            titleLabel.frame = CGRect(x: 8, y: 3, width: titleWidth, height: 16)
-            let gap: CGFloat = 8
-            branchLabel.frame = CGRect(x: 8 + titleWidth + gap, y: 3, width: max(0, room - titleWidth - gap), height: 16)
+            // The PR number is never cut. The title keeps its width and the branch takes the rest, so a long
+            // branch gets cut first.
+            let widths = PaneHeaderLayout.widths(title: Self.width(of: titleLabel), branch: Self.width(of: branchLabel),
+                                                 number: numberLabel.isHidden ? 0 : Self.width(of: numberLabel), room: room)
+            titleLabel.frame = CGRect(x: 8, y: 3, width: widths.title, height: 16)
+            branchLabel.frame = CGRect(x: titleLabel.frame.maxX + PaneHeaderLayout.gap, y: 3, width: widths.branch, height: 16)
+            numberLabel.frame = CGRect(x: branchLabel.frame.maxX + PaneHeaderLayout.numberGap, y: 3, width: widths.number, height: 16)
         }
         stateLabel.frame = CGRect(x: bounds.width - stateWidth - 8, y: 3, width: stateWidth, height: 16)
         stateLabel.alignment = .right
+    }
+
+    /// The width that a label needs for its whole text, with the room of its cell.
+    private static func width(of label: NSTextField) -> CGFloat {
+        ceil(label.attributedStringValue.size().width) + 4
     }
 
     /// A click anywhere in the pane focuses it, also when a terminal surface takes the click.

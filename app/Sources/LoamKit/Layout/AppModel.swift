@@ -1148,20 +1148,13 @@ public final class AppModel {
 
     // MARK: The PR of a pane
 
-    /// The PR of the worktree that the pane runs in, as the action bar chip shows it. Nil for a pane in
-    /// the main checkout or in Home, and for a worktree with no PR or with no folder. The ✎ mark of work
-    /// that is not pushed is a mark of the sidebar, not a PR.
+    /// The PR of the worktree that the pane runs in, as the action bar chip and the pane header show it.
+    /// Nil for a pane in the main checkout or in Home, and for a worktree with no PR or with no folder. The
+    /// ✎ mark of work that is not pushed is a mark of the sidebar, not a PR.
     public func pullRequestMark(of pane: PaneID) -> StageMark? {
         guard let id = workspace.spec(of: pane)?.worktree?.id, let status = worktreeStatus(id), status.pr != nil,
               let mark = StageMark(status), mark.number != nil else { return nil }
         return mark
-    }
-
-    /// What the header of a pane in a split tab says after its icon: the branch of its worktree and then
-    /// the PR number, such as "native-panel #16". Nil for a pane that runs in no worktree.
-    public func branchLabel(of pane: PaneID) -> String? {
-        guard let branch = workspace.spec(of: pane)?.worktree?.branch else { return nil }
-        return [branch, pullRequestMark(of: pane)?.label].compactMap { $0 }.joined(separator: " ")
     }
 
     /// The worktree that the focused pane runs in. Nil for the main checkout and for Home.

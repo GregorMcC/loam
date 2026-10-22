@@ -542,16 +542,21 @@ import Testing
         #expect(model.pullRequestMark(of: pane)?.stage == .readyToMerge)
     }
 
+    /// The pane header shows the branch from the pane spec, and then the number of the PR mark.
     @Test func thePaneHeaderShowsTheBranchAndThenThePRNumber() async throws {
         let rig = try await rig()
         let model = rig.model
+        func header() throws -> [String?] {
+            let pane = try #require(model.workspace.focusedPane)
+            return [model.workspace.spec(of: pane)?.worktree?.branch, model.pullRequestMark(of: pane)?.label]
+        }
         model.openTab(.shell, worktree: try workspaceRef(nativePanel, in: model))
-        #expect(model.branchLabel(of: try #require(model.workspace.focusedPane)) == "native-panel #16")
+        #expect(try header() == ["native-panel", "#16"])
         let local = try #require(model.worktrees[plotID]?.first { $0.stage == .notPushed })
         model.openTab(.shell, worktree: WorktreeRef(local.worktree))
-        #expect(model.branchLabel(of: try #require(model.workspace.focusedPane)) == "local-work")
+        #expect(try header() == ["local-work", nil])
         model.openTab(.shell)
-        #expect(model.branchLabel(of: try #require(model.workspace.focusedPane)) == nil)
+        #expect(try header() == [nil, nil])
     }
 
     // MARK: The switcher
