@@ -9,7 +9,9 @@ extension AppModel {
         guard let worktree = worktreeStatus(id)?.worktree else { return "The worktree is gone." }
         let text = goal.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
-            _ = try await client.worktreeEdit(plot: worktree.plotID, worktree: id, goal: text, expect: worktree.version)
+            let edited = try await client.worktreeEdit(plot: worktree.plotID, worktree: id, goal: text, expect: worktree.version)
+            // The action bar shows the changes of others, not this one.
+            if edited.changeID > 0 { onOwnChange?(edited.changeID) }
         } catch LoamError.stale {
             await reloadWorktrees()
             return "The goal changed meanwhile. Loam shows the new goal."

@@ -122,8 +122,11 @@ import Testing
         model.beginGoalEdit()
         #expect(model.prPopover.goalDraft == "Fix the login form")
         model.prPopover.setGoalDraft("  Fix the login form on phones ")
+        var own: [Int] = []
+        model.onOwnChange = { own.append($0) }
         await model.saveGoalEdit()
         #expect(rig.edits() == ["worktree edit \(plotID) \(id) --goal Fix the login form on phones --expect worktree:\(id)=0 --json --actor app"])
+        #expect(own == [27], "the action bar is told about the change")
         #expect(model.prPopover.goalDraft == nil && model.prPopover.goalProblem == nil && !model.prPopover.isSavingGoal)
         #expect(model.prPopover.isOpen, "the popover stays")
     }

@@ -66,6 +66,8 @@ extension Scenarios {
             (try? Data(contentsOf: invocationFile)).flatMap { try? JSONDecoder().decode(StartInvocation.self, from: $0) }
         }
         func resolved(_ path: String) -> String { URL(fileURLWithPath: path).resolvingSymlinksInPath().path }
+        /// What the element reads, for the message of a failed check.
+        func reads(_ id: String) -> String { app.text(of: id) ?? "nothing" }
 
         // 1. A plot with a repo that has a branch named fix-login, a Linear issue as a link, and a page that is no issue.
         let plot = try rig.newPlot("Widgets")
@@ -137,15 +139,15 @@ extension Scenarios {
         try expectStart(sheet.branch == issueBranch, "the branch reads \(sheet.branch)")
         try expectStart(sheet.goal == "Link kinds for Figma", "the goal reads \(sheet.goal)")
         try expectStart(sheet.defaultBase == "origin/main", "the default base reads \(sheet.defaultBase)")
-        try expectStart(app.text(of: "new-worktree-branch") == issueBranch, "the branch field reads \(app.text(of: "new-worktree-branch") ?? "nothing")")
-        try expectStart(app.text(of: "new-worktree-goal") == "Link kinds for Figma", "the goal field reads \(app.text(of: "new-worktree-goal") ?? "nothing")")
-        try expectStart(app.text(of: "new-worktree-repo") == "widgets", "the repo reads \(app.text(of: "new-worktree-repo") ?? "nothing")")
-        try expectStart(app.text(of: "new-worktree-base") == "origin/main", "the base reads \(app.text(of: "new-worktree-base") ?? "nothing")")
-        try expectStart(app.text(of: "new-worktree-link") == issueLabel, "the link reads \(app.text(of: "new-worktree-link") ?? "nothing")")
+        try expectStart(app.text(of: "new-worktree-branch") == issueBranch, "the branch field reads \(reads("new-worktree-branch"))")
+        try expectStart(app.text(of: "new-worktree-goal") == "Link kinds for Figma", "the goal field reads \(reads("new-worktree-goal"))")
+        try expectStart(app.text(of: "new-worktree-repo") == "widgets", "the repo reads \(reads("new-worktree-repo"))")
+        try expectStart(app.text(of: "new-worktree-base") == "origin/main", "the base reads \(reads("new-worktree-base"))")
+        try expectStart(app.text(of: "new-worktree-link") == issueLabel, "the link reads \(reads("new-worktree-link"))")
         let card = app.text(of: "new-worktree-link-card") ?? ""
         try expectStart(card.contains(issueLabel) && card.contains("Linear connector"), "the link card reads \(card)")
         try expectStart(app.text(of: "new-worktree-branch-note") == "From the issue key and the link label.",
-                        "the branch note reads \(app.text(of: "new-worktree-branch-note") ?? "nothing")")
+                        "the branch note reads \(reads("new-worktree-branch-note"))")
         try expectStart(AccessibilityProbe.shared.isEnabled("new-worktree-start"), "Start session is off for a good branch")
         try await settledShot("start-work-sheet")
 
@@ -155,7 +157,7 @@ extension Scenarios {
         let seedLine = (sheet.seedLine ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         try expectStart(seedLine.hasPrefix("- ") && seedLine.hasSuffix(": Link kinds for Figma (ENG-482, from origin/main)"),
                         "the seed line reads \(seedLine)")
-        try expectStart(app.text(of: "new-worktree-seed-line") == seedLine, "the sheet shows \(app.text(of: "new-worktree-seed-line") ?? "nothing")")
+        try expectStart(app.text(of: "new-worktree-seed-line") == seedLine, "the sheet shows \(reads("new-worktree-seed-line"))")
         try app.click("new-worktree-seed")
         try await app.waitUntil("the seed line hides") { !app.exists("new-worktree-seed-line") }
 
@@ -164,7 +166,7 @@ extension Scenarios {
         try app.fill("new-worktree-branch", with: "fix-login")
         try await app.waitUntil("the branch exists") { sheet.branchState == .exists }
         try expectStart(app.text(of: "new-worktree-branch-note") == "A branch with this name exists. Loam uses it as it is.",
-                        "the note reads \(app.text(of: "new-worktree-branch-note") ?? "nothing")")
+                        "the note reads \(reads("new-worktree-branch-note"))")
         try expectStart(!AccessibilityProbe.shared.isEnabled("new-worktree-base"), "the base is on for a branch that exists")
         try expectStart(AccessibilityProbe.shared.isEnabled("new-worktree-start"), "Start session is off for a branch that exists")
         try await settledShot("start-work-branch-exists")
@@ -172,7 +174,7 @@ extension Scenarios {
         try await app.waitUntil("the name is refused") {
             if case .invalid = sheet.branchState { return true } else { return false }
         }
-        Log.line("RESULT bad name note: \(app.text(of: "new-worktree-branch-note") ?? "nothing")")
+        Log.line("RESULT bad name note: \(reads("new-worktree-branch-note"))")
         try expectStart(app.text(of: "new-worktree-branch-note")?.isEmpty == false, "a bad name has no note")
         try expectStart(!AccessibilityProbe.shared.isEnabled("new-worktree-start"), "Start session is on for a bad name")
         try app.fill("new-worktree-branch", with: issueBranch)
@@ -213,11 +215,11 @@ extension Scenarios {
         try await app.waitUntil("the empty sheet opens") { sheet.isOpen && sheet.phase == .ready && app.exists("new-worktree-sheet") }
         try expectStart(sheet.startLink == nil && sheet.branch.isEmpty && sheet.goal.isEmpty, "the sheet from the plus is not empty")
         try expectStart(!app.exists("new-worktree-link-card"), "the sheet from the plus shows a link card")
-        try expectStart(app.text(of: "new-worktree-link") == NewWorktreeContent.noLink, "the link reads \(app.text(of: "new-worktree-link") ?? "nothing")")
-        try expectStart(app.text(of: "new-worktree-repo") == "widgets", "the repo reads \(app.text(of: "new-worktree-repo") ?? "nothing")")
+        try expectStart(app.text(of: "new-worktree-link") == NewWorktreeContent.noLink, "the link reads \(reads("new-worktree-link"))")
+        try expectStart(app.text(of: "new-worktree-repo") == "widgets", "the repo reads \(reads("new-worktree-repo"))")
         try expectStart(!AccessibilityProbe.shared.isEnabled("new-worktree-start"), "Start session is on with no branch")
         try expectStart(app.text(of: "new-worktree-goal-note") == NewWorktreeContent.goalHint,
-                        "the goal note reads \(app.text(of: "new-worktree-goal-note") ?? "nothing")")
+                        "the goal note reads \(reads("new-worktree-goal-note"))")
 
         // A goal over 20 words still saves. The note warns.
         let long = (1...24).map { "word\($0)" }.joined(separator: " ")

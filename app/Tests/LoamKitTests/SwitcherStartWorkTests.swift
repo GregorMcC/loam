@@ -99,7 +99,8 @@ import Testing
     func search(_ rig: Rig, _ query: String) async {
         rig.app.switcher.open()
         rig.app.switcher.query = query
-        let deadline = Date().addingTimeInterval(5)
+        // The wait is long, since a full run of the tests keeps the machine busy.
+        let deadline = Date().addingTimeInterval(30)
         while !rig.app.switcher.results.contains(where: { $0.item.kind == .link }), Date() < deadline {
             try? await Task.sleep(for: .milliseconds(5))
         }
