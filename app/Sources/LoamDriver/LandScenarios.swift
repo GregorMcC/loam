@@ -17,16 +17,17 @@ extension Scenarios {
         do { try await landSteps(app) } catch { app.dumpAccessibility(); throw error }
     }
 
-    /// What GitHub says about the PRs of `example/widgets`. All four stand on the commit `head`.
+    /// What GitHub says about the PRs of `example/widgets`. All five stand on the commit `head`.
     ///
     /// - 22 `link-labels`: three checks passed, approved. It is ready to merge.
     /// - 24 `fix-login`: one check passed, approved. It is ready to merge.
+    /// - 25 `rename-users`: one check passed, approved. It is ready to merge.
     /// - 16 `native-panel`: two checks failed.
     /// - 23 `unit-tests`: a check still runs, approved.
     ///
-    /// With `refusal`, GitHub refuses each merge with that message.
-    private static func landGitHub(head: String, refusal: String? = nil) throws -> Data {
-        func pull(_ number: Int, _ branch: String, title: String, mergeState: String) -> [String: Any] {
+    /// With `refusal`, GitHub refuses each merge with that message. With `newHead`, PR 25 stands on that commit.
+    private static func landGitHub(head: String, newHead: String? = nil, refusal: String? = nil) throws -> Data {
+        func pull(_ number: Int, _ branch: String, title: String, mergeState: String, head: String = head) -> [String: Any] {
             ["number": number, "title": title, "url": "https://github.com/example/widgets/pull/\(number)",
              "state": "OPEN", "mergeable": "MERGEABLE", "mergeStateStatus": mergeState, "reviewDecision": "APPROVED",
              "baseRefName": "main", "headRefName": branch, "headRefOid": head, "commits": ["totalCount": 9]]
@@ -48,18 +49,20 @@ extension Scenarios {
              "latestOpinionatedReviews": ["nodes": [["state": "APPROVED"]]], "reviewThreads": ["nodes": [Any]()]]
         }
         var state: [String: Any] = [
-            "refs": ["link-labels", "fix-login", "native-panel", "unit-tests"],
+            "refs": ["link-labels", "fix-login", "rename-users", "native-panel", "unit-tests"],
             "repository": ["mergeCommitAllowed": false, "squashMergeAllowed": true, "rebaseMergeAllowed": true,
                            "viewerDefaultMergeMethod": "SQUASH"],
             "pulls": [
                 pull(22, "link-labels", title: "Link labels", mergeState: "CLEAN"),
                 pull(24, "fix-login", title: "Fix login", mergeState: "CLEAN"),
+                pull(25, "rename-users", title: "Rename users", mergeState: "CLEAN", head: newHead ?? head),
                 pull(16, "native-panel", title: "Native panel", mergeState: "BLOCKED"),
                 pull(23, "unit-tests", title: "Unit tests", mergeState: "BLOCKED"),
             ],
             "details": [
                 "22": detail("SUCCESS", [check("build", "SUCCESS", run: 401), check("lint", "SUCCESS", run: 402), check("test", "SUCCESS", run: 403)]),
                 "24": detail("SUCCESS", [check("build", "SUCCESS", run: 404)]),
+                "25": detail("SUCCESS", [check("build", "SUCCESS", run: 410)]),
                 "16": detail("FAILURE", [check("build", "SUCCESS", run: 405), check("lint", "FAILURE", run: 406), check("test", "FAILURE", run: 407)]),
                 "23": detail("PENDING", [check("build", "SUCCESS", run: 408), check("test", nil, run: 409)]),
             ],
@@ -113,13 +116,14 @@ extension Scenarios {
             app.screenshot(name)
         }
 
-        // 1. A repo with four worktrees. native-panel has 2 files that are not committed. The remote becomes a GitHub
+        // 1. A repo with five worktrees. native-panel has 2 files that are not committed. The remote becomes a GitHub
         // address after the worktrees exist, so no git command asks the network.
         let plot = try rig.newPlot("Widgets plot")
         let widgets = try makeRepo(rig, named: "widgets")
         try rig.loam(["repo", "add", plot, widgets.path])
         let labels = try makeWorktree(rig, plot: plot, repo: widgets, name: "link-labels")
         let fix = try makeWorktree(rig, plot: plot, repo: widgets, name: "fix-login")
+        let rename = try makeWorktree(rig, plot: plot, repo: widgets, name: "rename-users")
         let panel = try makeWorktree(rig, plot: plot, repo: widgets, name: "native-panel")
         let units = try makeWorktree(rig, plot: plot, repo: widgets, name: "unit-tests")
         for name in ["notes.txt", "todo.txt"] {
@@ -144,6 +148,7 @@ extension Scenarios {
         try await app.waitUntil("the plot is active") { model.workspace.activePlotID == plot }
         try await app.waitUntil("the stages") {
             model.worktreeStatus(labels.id)?.stage == .readyToMerge && model.worktreeStatus(fix.id)?.stage == .readyToMerge
+                && model.worktreeStatus(rename.id)?.stage == .readyToMerge
                 && model.worktreeStatus(panel.id)?.stage == .checksFailed && model.worktreeStatus(units.id)?.stage == .checksRunning
         }
         func worktree(_ made: (id: String, path: String)) throws -> Worktree {
@@ -315,5 +320,72 @@ extension Scenarios {
         let changeID = added[0]["id"] as? Int ?? 0
         try await app.waitUntil("the change with Undo") { app.exists("change-undo-\(changeID)") }
         try expectLand(!app.exists("panel-worktree-\(labels.id)") && app.exists("panel-worktree-remove-\(fix.id)"), "the Worktrees section is wrong")
+        try app.pressMenuKey("i")
+        try await app.waitUntil("the panel closes again") { !app.exists("panel-whereItStands") }
+
+        // 6. Return in the Where it stands box only adds a line. A held Return repeats, and it never reaches the merge.
+        // rename-users is ready, so a merge here would show in the log of gh.
+        try expectLand(model.openLandSheet(rename.id), "the sheet did not open for rename-users")
+        try await app.waitUntil("the sheet shows the plan of rename-users") { sheetIsUp(25) }
+        // The sheet asks for the keys for a short time after it opens. A box that takes them before that loses them again.
+        await app.sleep(0.5)
+        try expectLand(AccessibilityProbe.shared.focus("land-sheet-where"), "the box took no focus")
+        try await app.waitUntil("the box has the keys") { host.window.firstResponder is NSTextView }
+        // The window is not the key window of an active app in a driver run, so SwiftUI learns about the focus of the box
+        // from the first key that the box takes.
+        try app.type("x")
+        await app.sleep(0.3)
+        func noMerge(_ key: String) async throws {
+            await app.sleep(0.6)
+            try expectLand(model.landSheet.isOpen && !model.landSheet.isMerging && merges(of: 25).isEmpty,
+                           "\(key) in the box merged: gh got \(merges(of: 25))")
+        }
+        app.press(.returnKey)
+        try await noMerge("a Return")
+        app.keyDown(.returnKey)
+        try await noMerge("the first press of a held Return")
+        for _ in 0..<3 {
+            app.keyDown(.returnKey, isARepeat: true)
+            try await noMerge("a repeat of a held Return")
+        }
+        app.keyUp(.returnKey)
+        try await noMerge("the end of a held Return")
+        app.press(.escape)
+        try await sheetCloses()
+
+        // With the keys on the sheet, Return merges a ready worktree. The PR gets a new commit after the sheet read it, so
+        // the core stops the merge and the sheet shows the message. Merge is off until the new plan is back. The repeats of the
+        // held key do nothing, and a new press takes the new commit.
+        try expectLand(model.openLandSheet(rename.id), "the sheet did not open again for rename-users")
+        try await app.waitUntil("the sheet shows the plan of rename-users again") { sheetIsUp(25) }
+        await app.sleep(0.5)
+        let newHead = String(repeating: "c", count: 40)
+        try landGitHub(head: head, newHead: newHead).write(to: ghState)
+        app.keyDown(.returnKey)
+        try await app.waitUntil("the message about the new commit", timeout: 30) {
+            app.text(of: "land-sheet-error")?.contains("has new commits since you looked at it") == true
+        }
+        try await app.waitUntil("the plan of the new commit") { model.landSheet.plan?.pr.headOID == newHead && sheetIsUp(25) }
+        try expectLand(model.landSheet.isOpen && !model.landSheet.isMerging && AccessibilityProbe.shared.isEnabled("land-sheet-merge"),
+                       "the sheet closed or stays locked after the new plan")
+        try expectLand(merges(of: 25).isEmpty, "gh got \(merges(of: 25)) for a PR with a new commit")
+        try expectLand(FileManager.default.fileExists(atPath: rename.path), "the stopped merge removed the worktree")
+        try await settledShot("land-sheet-new-commits")
+
+        // The key is still down while the core stops the merge. Its repeats do not start another one.
+        for _ in 0..<3 { app.keyDown(.returnKey, isARepeat: true) }
+        app.keyUp(.returnKey)
+        await app.sleep(1)
+        try expectLand(model.landSheet.isOpen && !model.landSheet.isMerging && merges(of: 25).isEmpty,
+                       "the repeats of a held Return merged: gh got \(merges(of: 25))")
+
+        app.press(.returnKey)
+        try await sheetCloses()
+        try await app.waitUntil("the toast of the merge by Return") {
+            app.text(of: "action-bar-toast")?.contains("Merged #25. Removed the worktree rename-users.") == true
+        }
+        let last = merges(of: 25)
+        try expectLand(last.count == 1 && last[0].contains("--match-head-commit") && last[0].last == newHead, "gh got \(last)")
+        try expectLand(!FileManager.default.fileExists(atPath: rename.path), "the worktree of rename-users is still there")
     }
 }

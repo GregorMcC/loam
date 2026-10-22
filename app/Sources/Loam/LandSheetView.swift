@@ -41,7 +41,13 @@ struct LandSheetView: View {
         .focused($focus, equals: .sheet)
         .focusEffectDisabled()
         .onKeyPress(.escape) { app.closeLandSheet(); return .handled }
-        .onKeyPress(.return) { merge(); return .handled }
+        // Only a first press of Return merges, and never one that the box takes. The box returns `.ignored` while an input
+        // method has marked text, so a Return that commits that text must not reach the merge. A held Return repeats.
+        .onKeyPress(.return, phases: .down) { _ in
+            guard focus != .editor else { return .ignored }
+            merge()
+            return .handled
+        }
         .task(id: sheet.openCount) {
             guard app.landSheet.isOpen else { return }
             arrived = false
@@ -231,11 +237,7 @@ struct LandSheetView: View {
     }
 
     private func color(of tone: LandSheetContent.Tone) -> Color {
-        switch tone {
-        case .good: LoamColor.inkMuted
-        case .note: LoamColor.inkMuted
-        case .blocking: LoamColor.rust
-        }
+        tone == .blocking ? LoamColor.rust : LoamColor.inkMuted
     }
 
     private func run(_ action: LandSheetContent.RowAction) {

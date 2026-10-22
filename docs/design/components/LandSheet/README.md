@@ -4,7 +4,7 @@ The Land sheet lands one worktree: it shows what GitHub checks, merges the PR, r
 
 - Land… in the PR popover (the primary button at Ready to merge), the Land… pill on a ready row of the Worktrees section, Land… in the Worktree actions menu (hover and context menus of a row), and Land… in the ⌘J menu. Each one shows only at Ready to merge.
 - The sheet reads the PR again when it opens, so it can show a plan that is not the plan of the row. A row that was ready can show a failed check in the sheet.
-- The sheet has a state of its own. It opens for one worktree. It closes when the PR popover, the quick switcher or the actions menu opens, and when its worktree leaves the list. A merge that runs keeps it open until the merge ends.
+- The sheet has a state of its own. It opens for one worktree. It closes when the PR popover, the quick switcher or the actions menu opens, and when its worktree leaves the list. A merge that runs keeps it open until the merge ends. While a merge runs, ⌘P, ⌘J and the other ways to open an overlay do nothing, and Quit waits for the merge to end.
 - One overlay shows at a time: the sheet closes the PR popover and the other way round.
 
 ## The card
@@ -24,7 +24,7 @@ The Land sheet lands one worktree: it shows what GitHub checks, merges the PR, r
 - After the merge: three boxes, all on by default.
   - "Remove the worktree link-labels". With open panes it reads "Close its pane and remove the worktree" or "Close its 2 panes and remove the worktree". Off passes `--keep-worktree`.
   - "Delete the branch on GitHub". Off passes `--keep-remote-branch`.
-  - "Move Where it stands on". Under it, a box with the Where it stands text: "Merged #142 Link labels from plot brief." before the current text. The box selects that sentence when it takes the keys, so one key replaces it. Return adds a line. ⌘Return merges. The caption is "Loam saves this as a change. You can undo it."
+  - "Move Where it stands on". Under it, a box with the Where it stands text: "Merged #142 Link labels from plot brief." before the current text. The box selects that sentence when it takes the keys, so one key replaces it. Return adds a line, and a held Return adds lines. ⌘Return merges. The caption is "Loam saves this as a change. You can undo it."
 - Footer: "You cannot undo a merge." in `ink-muted`, then Cancel and the primary button.
 
 ## States
@@ -33,19 +33,20 @@ The Land sheet lands one worktree: it shows what GitHub checks, merges the PR, r
 | --- | --- | --- |
 | Every check passes | Merge #142 (Return) | You cannot undo a merge. |
 | A check blocks | Merge #142, off | Fix the item in rust before you merge. Or: Fix the 2 items in rust before you merge. |
+| The plan is not ready and no row blocks | Merge #142, off | Loam cannot merge this PR yet. Open the PR on GitHub to see why. |
 | Checks running or waiting | Merge when ready (`--auto`) | GitHub merges #142 when its checks pass. Loam tidies up after the merge. |
 | A merge queue | Add to merge queue | The queue merges #142 after its checks pass on main. |
 | Already merged on GitHub | Off | #142 is merged on GitHub already. |
 
-- Merge is off whenever the plan says that a check blocks, whatever you press: the button, Return and ⌘Return all do nothing. The model checks this too (`LandSheetContent.canMerge`), so a stale click cannot start a merge.
+- Merge is off whenever the plan says that a check blocks, whatever you press: the button, Return and ⌘Return all do nothing. The model checks this too (`LandSheetContent.canMerge`), so a stale click cannot start a merge. The count in the footer is the count of rows in rust. A plan that is not ready for a reason that has no row gets the second footer text.
 - Behind base does not block unless the base branch needs the PR up to date. The Update branch button runs `loam worktree update` and reads the plan again.
 - For a merge that waits (`--auto` or a queue), Loam does not close any pane and does not save Where it stands. The third box is off and cannot be turned on, and a note under "After the merge" says "Loam does this when GitHub has merged the pull request." The tidy up after the merge is ticket 113.
 
 ## Merge
 
 1. With a merge now and the first box on, the panes of the worktree close. A pane in a turn asks first, through the close prompt ("Close its panes and merge?"). Cancel there cancels the land. The app writes the open panes to its state file before the next step, because the core refuses to remove a worktree that has an open pane.
-2. `loam worktree land` runs with the method and the flags of the boxes. The button shows a spinner and "Merging…", the checklist locks, and Cancel is off.
-3. When `land` fails, a `rust` callout inside the sheet shows the message of GitHub or of the core, and the sheet stays open. Each box keeps its value, so a second try needs one click. A check that blocks now (exit code 16) also makes the sheet read the plan again.
+2. `loam worktree land` runs with the method and the flags of the boxes, and with `--head` and the commit that the plan showed. When the PR has another head by then, the core stops with exit code 16 and a message such as "link-labels is not ready to land: PR #22 has new commits since you looked at it. Look again before you merge". Nothing merges, and the sheet reads the plan again. The button shows a spinner and "Merging…", the checklist locks, and Cancel is off.
+3. When `land` fails, a `rust` callout inside the sheet shows the message of GitHub or of the core, and the sheet stays open. Each box keeps its value, so a second try needs one click. A check that blocks now, or a new commit on the PR (exit code 16), also makes the sheet read the plan again. Until the new plan is back, the sheet is locked like a sheet that loads, so Merge cannot run on the old plan. When the worktree has left the list by then, the sheet closes.
 4. With the third box on, the app saves the text as Where it stands: one change with Undo, written by the app. It expects the version of Where it stands that the sheet read. When the plot changed meanwhile, Loam does not save the text, and the toast says so.
 5. The sheet closes, and the toast says "Merged #142. Removed the worktree link-labels." A worktree that you kept shows the Merged stage in the Worktrees section, faded, with a Remove… pill.
 
@@ -54,6 +55,7 @@ A merge writes no change-log row. The toast and the Where it stands change recor
 ## Keys
 
 - Return merges, Escape or Cancel closes, and a click on the scrim closes. A merge that runs ignores all three.
+- Only a first press of Return merges. A held Return does not repeat the merge. A Return that the box takes never merges: the box adds a line, or commits text that an input method composes.
 - The sheet takes the keys when it opens. The keys go back to the focused pane when it closes.
 
 ## The Worktrees section
