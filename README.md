@@ -60,7 +60,7 @@ A pane whose session waits on you, for example at a permission prompt, turns amb
 
 <img src="docs/images/plot-panel.png" align="right" width="300" alt="The plot panel: a change by Claude to Where it stands under New since you looked, with the word diff and Undo, then the Where it stands, What, and Why sections, repos, links, and the change log.">
 
-The plot panel (⌘I) holds the brief, the repos, and the links, and you can edit all of them. When a session changes the plot, the change shows under "New since you looked", with the diff. The change log keeps every change, and Undo reverses one.
+The plot panel (⌘I) holds the brief, the repos, and the links, and you can edit all of them. When a session changes the plot, the change shows under "New since you looked", with the diff. The change log keeps every change, and Undo reverses one. Drag a link to change the order.
 
 The diff shows the words that Claude removed and added. Read it, then keep the change or undo it.
 
@@ -241,6 +241,7 @@ loam start "Loam v1 build"                    # a seeded Claude Code session in 
 | `loam list` / `loam show <plot>` | See your plots and one plot in full |
 | `loam set <plot> where-it-stands "..."` | Move the brief on |
 | `loam open <plot> <link>` | Open a link: browser, Obsidian, Finder, or the default app |
+| `loam link move <plot> <link> <position>` | Move a link to a position, counting from 1. The seed lists links in this order. |
 | `loam changes` / `loam undo <change-id>` | Review the change log and undo one change |
 | `loam worktree new <plot> <repo> <name> --goal "..."` | Make a worktree for one task, then `loam start <plot> --worktree <name>` |
 | `loam sessions` / `loam resume <id>` | Find and resume a seeded session |
