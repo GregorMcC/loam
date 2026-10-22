@@ -68,6 +68,8 @@ public struct PaneSession: Codable, Equatable, Sendable {
             if !event.cwd.isEmpty { folder = event.cwd }
             // A compact can come in the middle of a turn. It keeps the state, and the input keeps its text.
             if event.source != "compact" || state == .running || state == .ended { set(.idle) }
+            // A new session starts with an empty input. `/clear` took the text, and the keys before the first
+            // SessionStart went to the setup command or the trust question.
             if event.source != "compact" { emptyInput() }
             return self != before
         }
