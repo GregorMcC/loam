@@ -284,7 +284,7 @@ public struct SidebarModel: Equatable, Sendable {
         orderedWorktrees = ordered
         // The row needs `gh` to work and a PR to show. A worktree of an archived plot does not count.
         let statuses = plots.flatMap { worktrees[$0.id] ?? [] }
-        let ghWorks = !statuses.contains { $0.prNote == .ghMissing || $0.prNote == .ghSignedOut }
+        let ghWorks = !statuses.contains(where: \.holdsGitHubNote)
         showsReadyToMerge = ghWorks && statuses.contains { $0.pr != nil }
         readyToMerge = showsReadyToMerge ? ordered.filter(\.isReadyToMerge) : []
         selection = activeSpace.map { space -> RowID in

@@ -48,6 +48,18 @@ private func refreshCalls(_ fake: FakeLoam) -> [String] { fake.args().filter { $
     init(_ value: Value) { self.value = value }
 }
 
+/// Changes what the fake of `fakePrinting` prints from now on.
+private func reprint(_ output: Data, from fake: FakeLoam) throws {
+    try output.write(to: fake.dir.appendingPathComponent("output.json"))
+}
+
+/// True when every one of the plots holds the note of a signed out or missing `gh` on its rows.
+@MainActor private func holdNote(_ model: AppModel, _ plots: [String]) -> Bool {
+    plots.allSatisfy { plot in
+        model.worktrees[plot]?.contains { $0.prNote == .ghSignedOut || $0.prNote == .ghMissing } == true
+    }
+}
+
 /// Waits long enough for a call that must not come.
 private func settle() async { try? await Task.sleep(for: .milliseconds(200)) }
 
@@ -344,6 +356,127 @@ private func settle() async { try? await Task.sleep(for: .milliseconds(200)) }
         let model = AppModel(client: fake.client())
         await model.refreshWorktrees(plot: plotB)
         #expect(model.shipNotices(for: plotB).isEmpty)
+    }
+
+    // MARK: The keys
+
+    /// Each refresh writes a new `pr_checked_at`, so it changes the rows, and the window renders. The
+    /// render must not move the keys to the terminal: you can type in a field of the plot panel then.
+    @Test func aRefreshThatChangesTheRowsLeavesTheKeysWhereTheyAre() async throws {
+        let fake = try fakePrinting(Data("[]".utf8))
+        let model = AppModel(client: fake.client())
+        model.shell = "/bin/zsh"
+        model.apply([plot(plotB)])
+        model.activate(plot: plotB)
+        model.openTab(.shell)
+
+        // The window: it builds the views and asks the plan about the keys at every render.
+        let plan = PaneViewPlan()
+        let terminal = NSObject()  // The view that would take the keys.
+        var renders = 0
+        var moves = 0
+        func render() {
+            renders += 1
+            for pane in plan.toBuild(in: model.workspace) { plan.didBuild(pane, in: model.workspace) }
+            if plan.movesKeys(in: model.workspace, target: terminal) { moves += 1 }
+        }
+        model.onWorkspaceChange = render
+        render()
+        #expect(moves == 1, "the first render gives the keys to the pane")
+
+        func rows(checkedAt: String) throws -> Data {
+            var rows = try #require(try JSONSerialization.jsonObject(with: Fixtures.data("worktree_list_stages")) as? [[String: Any]])
+            for index in rows.indices where rows[index]["pr_checked_at"] != nil { rows[index]["pr_checked_at"] = checkedAt }
+            return try JSONSerialization.data(withJSONObject: rows)
+        }
+        for minute in ["00:01", "00:02", "00:03"] {
+            try reprint(rows(checkedAt: "2026-01-01T12:\(minute):00Z"), from: fake)
+            let before = model.worktrees[plotB]
+            let rendersBefore = renders
+            await model.refreshWorktrees(plot: plotB)
+            #expect(model.worktrees[plotB] != before, "the refresh changed the rows")
+            #expect(renders > rendersBefore, "the window rendered for the new rows")
+        }
+        #expect(moves == 1, "a refresh moved the keys")
+    }
+
+    // MARK: A fix of gh
+
+    /// The Ready to merge row hides while any plot holds `gh_missing` or `gh_signed_out`. "Check again" asks
+    /// for one plot only, so a refresh that comes back with no such note refreshes the other plots that
+    /// still hold one, and the row comes back.
+    @Test func aRefreshWithNoGitHubNoteRefreshesTheOtherPlotsThatHoldOne() async throws {
+        let fake = try fakePrinting(try stageRows(note: "gh_signed_out"))
+        let (model, _) = await started(fake)
+        await waitUntil("both plots hold the note") { holdNote(model, [plotB, plotC]) }
+        #expect(!model.sidebar.showsReadyToMerge)
+        await settle()
+        #expect(refreshCalls(fake).count == 2, "a refresh that comes back with the note asks for no other plot")
+
+        try reprint(Fixtures.data("worktree_list_stages"), from: fake)
+        await model.checkGitHub()  // Plot B, the active plot.
+        await waitForRefreshes(fake, 4)
+        #expect(refreshCalls(fake).last == "worktree list plotaaaaac --refresh --json")
+        await waitUntil("plot C has no note") { model.worktrees[plotC]?.allSatisfy { $0.prNote != .ghSignedOut } == true }
+        #expect(model.shipNotices(for: plotC).isEmpty)
+        #expect(model.sidebar.showsReadyToMerge)
+        await settle()
+        #expect(refreshCalls(fake).count == 4)
+        model.shipRefresh.stop()
+    }
+
+    /// The plots that the first answer sent do not send each other: three plots make three refreshes after the
+    /// answer of the first, not more.
+    @Test func theRefreshesThatAFixStartsStartNoMoreOfThem() async throws {
+        let fake = try fakePrinting(try stageRows(note: "gh_missing"))
+        let sleep = ManualSleep()
+        let model = AppModel(client: fake.client(), shipRefresh: ShipRefresher(sleep: { try await sleep.sleep($0) }))
+        model.apply([plotB, plotC, "plotaaaaad"].map(plot))
+        model.activate(plot: plotB)
+        model.shipRefresh.start()
+        await waitForRefreshes(fake, 3)
+        await waitUntil("the three plots hold the note") { holdNote(model, [plotB, plotC, "plotaaaaad"]) }
+        await settle()
+        #expect(refreshCalls(fake).count == 3)
+        try reprint(Fixtures.data("worktree_list_stages"), from: fake)
+        await model.checkGitHub()
+        await waitForRefreshes(fake, 6)
+        await waitUntil("no plot holds a note") { model.worktrees.values.joined().allSatisfy { $0.prNote != .ghMissing } }
+        await settle()
+        #expect(refreshCalls(fake).count == 6, "\(refreshCalls(fake).count) refreshes, not 6")
+        model.shipRefresh.stop()
+    }
+
+    /// An answer that proves nothing about `gh` starts no refresh of another plot: a plot with no worktrees, and
+    /// a plot whose repo is not on GitHub, which `gh` never asked about.
+    @Test func anAnswerThatSaysNothingAboutGitHubRefreshesNoOtherPlot() async throws {
+        let fake = try fakePrinting(try stageRows(note: "gh_signed_out"))
+        let (model, _) = await started(fake)
+        await waitUntil("both plots hold the note") { holdNote(model, [plotB, plotC]) }
+        for answer in [Data("[]".utf8), try stageRows(note: "no_github_remote")] {
+            try reprint(answer, from: fake)
+            let before = refreshCalls(fake).count
+            await model.refreshWorktrees(plot: plotB)
+            await settle()
+            #expect(refreshCalls(fake).count == before + 1)
+            #expect(model.shipNotices(for: plotC) == [.ghSignedOut])
+        }
+        model.shipRefresh.stop()
+    }
+
+    @Test func anArchivedPlotThatHoldsANoteGetsNoRefreshAtAFix() async throws {
+        let fake = try fakePrinting(try stageRows(note: "gh_signed_out"))
+        let (model, _) = await started(fake, archived: [plotC])
+        await waitUntil("plot B holds the note") { holdNote(model, [plotB]) }
+        await model.refreshWorktrees(plot: plotC)
+        #expect(holdNote(model, [plotC]))
+        #expect(refreshCalls(fake).count == 2)
+        try reprint(Fixtures.data("worktree_list_stages"), from: fake)
+        await model.checkGitHub()
+        await settle()
+        #expect(refreshCalls(fake).count == 3)
+        #expect(refreshCalls(fake).last == "worktree list plotaaaaab --refresh --json")
+        model.shipRefresh.stop()
     }
 
     // MARK: Text for a pane

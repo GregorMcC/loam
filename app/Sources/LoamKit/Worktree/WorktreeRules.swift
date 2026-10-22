@@ -116,4 +116,12 @@ extension WorktreeStatus {
         guard let pr, let url = URL(string: pr.url), url.scheme == "https" else { return nil }
         return url
     }
+
+    /// True when `gh` is missing or signed out. GitHub cannot answer for this worktree until you fix `gh`.
+    public var holdsGitHubNote: Bool { prNote == .ghMissing || prNote == .ghSignedOut }
+
+    /// True when the last refresh of this worktree got an answer from GitHub: its folder is there and it
+    /// has no note. A worktree whose repo is not on GitHub has the note `no_github_remote`, so it does not
+    /// show that `gh` works.
+    var githubAnswered: Bool { !missing && (prNote ?? .noNote) == .noNote }
 }

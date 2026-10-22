@@ -10,8 +10,9 @@ extension LoamColor {
     static func stage(_ tone: StageTone) -> Color { ChromeTick.shared.colors[tone.rawValue]! }
 }
 
-/// The symbol of a stage at a point size. Not pushed shows the ✎ mark, which is text. No stage shows
-/// nothing. `color` is the colour of the stage unless a view gives another.
+/// The symbol of a stage at a point size. Not pushed shows the ✎ mark, which is text, at
+/// `WorktreeStage.pencilSize` for the same size. No stage shows nothing. `color` is the colour of the
+/// stage unless a view gives another.
 struct StageGlyph: View {
     let stage: WorktreeStage
     var size: CGFloat = 12
@@ -22,7 +23,9 @@ struct StageGlyph: View {
         if let symbol = stage.symbol {
             LoamIconView(icon: .symbol(symbol), size: size, color: color)
         } else if stage == .notPushed {
-            Text("\u{270E}").loamText(LoamTheme.captionStyle, color)
+            Text("\u{270E}")
+                .font(.system(size: WorktreeStage.pencilSize(symbolSize: size), weight: .medium))
+                .foregroundStyle(color)
         }
     }
 }

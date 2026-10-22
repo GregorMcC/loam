@@ -128,4 +128,93 @@ import Testing
         #expect(!plan.isClosing(session))
         #expect(plan.toBuild(in: model.workspace) == [session])
     }
+
+    // MARK: The keys (ticket 108)
+
+    /// The views that can take the keys: the terminal of a pane, and its Session ended bar. The window asks
+    /// for the keys with the view that would take them, as `PaneContainerView.focusTarget` says.
+    let terminalView = NSObject()
+    let endedBarView = NSObject()
+
+    /// The window renders for every change of the model, such as a refresh of the ship state. It moves the
+    /// first responder to the focused pane only when the focus moved, the pane got a new view, or the view
+    /// that takes the keys changed, so a render never takes the keys from a field that you type in, such as
+    /// one in the plot panel.
+    @Test func theKeysMoveOnlyWhenTheFocusOrTheViewChanges() throws {
+        let (model, session, shell) = try model(FakeLoam([]))
+        let plan = PaneViewPlan()
+        #expect(!plan.movesKeys(in: model.workspace, target: terminalView), "no pane has a view yet")
+        _ = render(plan, model.workspace)
+        #expect(plan.movesKeys(in: model.workspace, target: terminalView), "the first render gives the keys to the focused pane")
+        #expect(model.workspace.focusedPane == shell)
+        for _ in 0..<3 {
+            _ = render(plan, model.workspace)
+            #expect(!plan.movesKeys(in: model.workspace, target: terminalView), "a render with the focus where it was")
+        }
+
+        model.focus(session)
+        #expect(plan.movesKeys(in: model.workspace, target: terminalView), "another pane has the focus")
+        #expect(!plan.movesKeys(in: model.workspace, target: terminalView))
+
+        model.openTab(.shell)
+        _ = render(plan, model.workspace)
+        #expect(plan.movesKeys(in: model.workspace, target: terminalView), "a new tab")
+        model.selectTab(index: 0)
+        #expect(plan.movesKeys(in: model.workspace, target: terminalView), "another tab")
+        #expect(!plan.movesKeys(in: model.workspace, target: terminalView))
+
+        model.activate(plot: "plotaaaaac")
+        model.openTab(.shell)
+        _ = render(plan, model.workspace)
+        #expect(plan.movesKeys(in: model.workspace, target: terminalView), "another plot")
+        model.activateHome()
+        #expect(!plan.movesKeys(in: model.workspace, target: terminalView), "Home has no pane")
+        model.activate(plot: "plotaaaaac")
+        #expect(plan.movesKeys(in: model.workspace, target: terminalView), "the plot that you left for Home, where the keys have no pane")
+        model.activate(plot: "plotaaaaab")
+        #expect(plan.movesKeys(in: model.workspace, target: terminalView), "back in the first plot")
+    }
+
+    /// The Session ended bar takes the keys from the terminal of the focused pane when its session ends, with
+    /// the focus where it was: the target view changed.
+    @Test func theViewThatTakesTheKeysCanChangeWithTheFocusWhereItWas() throws {
+        let (model, _, shell) = try model(FakeLoam([]))
+        let plan = PaneViewPlan()
+        _ = render(plan, model.workspace)
+        #expect(model.workspace.focusedPane == shell)
+        #expect(plan.movesKeys(in: model.workspace, target: terminalView))
+        #expect(!plan.movesKeys(in: model.workspace, target: terminalView))
+        #expect(plan.movesKeys(in: model.workspace, target: endedBarView), "the ended bar takes the keys")
+        #expect(!plan.movesKeys(in: model.workspace, target: endedBarView))
+        #expect(plan.movesKeys(in: model.workspace, target: terminalView), "the terminal takes them back at a resume")
+    }
+
+    /// A pane with no view to take the keys leaves them nowhere, so the next view takes them.
+    @Test func aFocusedPaneWithNoTargetLeavesTheKeysNowhere() throws {
+        let (model, _, _) = try model(FakeLoam([]))
+        let plan = PaneViewPlan()
+        _ = render(plan, model.workspace)
+        #expect(plan.movesKeys(in: model.workspace, target: terminalView))
+        #expect(!plan.movesKeys(in: model.workspace, target: nil))
+        #expect(plan.movesKeys(in: model.workspace, target: terminalView))
+    }
+
+    /// A resume gives the pane a new view under the same ID. The keys move to it once it is built, and not
+    /// while the old view closes, since the pane has no view then.
+    @Test func aNewViewOfTheFocusedPaneTakesTheKeys() throws {
+        let (model, session, _) = try model(FakeLoam([]))
+        let plan = PaneViewPlan()
+        _ = render(plan, model.workspace)
+        model.focus(session)
+        #expect(plan.movesKeys(in: model.workspace, target: terminalView))
+
+        model.paneExited(session)
+        model.resumeSession(in: session)
+        let step = render(plan, model.workspace)
+        #expect(!plan.movesKeys(in: model.workspace, target: terminalView), "the pane has no view while the old process closes")
+        step.closes[session]?()
+        #expect(render(plan, model.workspace).built == [session])
+        #expect(plan.movesKeys(in: model.workspace, target: terminalView), "the new view takes the keys")
+        #expect(!plan.movesKeys(in: model.workspace, target: terminalView))
+    }
 }

@@ -321,9 +321,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window?.title = model.sidebar.windowTitle
         refreshSubtitle()
         closeActionsMenuIfContextChanged()
-        // The open switcher keeps the keyboard. A pane event or a feed update must not move it to the terminal.
-        if !model.switcher.isOpen, !actionBar.menu.isOpen, let focused = tab?.focused, let container = paneArea.container(for: focused) {
-            window?.makeFirstResponder(container.focusTarget)
+        // The keyboard moves to the focused pane only when the focus moved, the pane got a new view, or the
+        // view in it that takes the keys changed (the Session ended bar). Most renders are for other
+        // changes (a pane event, a feed update, a refresh of the ship state), and they must not take the
+        // keyboard from a field that you type in, such as one in the plot panel. The open switcher and the
+        // open actions menu keep the keyboard too.
+        let target = tab.flatMap { paneArea.container(for: $0.focused) }?.focusTarget
+        if views.movesKeys(in: workspace, target: target), !model.switcher.isOpen, !actionBar.menu.isOpen, let target {
+            window?.makeFirstResponder(target)
         }
         // A pane that opened with text to type (Sign in) has its terminal now.
         model.deliverUnsentText()

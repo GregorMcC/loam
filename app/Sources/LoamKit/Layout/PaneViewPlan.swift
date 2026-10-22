@@ -7,6 +7,8 @@ import Foundation
 /// starts in that time, two processes can hold the same session (ticket 61). So a pane gets no new
 /// view while a close of an older view of that pane runs. When the last close of the pane finishes,
 /// `onCloseFinished` runs, and the next render builds the view.
+///
+/// It also says when the window moves the keyboard to the focused pane (`movesKeys`).
 @MainActor
 public final class PaneViewPlan {
     /// Runs when the last running close of a pane finishes, so the window can build its new view.
@@ -18,6 +20,21 @@ public final class PaneViewPlan {
     private var closing: [PaneID: Int] = [:]
     /// Runs once no close runs.
     private var idleWaiters: [() -> Void] = []
+    /// A number for the view that each built pane has now, so a new view of a pane differs from its old one.
+    private var viewNumbers: [PaneID: Int] = [:]
+    private var lastViewNumber = 0
+    /// Where the keyboard was when `movesKeys` last said yes. Nil when the focused pane had no view.
+    private var keys: KeyFocus?
+
+    /// The place of the keyboard in the window: the space, its selected tab, the focused pane, the view
+    /// of that pane, and the view in it that takes the keys.
+    private struct KeyFocus: Equatable {
+        var space: Space?
+        var tab: UUID?
+        var pane: PaneID
+        var view: Int
+        var target: ObjectIdentifier
+    }
 
     public init() {}
 
@@ -36,6 +53,26 @@ public final class PaneViewPlan {
     /// Records the view that the window built for the pane.
     public func didBuild(_ pane: PaneID, in workspace: Workspace) {
         built[pane] = workspace.launch(of: pane)
+        lastViewNumber += 1
+        viewNumbers[pane] = lastViewNumber
+    }
+
+    /// True when the window must move the first responder to the focused pane now: the focus moved to
+    /// another pane, tab or space, the focused pane has a new view, or the view in it that takes the keys
+    /// changed (the Session ended bar takes them from the terminal). `target` is that view. Call it at
+    /// the end of each render. A render for any other change, such as a refresh of the ship state, a plot
+    /// list, or a pane event, must not move the keyboard: you can type in a field of the plot panel then.
+    /// A focused pane with no view or no target, and Home with no pane, leave the keyboard nowhere, so
+    /// the next view takes it.
+    public func movesKeys(in workspace: Workspace, target: AnyObject?) -> Bool {
+        guard let pane = workspace.focusedPane, let view = viewNumbers[pane], let target else {
+            keys = nil
+            return false
+        }
+        let focus = KeyFocus(space: workspace.activeSpace, tab: workspace.activeTab?.id, pane: pane, view: view,
+                             target: ObjectIdentifier(target))
+        defer { keys = focus }
+        return focus != keys
     }
 
     /// True while a close of a view of the pane runs.
@@ -48,6 +85,7 @@ public final class PaneViewPlan {
     /// returned function when the close finishes. A second call of it does nothing.
     public func closeStarted(_ pane: PaneID) -> () -> Void {
         built[pane] = nil
+        viewNumbers[pane] = nil
         closing[pane, default: 0] += 1
         var finished = false
         return { [weak self] in
@@ -65,6 +103,7 @@ public final class PaneViewPlan {
     /// Drops the record of a view that the window no longer has, with no close.
     public func forget(_ pane: PaneID) {
         built[pane] = nil
+        viewNumbers[pane] = nil
     }
 
     private func closeFinished(_ pane: PaneID) {

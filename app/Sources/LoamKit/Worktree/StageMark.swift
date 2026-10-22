@@ -67,6 +67,11 @@ extension WorktreeStage {
         }
     }
 
+    /// The point size of the ✎ of Not pushed, next to a symbol of `symbolSize` points. The ✎ is text and
+    /// it is drawn one point smaller than a symbol, so the two look as big as each other: 11 pt next to
+    /// the 12 pt symbols of the sidebar, 12 pt next to the 13 pt symbols of the Worktrees section.
+    public static func pencilSize(symbolSize: CGFloat) -> CGFloat { symbolSize - 1 }
+
     /// True for a stage that comes from a pull request. Pushed, no PR and Not pushed come from git,
     /// and no stage shows nothing.
     public var comesFromPullRequest: Bool {
@@ -82,11 +87,13 @@ public struct StageMark: Equatable, Sendable {
     public var stage: WorktreeStage
     /// The PR number. Nil for the ✎ mark.
     public var number: Int?
-    /// The words for a tooltip: the PR number, then the status line of the Worktrees section, such as
-    /// "#16 · 2 of 14 checks failed". `StatusLine` writes the line, so the two say the same. Nil for the
-    /// ✎ mark, which has none.
+    /// The words for a tooltip: the PR number, the stage in words, then the status line of the Worktrees
+    /// section, such as "#16 · Checks failed · 2 of 14 checks failed". `StatusLine` writes the line, so the
+    /// two say the same. A part of the line that repeats the stage words is left out. Nil for the ✎ mark,
+    /// which has none.
     public var tooltip: String?
-    /// The same words for VoiceOver and the driver, with commas.
+    /// The same words for VoiceOver and the driver, with commas. The symbol is hidden from VoiceOver, so
+    /// the stage words are the only place that says the stage.
     public var spoken: String
 
     /// The number as the row shows it, such as "#16". Nil for the ✎ mark.
@@ -100,9 +107,9 @@ public struct StageMark: Equatable, Sendable {
         guard !status.missing else { return nil }
         if let pr = status.pr, let stage = status.stage, stage.comesFromPullRequest {
             let line = StatusLine(of: status, now: now, timeZone: timeZone)
-            let number = Self.numberText(pr.number)
-            self.init(stage: stage, number: pr.number, tooltip: "\(number)\(StatusLine.separator)\(line.text)",
-                      spoken: ([number] + line.parts.map(\.text)).joined(separator: ", "))
+            let words = [Self.numberText(pr.number), stage.words] + line.parts.map(\.text).filter { $0 != stage.words }
+            self.init(stage: stage, number: pr.number, tooltip: words.joined(separator: StatusLine.separator),
+                      spoken: words.joined(separator: ", "))
         } else if status.changed > 0 || status.unpushed > 0 {
             self.init(stage: .notPushed, number: nil, tooltip: nil, spoken: WorktreeStage.notPushed.words)
         } else {

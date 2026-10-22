@@ -64,6 +64,8 @@ public final class AppModel {
     @ObservationIgnored public let shipRefresh: ShipRefresher
     /// The notices that you dismissed. They stay hidden until the app quits.
     public private(set) var dismissedShipNotices: Set<ShipNotice> = []
+    /// The plots that refresh because `gh` works again for another plot (`recheckGitHubNotes`).
+    @ObservationIgnored private var rechecking: Set<String> = []
     /// The panes that Sign in opened, with their plots. The plot refreshes when one closes.
     @ObservationIgnored private var signInPanes: [PaneID: String] = [:]
     /// Types text into the terminal of a pane as a paste, with no Return. False while the pane has no
@@ -323,6 +325,28 @@ public final class AppModel {
         worktreeReads += 1  // A read of the cache that started before the answer must not replace it.
         worktrees[plot] = rows.isEmpty ? nil : rows
         if worktreeReadsRunning > 0 || worktreeReadsApplied != applied { await reloadWorktrees() }
+        if !rows.contains(where: \.holdsGitHubNote), rows.contains(where: \.githubAnswered) {
+            recheckGitHubNotes(except: plot)
+        }
+    }
+
+    /// `gh` answered for a plot, so it works again. The Ready to merge row stays hidden while any plot
+    /// holds the note of a missing or signed out `gh` (`SidebarModel.showsReadyToMerge`), and "check
+    /// again" asks for one plot only. So each other plot that holds the note refreshes too. It goes
+    /// through the refresher, so it joins a refresh of that plot that runs now. A plot that refreshes for
+    /// this reason does not start the same refresh again while it runs, so the answers of these
+    /// refreshes do not start each other.
+    private func recheckGitHubNotes(except plot: String) {
+        let holding = plots.map(\.id).filter { id in
+            id != plot && !rechecking.contains(id) && worktrees[id]?.contains(where: \.holdsGitHubNote) == true
+        }
+        for id in holding {
+            rechecking.insert(id)
+            Task {
+                await shipRefresh.refresh(id)
+                rechecking.remove(id)
+            }
+        }
     }
 
     /// Reads the repos of every plot (`loam export`), then the branch of each one off the main

@@ -177,11 +177,11 @@ extension Scenarios {
         try expect(model.sidebar.readyToMerge.map(\.id) == [fixLogin.id, linkLabels.id],
                    "the ready worktrees are \(model.sidebar.readyToMerge.map(\.id))")
 
-        // The marks of the rows of the active plot: the PR number and the status line of the stage, the
-        // same words as the Worktrees section (`StatusLine`).
+        // The marks of the rows of the active plot: the PR number, the stage in words, and the status line
+        // of the stage, the same words as the Worktrees section (`StatusLine`).
         try await app.waitUntil("the marks of Alpha plot") {
-            app.text(of: "worktree-\(fixLogin.id)")?.contains("#31, 1 of 1 check passed, Approved") == true
-                && app.text(of: "worktree-\(nativePanel.id)")?.contains("#32, Review required") == true
+            app.text(of: "worktree-\(fixLogin.id)")?.contains("#31, Ready to merge, 1 of 1 check passed, Approved") == true
+                && app.text(of: "worktree-\(nativePanel.id)")?.contains("#32, Waiting for review, Review required") == true
         }
         app.screenshot("marks-and-row-night")
         NSApp.appearance = NSAppearance(named: .aqua)
@@ -204,7 +204,7 @@ extension Scenarios {
             model.workspace.activePlotID == beta && model.sidebar.selection == .worktree(linkLabels.id)
         }
         try await app.waitUntil("the marks of Beta plot") {
-            app.text(of: "worktree-\(linkLabels.id)")?.contains("#41, 1 of 1 check passed, Approved") == true
+            app.text(of: "worktree-\(linkLabels.id)")?.contains("#41, Ready to merge, 1 of 1 check passed, Approved") == true
                 && app.text(of: "worktree-\(localWork.id)")?.contains("Not pushed") == true
         }
         app.screenshot("second-ready-worktree")

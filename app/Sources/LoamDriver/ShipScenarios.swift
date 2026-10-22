@@ -259,6 +259,23 @@ extension Scenarios {
         // Home hides the panel, and the plot brings it back.
         try await app.waitUntil("the panel is back") { app.exists(row(local)) }
 
+        // 6b. A refresh never moves the keyboard. Each one writes a new `pr_checked_at`, so the rows change and
+        // the window renders. You type in the Where it stands field of the panel: the field keeps the focus,
+        // and the next keys go into it, not into the session.
+        await app.sleep(1.5)  // The refresh of the open is done, and the next one has a later time.
+        try app.fill("panel-whereItStands", with: "draft")
+        try check(AccessibilityProbe.shared.isFocused("panel-whereItStands"), "the field has no focus")
+        let rowsBefore = model.worktrees[plot]
+        try refresh(panel)
+        try await app.waitUntil("the refresh changes the rows") { model.worktrees[plot] != rowsBefore }
+        await app.sleep(0.5)
+        try check(AccessibilityProbe.shared.isFocused("panel-whereItStands"), "a refresh took the focus from the field")
+        try check(!(app.window.firstResponder is TerminalSurfaceView), "a refresh gave the keys to the terminal")
+        try app.type("more")
+        try await app.waitUntil("the keys went into the field") { app.text(of: "panel-whereItStands") == "draftmore" }
+        try app.click("panel-revert-whereItStands")
+        try await app.waitUntil("Revert drops the draft") { !app.exists("panel-revert-whereItStands") }
+
         // 7. A folder that is gone shows "Folder is gone" and no PR data.
         try fm.removeItem(atPath: local.path)
         try refresh(local)
