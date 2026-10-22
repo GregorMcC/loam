@@ -1267,7 +1267,7 @@ public final class AppModel {
         guard let prompt = worktreeStatus(start.worktree).flatMap(FixPrompt.init), let session = workspace.session(of: pane),
               SendPlan.step(for: pane, session: session, prompt: prompt.text) == .type(pane),
               typePrompt(prompt.text, into: pane) else { return }
-        onToast?(SendPlan.toast(prompt.kind, into: workspace.title(of: pane, terminalTitles: terminalTitles)))
+        onToast?(SendPlan.toastForNewSession(prompt.kind))
     }
 
     /// No `SessionStart` came in `sessionStartWait`, such as when the setup command waits for an answer. Loam

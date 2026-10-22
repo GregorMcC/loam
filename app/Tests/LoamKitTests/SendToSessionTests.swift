@@ -432,11 +432,10 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
         #expect(record.typed.isEmpty)
         // The session runs the setup question first, and you answer it. Those keys are not in the input of Claude Code.
         model.typed(in: pane)
-        model.setTerminalTitle("\u{2733} Rename users", of: pane)
         send("SessionStart", to: pane, model, source: "startup")
         #expect(record.typed.map(\.pane) == [pane])
         #expect(record.typed.map(\.text) == [try prompt(review, model)])
-        #expect(record.toasts == ["Loam typed the review into \u{2733} Rename users. Press Return to send."])
+        #expect(record.toasts == ["Loam typed the review into the new session. Press Return to send."])
         // A later SessionStart, such as /clear, types nothing more.
         send("SessionEnd", to: pane, model)
         model.apply(paneEvent("SessionStart", "next-session", source: "clear"), to: pane)

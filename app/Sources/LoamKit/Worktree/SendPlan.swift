@@ -115,4 +115,10 @@ public struct SendPlan: Equatable, Sendable {
     public static func toast(_ kind: FixPrompt.Kind, into paneName: String) -> String {
         "Loam typed the \(kind.rawValue) into \(paneName). Press Return to send."
     }
+
+    /// The toast after Loam typed a prompt into the session that Start session with prompt opened. The session may
+    /// not have set its title yet at its `SessionStart`, so the toast does not name it by the title.
+    public static func toastForNewSession(_ kind: FixPrompt.Kind) -> String {
+        toast(kind, into: "the new session")
+    }
 }
