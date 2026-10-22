@@ -12,6 +12,8 @@ import Foundation
 ///   and Send to session types only when `typedSinceSubmit` is false. `PaneInput` sorts the keys. Each input and
 ///   event, and what it does:
 ///   - A key (`.key`, or `.pick` and `.escape` outside a dialog) sets `typedSinceSubmit` and `typedSinceReturn`.
+///   - ⌃S (`.stash`) is a key that also sets `stashPending`: Claude Code keeps the draft aside and puts it back
+///     into the composer at the next submit, or after `/clear`.
 ///   - A paste, a drop, or text from dictation or a picker (`.text`) sets both, also while `dialogOpen`. The
 ///     dialog may have closed before Loam knows, and too careful is fine.
 ///   - A submit Return (`.submit`) clears `typedSinceReturn` and sets `pendingSubmit` to now.
@@ -20,7 +22,9 @@ import Foundation
 ///     input, because it can stop a turn and put a queued prompt back into the composer. Other keys do nothing.
 ///   - `UserPromptSubmit` with source `user`, or with no source (Claude Code does not send one today), takes the
 ///     composer only when `pendingSubmit` is 0 to `submitWindow` seconds old: `typedSinceSubmit` becomes
-///     `typedSinceReturn`, `loamPrompt` clears when `typedSinceReturn` is false, and `pendingSubmit` ends. With
+///     `typedSinceReturn`, `loamPrompt` clears when `typedSinceReturn` is false, and `pendingSubmit` ends. While
+///     `stashPending`, the stash comes back, so `typedSinceSubmit` stays set, `loamPrompt` stays, and
+///     `stashPending` ends. With
 ///     no pending Return it changes nothing, because a background task, a message from a peer, or an
 ///     auto-continuation starts a turn with the same line while your text stays in the composer.
 ///   - `UserPromptSubmit` with any other source changes nothing, and `pendingSubmit` stays.
@@ -38,7 +42,8 @@ import Foundation
 ///     know. So does the process exit.
 ///   - `Stop` changes nothing else, because Claude Code keeps a draft that you typed during the turn.
 ///   - `SessionStart` with source `startup`, `resume` or `clear` starts with an empty composer, so all of the
-///     rule resets. Any other source, such as `compact` or `fork`, keeps it.
+///     rule resets. While `stashPending`, the stash comes back instead: the flags stay set, `loamPrompt` stays,
+///     and `stashPending` ends. Any other source, such as `compact` or `fork`, keeps all of the rule.
 /// - The process exit means ended for good: later events change nothing.
 /// - An event for another session ID changes nothing. Only `SessionStart` takes a new ID.
 /// - Unknown events change nothing else (docs/contract.md, "Pane socket"). They close a dialog (the composer rule).
@@ -77,6 +82,8 @@ public struct PaneSession: Codable, Equatable, Sendable {
     /// True after an answer key closed a dialog, until the next hook event other than `permission_prompt`
     /// (ticket 110).
     public var dialogAnswered = false
+    /// True after ⌃S stashed a draft, until the next submit or new session puts it back (ticket 110).
+    public var stashPending = false
     /// The prompt that Send to session typed into the composer (ticket 110). It waits there until you press
     /// Return and Claude Code takes it. Nil when Loam typed nothing.
     public var loamPrompt: String?
@@ -175,7 +182,7 @@ public struct PaneSession: Codable, Equatable, Sendable {
                 answerDialog()
                 putIntoComposer()
             case .text: putIntoComposer()
-            case .key, .none: break
+            case .stash, .key, .none: break
             }
             return
         }
@@ -183,6 +190,9 @@ public struct PaneSession: Codable, Equatable, Sendable {
         case .submit:
             typedSinceReturn = false
             pendingSubmit = now
+        case .stash:
+            putIntoComposer()
+            stashPending = true
         case .pick, .escape, .key, .text: putIntoComposer()
         case .none: break
         }
@@ -208,16 +218,28 @@ public struct PaneSession: Codable, Equatable, Sendable {
     private mutating func tookSubmit(now: Date) {
         // A wall clock that steps back must not make an old Return look fresh.
         guard let pending = pendingSubmit, (0...Self.submitWindow).contains(now.timeIntervalSince(pending)) else { return }
+        pendingSubmit = nil
+        if stashPending {
+            // The stash comes back into the composer, and it can hold the prompt that Loam typed.
+            typedSinceSubmit = true
+            stashPending = false
+            return
+        }
         typedSinceSubmit = typedSinceReturn
         if !typedSinceReturn { loamPrompt = nil }
-        pendingSubmit = nil
     }
 
-    /// The composer is empty: a new session started.
+    /// The composer is empty: a new session started. A stash comes back into it.
     private mutating func emptyComposer() {
+        pendingSubmit = nil
+        if stashPending {
+            typedSinceSubmit = true
+            typedSinceReturn = true
+            stashPending = false
+            return
+        }
         typedSinceSubmit = false
         typedSinceReturn = false
-        pendingSubmit = nil
         loamPrompt = nil
     }
 

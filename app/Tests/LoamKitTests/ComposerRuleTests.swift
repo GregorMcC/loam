@@ -279,6 +279,57 @@ import Testing
         #expect(session.typedSinceSubmit)
     }
 
+    // MARK: The stash
+
+    /// ⌃S stashes the draft. Claude Code puts it back into the composer when you submit, so the submit of the next
+    /// prompt leaves the flag set. The submit after that clears it as usual.
+    @Test func aStashedDraftComesBackAfterTheSubmit() {
+        var session = session()
+        session.input(.key, now: t0)  // Draft D.
+        session.input(.stash, now: t0)
+        #expect(session.stashPending && session.typedSinceSubmit)
+        session.input(.key, now: t0)  // Q.
+        session.input(.submit, now: t0.addingTimeInterval(1))
+        session.apply(paneEvent("UserPromptSubmit", "s1"), now: t0.addingTimeInterval(1.2))
+        #expect(session.typedSinceSubmit && !session.stashPending && session.pendingSubmit == nil)
+        session.apply(paneEvent("Stop", "s1"), now: t0.addingTimeInterval(5))
+        session.input(.submit, now: t0.addingTimeInterval(6))
+        session.apply(paneEvent("UserPromptSubmit", "s1"), now: t0.addingTimeInterval(6.2))
+        #expect(!session.typedSinceSubmit)
+    }
+
+    /// The stash also comes back after `/clear`, so its `SessionStart` leaves the flag set.
+    @Test func aStashedDraftComesBackAfterAClear() {
+        var session = session()
+        session.input(.key, now: t0)
+        session.input(.stash, now: t0)
+        session.input(.submit, now: t0.addingTimeInterval(1))  // `/clear`.
+        session.apply(paneEvent("SessionStart", "s2", source: "clear"), now: t0.addingTimeInterval(1.2))
+        #expect(session.typedSinceSubmit && !session.stashPending)
+        session.input(.submit, now: t0.addingTimeInterval(2))
+        session.apply(paneEvent("UserPromptSubmit", "s2"), now: t0.addingTimeInterval(2.2))
+        #expect(!session.typedSinceSubmit)
+    }
+
+    /// The stash can hold the prompt that Loam typed, so Loam keeps it in mind until the next submit.
+    @Test func aStashKeepsLoamsPrompt() {
+        var session = session()
+        session.prompted("Fix it.")
+        session.input(.stash, now: t0)
+        session.input(.key, now: t0)
+        session.input(.submit, now: t0.addingTimeInterval(1))
+        session.apply(paneEvent("UserPromptSubmit", "s1"), now: t0.addingTimeInterval(1.2))
+        #expect(session.loamPrompt == "Fix it.")
+    }
+
+    /// The dialog takes ⌃S, so it does nothing there.
+    @Test func aStashInADialogDoesNothing() {
+        var session = session()
+        session.apply(paneEvent("PermissionRequest", "s1"), now: t0)
+        session.input(.stash, now: t0)
+        #expect(!session.stashPending && !session.typedSinceSubmit && session.dialogOpen)
+    }
+
     // MARK: New sessions
 
     /// A start, a resume and `/clear` begin with an empty composer. A compact and a fork keep it, because the text
@@ -358,6 +409,16 @@ import Testing
         #expect(key(oneKey, "1", [.command]) == .none)
         #expect(key(oneKey, "1", composing: true) == .key)
         #expect(key(oneKey, "1\u{20E3}") == .key)
+    }
+
+    /// ⌃S stashes the draft of Claude Code. Loam reads the control character, so the key of S on any layout works.
+    @Test func controlSIsTheStash() {
+        #expect(key(0x01, "\u{13}", [.control]) == .stash)
+        #expect(key(0x01, "\u{13}", [.control], isARepeat: true) == .stash)
+        #expect(key(0x01, "\u{13}", [.control, .shift]) == .key)
+        #expect(key(0x01, "\u{13}", [.control], composing: true) == .key)
+        #expect(key(0x01, "s") == .key)
+        #expect(key(0x01, "s", [.command]) == .none)
     }
 
     /// ⌘ keys scroll, change the font size, clear the screen or move the focus, so they leave the input as it is.

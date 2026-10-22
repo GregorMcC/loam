@@ -10,6 +10,8 @@ public enum PaneInput: Equatable, Sendable {
     case pick
     /// Escape. In a dialog it denies. It counts as input everywhere.
     case escape
+    /// ⌃S, which stashes the draft of Claude Code (`chat:stash`). Claude Code puts the draft back when you submit.
+    case stash
     /// Any other key that can put text into the composer or change it.
     case key
     /// A paste, a drop, or text from dictation or a picker. It does not come from a key down.
@@ -22,6 +24,8 @@ public enum PaneInput: Equatable, Sendable {
     /// Delete and forward delete. With ⌘ they clear the line.
     static let deleteKeys: Set<UInt16> = [0x33, 0x75]
     static let escapeKey: UInt16 = 0x35
+    /// The character of ⌃S. Loam reads it, not the key code, so the key of S on any layout works.
+    static let stashCharacter = "\u{13}"
     /// The characters that pick an option of a dialog. Loam reads the character, not the key code, because AZERTY
     /// needs ⇧ for a digit.
     static let pickCharacters: Set<String> = ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
@@ -39,6 +43,8 @@ public enum PaneInput: Equatable, Sendable {
             self = isARepeat ? .none : .submit
         } else if keyCode == Self.escapeKey {
             self = .escape
+        } else if mods == .control, characters == Self.stashCharacter {
+            self = .stash
         } else if !mods.contains(.control), let characters, Self.pickCharacters.contains(characters) {
             self = .pick
         } else {
