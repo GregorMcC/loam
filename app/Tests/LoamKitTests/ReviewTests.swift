@@ -203,6 +203,14 @@ private func tempState() -> AppStateFile {
         #expect(ChangeRules.entryViews(moved) == [.init(title: "Link order", body: .text("Link order changed"))])
     }
 
+    @Test func linkOrderTextNamesEachLinkInOrder() {
+        let labels = ["a": "Spec", "b": "Board", "c": "Project hub"]
+        #expect(ChangeRules.linkOrderText("c,a,b", linkLabels: labels) == "Project hub, Spec, Board")
+        #expect(ChangeRules.linkOrderText("a,x", linkLabels: labels) == "Spec, a removed link")
+        #expect(ChangeRules.linkOrderText("", linkLabels: labels) == "")
+        #expect(ChangeRules.linkOrderText(nil, linkLabels: labels) == "")
+    }
+
     @Test func undoOfAMoveSummarisesAsUndo() {
         #expect(ChangeRules.summary(move(4, old: "c,a,b", new: "a,b,c", undoOf: 3)) == "Undid change 3")
     }

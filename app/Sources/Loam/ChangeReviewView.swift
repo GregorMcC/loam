@@ -304,8 +304,8 @@ struct UndoClashSection: View {
                 ForEach(Array(prompt.undoWouldWrite.enumerated()), id: \.offset) { _, entry in
                     VStack(alignment: .leading, spacing: 2) {
                         Text(ChangeRules.itemTitle(entry.item)).loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
-                        Text("Now: \(entry.old ?? "(none)")").loamText(LoamTheme.bodyStyle).textSelection(.enabled)
-                        Text("After undo: \(entry.new ?? "(removed)")").loamText(LoamTheme.bodyStyle).textSelection(.enabled)
+                        Text("Now: \(value(entry, entry.old) ?? "(none)")").loamText(LoamTheme.bodyStyle).textSelection(.enabled)
+                        Text("After undo: \(value(entry, entry.new) ?? "(removed)")").loamText(LoamTheme.bodyStyle).textSelection(.enabled)
                     }
                     .fixedSize(horizontal: false, vertical: true)
                 }
@@ -319,5 +319,12 @@ struct UndoClashSection: View {
             }
         }
         .transition(LoamAnimation.growIn)
+    }
+
+    /// A link order shows as labels, not IDs.
+    private func value(_ entry: ChangeEntry, _ text: String?) -> String? {
+        guard entry.item == "links" else { return text }
+        let labels = ChangeRules.linkOrderText(text, linkLabels: linkLabels)
+        return labels.isEmpty ? nil : labels
     }
 }
