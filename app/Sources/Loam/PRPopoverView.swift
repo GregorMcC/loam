@@ -75,17 +75,17 @@ struct PRPopoverView: View {
     }
 
     private func cardContent(_ content: PRPopoverContent, status: WorktreeStatus) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        // One plan for each render: the button and the line under the buttons say the same thing.
+        let plan = content.primary == nil ? nil : app.sendPlan(for: status.worktree.id)
+        return VStack(alignment: .leading, spacing: 12) {
             if let stage = content.stage { header(stage, content) }
             titleBlock(content)
             if let notice = content.notice { footnote(notice, id: "pr-popover-notice") }
             rows(content)
             if let note = content.stageNote { footnote(note, id: "pr-popover-stage-note") }
             if !content.failedChecks.isEmpty { failedChecks(content) }
-            if content.primary != nil || !content.secondary.isEmpty { buttons(content, status: status) }
-            if content.primary != nil, let plan = app.sendPlan(for: status.worktree.id) {
-                footnote(plan.footnote, id: "pr-popover-send-note")
-            }
+            if content.primary != nil || !content.secondary.isEmpty { buttons(content, status: status, plan: plan) }
+            if let plan { footnote(plan.footnote, id: "pr-popover-send-note") }
             if let note = app.prPopover.note { footnote(note, id: "pr-popover-note") }
         }
         .padding(EdgeInsets(top: 14, leading: 16, bottom: 16, trailing: 16))
@@ -188,11 +188,10 @@ struct PRPopoverView: View {
 
     // MARK: Buttons
 
-    private func buttons(_ content: PRPopoverContent, status: WorktreeStatus) -> some View {
+    private func buttons(_ content: PRPopoverContent, status: WorktreeStatus, plan: SendPlan?) -> some View {
         let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: content.hasPullRequest ? 3 : 2)
         return VStack(spacing: 8) {
             if let primary = content.primary {
-                let plan = app.sendPlan(for: status.worktree.id)
                 Button { runPrimary(primary) } label: { primaryLabel(primary, plan: plan) }
                     .loamPrimaryButton()
                     .controlSize(.large)

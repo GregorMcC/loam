@@ -42,7 +42,6 @@ public final class AppModel {
             }
             attentionChanged()
             closedShipPanes()
-            closedSendPanes()
             onWorkspaceChange?()
             saveLayout()
         }
@@ -1203,7 +1202,7 @@ public final class AppModel {
     /// True when the checks of the worktree failed. The Worktree actions menu and ⌘J then offer Send failures
     /// to session.
     public func canSendFailures(_ id: String) -> Bool {
-        sendPlan(for: id)?.prompt.kind == .failures
+        worktreeStatus(id).flatMap(FixPrompt.init)?.kind == .failures
     }
 
     /// The primary button of the PR popover for a worktree that needs a fix. It types the prompt into the
@@ -1276,14 +1275,6 @@ public final class AppModel {
     private func sessionDidNotStart(_ pane: PaneID) {
         guard startPrompts.removeValue(forKey: pane) != nil else { return }
         onToast?(SendPlan.notStartedToast)
-    }
-
-    /// A pane that closed gets no prompt, and its focus time goes.
-    private func closedSendPanes() {
-        let open = Set(storedWorkspace.allPaneIDs)
-        guard lastFocus.keys.contains(where: { !open.contains($0) }) || startPrompts.keys.contains(where: { !open.contains($0) }) else { return }
-        lastFocus = lastFocus.filter { open.contains($0.key) }
-        for pane in startPrompts.keys where !open.contains(pane) { startPrompts.removeValue(forKey: pane)?.wait.cancel() }
     }
 
     // MARK: The PR of a pane
@@ -1466,12 +1457,13 @@ public final class AppModel {
     }
 
     /// The text for a pane that closed never arrives. A plot whose Sign in pane closed refreshes, since
-    /// the sign-in may be done.
+    /// the sign-in may be done. A pane that closed gets no prompt from Send to session, and its focus time goes.
     private func closedShipPanes() {
-        guard !unsentText.isEmpty || !signInPanes.isEmpty || !shellWaits.isEmpty else { return }
         let open = Set(storedWorkspace.allPaneIDs)
         unsentText = unsentText.filter { open.contains($0.key) }
+        lastFocus = lastFocus.filter { open.contains($0.key) }
         for pane in shellWaits.keys where !open.contains(pane) { shellWaits.removeValue(forKey: pane)?.cancel() }
+        for pane in startPrompts.keys where !open.contains(pane) { startPrompts.removeValue(forKey: pane)?.wait.cancel() }
         let closed = signInPanes.filter { !open.contains($0.key) }
         for pane in closed.keys { signInPanes[pane] = nil }
         for plot in Set(closed.values) { Task { await shipRefresh.refresh(plot) } }
