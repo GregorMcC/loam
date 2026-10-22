@@ -204,8 +204,8 @@ extension Scenarios {
         try expectSend(model.workspace.state(of: session) == .working, "the turn ended before the busy steps were done")
         try await closePopover()
 
-        // 5. During the turn, you paste the prompt with Edit > Paste, press ⌘⌫, and dictate a word. Each puts text into
-        // the input, so each reaches the input hook of the terminal. The driver app is not frontmost, so its window
+        // 5. During the turn, you paste the prompt with Edit > Paste, dictate a word, and press ⌘⌫. Each changes the
+        // input, so each reaches the input hook of the terminal. ⌘⌫ clears the line, so the later shots do not show it. The driver app is not frontmost, so its window
         // is not key and ⌘V finds no target. The Paste item sends its action to the terminal, as in the key window.
         try await app.waitUntil("the session has the keys in the turn") { hasTheKeys(session) }
         try expectSend(model.workspace.session(of: session)?.typedSinceSubmit == false, "the submit did not empty the input")
@@ -219,10 +219,10 @@ extension Scenarios {
         }
         NSApp.sendAction(action, to: host.window.firstResponder, from: paste)
         try await app.waitUntil("the paste counts") { inputs.value == 1 && model.workspace.session(of: session)?.typedSinceSubmit == true }
-        app.press(.delete, flags: .command)
-        try await app.waitUntil("command-delete counts") { inputs.value == 2 }
         view.insertText("\u{E9}", replacementRange: NSRange(location: NSNotFound, length: 0))
-        try await app.waitUntil("the dictated word counts") { inputs.value == 3 }
+        try await app.waitUntil("the dictated word counts") { inputs.value == 2 }
+        app.press(.delete, flags: .command)
+        try await app.waitUntil("command-delete counts") { inputs.value == 3 }
         view.onInput = hook
         try expectSend(model.workspace.state(of: session) == .working, "the turn ended before the keys of the turn")
 
