@@ -393,7 +393,7 @@ struct PlotPanelView: View {
             }
             .highPriorityGesture(linkDragGesture(link, order: order), including: canDrag ? .all : .subviews)
         } actions: {
-            linkActions(link)
+            linkActions(link, first: index == 0)
         }
         .accessibilityIdentifier("panel-link-row-\(link.id)")
         .accessibilityActions {
@@ -426,7 +426,7 @@ struct PlotPanelView: View {
             }
     }
 
-    @ViewBuilder private func linkActions(_ link: PlotLink) -> some View {
+    @ViewBuilder private func linkActions(_ link: PlotLink, first: Bool) -> some View {
         // Ticket 115: a Linear issue or a GitHub issue starts a worktree. The sheet takes its branch and goal from the link.
         if link.issue != nil, let plot = model.plot?.id {
             Button("Start work\u{2026}") { app.openNewWorktree(plot: plot, from: link) }
@@ -441,6 +441,10 @@ struct PlotPanelView: View {
                 let path = (link.target as NSString).expandingTildeInPath
                 NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
             }
+        }
+        // A long list scrolls, so a drag may not reach the top.
+        if !first {
+            Button("Move to top") { Task { await model.moveLink(id: link.id, to: 1) } }
         }
         Divider()
         Button("Edit link") { beginEditing(link) }
