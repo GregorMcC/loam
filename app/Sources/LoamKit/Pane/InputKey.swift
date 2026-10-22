@@ -26,3 +26,11 @@ public enum InputKey: Equatable, Sendable {
         }
     }
 }
+
+/// How text came into the composer of a pane (ticket 110). See the composer rule of `PaneSession`.
+public enum PaneInput: Equatable, Sendable {
+    /// A key that `InputKey` counts as input. An open dialog takes it.
+    case key
+    /// A paste, a drop, or text from dictation or a picker. It counts also while a dialog is open.
+    case text
+}

@@ -346,7 +346,7 @@ public final class TerminalRuntime {
         // libghostty reads the clipboard for a paste (⌘V, ⌘⇧V, a middle click) and for a program that asks with
         // OSC 52, and does not say which. So each read counts as input, and Send to session does not type over
         // it (ticket 110). Loam's own text goes in with `pasteWithoutReturn`, not through here.
-        view.onInput?()
+        view.onInput?(.text)
         ClipboardContent.complete(surface, contents: contents, available: available, state: state)
         return GHOSTTY_CLIPBOARD_READ_STARTED
     }

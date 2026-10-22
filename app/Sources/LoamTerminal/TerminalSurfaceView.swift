@@ -65,7 +65,8 @@ public final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClien
     /// one), ⌘⌫ and ⌘⌦ (they clear the line), a read of the clipboard (⌘V, ⌘⇧V, a middle click), text from an
     /// input method or dictation, and a drop. Other ⌘ keys scroll, zoom or move the focus, so they do not count.
     /// Text that `pasteWithoutReturn` types is not yours, so it does not count. `InputKey` has the rule for keys.
-    public var onInput: (() -> Void)?
+    /// A key comes as `.key`, and every other input as `.text`, because an open dialog takes only keys.
+    public var onInput: ((PaneInput) -> Void)?
     /// You pressed a plain Return, which sends the line (ticket 110). It is not input. A held Return, a Return
     /// with a modifier, and a Return that ends a composition do not call it.
     public var onReturn: (() -> Void)?
@@ -509,11 +510,10 @@ public final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClien
         // A held key that started in another view. A key held here started with a key down that is not a repeat.
         if event.isARepeat, dropsRepeats { return }
         dropsRepeats = false
-        // The input first: a key that answers a dialog must find the dialog still open, and `onKeyInput` ends it.
         switch InputKey(keyCode: event.keyCode, mods: KeyChord.Mods(event.modifierFlags), isARepeat: event.isARepeat,
                         composing: markedText.length > 0) {
         case .submit: onReturn?()
-        case .input: onInput?()
+        case .input: onInput?(.key)
         case .none: break
         }
         if !event.modifierFlags.contains(.command), TypingKey.clearsNeedsYou(event.characters) { onKeyInput?() }
@@ -830,7 +830,7 @@ public final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClien
         // comes from dictation, the emoji and character viewer, the accent popup, or a candidate picked with the
         // mouse, so it counts as input here.
         guard !text.isEmpty else { return }
-        onInput?()
+        onInput?(.text)
         _ = committedText(GHOSTTY_ACTION_PRESS, text)
     }
 
@@ -865,7 +865,7 @@ extension TerminalSurfaceView {
     @discardableResult
     public func drop(_ pasteboard: NSPasteboard) -> Bool {
         guard let text = pasteboard.loamString(), !text.isEmpty else { return false }
-        onInput?()
+        onInput?(.text)
         DispatchQueue.main.async { [weak self] in self?.sendText(text) }
         return true
     }

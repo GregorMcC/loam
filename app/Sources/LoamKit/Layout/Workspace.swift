@@ -372,12 +372,12 @@ public struct Workspace: Codable, Equatable, Sendable {
 
     // MARK: Sessions in panes
 
-    /// Applies a line from the pane's socket. A shell pane raises no state (spec 8.4), so it
+    /// Applies a line from the pane's socket that came at `now`. A shell pane raises no state (spec 8.4), so it
     /// ignores the line. Returns true when the pane changed.
     @discardableResult
-    public mutating func apply(_ event: PaneEvent, to pane: PaneID) -> Bool {
+    public mutating func apply(_ event: PaneEvent, to pane: PaneID, now: Date = Date()) -> Bool {
         guard specs[pane]?.kind == .session else { return false }
-        return sessions[pane]?.apply(event) ?? false
+        return sessions[pane]?.apply(event, now: now) ?? false
     }
 
     /// The pane's process exited. A seeded pane stays and shows "Session ended".
@@ -391,14 +391,14 @@ public struct Workspace: Codable, Equatable, Sendable {
         sessions[pane]?.typed() ?? false
     }
 
-    /// You put something into the input of the pane: a key, a paste, or a drop (ticket 110).
-    public mutating func input(in pane: PaneID) {
-        sessions[pane]?.input()
+    /// You put something into the composer of the pane (ticket 110).
+    public mutating func input(_ kind: PaneInput, in pane: PaneID) {
+        sessions[pane]?.input(kind)
     }
 
-    /// You pressed a Return that can send the input of the pane (ticket 110).
-    public mutating func pressedReturn(in pane: PaneID) {
-        sessions[pane]?.pressedReturn()
+    /// You pressed a submit Return in the pane at `now` (ticket 110).
+    public mutating func pressedReturn(in pane: PaneID, now: Date = Date()) {
+        sessions[pane]?.pressedReturn(now: now)
     }
 
     /// Send to session typed `prompt` into the input of the pane (ticket 110).

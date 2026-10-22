@@ -801,9 +801,12 @@ public final class AppModel {
 
     // MARK: Sessions in panes
 
+    /// The clock of the composer rule (ticket 110). Tests set it.
+    @ObservationIgnored public var now: () -> Date = { Date() }
+
     /// A line from the pane's socket.
     public func apply(_ event: PaneEvent, to pane: PaneID) {
-        let accepted = workspace.apply(event, to: pane)
+        let accepted = workspace.apply(event, to: pane, now: now())
         // A session that ends a turn in a plot may have pushed, or changed a PR (ticket 108).
         if accepted, event.event == "Stop", let plot = workspace.spec(of: pane)?.space.plotID {
             shipRefresh.stopped(in: plot)
@@ -831,27 +834,24 @@ public final class AppModel {
         workspace.typed(in: pane)
     }
 
-    /// You put something into the input of the pane: a key, a paste, or a drop. An arrow key can recall a prompt
-    /// and Tab can complete one, so they count too. Send to session does not type into the pane until Claude Code
-    /// takes the input (ticket 110). The keys of a dialog do not count. The workspace changes only on the first
-    /// input after a Return or a submit.
-    public func input(in pane: PaneID) {
+    /// You put something into the composer of the pane: a key, a paste, a drop, or text from dictation. An arrow
+    /// key can recall a prompt and Tab can complete one, so they count too. Send to session does not type into
+    /// the pane until Claude Code takes the composer (the composer rule of `PaneSession`). The workspace changes
+    /// only on the first input after a Return or a submit.
+    public func input(_ kind: PaneInput = .key, in pane: PaneID) {
         guard var session = workspace.session(of: pane) else { return }
         let before = session
-        session.input()
+        session.input(kind)
         guard session != before else { return }
-        workspace.input(in: pane)
+        workspace.input(kind, in: pane)
     }
 
-    /// You pressed a plain Return in the pane: it sends the input of Claude Code, or does nothing when the input
-    /// is empty (ticket 110). The `UserPromptSubmit` of the prompt comes later. The workspace changes only when
-    /// you typed since the last Return.
+    /// You pressed a plain Return in the pane: it sends the composer of Claude Code, or does nothing when the
+    /// composer is empty (ticket 110). The `UserPromptSubmit` of the prompt comes later. A Return in a dialog
+    /// changes nothing.
     public func pressedReturn(in pane: PaneID) {
-        guard var session = workspace.session(of: pane) else { return }
-        let before = session
-        session.pressedReturn()
-        guard session != before else { return }
-        workspace.pressedReturn(in: pane)
+        guard workspace.session(of: pane)?.dialogOpen == false else { return }
+        workspace.pressedReturn(in: pane, now: now())
     }
 
     /// Loam became frontmost or stopped being frontmost. Done, unread of the pane that you see clears.

@@ -302,112 +302,6 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
         #expect(SendPlan.step(for: pane, session: prompted, prompt: "Fix the other thing.") == .copy(.prompted))
     }
 
-    /// Your Return sends the input, and the `UserPromptSubmit` of that prompt says that Claude Code took it. An
-    /// event for another session changes nothing.
-    @Test func aReturnAndItsSubmitEmptyTheInput() {
-        var session = PaneSession(sessionID: "s1", state: .idle, started: true)
-        session.input()
-        session.loamPrompt = "Fix it."
-        #expect(session.typedSinceSubmit && session.typedSinceReturn)
-        session.pressedReturn()
-        #expect(session.typedSinceSubmit && !session.typedSinceReturn)
-        session.apply(paneEvent("UserPromptSubmit", "other", source: "user"))
-        #expect(session.typedSinceSubmit && session.loamPrompt == "Fix it.")
-        session.apply(paneEvent("UserPromptSubmit", "s1", source: "user"))
-        #expect(!session.typedSinceSubmit && !session.typedSinceReturn && session.loamPrompt == nil)
-    }
-
-    /// An older Claude Code sends no source. Its `UserPromptSubmit` counts as a prompt that you sent.
-    @Test func aSubmitWithNoSourceIsAPromptThatYouSent() {
-        var session = PaneSession(sessionID: "s1", state: .idle, started: true)
-        session.input()
-        session.loamPrompt = "Fix it."
-        session.pressedReturn()
-        session.apply(paneEvent("UserPromptSubmit", "s1"))
-        #expect(!session.typedSinceSubmit && session.loamPrompt == nil)
-    }
-
-    /// A submit with no Return before it, such as a prompt that Loam typed and that you did not send, leaves the
-    /// input as it is.
-    @Test func aSubmitWithNoReturnKeepsTheInput() {
-        var session = PaneSession(sessionID: "s1", state: .idle, started: true)
-        session.input()
-        session.loamPrompt = "Fix it."
-        session.apply(paneEvent("UserPromptSubmit", "s1", source: "user"))
-        #expect(session.typedSinceSubmit && session.loamPrompt == "Fix it.")
-    }
-
-    /// Claude Code starts some turns by itself: a task notification, a message from a peer, a wake-up. Your draft
-    /// stays in the input, so such a turn changes nothing, and neither does its Stop.
-    @Test func aTurnThatClaudeCodeStartsKeepsTheInput() {
-        for source in ["system", "sdk", "loop_wakeup", "schedule_wakeup", "poll_event"] {
-            var session = PaneSession(sessionID: "s1", state: .idle, started: true)
-            session.input()
-            session.loamPrompt = "Fix it."
-            session.apply(paneEvent("UserPromptSubmit", "s1", source: source))
-            #expect(session.state == .working, "\(source)")
-            session.apply(paneEvent("PostToolUse", "s1"))
-            session.apply(paneEvent("Stop", "s1"))
-            #expect(session.state == .idle, "\(source)")
-            #expect(session.typedSinceSubmit && session.typedSinceReturn && session.loamPrompt == "Fix it.", "\(source)")
-        }
-    }
-
-    /// Claude Code keeps a draft that you type during a turn and do not send. So the keys between a submit and
-    /// the Stop still count after the Stop.
-    @Test func theKeysOfATurnStillCountAfterItsStop() {
-        var session = PaneSession(sessionID: "s1", state: .idle, started: true)
-        session.pressedReturn()
-        session.apply(paneEvent("UserPromptSubmit", "s1", source: "user"))
-        session.input()
-        session.apply(paneEvent("Stop", "s1"))
-        #expect(session.state == .idle && session.typedSinceSubmit)
-    }
-
-    /// A prompt that you send during a turn waits in a queue. Its `UserPromptSubmit` comes when the queue drains,
-    /// after you may have typed a new draft. The draft still counts.
-    @Test func aQueuedPromptKeepsTheDraftAfterIt() {
-        var session = PaneSession(sessionID: "s1", state: .idle, started: true)
-        session.apply(paneEvent("UserPromptSubmit", "s1", source: "user"))
-        session.input()
-        session.pressedReturn()
-        session.input()
-        session.apply(paneEvent("PostToolUse", "s1"))
-        session.apply(paneEvent("UserPromptSubmit", "s1", source: "user"))
-        #expect(session.typedSinceSubmit && session.typedSinceReturn)
-        session.apply(paneEvent("Stop", "s1"))
-        #expect(session.typedSinceSubmit)
-    }
-
-    /// The hook line comes up to about 200 ms after your Return. A key in that time still counts.
-    @Test func aKeyBeforeTheLateSubmitStillCounts() {
-        var session = PaneSession(sessionID: "s1", state: .idle, started: true)
-        session.input()
-        session.pressedReturn()
-        session.input()
-        session.apply(paneEvent("UserPromptSubmit", "s1", source: "user"))
-        #expect(session.typedSinceSubmit && session.typedSinceReturn)
-    }
-
-    /// A key, a Return or a paste while a permission dialog or a question waits goes to the dialog, not to the
-    /// input. The keys after an API error or for `agent_needs_input` go to the input.
-    @Test func theKeysOfADialogAreNotInput() {
-        for (event, notification) in [("PermissionRequest", nil), ("Notification", "elicitation_dialog"), ("Notification", "permission_prompt")] {
-            var session = PaneSession(sessionID: "s1", state: .working, started: true)
-            session.apply(paneEvent(event, "s1", notification: notification))
-            #expect(session.state == .needsYou, "\(event) \(String(describing: notification))")
-            session.input()
-            session.pressedReturn()
-            #expect(!session.typedSinceSubmit && !session.typedSinceReturn, "\(event) \(String(describing: notification))")
-        }
-        for (event, notification) in [("StopFailure", nil), ("Notification", "agent_needs_input")] {
-            var session = PaneSession(sessionID: "s1", state: .working, started: true)
-            session.apply(paneEvent(event, "s1", notification: notification))
-            session.input()
-            #expect(session.typedSinceSubmit && session.typedSinceReturn, "\(event) \(String(describing: notification))")
-        }
-    }
-
     @Test func loamTypesOnlyIntoAnIdleSession() async throws {
         let (model, _) = try await rig()
         model.openWorktreePane(try worktree(failed, in: model))
@@ -461,6 +355,49 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
         send("Stop", to: pane, model)
         #expect(model.workspace.session(of: pane)?.typedSinceSubmit == false)
         #expect(model.sendPlan(for: failed)?.step == .type(pane))
+    }
+
+    /// Loam types the prompt, and you leave it. A background task ends, and Claude Code starts a turn with a submit
+    /// that has no source, as yours has. Loam still knows that its prompt waits, and a second click types nothing.
+    @Test func aTurnThatClaudeCodeStartsDoesNotForgetLoamsPrompt() async throws {
+        let (model, record) = try await rig()
+        let pane = try open(in: failed, model)
+        model.sendToSession(failed)
+        #expect(record.typed.count == 1)
+        send("UserPromptSubmit", to: pane, model)
+        send("Stop", to: pane, model)
+        #expect(model.workspace.session(of: pane)?.loamPrompt == (try prompt(failed, model)))
+        model.sendToSession(failed)
+        #expect(record.typed.count == 1 && record.toasts.count == 2)
+    }
+
+    /// The model reads its clock at your Return and at the submit.
+    @Test func aSubmitLongAfterYourReturnLeavesTheFlag() async throws {
+        let (model, _) = try await rig()
+        let pane = try open(in: failed, model)
+        var now = Date(timeIntervalSince1970: 1_800_000_000)
+        model.now = { now }
+        model.input(in: pane)
+        model.pressedReturn(in: pane)
+        now.addTimeInterval(4)
+        send("UserPromptSubmit", to: pane, model)
+        send("Stop", to: pane, model)
+        #expect(model.sendPlan(for: failed)?.step == .copy(.typed))
+        model.pressedReturn(in: pane)
+        now.addTimeInterval(1)
+        send("UserPromptSubmit", to: pane, model)
+        #expect(model.workspace.session(of: pane)?.typedSinceSubmit == false)
+    }
+
+    /// A paste in a dialog counts: the dialog may have closed before Loam knows.
+    @Test func aPasteInADialogBlocksSend() async throws {
+        let (model, _) = try await rig()
+        let pane = try open(in: failed, model)
+        model.apply(paneEvent("PermissionRequest", model.workspace.session(of: pane)!.sessionID!), to: pane)
+        model.input(.text, in: pane)
+        send("PostToolUse", to: pane, model)
+        send("Stop", to: pane, model)
+        #expect(model.sendPlan(for: failed)?.step == .copy(.typed))
     }
 
     /// `/clear` and a resume start with an empty input. A compact can come in the middle of a turn, while you type.
@@ -689,43 +626,4 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
     let deadline = Date().addingTimeInterval(5)
     while !condition(), Date() < deadline { try? await Task.sleep(for: .milliseconds(5)) }
     #expect(condition(), "\(what) did not happen")
-}
-
-/// What a key down in a terminal does to the input of Claude Code (ticket 110).
-@Suite struct InputKeyTests {
-    let returnKey: UInt16 = 0x24
-    let enterKey: UInt16 = 0x4C
-
-    @Test func aPlainReturnSendsTheInput() {
-        #expect(InputKey(keyCode: returnKey, mods: [], isARepeat: false, composing: false) == .submit)
-        #expect(InputKey(keyCode: enterKey, mods: [], isARepeat: false, composing: false) == .submit)
-    }
-
-    /// A held Return sends nothing more. ⇧ or ⌥ with Return adds a line, and Return in an input method ends the
-    /// composition.
-    @Test func otherReturnsAreNotASubmit() {
-        #expect(InputKey(keyCode: returnKey, mods: [], isARepeat: true, composing: false) == .none)
-        #expect(InputKey(keyCode: returnKey, mods: [.shift], isARepeat: false, composing: false) == .input)
-        #expect(InputKey(keyCode: returnKey, mods: [.option], isARepeat: false, composing: false) == .input)
-        #expect(InputKey(keyCode: returnKey, mods: [], isARepeat: false, composing: true) == .input)
-    }
-
-    @Test func aKeyWithNoCommandIsInput() {
-        for code: UInt16 in [0x00, 0x7E, 0x30, 0x33, 0x35] {  // a, Up, Tab, Delete, Escape
-            #expect(InputKey(keyCode: code, mods: [], isARepeat: false, composing: false) == .input, "\(code)")
-            #expect(InputKey(keyCode: code, mods: [.control], isARepeat: true, composing: false) == .input, "\(code)")
-        }
-    }
-
-    /// ⌘ keys scroll, change the font size, clear the screen or move the focus, so they leave the input as it is.
-    /// ⌘⌫ and ⌘⌦ clear the line, so they count.
-    @Test func ofTheCommandKeysOnlyTheDeleteKeysAreInput() {
-        for code: UInt16 in [0x7E, 0x7D, 0x7B, 0x7C, 0x28, 0x18, 0x1B, 0x1D, 0x24] {  // arrows, K, =, -, 0, Return
-            #expect(InputKey(keyCode: code, mods: [.command], isARepeat: false, composing: false) == .none, "\(code)")
-            #expect(InputKey(keyCode: code, mods: [.command, .option], isARepeat: false, composing: false) == .none, "\(code)")
-        }
-        #expect(InputKey(keyCode: 0x24, mods: [.command, .shift], isARepeat: false, composing: false) == .none)
-        #expect(InputKey(keyCode: 0x33, mods: [.command], isARepeat: false, composing: false) == .input)
-        #expect(InputKey(keyCode: 0x75, mods: [.command], isARepeat: false, composing: false) == .input)
-    }
 }

@@ -213,7 +213,7 @@ extension Scenarios {
         let view = try terminal(session)
         let hook = view.onInput
         let inputs = InputCount()
-        view.onInput = { inputs.value += 1; hook?() }
+        view.onInput = { kind in inputs.value += 1; hook?(kind) }
         let editItems = (NSApp.mainMenu?.items ?? []).flatMap { $0.submenu?.items ?? [] }
         guard let paste = editItems.first(where: { $0.action == #selector(NSText.paste(_:)) }), let action = paste.action else {
             throw DriverFailure("the menu has no Paste item")

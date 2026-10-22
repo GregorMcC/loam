@@ -8,16 +8,32 @@ import Foundation
 /// - `PermissionRequest`, `StopFailure`, and a `Notification` of a question type mean needs you.
 ///   The session moving on clears it, and so does a key in the pane (`typed()`).
 /// - `SessionEnd` means ended. A `SessionStart` after it (the `/clear` case) makes the pane idle again.
-/// - The input of Claude Code (ticket 110). Loam cannot see it, so it counts what can change it. A key, a paste
-///   or a drop sets `typedSinceSubmit` and `typedSinceReturn`, except while a dialog waits (`input()`). Your
-///   Return clears `typedSinceReturn` (`pressedReturn()`). At a `UserPromptSubmit` from you (source `user`, or
-///   no source from an older Claude Code), Claude Code took what you sent, so `typedSinceSubmit` becomes
-///   `typedSinceReturn`: only the keys after your Return still count. A turn that Claude Code starts by itself
-///   (any other source) leaves your draft in the input and changes nothing. `Stop` changes nothing either.
-///   A new session (a `SessionStart` that is not a compact) starts with an empty input.
+/// - The composer rule (ticket 110). Loam cannot see the composer of Claude Code, so it counts what can change it,
+///   and Send to session types only when `typedSinceSubmit` is false. Each event and what it does:
+///   - A key that counts as input (`InputKey.input`) sets `typedSinceSubmit` and `typedSinceReturn`. While
+///     `dialogOpen`, it does nothing, because the dialog takes the key.
+///   - A paste, a drop, or text from dictation or a picker (`PaneInput.text`) sets both, also while `dialogOpen`.
+///     The dialog may have closed before its next hook line, and too careful is fine.
+///   - A submit Return (`InputKey.submit`) clears `typedSinceReturn` and sets `pendingSubmit` to now. While
+///     `dialogOpen`, it does nothing, because it answers the dialog.
+///   - `UserPromptSubmit` with source `user`, or with no source (Claude Code does not send one today), takes the
+///     composer only when `pendingSubmit` is at most `submitWindow` old: `typedSinceSubmit` becomes
+///     `typedSinceReturn`, `loamPrompt` clears when `typedSinceReturn` is false, and `pendingSubmit` ends. With
+///     no pending Return it changes nothing, because a background task, a message from a peer, or an
+///     auto-continuation starts a turn with the same line while your text stays in the composer.
+///   - `UserPromptSubmit` with any other source changes nothing, and `pendingSubmit` stays.
+///   - `PermissionRequest`, and a `Notification` of type `elicitation_dialog`, `elicitation_url_dialog` or
+///     `permission_prompt`, set `dialogOpen`. `agent_needs_input` and `StopFailure` do not, because their keys
+///     go to the composer.
+///   - Every other event of the session closes the dialog: `PostToolUse`, `UserPromptSubmit`, `Stop`,
+///     `StopFailure`, `SessionStart`, `SessionEnd`, and an event that Loam does not know, such as `PreToolUse`.
+///     So does the process exit. A key does not.
+///   - `Stop` changes nothing else, because Claude Code keeps a draft that you typed during the turn.
+///   - `SessionStart` with source `startup`, `resume` or `clear` starts with an empty composer, so all of the
+///     rule resets. Any other source, such as `compact` or `fork`, keeps it.
 /// - The process exit means ended for good: later events change nothing.
 /// - An event for another session ID changes nothing. Only `SessionStart` takes a new ID.
-/// - Unknown events change nothing (docs/contract.md, "Pane socket").
+/// - Unknown events change nothing else (docs/contract.md, "Pane socket"). They close a dialog (the composer rule).
 public struct PaneSession: Codable, Equatable, Sendable {
     /// The session that runs in the pane now. For a seeded pane, the ID it started or resumed with
     /// until the first `SessionStart`.
@@ -39,15 +55,24 @@ public struct PaneSession: Codable, Equatable, Sendable {
     /// What the session waits on while the pane needs you. Nil in every other state. Restore does
     /// not bring it back, because the prompt is gone after a quit.
     public var waitsOn: NeedsYouReason?
-    /// True when the input can hold your text (ticket 110): you put text into the pane, and Claude Code has not
+    /// True when the composer can hold your text (ticket 110): you put text into the pane, and Claude Code has not
     /// taken it since. Send to session does not type then.
     public var typedSinceSubmit = false
-    /// True when you put text into the pane since your last Return that can send the input (ticket 110). A
-    /// `UserPromptSubmit` that comes later takes only the text before that Return.
+    /// True when you put text into the pane since your last submit Return (ticket 110). The `UserPromptSubmit` of
+    /// that Return takes only the text before it.
     public var typedSinceReturn = false
-    /// The prompt that Send to session typed into the input (ticket 110). It waits there until you press Return
-    /// and Claude Code takes it. Nil when Loam typed nothing.
+    /// The time of your last submit Return, until a `UserPromptSubmit` takes it (ticket 110).
+    public var pendingSubmit: Date?
+    /// True while a permission dialog or a question takes the keys (ticket 110). It is the belief of the composer
+    /// rule, apart from needs you: a key ends needs you, but only the next hook event closes the dialog.
+    public var dialogOpen = false
+    /// The prompt that Send to session typed into the composer (ticket 110). It waits there until you press
+    /// Return and Claude Code takes it. Nil when Loam typed nothing.
     public var loamPrompt: String?
+    /// How long after your Return its `UserPromptSubmit` can come. The hook line comes about 200 ms after it.
+    public static let submitWindow: TimeInterval = 3
+    /// The sources of a `SessionStart` that begin with an empty composer.
+    static let emptyComposerSources: Set<String> = ["startup", "resume", "clear"]
 
     public init(sessionID: String? = nil, state: PaneState = .running, started: Bool = false,
                 exited: Bool = false, pastSessionIDs: [String] = [], folder: String? = nil, doneUnread: Bool = false) {
@@ -60,9 +85,9 @@ public struct PaneSession: Codable, Equatable, Sendable {
         self.doneUnread = doneUnread
     }
 
-    /// Applies one line from the pane socket. Returns true when something changed.
+    /// Applies one line from the pane socket that came at `now`. Returns true when something changed.
     @discardableResult
-    public mutating func apply(_ event: PaneEvent) -> Bool {
+    public mutating func apply(_ event: PaneEvent, now: Date = Date()) -> Bool {
         guard !exited else { return false }
         let before = self
         if event.event == "SessionStart" {
@@ -72,21 +97,20 @@ public struct PaneSession: Codable, Equatable, Sendable {
             sessionID = event.sessionID
             started = true
             if !event.cwd.isEmpty { folder = event.cwd }
-            // A compact can come in the middle of a turn. It keeps the state, and the input keeps its text.
+            // A compact can come in the middle of a turn. It keeps the state.
             if event.source != "compact" || state == .running || state == .ended { set(.idle) }
-            // A new session starts with an empty input. `/clear` took the text, and the keys before the first
-            // SessionStart went to the setup command or the trust question.
-            if event.source != "compact" { emptyInput() }
+            dialogOpen = false
+            // `/clear` took the text, and the keys before the first SessionStart went to the setup command or the
+            // trust question. A compact, a fork, or a source that Loam does not know keeps the composer.
+            if let source = event.source, Self.emptyComposerSources.contains(source) { emptyComposer() }
             return self != before
         }
         guard sessionID == nil || event.sessionID == sessionID else { return false }
+        dialogOpen = Self.opensDialog(event)
         switch event.event {
         case "UserPromptSubmit":
             set(.working)
-            if event.source == nil || event.source == "user" {
-                typedSinceSubmit = typedSinceReturn
-                if !typedSinceReturn { loamPrompt = nil }
-            }
+            if event.source == nil || event.source == "user" { tookSubmit(now: now) }
         case "PostToolUse": set(.working)
         case "Stop":
             set(.idle)
@@ -122,34 +146,51 @@ public struct PaneSession: Codable, Equatable, Sendable {
     /// The pane's process exited. The pane stays and shows "Session ended".
     public mutating func processExited() {
         exited = true
+        dialogOpen = false
         set(.ended)
     }
 
-    /// You put something into the input of the pane: a key, a paste, or a drop. Send to session does not type
-    /// until Claude Code takes the input (ticket 110). While a permission dialog or a question waits, the keys
-    /// go to the dialog, so they do not count. Needs you stays, because an arrow key or Tab only picks an option
-    /// of a prompt (`typed()` clears it).
-    public mutating func input() {
-        guard !waitsOnDialog else { return }
+    // MARK: The composer rule (ticket 110)
+
+    /// You put something into the composer of the pane (see the composer rule above). Needs you stays, because an
+    /// arrow key or Tab only picks an option of a prompt (`typed()` clears it).
+    public mutating func input(_ kind: PaneInput) {
+        if kind == .key, dialogOpen { return }
         typedSinceSubmit = true
         typedSinceReturn = true
     }
 
-    /// You pressed a Return that can send the input (ticket 110). A Return in a dialog answers the dialog.
-    public mutating func pressedReturn() {
-        guard !waitsOnDialog else { return }
+    /// You pressed a submit Return at `now` (see the composer rule above).
+    public mutating func pressedReturn(now: Date = Date()) {
+        guard !dialogOpen else { return }
         typedSinceReturn = false
+        pendingSubmit = now
     }
 
-    /// A permission dialog or a question takes the keys. After an API error and for `agent_needs_input`, the keys
-    /// go to the input.
-    private var waitsOnDialog: Bool { waitsOn == .permission || waitsOn == .question }
+    /// A `UserPromptSubmit` from you, or one that looks the same. It takes the composer only after your Return.
+    private mutating func tookSubmit(now: Date) {
+        guard let pending = pendingSubmit, now.timeIntervalSince(pending) <= Self.submitWindow else { return }
+        typedSinceSubmit = typedSinceReturn
+        if !typedSinceReturn { loamPrompt = nil }
+        pendingSubmit = nil
+    }
 
-    /// The input of Claude Code is empty: a new session started.
-    private mutating func emptyInput() {
+    /// The composer is empty: a new session started.
+    private mutating func emptyComposer() {
         typedSinceSubmit = false
         typedSinceReturn = false
+        pendingSubmit = nil
         loamPrompt = nil
+    }
+
+    /// True for the events that open a dialog that takes the keys.
+    private static func opensDialog(_ event: PaneEvent) -> Bool {
+        switch event.event {
+        case "PermissionRequest": true
+        case "Notification":
+            ["elicitation_dialog", "elicitation_url_dialog", "permission_prompt"].contains(event.notificationType ?? "")
+        default: false
+        }
     }
 
     /// A state that is not needs you. The `state` observer clears what the session waited on.

@@ -19,8 +19,8 @@ final class TerminalPaneViewFactory: PaneViewFactory {
     var onChildExited: ((PaneID) -> Void)?
     /// You typed in a pane.
     var onKeyInput: ((PaneID) -> Void)?
-    /// You put something into the input of a pane: a key, a paste, or a drop.
-    var onInput: ((PaneID) -> Void)?
+    /// You put something into the composer of a pane: a key, a paste, a drop, or text from dictation.
+    var onInput: ((PaneID, PaneInput) -> Void)?
     /// You pressed a plain Return in a pane, which sends its input.
     var onReturn: ((PaneID) -> Void)?
 
@@ -69,7 +69,7 @@ final class TerminalPaneViewFactory: PaneViewFactory {
             }
             view.onTitleChange = { [weak self] title in if current() { self?.onTitleChange?(id, title) } }
             view.onKeyInput = { [weak self] in if current() { self?.onKeyInput?(id) } }
-            view.onInput = { [weak self] in if current() { self?.onInput?(id) } }
+            view.onInput = { [weak self] kind in if current() { self?.onInput?(id, kind) } }
             view.onReturn = { [weak self] in if current() { self?.onReturn?(id) } }
             views[ObjectIdentifier(view)] = (id, launch, server)
             surfaces[id] = view
@@ -102,7 +102,7 @@ final class TerminalPaneViewFactory: PaneViewFactory {
         onChildExited = { [weak model] in model?.paneExited($0) }
         onTitleChange = { [weak model] pane, title in model?.setTerminalTitle(title, of: pane) }
         onKeyInput = { [weak model] in model?.typed(in: $0) }
-        onInput = { [weak model] in model?.input(in: $0) }
+        onInput = { [weak model] pane, kind in model?.input(kind, in: pane) }
         onReturn = { [weak model] in model?.pressedReturn(in: $0) }
         model.typeIntoPane = { [weak self] pane, text in try self?.surfaces[pane]?.pasteWithoutReturn(text) ?? false }
     }
