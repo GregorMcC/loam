@@ -27,7 +27,12 @@ The PR popover shows the state of the PR of one worktree and the actions that go
 
 ## Buttons
 
-- The primary button is the full-width button of the stage, with Return as its key. The stage decides it: Land… at Ready to merge, and Send failures, Send review or Send conflicts to session at Checks failed, Changes requested and Conflicts. The slot and the rule exist, and no button shows until tickets 110 and 112 build them.
+- The primary button is the full-width button of the stage, with Return as its key. The stage decides it: Land… at Ready to merge, and Send failures, Send review or Send conflicts to session at Checks failed, Changes requested and Conflicts. The three Send buttons are ticket 110. Land… shows when ticket 112 builds it.
+- A Send button types a fix prompt into the session of the worktree, and you press Return (ticket 110, boards 2.1 to 2.3). The prompt names the `gh` command that shows the details, and never holds the text of a log or a comment. `SendPlan` in LoamKit decides what the button does:
+  - The session pane is a seeded session of the worktree. Of two or more, it is the one focused last.
+  - Loam types only when the session is idle and you put nothing into it since its last Stop: no key, paste or drop. The button then names the pane after its words, 12pt medium at 75% opacity, and the line under the buttons says "Loam types the prompt into the session. You press Return." The click focuses the pane, types the prompt with no Return, and shows a toast in the action bar. A second click finds the prompt in the input and does not type it again.
+  - When Loam cannot type, the button is Copy prompt, and the line says why: the session is busy, has not started, has your text, or has another prompt from Loam. The click copies the prompt, and the popover says "Copied the prompt."
+  - With no session in the worktree, the button is Start session with prompt. Loam starts a seeded session in the worktree and types the prompt after its SessionStart. When no SessionStart comes in 30 seconds, Loam types nothing, and the popover opens in the Copy prompt state if you are still in that pane.
 - The smaller buttons are 28pt high, radius 6. They show only when they can do something.
   - Re-run failed: when a failed check has a run. It runs `loam worktree rerun`.
   - Update branch: when the PR is behind its base and is not in the merge queue. It runs `loam worktree update`.
