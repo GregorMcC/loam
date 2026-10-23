@@ -140,7 +140,7 @@ extension MainWindowController: NSMenuItemValidation {
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         guard let command = (menuItem.representedObject as? MenuCommand)?.command else { return true }
         // Under a sheet only the commands of the app are on (ticket 128), also ⌘W.
-        guard model.commandAllowed(command) else { return false }
+        guard commandAllowed(command) else { return false }
         // ⌘W with no pane closes the window (`closePane`), so the menu bar keeps it enabled.
         if command == .closePane { return true }
         return availability(command)

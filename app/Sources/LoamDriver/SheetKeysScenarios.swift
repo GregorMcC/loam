@@ -2,8 +2,9 @@ import AppKit
 import LoamKit
 import LoamTerminal
 
-/// The check of ticket 128, for the scenarios that open a sheet: the keys and the menu items under an open sheet. Every menu
-/// item that acts on the window is off, and its key does nothing. The items of the app stay on. The sheet keeps its keys.
+/// The check of ticket 128, for the scenarios that open a sheet: the keys and the menu items under an open sheet, a Loam sheet
+/// or a native one. Every menu item that acts on the window is off, and its key does nothing. The items of the app stay on.
+/// The sheet keeps its keys.
 @MainActor
 extension Scenarios {
     /// A menu item that acts on the window, with its key.
@@ -60,19 +61,20 @@ extension Scenarios {
         }
     }
 
-    /// A sheet is open over the window of `plot`. Every menu item that acts on the window draws off. Its key through the
-    /// menu, its key through the window, its action sent by hand and the command of a Ghostty key change nothing: no tab, no
-    /// panel, no sidebar, no overlay, and the sheet stays open. The caller closes the sheet with Escape.
+    /// A sheet is open over the window of `plot`: the Land sheet, the New worktree sheet, or a native sheet. Every menu item
+    /// that acts on the window draws off. Its key through the menu, its key through the window, its action sent by hand and
+    /// the command of a Ghostty key change nothing: no tab, no panel, no sidebar, no overlay, and the sheet stays open. The
+    /// caller closes the sheet.
     static func expectKeysOffUnderSheet(_ app: DriverApp, _ host: AppHost, plot: String) async throws {
         let model = host.model
-        guard model.sheetIsOpen else { throw DriverFailure("no sheet is open") }
+        guard model.sheetIsOpen || host.window.attachedSheet != nil else { throw DriverFailure("no sheet is open") }
         try expectWindowItems(enabled: false)
 
         func state() -> String {
             "tabs \(model.workspace.tabs(of: .plot(plot)).count), selected \(String(describing: model.workspace.selectedTab(of: .plot(plot))?.id)), "
                 + "active \(String(describing: model.workspace.activePlotID)), panel \(model.panel.visible), "
                 + "sidebar \(model.sidebarCollapsed), switcher \(model.switcher.isOpen), menu \(app.exists("actions-menu")), "
-                + "sheet \(model.landSheet.isOpen), \(model.newWorktreeSheet.isOpen)"
+                + "sheet \(model.landSheet.isOpen), \(model.newWorktreeSheet.isOpen), native \(host.window.attachedSheet.map(ObjectIdentifier.init) as Any)"
         }
         let before = state()
 
@@ -99,7 +101,6 @@ extension Scenarios {
 
         let after = state()
         if after != before { throw DriverFailure("a key changed the window under the sheet.\nbefore: \(before)\nafter:  \(after)") }
-        guard model.sheetIsOpen else { throw DriverFailure("a key closed the sheet") }
         try expectWindowItems(enabled: false)
     }
 }

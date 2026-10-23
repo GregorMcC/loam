@@ -123,5 +123,17 @@ extension Scenarios {
         }
         try app.click("new-session-button")
         try await app.waitUntil("New session opens a tab") { model.workspace.tabs(of: .plot(plot)).count == tabs + 1 }
+
+        // 4. A native sheet (ticket 128): New Plot… asks for a name in a sheet. The commands that act on the window are off while
+        // it shows, as under the sheets of Loam. Cancel closes it, and the commands run again.
+        try expectToolbar(app.sendMenuKey("n"), "the main menu took no \u{2318}N")
+        try await app.waitUntil("the name sheet shows") { host.window.attachedSheet != nil }
+        try await expectKeysOffUnderSheet(app, host, plot: plot)
+        guard let nameSheet = host.window.attachedSheet else { throw DriverFailure("a key closed the name sheet") }
+        host.window.endSheet(nameSheet, returnCode: .alertSecondButtonReturn)
+        try await app.waitUntil("the name sheet closes") { host.window.attachedSheet == nil }
+        try expectWindowItems(enabled: true)
+        try expectToolbar(app.sendMenuKey("t"), "the main menu took no \u{2318}T")
+        try await app.waitUntil("\u{2318}T opens a tab again") { model.workspace.tabs(of: .plot(plot)).count == tabs + 2 }
     }
 }
