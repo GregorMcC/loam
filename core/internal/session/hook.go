@@ -27,8 +27,11 @@ type hookInput struct {
 //
 // When LOAM_PANE_SOCKET names a socket, it first sends each event of the
 // event table to it. Then, on every SessionStart, it records the session ID
-// for CLAUDE_PID. On source "clear" or "resume" it adds a session record for
-// a new ID of a seeded session. On source "compact" it prints the seed as
+// for CLAUDE_PID. On source "clear", "resume", or "fork" it adds a session
+// record for a new ID of a seeded session. A fork in the same process is the
+// /branch command: CLAUDE_PID stays, and the session gets a new ID. A fork
+// that starts a new process (--fork-session) has a new PID, so it has no
+// earlier session and adds nothing. On source "compact" it prints the seed as
 // additional context.
 func RunHook(in io.Reader, out io.Writer, getenv func(string) string) {
 	home, err := store.Home()
@@ -78,8 +81,8 @@ func RunHook(in io.Reader, out io.Writer, getenv func(string) string) {
 }
 
 // recordSession stores the session ID for the claude process. On source
-// "clear" or "resume" it also adds a session record for a new ID when the
-// earlier session of the process was seeded. The earlier session is the one
+// "clear", "resume", or "fork" it also adds a session record for a new ID when
+// the earlier session of the process was seeded. The earlier session is the one
 // that the PID record held before this call. It does not create a store: a
 // missing store means Loam has not run here.
 func recordSession(home, pidText, plotID string, h hookInput, logf func(string, ...any)) {
@@ -101,7 +104,8 @@ func recordSession(home, pidText, plotID string, h hookInput, logf func(string, 
 		return
 	}
 	defer s.Close()
-	if h.Source == "clear" || h.Source == "resume" {
+	switch h.Source {
+	case "clear", "resume", "fork":
 		addSessionRecord(s, pid, plotID, h, logf)
 	}
 	if err := s.SetPIDSession(pid, h.SessionID); err != nil {

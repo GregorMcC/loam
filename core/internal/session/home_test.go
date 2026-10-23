@@ -115,12 +115,12 @@ func TestStartHomeUsageErrors(t *testing.T) {
 }
 
 // A Home session has no LOAM_PLOT and no session record. Its hooks still reach the pane, and a
-// clear or a resume adds no record.
+// clear, a resume, or a fork adds no record.
 func TestHookFromAHomeSession(t *testing.T) {
 	e := setup(t)
 	path, lines := listen(t)
 	env := map[string]string{"LOAM_PANE_SOCKET": path, "CLAUDE_PID": "4245"}
-	for _, source := range []string{"startup", "clear", "resume"} {
+	for _, source := range []string{"startup", "clear", "resume", "fork"} {
 		runHook(t, `{"session_id":"home-`+source+`","cwd":"/home","hook_event_name":"SessionStart","source":"`+source+`"}`, env)
 		if line := nextLine(t, lines); !strings.Contains(line, `"source":"`+source+`"`) {
 			t.Errorf("%s: pane line %s", source, line)

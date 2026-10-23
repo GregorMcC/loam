@@ -107,6 +107,30 @@ func TestFakeClaudeHookModeRunsTheSettingsHooks(t *testing.T) {
 	}
 }
 
+// /branch keeps the process, as in Claude Code. It gives a new session ID and source "fork".
+func TestFakeClaudeBranchGivesAForkStart(t *testing.T) {
+	testutil.FakeClaude(t)
+	log := filepath.Join(t.TempDir(), "hooks.log")
+	cmd := exec.Command("claude", "--session-id", "s1", "--settings", hookSettings(t, log))
+	cmd.Env = append(os.Environ(), "LOAM_FAKE_CLAUDE_HOOKS=1", "LOAM_FAKE_CLAUDE_TURN=10ms")
+	cmd.Stdin = strings.NewReader("/branch\n/exit\n")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	calls := readHookCalls(t, log)
+	var got []string
+	for _, c := range calls {
+		got = append(got, c.Event+" "+c.Source)
+	}
+	want := []string{"SessionStart startup", "SessionEnd ", "SessionStart fork", "SessionEnd "}
+	if !slices.Equal(got, want) {
+		t.Fatalf("hooks %q, want %q", got, want)
+	}
+	if calls[1].SessionID != "s1" || calls[2].SessionID == "s1" || calls[2].SessionID == "" || calls[3].SessionID != calls[2].SessionID {
+		t.Fatalf("/branch did not change the session ID: %+v", calls)
+	}
+}
+
 // The lines that make the session wait on you: a permission prompt that you
 // allow or deny, a question, and a turn that stops on an API error.
 func TestFakeClaudeHookModeRaisesTheNeedsYouHooks(t *testing.T) {

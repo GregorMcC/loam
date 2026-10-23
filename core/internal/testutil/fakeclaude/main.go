@@ -8,6 +8,8 @@
 //
 //   - EOF or "/exit": SessionEnd, then exit 0.
 //   - "/clear": SessionEnd, then SessionStart with a new session ID and source "clear".
+//   - "/branch": SessionEnd, then SessionStart with a new session ID and source "fork". The
+//     process stays, as for the /branch command of Claude Code.
 //   - "/permission": UserPromptSubmit, a wait of LOAM_FAKE_CLAUDE_TURN, then
 //     PermissionRequest. The next line answers: "y" allows (PostToolUse, then
 //     Stop). Any other line denies, and no hook follows, as in Claude Code.
@@ -161,6 +163,11 @@ func session(args []string, cwd string) (eof bool) {
 			run("SessionEnd", nil)
 			id = newID()
 			run("SessionStart", map[string]string{"source": "clear"})
+			fmt.Printf("fake claude: session %s\n", id)
+		case "/branch":
+			run("SessionEnd", nil)
+			id = newID()
+			run("SessionStart", map[string]string{"source": "fork"})
 			fmt.Printf("fake claude: session %s\n", id)
 		case "/permission":
 			startTurn()
