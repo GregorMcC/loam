@@ -144,10 +144,11 @@ extension Scenarios {
         try expectStart(sheet.branch == issueBranch, "the branch reads \(sheet.branch)")
         try expectStart(sheet.goal == "Link kinds for Figma", "the goal reads \(sheet.goal)")
         try expectStart(sheet.defaultBase == "origin/main", "the default base reads \(sheet.defaultBase)")
+        // The popup shows the base of the answer after the next render. Under load, that render can come after this line.
+        try await app.waitUntil("the base popup reads origin/main", timeout: 3) { app.text(of: "new-worktree-base") == "origin/main" }
         try expectStart(app.text(of: "new-worktree-branch") == issueBranch, "the branch field reads \(reads("new-worktree-branch"))")
         try expectStart(app.text(of: "new-worktree-goal") == "Link kinds for Figma", "the goal field reads \(reads("new-worktree-goal"))")
         try expectStart(app.text(of: "new-worktree-repo") == "widgets", "the repo reads \(reads("new-worktree-repo"))")
-        try expectStart(app.text(of: "new-worktree-base") == "origin/main", "the base reads \(reads("new-worktree-base"))")
         try expectStart(app.text(of: "new-worktree-link") == issueLabel, "the link reads \(reads("new-worktree-link"))")
         let card = app.text(of: "new-worktree-link-card") ?? ""
         try expectStart(card.contains(issueLabel) && card.contains("Linear connector"), "the link card reads \(card)")
@@ -234,11 +235,52 @@ extension Scenarios {
         app.press(.escape)
         try await app.waitUntil("Escape ends the goal edit") { model.prPopover.goalDraft == nil }
         try expectStart(model.prPopover.isOpen, "Escape ended the goal edit and closed the popover")
+
+        // A save that finds a newer goal shows it in the field. The field has the keys again, so Return saves it. The field is
+        // off while the save runs, and a field that is off loses the keys.
+        try await app.waitUntil("the goal row shows again") { app.exists("pr-popover-goal") && !app.exists("pr-popover-goal-field") }
+        try app.click("pr-popover-goal")
+        try await app.waitUntil("the goal field shows again") { app.exists("pr-popover-goal-field") }
+        _ = AccessibilityProbe.shared.focus("pr-popover-goal-field")
+        try await app.waitUntil("the goal field edits again") { (app.window.firstResponder as? NSTextView)?.isFieldEditor == true }
+        let newerGoal = "Link kinds for Figma and Miro"
+        try rig.loam(["worktree", "edit", plot, made.id, "--goal", newerGoal])
+        app.press(.returnKey)
+        try await app.waitUntil("the save shows the newer goal") {
+            model.prPopover.goalDraft == newerGoal && model.prPopover.goalProblem == "The goal changed meanwhile. Loam shows the new goal."
+        }
+        try await app.waitUntil("the goal field has the keys after the save", timeout: 3) {
+            (app.window.firstResponder as? NSTextView)?.isFieldEditor == true
+        }
+        app.press(.returnKey)
+        try await app.waitUntil("Return saves the goal") { model.prPopover.goalDraft == nil }
+        try expectStart(model.prPopover.isOpen, "Return in the goal field closed the popover")
+
         app.press(.escape)
         try await app.waitUntil("Escape closes the popover") { !model.prPopover.isOpen && !app.exists("pr-popover") }
 
         // 7. The plus of the Worktrees section opens the sheet with no link: nothing is filled, and Start session is off.
+        // The sheet gives Branch the keys as it opens, for a short time. A Tab at that time moves the keys off Branch, and
+        // they stay where the Tab put them.
+        /// The label of the text field that has the keys, or nil.
+        func fieldWithTheKeys() -> String? {
+            guard let editor = app.window.firstResponder as? NSTextView, editor.isFieldEditor else { return nil }
+            return (editor.delegate as? NSView)?.accessibilityLabel()
+        }
         try app.click("panel-add-worktree")
+        let clicked = Date()
+        while fieldWithTheKeys() != "Branch" {
+            if Date().timeIntervalSince(clicked) > 5 { throw DriverFailure("Branch did not get the keys when the sheet opened") }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        Log.line(String(format: "RESULT Branch has the keys %.3f s after the click", Date().timeIntervalSince(clicked)))
+        app.press(.tab)
+        // The sheet tries for about 130 ms. For a second, the keys never go back to Branch.
+        let tabbed = Date()
+        while Date().timeIntervalSince(tabbed) < 1 {
+            try expectStart(fieldWithTheKeys() != "Branch", "a Tab as the sheet opened went back to Branch")
+            try await Task.sleep(for: .milliseconds(10))
+        }
         try await app.waitUntil("the empty sheet opens") { sheet.isOpen && sheet.phase == .ready && app.exists("new-worktree-sheet") }
         try expectStart(sheet.startLink == nil && sheet.branch.isEmpty && sheet.goal.isEmpty, "the sheet from the plus is not empty")
         try expectStart(!app.exists("new-worktree-link-card"), "the sheet from the plus shows a link card")
@@ -267,5 +309,34 @@ extension Scenarios {
         editor.unmarkText()
         app.press(.escape)
         try await app.waitUntil("Escape closes the sheet") { !sheet.isOpen && !app.exists("new-worktree-sheet") }
+
+        // 8. In the switcher, ⌘Return on the issue link runs Start work… and nothing else: the link does not open. Return on
+        // the same link opens it and opens no sheet. The keys go through the window, as a key press does.
+        func selectIssueInSwitcher() async throws {
+            try app.pressMenuKey("p", flags: .command)
+            try await app.waitUntil("the switcher shows", timeout: 5) { app.exists("switcher-field") }
+            try app.fill("switcher-field", with: "ENG-482")
+            func issueRow() -> Int? { model.switcher.results.firstIndex { $0.item.kind == .link && $0.item.title == issueLabel } }
+            try await app.waitUntil("the issue link row", timeout: 10) { issueRow() != nil }
+            model.switcher.selection = issueRow() ?? 0
+        }
+        try await selectIssueInSwitcher()
+        let opened = rig.openCalls.count
+        app.press(.returnKey, flags: .command)
+        try await app.waitUntil("⌘Return opens the sheet from the link", timeout: 5) {
+            sheet.isOpen && sheet.startLink?.label == issueLabel && !model.switcher.isOpen
+        }
+        await app.sleep(2)
+        try expectStart(rig.openCalls.count == opened, "⌘Return also opened the link: \(rig.openCalls.suffix(2))")
+        app.press(.escape)
+        try await app.waitUntil("Escape closes the sheet from the switcher") { !sheet.isOpen }
+        try await selectIssueInSwitcher()
+        app.press(.returnKey)
+        try await app.waitUntil("Return opens the link", timeout: 10) { rig.openCalls.dropFirst(opened).contains { $0.contains(issueURL) } }
+        try expectStart(!sheet.isOpen && !model.switcher.isOpen, "Return on the issue link opened the sheet")
+        // One open for the two keys: a late open from ⌘Return would make two.
+        await app.sleep(1)
+        let issueOpens = rig.openCalls.dropFirst(opened).filter { $0.contains(issueURL) }.count
+        try expectStart(issueOpens == 1, "the issue link opened \(issueOpens) times for one Return and one ⌘Return")
     }
 }

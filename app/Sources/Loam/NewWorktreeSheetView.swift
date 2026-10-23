@@ -52,9 +52,11 @@ struct NewWorktreeSheetView: View {
             arrived = false
             withAnimation(LoamAnimation.arrive) { arrived = true }
             // The hosting view becomes first responder after this view appears. The Branch field takes the keys, so Return
-            // starts a session from a link and a first key names the branch from the plus.
-            for _ in 0..<5 {
+            // starts a session from a link and a first key names the branch from the plus. After the first try, a control of
+            // the sheet that you chose meanwhile, with a click or a Tab, keeps the keys.
+            for attempt in 0..<5 {
                 guard app.newWorktreeSheet.isOpen else { return }
+                if attempt > 0, focus != .branch, aControlHasTheKeys { return }
                 focus = .branch
                 try? await Task.sleep(for: .milliseconds(30))
             }
@@ -64,6 +66,21 @@ struct NewWorktreeSheetView: View {
     /// The text view that has the keys in the window of the sheet: the field editor of a text field.
     private var fieldEditor: NSTextView? {
         (window.window ?? NSApp.keyWindow)?.firstResponder as? NSTextView
+    }
+
+    /// True when a control of the sheet has the keys: a field, a popup, or the card itself after a Tab. False when the hosting
+    /// view has them, as it does when the sheet opens, and when a view outside the sheet has them. At the open, the hosting
+    /// view has the keys and nothing has the focus. SwiftUI does not give the card the keys on its own, so the card has them
+    /// only after a Tab. The host is `NSHostingView<NewWorktreeSheetView>` (`installNewWorktreeSheet`). The `start-work`
+    /// driver scenario checks this with a Tab at the open.
+    private var aControlHasTheKeys: Bool {
+        var view = (window.window ?? NSApp.keyWindow)?.firstResponder as? NSView
+        if view is NSHostingView<NewWorktreeSheetView> { return false }
+        while let current = view {
+            if current is NSHostingView<NewWorktreeSheetView> { return true }
+            view = current.superview
+        }
+        return false
     }
 
     /// Return, or a click on the primary button. The model does nothing while the check blocks.

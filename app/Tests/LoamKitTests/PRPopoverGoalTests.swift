@@ -255,6 +255,24 @@ import Testing
         #expect(rig.model.prPopover.goalProblem?.contains("choose a number") == true)
     }
 
+    /// After a save, the field takes the keys again and writes its text back with no change. The message stays until you
+    /// change the text, so you can read why Return did not save.
+    @Test func theMessageStaysUntilTheTextChanges() async throws {
+        let rig = try await rig()
+        rig.model.openPullRequest(id)
+        rig.model.beginGoalEdit()
+        try await claudeSetsTheGoal(rig, "Claude's goal", version: 40)
+        rig.model.prPopover.setGoalDraft("Mine")
+        try rig.touch("fail-stale")
+        await rig.model.saveGoalEdit()
+        let message = "The goal changed meanwhile. Loam shows the new goal."
+        #expect(rig.model.prPopover.goalProblem == message)
+        rig.model.prPopover.setGoalDraft("Claude's goal")
+        #expect(rig.model.prPopover.goalProblem == message, "a write of the same text took the message away")
+        rig.model.prPopover.setGoalDraft("Claude's goal!")
+        #expect(rig.model.prPopover.goalProblem == nil)
+    }
+
     @Test func aWorktreeWithAPRHasNoGoalToEdit() async throws {
         let rig = try await rig()
         try Fixtures.data("worktree_list_stages").write(to: rig.dir.appendingPathComponent("list.json"))

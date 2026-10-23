@@ -948,11 +948,11 @@ public final class AppModel {
     }
 
     /// ⌘⇧L and a click on the "Ready to merge" row: goes to the next ready worktree, in any plot, and
-    /// opens its PR popover. Returns false when no worktree is ready, and while a merge runs.
+    /// opens its PR popover. Returns false when no worktree is ready, and while a merge or a worktree start runs.
     @discardableResult
     public func goToNextReadyWorktree() -> Bool {
-        // A merge that runs keeps the keys on the Land sheet, and the popover would take them.
-        guard !landSheet.isMerging, let row = nextReadyWorktree() else { return false }
+        // A merge or a worktree start keeps the keys on its sheet, and the popover would take them.
+        guard !sheetHoldsWindow, let row = nextReadyWorktree() else { return false }
         goToWorktree(row.id)
         openPullRequest(row.id)
         return true
@@ -1170,12 +1170,12 @@ public final class AppModel {
 
     /// Opens the PR popover for a worktree and asks GitHub about it (`refreshWorktree`), so the popover
     /// shows the state now. The popover shows the last state until the answer comes. A popover that is open
-    /// moves to the worktree. Returns false when the worktree is unknown, and while a merge runs.
+    /// moves to the worktree. Returns false when the worktree is unknown, and while a merge or a worktree start runs.
     @discardableResult
     public func openPullRequest(_ id: String, anchor: PopoverAnchor = .actionBar) -> Bool {
-        // The popover would open under a sheet that merges and take its keys, so a merge that fails leaves the sheet
-        // with none.
-        guard !landSheet.isMerging, worktreeStatus(id) != nil else { return false }
+        // The popover would open under a sheet that merges or makes a worktree and take its keys, so a merge or a start that
+        // fails leaves the sheet with none.
+        guard !sheetHoldsWindow, worktreeStatus(id) != nil else { return false }
         prPopover.open(id, anchor: anchor)
         worktreeRefresh(id)
         return true

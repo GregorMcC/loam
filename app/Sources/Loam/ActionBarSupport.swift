@@ -44,8 +44,9 @@ extension MainWindowController: NSMenuItemValidation {
     /// ⌘J or a click on Actions: opens the menu with the actions that can run now, or closes it.
     func toggleActionsMenu() {
         if actionBar.menu.isOpen { return closeActionsMenu() }
-        // A merge that runs keeps the sheet. The menu stays shut then, since its commands would change the window under it.
-        if model.landSheet.isMerging { return }
+        // A merge or a worktree start keeps its sheet (`sheetHoldsWindow`). The menu stays shut then, since it would show
+        // over the sheet and its commands would change the window under it.
+        if model.sheetHoldsWindow { return }
         if model.switcher.isOpen { model.switcher.close() }
         model.closePullRequest()  // One overlay at a time: the popover would take the clicks of the menu.
         model.closeLandSheet()

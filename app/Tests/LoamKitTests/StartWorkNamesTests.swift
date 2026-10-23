@@ -42,6 +42,18 @@ import Testing
         }
     }
 
+    /// The core reads `--link` as a URL only when it has "://", else as the ID of a link of the plot. A URL with no scheme
+    /// is no issue here either, so the sheet shows its note and never sends it.
+    @Test func aUrlWithNoSchemeIsNotAnIssue() {
+        for target in [
+            "//linear.app/example/issue/ENG-482/link-kinds-for-figma", "linear.app/example/issue/ENG-482",
+            "//github.com/example/widgets/issues/57", "github.com/example/widgets/issues/57",
+            "https:linear.app/example/issue/ENG-482", "https:/github.com/example/widgets/issues/57",
+        ] {
+            #expect(IssueLink(target: target) == nil, "\(target)")
+        }
+    }
+
     @Test func aGitHubNameWithAControlCharacterIsNotAnIssue() {
         // The core refuses these too, so a link never reaches `--link` with a name that cannot be a key.
         #expect(IssueLink(target: "https://github.com/exa%0Ample/widgets/issues/57") == nil)

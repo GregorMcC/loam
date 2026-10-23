@@ -85,8 +85,6 @@ public final class NewWorktreeModel {
     public private(set) var bases: [String] = []
     /// The default base of the last answer, such as origin/main. Empty when the repo has none.
     public private(set) var defaultBase = ""
-    /// The seed line of the last answer for a good name. Nil for an empty or a bad name.
-    public private(set) var seedLine: String?
     /// "What the seed adds" is open.
     public var showsSeed = false
     /// The worktree is made now. The fields lock, and Cancel is off.
@@ -154,7 +152,6 @@ public final class NewWorktreeModel {
         baseChoice = nil
         bases = []
         defaultBase = ""
-        seedLine = nil
         showsSeed = false
         isStarting = false
         startError = nil
@@ -334,13 +331,19 @@ public final class NewWorktreeModel {
         answer = (stamp, .result(result))
         bases = result.bases
         defaultBase = result.defaultBase
-        seedLine = result.seedLine
     }
 
     func checkFailed(_ message: String, stamp: Stamp) {
         guard stamp.branch == branchRevision else { return }
         answer = (stamp, .failed(message))
-        seedLine = nil
+    }
+
+    /// The seed line of the answer for the name, the repo and the base as they are now. Nil for an empty or a bad name, and
+    /// until the answer for a changed name, repo or base is back: the line of an older answer names another branch, repo
+    /// or base. A change of the goal or the link keeps the line until the next answer.
+    public var seedLine: String? {
+        guard let answer, answer.stamp.branch == branchRevision, case .result(let check) = answer.outcome else { return nil }
+        return check.seedLine
     }
 
     /// The words of the core for a name that starts with a hyphen. The core refuses it, and `loam` would read it as a

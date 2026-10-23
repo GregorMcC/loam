@@ -6,9 +6,14 @@ import Foundation
 extension AppModel {
     // MARK: Open and close
 
-    /// False while a merge runs, since the sheet would open over it, and while a worktree is made, since a new open would
-    /// take back the state of that start.
-    public var canOpenNewWorktree: Bool { !landSheet.isMerging && !newWorktreeSheet.isStarting }
+    /// True while a sheet keeps the window: a merge runs in the Land sheet, or a worktree is made in the New worktree sheet.
+    /// That sheet cannot close, so no other overlay opens. The switcher and the actions menu would show over it, and the PR
+    /// popover and the other sheet would take its keys.
+    public var sheetHoldsWindow: Bool { landSheet.isMerging || newWorktreeSheet.isStarting }
+
+    /// False while a sheet keeps the window (`sheetHoldsWindow`). An open while a worktree is made would also take back the
+    /// state of that start.
+    public var canOpenNewWorktree: Bool { !sheetHoldsWindow }
 
     /// Opens the sheet for a plot, and reads its repos and links. `link` is the link of Start work…: the sheet takes the
     /// branch, the goal and the Link field from it. Returns false when it cannot open (`canOpenNewWorktree`). Every entry

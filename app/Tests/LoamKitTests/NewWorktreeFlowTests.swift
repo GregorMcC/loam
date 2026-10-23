@@ -425,6 +425,39 @@ import Testing
         #expect(rig.makes().count == 1)
     }
 
+    /// The sheet cannot close while the worktree is made, so no other overlay opens: the switcher and the actions menu would
+    /// show over it, and the PR popover and the Land sheet would open under it and take its keys.
+    @Test func noOtherOverlayOpensWhileAWorktreeIsMade() async throws {
+        let rig = try await rig()
+        try rig.write("worktree_list.json", Fixtures.data("worktree_list_stages"))
+        await rig.model.reloadWorktrees()
+        let ready = "wtreaaaaao"
+        rig.model.openNewWorktree(plot: plotID, from: linearLink)
+        await rig.settle()
+        try rig.touch("hold-new")
+        let starting = Task { await rig.model.startNewWorktree() }
+        try await rig.waitForStarting()
+        #expect(rig.model.sheetHoldsWindow)
+        rig.model.switcher.open()
+        #expect(!rig.model.switcher.isOpen, "the switcher opened over the sheet")
+        rig.model.switcher.open(actionsOnly: true)
+        #expect(!rig.model.switcher.isOpen)
+        #expect(!rig.model.openPullRequest(ready), "the PR popover opened under the sheet")
+        #expect(!rig.model.openLandSheet(ready), "the Land sheet opened under the sheet")
+        #expect(!rig.model.goToNextReadyWorktree(), "the key for the next ready worktree opened the PR popover")
+        #expect(!rig.model.prPopover.isOpen && !rig.model.landSheet.isOpen)
+        try FileManager.default.removeItem(at: rig.dir.appendingPathComponent("hold-new"))
+        await starting.value
+        // With the worktree made, each one opens again, so the start was the reason.
+        #expect(!rig.model.sheetHoldsWindow)
+        #expect(rig.model.openPullRequest(ready))
+        rig.model.closePullRequest()
+        #expect(rig.model.openLandSheet(ready))
+        rig.model.closeLandSheet()
+        rig.model.switcher.open()
+        #expect(rig.model.switcher.isOpen)
+    }
+
     @Test func noSheetOpensOverAMerge() async throws {
         let rig = try await rig()
         rig.model.landSheet.beginMerging()
