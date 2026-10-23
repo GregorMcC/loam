@@ -365,12 +365,19 @@ import Testing
         try rig.touch("hold-new")
         let starting = Task { await model.startNewWorktree() }
         await rig.waitForStarting()
-        model.whenSheetWorkEnds { ends.append($0) }
-        #expect(ends == [false, false], "the worktree is made")
+        // Quit goes on a pass later (`applicationShouldTerminate`), so the session opens first.
+        let space = Space.plot(plotID)
+        var panesAtQuit: Int?
+        model.whenSheetWorkEnds {
+            ends.append($0)
+            Task { @MainActor in panesAtQuit = model.workspace.paneCount(of: space) }
+        }
+        #expect(ends == [false, false], "the worktree is not made yet")
         rig.remove("hold-new")
         await starting.value
-        #expect(ends == [false, false, false], "the worktree is made")
-        #expect(model.workspace.paneCount(of: .plot(plotID)) == 1, "the session is open by the time that Quit goes on")
+        await poll { panesAtQuit != nil }
+        #expect(ends == [false, false, false], "the start is done")
+        #expect(panesAtQuit == 1, "the session is open by the time that Quit goes on")
         #expect(!rig.sheet.isOpen && rig.sheet.startError == nil)
     }
 
@@ -404,6 +411,19 @@ import Testing
         rig.remove("hold-new")
         await again.value
         #expect(ends == [true, false], "a start that follows a failure is done, not failed")
+    }
+
+    /// A start that waits for the check has made no worktree. A quit drops it, so it does not begin while the app closes.
+    @Test func aQuitDropsAStartThatWaitsForTheCheck() async throws {
+        let rig = try await rig()
+        rig.model.openNewWorktree(plot: plotID, from: linearLink)
+        await rig.model.startNewWorktree()
+        #expect(rig.sheet.startQueued)
+        rig.sheet.dropQueuedStart()
+        #expect(!rig.sheet.startQueued)
+        await rig.settle()
+        #expect(rig.makes().isEmpty && !rig.sheet.isStarting, "the check came back, and no worktree was made")
+        #expect(rig.sheet.isOpen && rig.sheet.canStart, "the sheet stays, and Start session works")
     }
 
     // MARK: A worktree that is made is never stopped

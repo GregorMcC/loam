@@ -94,6 +94,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let controller = windowController, !readyToQuit else { return .terminateNow }
         guard !quitting else { return .terminateCancel }
         quitting = true
+        // A start that only waits for the check does not run after this point.
+        controller.model.newWorktreeSheet.dropQueuedStart()
         // A merge on GitHub cannot be undone, and an app that quits in the middle can leave it half done. A start that
         // quits in the middle leaves a worktree with no session. This terminate waits for the end of the merge or the start.
         // One that failed cancels the quit, so the sheet shows the message of GitHub or of the core to you. Any other end
