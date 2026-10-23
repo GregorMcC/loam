@@ -65,7 +65,7 @@ private func nextChanges(_ it: inout AsyncStream<FeedUpdate>.Iterator) async -> 
         for _ in 0..<10 { triggers.yield() }
         await sleep.waitForBegun(10)
         sleep.release(debounce)
-        let update = await it.next()
+        let update = await next(&it)
         #expect(update == .changes([change(3)]))
         // One start poll, then exactly one poll for the burst.
         try await Task.sleep(for: .milliseconds(200))
@@ -169,7 +169,7 @@ private func nextChanges(_ it: inout AsyncStream<FeedUpdate>.Iterator) async -> 
             },
             makeTriggers: { triggers }, debounce: debounce, after: 1, sleep: { try await sleep.sleep($0) })
         var it = feed.updates().makeAsyncIterator()
-        #expect(await it.next() == .changes([change(2)]))  // the start poll
+        #expect(await next(&it) == .changes([change(2)]))  // the start poll
         tc.yield()
         await sleep.waitForBegun(1)
         sleep.release(debounce)
@@ -178,11 +178,11 @@ private func nextChanges(_ it: inout AsyncStream<FeedUpdate>.Iterator) async -> 
         await sleep.waitForBegun(2)
         sleep.release(debounce)
         await gate.open()
-        #expect(await it.next() == .unchanged)  // the poll a trigger started
-        #expect(await it.next() == .unchanged)  // the one more poll
+        #expect(await next(&it) == .unchanged)  // the poll a trigger started
+        #expect(await next(&it) == .unchanged)  // the one more poll
         #expect(await gate.count() == 3)  // start, the poll, one more poll
         tc.finish()
-        #expect(await it.next() == nil)  // no failure was published
+        #expect(await next(&it) == nil)  // no failure was published
     }
 
     /// SQLite makes and deletes `loam.db-wal` each time a CLI read opens and closes the store, so

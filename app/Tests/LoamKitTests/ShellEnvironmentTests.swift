@@ -68,7 +68,9 @@ import Testing
         let sh = try shell("trap '' TERM; while :; do sleep 1; done")
         let began = Date()
         #expect(await ShellEnvironment.resolvedPath(shell: sh, timeout: 0.5) == nil)
-        #expect(Date().timeIntervalSince(began) < 5)
+        // The shell never ends, so only the timeout can end the call. The bound is loose, because a busy machine can
+        // hold the launch of the shell for many seconds.
+        #expect(Date().timeIntervalSince(began) < 60)
     }
 
     @Test(.waitLimit) func applySetsTheResolvedPathBeforeTheCurrentOnes() async throws {

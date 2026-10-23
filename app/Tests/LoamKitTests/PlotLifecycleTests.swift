@@ -7,7 +7,7 @@ import Testing
 /// the core would give after an archive, so the reload after each call fails here (`error_generic`)
 /// and keeps what the call itself set. The driver test runs the real core.
 @MainActor
-@Suite struct PlotLifecycleTests {
+@Suite(.waitLimit) struct PlotLifecycleTests {
     func plot(_ id: String, _ name: String) -> PlotSummary {
         PlotSummary(id: id, name: name, what: "", createdAt: "2026-01-01T00:00:00Z")
     }
@@ -138,7 +138,7 @@ import Testing
         let model = AppModel(client: fake.client())
         let first = Task { await model.reloadPlots() }
         // Wait until the first read has started, so the next calls come during it.
-        while fake.args().isEmpty { try await Task.sleep(nanoseconds: 1_000_000) }
+        await waitUntil("the first read started") { !fake.args().isEmpty }
         let second = Task { await model.reloadPlots() }
         let third = Task { await model.reloadPlots() }
         await second.value

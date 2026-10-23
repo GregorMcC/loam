@@ -336,7 +336,7 @@ import Testing
         await rig.settle()
         try rig.touch("hold-new")
         let starting = Task { await rig.model.startNewWorktree() }
-        while !rig.sheet.isStarting { try await Task.sleep(for: .milliseconds(2)) }
+        await rig.waitForStarting()
         rig.model.closeNewWorktree()
         #expect(rig.sheet.isOpen, "a worktree that is made now cannot stop")
         // A second Start does not make a second worktree.

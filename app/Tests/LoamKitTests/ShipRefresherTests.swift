@@ -27,6 +27,7 @@ final class ManualSleep {
     private func cancel(_ id: Int) {
         guard let index = waiters.firstIndex(where: { $0.id == id }) else { return }
         waiters.remove(at: index).wake.resume(throwing: CancellationError())
+        changes.changed()
     }
 
     /// The lengths of the sleeps that wait now.
@@ -39,6 +40,7 @@ final class ManualSleep {
         let woken = waiters.filter { $0.length == length }
         waiters.removeAll { $0.length == length }
         for waiter in woken { waiter.wake.resume() }
+        changes.changed()
     }
 
     /// Returns when `count` sleeps began, of any length, ended or not.

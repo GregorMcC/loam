@@ -123,7 +123,7 @@ import Testing
         model.onOwnChange = { record.ownChanges.append($0) }
         model.confirmClose = { prompt in
             record.prompts.append(prompt)
-            while record.holdsTheQuestion { try? await Task.sleep(for: .milliseconds(5)) }
+            await poll { !record.holdsTheQuestion }
             return record.answer
         }
         let rig = Rig(dir: dir, model: model, record: record)

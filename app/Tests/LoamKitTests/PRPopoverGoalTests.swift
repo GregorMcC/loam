@@ -66,7 +66,7 @@ import Testing
 }
 
 @MainActor
-@Suite struct PRPopoverGoalEditTests {
+@Suite(.waitLimit) struct PRPopoverGoalEditTests {
     let plotID = "plotaaaaab"
     let id = "wtreaaaaab"
 
@@ -301,7 +301,7 @@ import Testing
         rig.model.prPopover.setGoalDraft("Mine")
         try rig.touch("hold-edit")
         let saving = Task { await rig.model.saveGoalEdit() }
-        while !rig.model.prPopover.isSavingGoal { try await Task.sleep(for: .milliseconds(2)) }
+        await waitUntil("the save started") { rig.model.prPopover.isSavingGoal }
         // The field is locked while the save runs.
         rig.model.prPopover.setGoalDraft("Other")
         #expect(rig.model.prPopover.goalDraft == "Mine")
