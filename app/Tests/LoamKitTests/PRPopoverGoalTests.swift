@@ -103,7 +103,9 @@ import Testing
                 [ -f '\(d)/fail-stale' ] && { cat '\(d)/error_stale_worktree.json'; exit 10; }
                 [ -f '\(d)/fail-edit' ] && { cat '\(d)/error_invalid.json'; exit 2; }
                 cat '\(d)/worktree_edit.json';;
-              "worktree list") cat '\(d)/list.json';;
+              "worktree list") [ -f '\(d)/fail-list' ] && exit 1
+                [ -f '\(d)/fail-list-once' ] && { rm '\(d)/fail-list-once'; exit 1; }
+                cat '\(d)/list.json';;
               *) exit 1;;
             esac
             """, at: dir.appendingPathComponent("loam"))
@@ -193,6 +195,53 @@ import Testing
         await rig.model.saveGoalEdit()
         #expect(rig.edits().last == "worktree edit \(plotID) \(id) --goal Claude's goal, and mine --expect worktree:\(id)=40 --json --actor app")
         #expect(rig.model.prPopover.goalDraft == nil)
+    }
+
+    /// The row that the next read gives, as after a `set_worktree_goal` by Claude. It does not read the list.
+    func writeList(_ rig: Rig, goal: String, version: Int) throws {
+        var rows = try #require(try JSONSerialization.jsonObject(with: Fixtures.data("worktree_list")) as? [[String: Any]])
+        var worktree = try #require(rows[0]["worktree"] as? [String: Any])
+        worktree["goal"] = goal
+        worktree["version"] = version
+        rows[0]["worktree"] = worktree
+        try JSONSerialization.data(withJSONObject: rows).write(to: rig.dir.appendingPathComponent("list.json"))
+    }
+
+    @Test func aStaleAnswerWithNoNewReadKeepsYourDraftAndNeverShowsTheOldGoalAsNew() async throws {
+        let rig = try await rig()
+        rig.model.openPullRequest(id)
+        rig.model.beginGoalEdit()
+        rig.model.prPopover.setGoalDraft("Mine")
+        // Claude sets the goal, but the read after the stale answer fails: the row is still the one that the edit opened with.
+        try writeList(rig, goal: "Claude's goal", version: 40)
+        try rig.touch("fail-stale")
+        try rig.touch("fail-list")
+        await rig.model.saveGoalEdit()
+        #expect(rig.model.worktreeStatus(id)?.worktree.version == 0)
+        #expect(rig.model.prPopover.goalDraft == "Mine", "the draft stays")
+        #expect(rig.model.prPopover.goalProblem?.contains("could not read") == true)
+        #expect(!rig.model.prPopover.isSavingGoal && rig.model.prPopover.goalDraft != "Fix the login form")
+        // The read works again. The next Return gets a stale answer again, and now the field shows the new goal.
+        try FileManager.default.removeItem(at: rig.dir.appendingPathComponent("fail-list"))
+        await rig.model.saveGoalEdit()
+        #expect(rig.model.prPopover.goalDraft == "Claude's goal")
+        #expect(rig.model.prPopover.goalProblem == "The goal changed meanwhile. Loam shows the new goal.")
+        #expect(rig.model.prPopover.goalVersion == 40)
+    }
+
+    @Test func aStaleAnswerShowsTheNewGoalEvenWhenTheSharedReadDidNotApply() async throws {
+        let rig = try await rig()
+        rig.model.openPullRequest(id)
+        rig.model.beginGoalEdit()
+        rig.model.prPopover.setGoalDraft("Mine")
+        // The shared read fails once (the read of the stale answer), then reads fine: the second read finds the new row.
+        try writeList(rig, goal: "Claude's goal", version: 40)
+        try rig.touch("fail-stale")
+        try rig.touch("fail-list-once")
+        await rig.model.saveGoalEdit()
+        #expect(rig.model.prPopover.goalDraft == "Claude's goal")
+        #expect(rig.model.prPopover.goalVersion == 40)
+        #expect(rig.model.prPopover.goalProblem == "The goal changed meanwhile. Loam shows the new goal.")
     }
 
     @Test func anyOtherFailureKeepsTheEditOpenWithTheMessageOfTheCore() async throws {

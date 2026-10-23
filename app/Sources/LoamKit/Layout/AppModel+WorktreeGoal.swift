@@ -45,8 +45,10 @@ extension AppModel {
     public func saveGoalEdit() async {
         guard let id = prPopover.worktreeID, let draft = prPopover.goalDraft, !prPopover.isSavingGoal else { return }
         let open = prPopover.openCount
+        let expected = prPopover.goalVersion
+        let plot = worktreeStatus(id)?.worktree.plotID
         prPopover.beginSavingGoal()
-        let saved = await setWorktreeGoal(id, to: draft, expect: prPopover.goalVersion)
+        let saved = await setWorktreeGoal(id, to: draft, expect: expected)
         // A popover that closed or opened again meanwhile has dropped the edit.
         guard prPopover.isOpen, prPopover.openCount == open, prPopover.isSavingGoal else { return }
         switch saved {
@@ -55,8 +57,21 @@ extension AppModel {
         case .failed(let message):
             prPopover.goalFailed(message)
         case .changed:
-            // The read after the stale answer gave the row as it is now. A worktree that is gone or has a PR has no edit.
-            guard let status = worktreeStatus(id), PRPopoverContent(status).goal != nil else { return prPopover.cancelGoalEdit() }
+            // The read after the stale answer gave the row as it is now. A worktree that is gone has no edit.
+            guard var status = worktreeStatus(id) else { return prPopover.cancelGoalEdit() }
+            // That read can come back with no row: a newer read was ahead of it, or it failed. The row then still has the
+            // version that the edit opened with, and its goal is the old one. Read the plot once more for this answer.
+            if status.worktree.version == expected, let plot {
+                let rows = try? await client.worktrees(plot: plot)
+                guard prPopover.isOpen, prPopover.openCount == open, prPopover.isSavingGoal else { return }
+                guard let fresh = rows?.first(where: { $0.worktree.id == id }), fresh.worktree.version != expected else {
+                    // Never show a goal of the same version as the new goal. The draft stays, and Return tries again.
+                    return prPopover.goalFailed("The goal changed meanwhile, but Loam could not read the new goal. Press Return to try again.")
+                }
+                status = fresh
+            }
+            // A worktree that has a PR has no goal edit.
+            guard PRPopoverContent(status).goal != nil else { return prPopover.cancelGoalEdit() }
             prPopover.goalChanged(to: status.worktree.goal ?? "", version: status.worktree.version,
                                   message: "The goal changed meanwhile. Loam shows the new goal.")
         }
