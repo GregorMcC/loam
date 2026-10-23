@@ -127,6 +127,24 @@ import Testing
         }
     }
 
+    /// Ticket 129: the States table of the design README gives the hover fill as a percent of the ink. The code has one
+    /// value for it, `LoamTheme.hoverFillAlpha`.
+    @Test func theHoverFillAlphaIsTheValueOfTheStatesTable() throws {
+        let readme = try String(contentsOf: Self.root.appendingPathComponent("docs/design/README.md"), encoding: .utf8)
+        let row = try #require(readme.split(separator: "\n").first { $0.hasPrefix("| Hover |") }, "the States table has no Hover row")
+        let found = try #require(row.range(of: #"`ink` at (\d+)%"#, options: .regularExpression), "the Hover row has no percent: \(row)")
+        let percent = try #require(Double(row[found].dropFirst("`ink` at ".count).dropLast()))
+        #expect(LoamTheme.hoverFillAlpha == CGFloat(percent / 100))
+    }
+
+    /// `LoamColor` is in the app target, which this suite cannot import, so the test reads its source. `inkFill` is the
+    /// SwiftUI hover fill, and it must take the alpha from `LoamTheme` and not set a value of its own.
+    @Test func theSwiftUIHoverFillReadsTheHoverFillAlpha() throws {
+        let source = try String(contentsOf: Self.root.appendingPathComponent("app/Sources/Loam/Design/LoamDesign.swift"), encoding: .utf8)
+        let line = try #require(source.split(separator: "\n").first { $0.contains("static var inkFill") }, "LoamColor has no inkFill")
+        #expect(line.contains("LoamTheme.hoverFillAlpha"), "inkFill is \(line)")
+    }
+
     // MARK: Ghostty themes
 
     private func themeLines(_ name: String) throws -> [String: [String]] {

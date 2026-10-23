@@ -535,7 +535,7 @@ private struct GoalButton: View {
             }
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
-            .background(RoundedRectangle(cornerRadius: 5).fill(LoamColor.hoverFill).opacity(hovering ? 1 : 0))
+            .background(RoundedRectangle(cornerRadius: 5).fill(LoamColor.inkFill).opacity(hovering ? 1 : 0))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

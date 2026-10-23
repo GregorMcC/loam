@@ -571,8 +571,6 @@ private struct PanelRequestKey: Equatable {
 extension LoamColor {
     /// A hairline: the ink at 8%. Structure is felt, not seen.
     static var hairline: Color { ink.opacity(0.08) }
-    /// The neutral fill of a hovered row: the ink at 6%.
-    static var hoverFill: Color { ink.opacity(0.06) }
     /// The fill of a chip and a small round control: the ink at 10%.
     static var chipFill: Color { ink.opacity(0.10) }
     /// The fill of an avatar: the ink at 7%.
@@ -640,7 +638,7 @@ struct BriefText: View {
             .padding(.horizontal, inset)
             .padding(.vertical, inset == 0 ? 0 : 4)
             .background(
-                RoundedRectangle(cornerRadius: LoamTheme.radiusSm).fill(LoamColor.hoverFill)
+                RoundedRectangle(cornerRadius: LoamTheme.radiusSm).fill(LoamColor.inkFill)
                     .opacity(inset > 0 && (hovering || focused) ? 1 : 0))
             .onHover { hovering = $0 }
             .animation(LoamAnimation.fast, value: hovering)
@@ -723,7 +721,7 @@ struct PanelSectionHeader: View {
                     Image(systemName: "plus")
                         .font(.system(size: 11, weight: .medium))
                         .frame(width: 20, height: 20)
-                        .background(RoundedRectangle(cornerRadius: 5).fill(LoamColor.hoverFill).opacity(hovering ? 1 : 0))
+                        .background(RoundedRectangle(cornerRadius: 5).fill(LoamColor.inkFill).opacity(hovering ? 1 : 0))
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -913,7 +911,7 @@ struct HoverMenuRow<Content: View, Actions: View>: View {
         }
         .padding(.horizontal, 8)
         .frame(minHeight: minHeight)
-        .background(RoundedRectangle(cornerRadius: LoamTheme.radiusSm).fill(LoamColor.hoverFill).opacity(active ? 1 : 0))
+        .background(RoundedRectangle(cornerRadius: LoamTheme.radiusSm).fill(LoamColor.inkFill).opacity(active ? 1 : 0))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .animation(LoamAnimation.fast, value: active)

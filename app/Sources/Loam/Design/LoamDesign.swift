@@ -51,8 +51,9 @@ enum LoamColor {
     static var ink: Color { ChromeTick.shared.colors["ink"]! }
     // Neutral fills and hairlines mix from the derived ink (polish prototype, ticket 86), so they
     // follow the terminal theme and take no fixed hex.
-    /// A field at rest and a hovered row: the ink at 5%.
-    static var inkFill: Color { ink.opacity(0.05) }
+    /// A field at rest and a hovered row: the ink at `LoamTheme.hoverFillAlpha` (5%). The AppKit views read the
+    /// same constant, so a hover fill has one value. A field at rest takes the same value.
+    static var inkFill: Color { ink.opacity(LoamTheme.hoverFillAlpha) }
     /// The selected row: the ink at 9%.
     static var inkSelected: Color { ink.opacity(0.09) }
     /// A keycap: the ink at 10%.
