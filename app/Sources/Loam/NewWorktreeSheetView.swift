@@ -81,7 +81,10 @@ struct NewWorktreeSheetView: View {
             // The hosting view becomes first responder after this view appears. The Branch field takes the keys, so Return
             // starts a session from a link and a first key names the branch from the plus. When the plot cannot be read, no
             // field shows, and the card takes them. After the first try, a control of the sheet that you chose meanwhile,
-            // with a click or a Tab, keeps the keys.
+            // with a click or a Tab, keeps the keys. A focus left from a refused move is cleared first (ticket 130).
+            await window.clearALeftFocus(of: NSHostingView<NewWorktreeSheetView>.self, isFocused: focus != nil) {
+                focus = nil
+            }
             for attempt in 0..<5 {
                 guard app.newWorktreeSheet.isOpen else { return }
                 let first = NewWorktreeContent.fields(of: app.newWorktreeSheet).first ?? .sheet
@@ -120,15 +123,7 @@ struct NewWorktreeSheetView: View {
     /// the keys and nothing has the focus. SwiftUI does not give the card the keys on its own. The host is
     /// `NSHostingView<NewWorktreeSheetView>` (`installNewWorktreeSheet`). The `start-work` driver scenario checks this with
     /// a Tab at the open.
-    private var aControlHasTheKeys: Bool {
-        var view = (window.window ?? NSApp.keyWindow)?.firstResponder as? NSView
-        if view is NSHostingView<NewWorktreeSheetView> { return false }
-        while let current = view {
-            if current is NSHostingView<NewWorktreeSheetView> { return true }
-            view = current.superview
-        }
-        return false
-    }
+    private var aControlHasTheKeys: Bool { window.controlHasTheKeys(in: NSHostingView<NewWorktreeSheetView>.self) }
 
     /// Return, or a click on the primary button. The model does nothing while the check blocks.
     private func start() {

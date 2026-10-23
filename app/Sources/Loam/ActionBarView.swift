@@ -200,11 +200,9 @@ struct ActionsMenuView: View {
         }
         .background(WindowReader(ref: window))
         .task(id: menu.openCount) {
-            // The hosting view becomes first responder after this view appears.
-            for _ in 0..<5 {
-                fieldFocused = true
-                try? await Task.sleep(for: .milliseconds(30))
-            }
+            // The hosting view becomes first responder after this view appears. The field takes the keys.
+            await window.giveKeysToAControl(of: NSHostingView<ActionsMenuView>.self, while: { menu.isOpen },
+                                            isFocused: { fieldFocused }, focus: { fieldFocused = $0 })
         }
     }
 

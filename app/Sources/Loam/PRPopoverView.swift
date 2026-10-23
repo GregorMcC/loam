@@ -70,11 +70,8 @@ struct PRPopoverView: View {
         .task(id: model.openCount) {
             // The hosting view becomes first responder after this view appears. A popover that closed meanwhile
             // takes no keys: they went back to where they were.
-            for _ in 0..<5 {
-                guard app.prPopover.isOpen else { return }
-                focused = true
-                try? await Task.sleep(for: .milliseconds(30))
-            }
+            await window.giveKeysToAControl(of: NSHostingView<PRPopoverView>.self, while: { app.prPopover.isOpen },
+                                            isFocused: { focused }, focus: { focused = $0 })
         }
     }
 

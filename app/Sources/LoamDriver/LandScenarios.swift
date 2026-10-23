@@ -186,9 +186,12 @@ extension Scenarios {
         // off. Escape still closes the sheet, and the items are on again (ticket 128).
         try await expectKeysOffUnderSheet(app, host, plot: plot)
         try await settledShot("land-sheet-blocked")
+        let sheetKeys = app.keyView
         app.press(.escape)
         try await sheetCloses()
         try expectWindowItems(enabled: true)
+        // The closed sheet does not take the keys back (ticket 130).
+        try app.checkClosedOverlayTakesNoKeys(sheetKeys, "the closed sheet")
 
         // 3. A check still runs: the button waits for GitHub with --auto, the third box is off, and nothing closes or saves.
         let beforeAuto = try rig.lastChangeID(plot)
