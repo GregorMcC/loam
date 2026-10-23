@@ -308,6 +308,64 @@ func TestCheckSkipsTheBaseForABranchThatExists(t *testing.T) {
 	}
 }
 
+// The New worktree sheet shows the seed line of the worktree before it exists.
+// The dry run builds it with the code that writes the seed, so the line in the
+// sheet is the line that Create then puts in the seed.
+func TestCheckShowsTheSeedLineThatCreateWrites(t *testing.T) {
+	e := setup(t)
+	testutil.Git(t, e.repo, "branch", "local-only")
+	for _, c := range []struct {
+		name string
+		o    worktree.CreateOptions
+		line string
+	}{
+		{"goal, link and the default base", worktree.CreateOptions{Name: "eng-482", Goal: "Link kinds for Figma", Link: linearIssue},
+			"- app-eng-482: Link kinds for Figma (ENG-482, from origin/main)"},
+		// A base that names a local branch uses the local branch.
+		{"a base that the app picked", worktree.CreateOptions{Name: "fix-57", Base: "main", Link: githubIssue},
+			"- app-fix-57 (example/widgets#57, from main)"},
+		{"nothing but the name", worktree.CreateOptions{Name: "plain"}, "- app-plain (from origin/main)"},
+		// A branch that exists keeps its history, so the worktree has no base.
+		{"a branch that exists", worktree.CreateOptions{Name: "local-only", Goal: "Pick it up"}, "- app-local-only: Pick it up"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			c.o.PlotID, c.o.Repo = e.plot.ID, e.repo
+			res, err := worktree.Check(e.s, c.o)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if res.SeedLine != c.line {
+				t.Fatalf("seed line %q, want %q", res.SeedLine, c.line)
+			}
+			if _, err := worktree.Create(e.s, c.o); err != nil {
+				t.Fatal(err)
+			}
+			if got := e.seedText(); !strings.Contains(got, c.line+"\n") {
+				t.Fatalf("the seed has no line %q:\n%s", c.line, got)
+			}
+		})
+	}
+	// A name that is not a branch name has no worktree, so it has no line.
+	res, err := worktree.Check(e.s, worktree.CreateOptions{PlotID: e.plot.ID, Repo: e.repo, Name: "a b"})
+	if err != nil || res.SeedLine != "" {
+		t.Fatalf("%+v %v", res, err)
+	}
+}
+
+// The sheet opens before you type a name, and it lists the bases at once. An
+// empty name is a result, not a failure.
+func TestCheckListsTheBasesForAnEmptyName(t *testing.T) {
+	e := setup(t)
+	res, err := worktree.Check(e.s, worktree.CreateOptions{PlotID: e.plot.ID, Repo: e.repo, Name: ""})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.ValidName || res.NameError == "" || res.SeedLine != "" || res.BranchExists || res.WorktreeExists ||
+		res.DefaultBase != "origin/main" || !slices.Equal(res.Bases, []string{"origin/main", "main"}) {
+		t.Fatalf("%+v", res)
+	}
+}
+
 func TestCheckWithoutARemote(t *testing.T) {
 	e := setup(t)
 	testutil.Git(t, e.repo, "remote", "remove", "origin")
@@ -331,5 +389,27 @@ func TestCheckDoesNotAskTheRemote(t *testing.T) {
 	}
 	if res.DefaultBase != "" || !slices.Equal(res.Bases, []string{"origin/main", "main"}) {
 		t.Fatalf("%+v", res)
+	}
+}
+
+// With no origin/HEAD, the dry run does not know the base that Create finds by
+// asking the remote, so its seed line has no base. Create then writes the
+// line with the base, "from origin/main". The contract says so.
+func TestCheckSeedLineWithoutADefaultBaseHasNoBaseAndCreateAddsIt(t *testing.T) {
+	e := setup(t)
+	testutil.Git(t, e.repo, "remote", "set-head", "origin", "--delete")
+	o := worktree.CreateOptions{PlotID: e.plot.ID, Repo: e.repo, Name: "plain"}
+	res, err := worktree.Check(e.s, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.DefaultBase != "" || res.SeedLine != "- app-plain" {
+		t.Fatalf("default base %q, seed line %q", res.DefaultBase, res.SeedLine)
+	}
+	if _, err := worktree.Create(e.s, o); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.seedText(); !strings.Contains(got, "- app-plain (from origin/main)\n") {
+		t.Fatalf("the seed has no line with the base the remote gave:\n%s", got)
 	}
 }

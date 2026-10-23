@@ -186,7 +186,10 @@ public final class SwitcherModel {
                 id: SwitcherItem.linkKey(plot: link.plotID, link: link.linkID), kind: .link, title: link.label,
                 otherText: [link.target, plotName], plotName: plotName,
                 target: .link(plot: link.plotID, link: link.linkID), icon: .link(link.kind, target: link.target),
-                linkKind: link.kind, linkTarget: link.target))
+                linkKind: link.kind, linkTarget: link.target,
+                // An issue starts work (ticket 115). Return still opens the link.
+                alternate: IssueLink(kind: link.kind, target: link.target) == nil
+                    ? nil : SwitcherItem.Alternate(title: "Start work\u{2026}", action: .startWork(link))))
         }
         for action in actions {
             items.append(SwitcherItem(
@@ -238,6 +241,27 @@ public final class SwitcherModel {
     public func chooseSelected() {
         guard results.indices.contains(selection) else { return }
         choose(results[selection].item)
+    }
+
+    /// ⌘Return: the second action of the selected result, such as Start work… on an issue link.
+    public func chooseSelectedAlternate() {
+        guard results.indices.contains(selection) else { return }
+        chooseAlternate(results[selection].item)
+    }
+
+    /// Does what ⌘Return does, then closes the switcher. An item with no second action does nothing, so the key never does
+    /// what Return does by mistake. The plot of the issue becomes the active plot first, so the sheet opens over it.
+    public func chooseAlternate(_ item: SwitcherItem) {
+        guard let alternate = item.alternate, let app else { return }
+        switch alternate.action {
+        case .startWork(let link):
+            close()
+            // A worktree that is made now keeps the sheet, so the plot stays where it is.
+            guard app.canOpenNewWorktree else { return }
+            useTimes?.record(item.id)
+            app.activate(plot: link.plotID)
+            app.openNewWorktree(plot: link.plotID, from: link.plotLink)
+        }
     }
 
     /// Does what Return does, then closes the switcher. A plot or pane switch comes first, so the

@@ -84,6 +84,8 @@ public final class AppModel {
     /// after a merge (ticket 113). The window reads the terminal. The default says yes, so with no terminal to read,
     /// Loam asks.
     @ObservationIgnored public var paneRunsAProcess: (PaneID) -> Bool = { _ in true }
+    /// The New worktree sheet (ticket 115).
+    @ObservationIgnored public let newWorktreeSheet = NewWorktreeModel()
     /// Asks the question of a close that ends a session in a turn, and returns true on the confirm button. The window
     /// shows it as a sheet. The default says no, so a land with no window never stops a session.
     @ObservationIgnored public var confirmClose: (ClosePrompt) async -> Bool = { _ in false }
@@ -1195,7 +1197,10 @@ public final class AppModel {
     private func followPullRequestRow() {
         guard let id = prPopover.worktreeID else { return }
         guard let status = worktreeStatus(id) else { return prPopover.close() }
-        if PRPopoverContent(status).passedChecks.isEmpty { prPopover.hidePassedChecks() }
+        let content = PRPopoverContent(status)
+        if content.passedChecks.isEmpty { prPopover.hidePassedChecks() }
+        // A worktree that got its PR has no Goal row to edit (ticket 115).
+        if content.goal == nil { prPopover.cancelGoalEdit() }
     }
 
     /// Re-run failed: `loam worktree rerun`. The popover shows what GitHub did, then asks about the
@@ -1360,33 +1365,6 @@ public final class AppModel {
     /// worktree folder, a shell pane by its start folder.
     public var openPaneFolders: [String] {
         workspace.livePaneIDs.compactMap(workspace.folder(of:))
-    }
-
-    /// `loam worktree new`, then a seeded session in the new worktree. `repo` nil means the main repo.
-    /// Returns the worktree, or nil with `lastError` set.
-    @discardableResult
-    public func newWorktree(in plot: String, named name: String, repo: String? = nil, base: String? = nil) async -> Worktree? {
-        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return nil }
-        do {
-            let repoPath: String
-            if let repo {
-                repoPath = repo
-            } else if let main = try await client.show(plot: plot).repos.first(where: \.main) {
-                repoPath = main.path
-            } else {
-                lastError = "The plot has no repo. Add a repo first."
-                return nil
-            }
-            let made = try await client.worktreeNew(plot: plot, repo: repoPath, name: name, base: base)
-            lastError = nil
-            await reloadWorktrees()
-            openWorktreePane(made.worktree)
-            return made.worktree
-        } catch {
-            report(error)
-            return nil
-        }
     }
 
     /// Opens a tab in the worktree with a seeded session. `loam start --worktree` runs the setup

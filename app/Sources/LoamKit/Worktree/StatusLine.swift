@@ -27,14 +27,16 @@ public struct StatusLine: Equatable, Sendable {
     /// The parts as one line, with `separator` between them.
     public var text: String { parts.map(\.text).joined(separator: Self.separator) }
 
-    /// `now` and `timeZone` give the day and the clock of a merge time.
-    public init(of status: WorktreeStatus, now: Date = Date(), timeZone: TimeZone = .current) {
+    /// `now` and `timeZone` give the day and the clock of a merge time. With `includesLinkKey`, the line of a worktree with
+    /// no PR starts with the key of its link, such as "ENG-482 · 4 commits not pushed" (ticket 115). A PR line never has it.
+    public init(of status: WorktreeStatus, now: Date = Date(), timeZone: TimeZone = .current, includesLinkKey: Bool = false) {
         if status.missing {
             parts = [Part(text: "Folder is gone")]
         } else if let pr = status.pr, let stage = status.stage, stage != .noStage {
             parts = Self.parts(of: pr, stage: stage, now: now, timeZone: timeZone)
         } else {
-            parts = Self.localParts(of: status)
+            let key = includesLinkKey ? status.worktree.link?.key : nil
+            parts = (key.flatMap { $0.isEmpty ? nil : [Part(text: $0)] } ?? []) + Self.localParts(of: status)
         }
     }
 

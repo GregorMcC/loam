@@ -594,6 +594,10 @@
       "/tmp/loam-contract/repos/web",
       "fix-login",
       "--dry-run",
+      "--goal",
+      "Fix the login form",
+      "--link",
+      "https://github.com/example/widgets/issues/57",
       "--json"
     ],
     "exit_code": 0,

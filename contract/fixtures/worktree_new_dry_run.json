@@ -7,6 +7,7 @@
   "default_base": "origin/main",
   "folder": "web-fix-login",
   "name": "fix-login",
+  "seed_line": "- web-fix-login: Fix the login form (example/widgets#57, from origin/main)",
   "valid_name": true,
   "worktree_exists": false
 }

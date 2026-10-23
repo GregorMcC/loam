@@ -10,6 +10,7 @@ extension MainWindowController {
         if model.switcher.isOpen { model.switcher.close() }
         closeActionsMenu()
         model.closePullRequest()
+        model.closeNewWorktree()
         window?.makeFirstResponder(landHost)
     }
 }

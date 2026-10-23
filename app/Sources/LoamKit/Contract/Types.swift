@@ -507,10 +507,14 @@ public struct WorktreeCheck: Codable, Equatable, Sendable {
     public var defaultBase: String
     /// The default base first, then the branches of origin, then the local branches.
     public var bases: [String]
+    /// The line that the seed gets for the worktree, with the goal, the link and the base of the check, such as
+    /// "- web-fix-login: Fix the login form (#57, from origin/main)". Nil when the name is not valid, and from a
+    /// core before ticket 115.
+    public var seedLine: String?
     enum CodingKeys: String, CodingKey {
         case name, folder, bases
         case validName = "valid_name", nameError = "name_error", worktreeExists = "worktree_exists"
-        case branchExists = "branch_exists", defaultBase = "default_base"
+        case branchExists = "branch_exists", defaultBase = "default_base", seedLine = "seed_line"
     }
 }
 

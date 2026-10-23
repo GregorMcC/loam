@@ -31,6 +31,8 @@ public struct SwitcherPreview: Equatable, Sendable {
     public var rows: [Row]
     /// The primary action in the footer: "Open plot", "Go to pane", "Show pull request", "Open link", "Run".
     public var footerAction: String
+    /// The second action in the footer, on ⌘Return (ticket 115). Nil when the item has none.
+    public var alternateAction: String?
 
     /// The facts about one pane that the preview needs.
     public struct PaneFacts: Equatable, Sendable {
@@ -214,7 +216,7 @@ public struct SwitcherPreview: Equatable, Sendable {
         }
         if let plot = item.plotName { rows.append(Row(label: "Plot", value: .text(plot))) }
         return SwitcherPreview(icon: item.icon, title: item.title, caption: kind, whereItStands: nil, rows: rows,
-                               footerAction: "Open link")
+                               footerAction: "Open link", alternateAction: item.alternate?.title)
     }
 
     private static func action(_ item: SwitcherItem) -> SwitcherPreview {

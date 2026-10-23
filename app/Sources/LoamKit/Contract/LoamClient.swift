@@ -142,9 +142,33 @@ public struct LoamClient: Sendable {
         try await write(["repo", "rm", plot, repo] + (newMain.map { ["--main", $0] } ?? []) + expectArgs(expect))
     }
 
-    /// `loam worktree new`. `repo` is a repo ID or a path.
-    public func worktreeNew(plot: String, repo: String, name: String, base: String? = nil) async throws -> WorktreeNewResult {
-        try await write(["worktree", "new", plot, repo, name] + (base.map { ["--base", $0] } ?? []))
+    /// `loam worktree new`. `repo` is a repo ID or a path. `goal` and `link` are as in `worktreeCheck`. The flags come
+    /// first and `--` comes before the plot, the repo and the name: the name is typed text, so "-h" is a name and not
+    /// the help flag.
+    public func worktreeNew(plot: String, repo: String, name: String, base: String? = nil, goal: String? = nil,
+                            link: String? = nil) async throws -> WorktreeNewResult {
+        try await write(["worktree", "new"] + newArgs(base: base, goal: goal, link: link), positionals: [plot, repo, name])
+    }
+
+    /// `loam worktree new --dry-run`: changes nothing and never asks origin, so the New worktree sheet can run it as you
+    /// type. A name that is not a good branch name is a result. A repo, a link or a base that `worktreeNew` would refuse
+    /// throws, as `worktreeNew` does. `link` is the ID of a link of the plot, or the URL of an issue.
+    public func worktreeCheck(plot: String, repo: String, name: String, base: String? = nil, goal: String? = nil,
+                              link: String? = nil) async throws -> WorktreeCheck {
+        try await read(["worktree", "new", "--dry-run"] + newArgs(base: base, goal: goal, link: link), positionals: [plot, repo, name])
+    }
+
+    /// `loam worktree edit --goal`: sets the goal of a worktree as one change. An empty goal clears it. `expect` is the
+    /// version of the goal that you read (`Worktree.version`), so a goal that changed meanwhile throws `.stale`.
+    public func worktreeEdit(plot: String, worktree: String, goal: String, expect: Int? = nil) async throws -> WorktreeEditResult {
+        try await write(["worktree", "edit", plot, worktree, "--goal", goal]
+            + (expect.map { ["--expect", "worktree:\(worktree)=\($0)"] } ?? []))
+    }
+
+    /// The flags of `worktree new`, with and without `--dry-run`. A goal or a link that is empty is left out.
+    private func newArgs(base: String?, goal: String?, link: String?) -> [String] {
+        (base.map { ["--base", $0] } ?? []) + ((goal?.isEmpty ?? true) ? [] : ["--goal", goal!])
+            + ((link?.isEmpty ?? true) ? [] : ["--link", link!])
     }
 
     /// `loam worktree rm`. `openPanes` are the folders of the panes that are open or saved, so the core
@@ -227,13 +251,16 @@ public struct LoamClient: Sendable {
         note.map { ["--note", $0] } ?? []
     }
 
-    private func read<T: Decodable>(_ args: [String]) async throws -> T {
-        try decode(await run(args + ["--json"], stdin: nil))
+    /// `positionals` are the arguments that are not flags. They go after `--`, so none of them can be read as a flag.
+    private func read<T: Decodable>(_ args: [String], positionals: [String] = []) async throws -> T {
+        try decode(await run(args + ["--json"] + Self.afterFlags(positionals), stdin: nil))
     }
 
-    private func write<T: Decodable>(_ args: [String], stdin: String? = nil) async throws -> T {
-        try decode(await run(args + ["--json", "--actor", "app"], stdin: stdin))
+    private func write<T: Decodable>(_ args: [String], positionals: [String] = [], stdin: String? = nil) async throws -> T {
+        try decode(await run(args + ["--json", "--actor", "app"] + Self.afterFlags(positionals), stdin: stdin))
     }
+
+    private static func afterFlags(_ positionals: [String]) -> [String] { positionals.isEmpty ? [] : ["--"] + positionals }
 
     private func decode<T: Decodable>(_ data: Data) throws -> T {
         do {

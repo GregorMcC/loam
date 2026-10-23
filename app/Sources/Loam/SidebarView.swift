@@ -296,6 +296,10 @@ private struct TreeRow<Trailing: View>: View {
     /// The plot level is semibold, so the levels read apart.
     var bold = false
     var truncation: Text.TruncationMode = .tail
+    /// The key of the issue that a worktree started from (ticket 115), in `ink-faint` after the name. It shows only when
+    /// the whole name and the key fit. The name keeps its room: a long name drops the key, which the Worktrees row and
+    /// the tooltip of the row have.
+    var key: String?
     @ViewBuilder var trailing: () -> Trailing
 
     var body: some View {
@@ -303,18 +307,38 @@ private struct TreeRow<Trailing: View>: View {
             LoamIconView(icon: icon, size: 12, color: symbolColor)
                 .frame(width: 16)
                 .accessibilityHidden(true)
-            Text(title)
-                .font(Font(bold ? NSFont.systemFont(ofSize: LoamTheme.rowStyle.size, weight: .semibold)
-                                : LoamTheme.font(LoamTheme.rowStyle)))
-                .foregroundStyle(titleColor)
-                .lineLimit(1)
-                .truncationMode(truncation)
-                // The name fills the row (flex: 1 in docs/design), so the marks sit at the trailing edge.
-                .frame(maxWidth: .infinity, alignment: .leading)
+            ViewThatFits(in: .horizontal) {
+                if let key {
+                    HStack(spacing: LoamTheme.space2) {
+                        name
+                        Text(key)
+                            .font(.system(size: 11))
+                            .foregroundStyle(LoamColor.inkFaint)
+                            .lineLimit(1)
+                            .fixedSize()
+                            // The name says the key, so VoiceOver does not read it twice.
+                            .accessibilityHidden(true)
+                    }
+                }
+                name
+            }
             trailing()
         }
         .frame(minHeight: 26)  // With the list's own padding, a row is about 30 pt.
         .contentShape(Rectangle())
+    }
+
+    private var name: some View {
+        Text(title)
+            .font(Font(bold ? NSFont.systemFont(ofSize: LoamTheme.rowStyle.size, weight: .semibold)
+                            : LoamTheme.font(LoamTheme.rowStyle)))
+            .foregroundStyle(titleColor)
+            .lineLimit(1)
+            .truncationMode(truncation)
+            // The name fills the row (flex: 1 in docs/design), so the marks sit at the trailing edge.
+            .frame(maxWidth: .infinity, alignment: .leading)
+            // The key is in the label whether the row shows it or not, so VoiceOver has it when the name needs the room.
+            .accessibilityLabel(key.map { "\(title), \($0)" } ?? title)
     }
 }
 
@@ -402,7 +426,7 @@ private struct PlotRowView: View {
         .contextMenu {
             // Ticket 93: a session in the plot folder, not in a repo.
             Button("New session") { model.openPlotSession(row.id) }
-            Button("New worktree\u{2026}") { WorktreeDialogs.askNewWorktree(plot: row.id, model: model) }
+            Button("New worktree\u{2026}") { model.openNewWorktree(plot: row.id) }
             Divider()
             Button("Archive") { PlotDialogs.askArchive(row.id, model: model) }
         }
@@ -462,7 +486,7 @@ private struct CheckoutRowView: View {
     var body: some View {
         TreeRow(icon: .symbol(row.kind == .worktree ? "arrow.triangle.pull" : "arrow.triangle.branch"),
                 title: row.label, titleColor: missing ? LoamColor.inkFaint : selected ? LoamColor.ink : LoamColor.inkMuted,
-                truncation: .middle) {
+                truncation: .middle, key: missing ? nil : row.worktree?.linkKey) {
             if let detail = row.detail {
                 Text(detail)
                     .loamText(LoamTheme.captionStyle, LoamColor.inkFaint)
@@ -478,7 +502,8 @@ private struct CheckoutRowView: View {
                 CountChip(text: "\(row.panes.count)")
             }
         }
-        .help(row.worktree?.mark?.tooltip ?? "")
+        // The key and the goal say what the work is for (ticket 115). A worktree with no goal has the words of its mark.
+        .help(row.worktree?.tooltip ?? "")
         .onTapGesture { show() }
         .contextMenu {
             Button("New pane") { newPane() }

@@ -15,6 +15,7 @@ extension MainWindowController {
             closeActionsMenu()
             model.closePullRequest()
             model.closeLandSheet()
+            model.closeNewWorktree()
         }
         switcherHost.isHidden = !open
         if open {

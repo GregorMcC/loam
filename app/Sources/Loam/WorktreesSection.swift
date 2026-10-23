@@ -22,7 +22,7 @@ struct WorktreesSection: View {
                     title: "Worktrees",
                     detail: ShipAge.label(for: rows, now: context.date, timeZone: timeZone).map { ($0, "panel-worktrees-age") },
                     add: ("New worktree\u{2026}", "panel-add-worktree")
-                ) { WorktreeDialogs.askNewWorktree(plot: plot, model: app) }
+                ) { app.openNewWorktree(plot: plot) }
             }
             ForEach(app.shipNotices(for: plot), id: \.self) { ShipNoticeCard(app: app, notice: $0) }
             ForEach(rows, id: \.worktree.id) {
@@ -87,7 +87,7 @@ private struct WorktreeRowView: View {
     @State private var probe = AnchorProbe()
 
     var body: some View {
-        let line = StatusLine(of: row, timeZone: timeZone)
+        let line = StatusLine(of: row, timeZone: timeZone, includesLinkKey: true)
         let faded = row.stage == .merged && !row.missing
         HoverMenuRow(menuLabel: "Worktree actions", menuID: "panel-worktree-menu-\(row.worktree.id)",
                      kind: row.missing ? "gone" : nil, minHeight: 44, trailingInset: 28) {
