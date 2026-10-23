@@ -56,6 +56,7 @@ enum Scenarios {
         Scenario(name: "after-merge", limit: 120, body: afterMerge),
         Scenario(name: "start-work", limit: 180, body: startWork),
         Scenario(name: "depth-shot", limit: 180, body: depthShot),
+        Scenario(name: "toolbar-sheet", limit: 90, body: toolbarSheet),
         Scenario(name: "archive", limit: 120, body: archive),
         Scenario(name: "restore-quit", limit: 90, body: restoreQuit),
         Scenario(name: "restore-relaunch", limit: 90, body: restoreRelaunch),

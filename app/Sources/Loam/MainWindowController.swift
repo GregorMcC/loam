@@ -42,6 +42,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private(set) var landHost: NSHostingView<LandSheetView>!
     /// The New worktree sheet over the window (ticket 115).
     var newWorktreeHost: NSHostingView<NewWorktreeSheetView>!
+    /// The part of a sheet's scrim over the title bar (ticket 126).
+    let titleBarScrim = TitleBarScrim()
     let chipProbe = AnchorProbe()
     let popoverPlace = PopoverPlace()
     var popoverContext: ActionsContext?
@@ -714,6 +716,8 @@ final class LoamSplitView: NSSplitView {
     var sheet: NSView?
     /// The New worktree sheet (ticket 115), over the whole window with its own dim.
     var newWorktreeSheet: NSView?
+    /// The dim of a sheet over the title bar (ticket 126). It keeps the window buttons clear, and they move on a resize.
+    var titleBarScrim: TitleBarScrim?
     /// Called with the room right of the bar: the plot panel, or 0.
     var onBarLayout: ((CGFloat) -> Void)?
     /// Called after each layout pass, which can move the control that the PR popover opened from.
@@ -748,6 +752,7 @@ final class LoamSplitView: NSSplitView {
             newWorktreeSheet?.frame = convert(bounds, to: container)
             switcher?.frame = convert(switcherRect, to: container)
         }
+        if titleBarScrim?.isShown == true { titleBarScrim?.update() }
         onLayout?()
     }
 

@@ -15,6 +15,7 @@ extension MainWindowController {
 
     private func newWorktreeSheetChanged(open: Bool) {
         newWorktreeHost.isHidden = !open
+        syncTitleBarScrim()
         guard open else { return focusActivePane() }
         // One overlay at a time: the switcher, the actions menu, the PR popover and the Land sheet would take the clicks.
         if model.switcher.isOpen { model.switcher.close() }

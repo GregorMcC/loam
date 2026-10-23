@@ -5,6 +5,7 @@ import LoamKit
 extension MainWindowController {
     func landSheetChanged(open: Bool) {
         landHost.isHidden = !open
+        syncTitleBarScrim()
         guard open else { return focusActivePane() }
         // One overlay at a time: the switcher, the actions menu and the PR popover would take the clicks.
         if model.switcher.isOpen { model.switcher.close() }

@@ -18,6 +18,8 @@ final class WindowToolbar: NSObject, NSToolbarDelegate {
     private let panelAction: Selector
     private var panelItem: NSToolbarItem?
     private var panelButton: NSButton?
+    private var newSessionButton: NSButton?
+    private weak var toolbar: NSToolbar?
     /// Built once with the delegate, so the toolbar can hide and show it.
     private let needsYou: NeedsYouToolbarItem
 
@@ -29,6 +31,7 @@ final class WindowToolbar: NSObject, NSToolbarDelegate {
         needsYou = NeedsYouToolbarItem(model: model)
         super.init()
         refreshPanel()
+        refreshEnabled()
     }
 
     func makeToolbar() -> NSToolbar {
@@ -36,6 +39,7 @@ final class WindowToolbar: NSObject, NSToolbarDelegate {
         toolbar.delegate = self
         toolbar.displayMode = .iconOnly
         toolbar.allowsUserCustomization = false
+        self.toolbar = toolbar
         return toolbar
     }
 
@@ -54,14 +58,18 @@ final class WindowToolbar: NSObject, NSToolbarDelegate {
         case NeedsYouToolbarItem.identifier:
             return needsYou.item
         case Self.newSession:
-            return button(id, symbol: "plus", label: "New session", help: "New session (\u{2318}T)",
-                          action: newSessionAction, axID: "new-session-button").item
+            let (item, button) = button(id, symbol: "plus", label: "New session", help: "New session (\u{2318}T)",
+                                        action: newSessionAction, axID: "new-session-button")
+            newSessionButton = button
+            applyEnabled()
+            return item
         case Self.plotPanel:
             let (item, button) = button(id, symbol: "sidebar.right", label: "Plot panel", help: "Plot panel (\u{2318}I)",
                                         action: panelAction, axID: "panel-button")
             panelItem = item
             panelButton = button
             applyPanelCount()
+            applyEnabled()
             return item
         default:
             return nil
@@ -104,7 +112,37 @@ final class WindowToolbar: NSObject, NSToolbarDelegate {
         let words = count > 0 ? "Plot panel \u{2318}I \u{00B7} \(count)" : "Plot panel \u{2318}I"
         panelItem?.label = words
         panelButton?.setAccessibilityLabel(words)
-        // Home has no plot panel (ticket 99).
-        panelButton?.isEnabled = model.workspace.activePlotID != nil
+    }
+
+    /// Which items take a click (`AppModel.toolbarAllows`): none while a sheet shows, and no plot panel in Home (ticket 99).
+    /// The scrim of a sheet covers the title bar (ticket 126) and takes the clicks. A disabled item also refuses the
+    /// accessibility press. The keys and the menu bar are not part of this.
+    private func refreshEnabled() {
+        withObservationTracking {
+            for action in ToolbarAction.allCases { _ = model.toolbarAllows(action) }
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.refreshEnabled() }
+        }
+        applyEnabled()
+    }
+
+    private func applyEnabled() {
+        newSessionButton?.isEnabled = model.toolbarAllows(.newSession)
+        panelButton?.isEnabled = model.toolbarAllows(.plotPanel)
+        needsYou.isEnabled = model.toolbarAllows(.needsYou)
+        if let item = toolbar?.items.first(where: { $0.itemIdentifier == .toggleSidebar }) { applySidebarEnabled(item) }
+    }
+
+    /// The sidebar button is the system's. It validates through the responder chain, which says yes, so the state is set by
+    /// hand.
+    private func applySidebarEnabled(_ item: NSToolbarItem) {
+        item.autovalidates = false
+        item.isEnabled = model.toolbarAllows(.toggleSidebar)
+    }
+
+    /// The toolbar adds the sidebar button after the delegate made the other items, and again if it builds its items again.
+    func toolbarWillAddItem(_ notification: Notification) {
+        guard let item = notification.userInfo?["item"] as? NSToolbarItem, item.itemIdentifier == .toggleSidebar else { return }
+        applySidebarEnabled(item)
     }
 }

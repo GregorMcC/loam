@@ -70,8 +70,11 @@ extension Scenarios {
                 model.landContent?.number == number && app.exists("land-sheet-footer") && app.exists("land-sheet-merge")
             }
             try await settledShot(name)
+            // Ticket 126: the scrim covers the title bar in the shot, and goes with the sheet.
+            try await expectTitleBarScrim(app, host, shown: true)
             model.closeLandSheet()
             try await app.waitUntil("the sheet closes") { !app.exists("land-sheet") }
+            try await expectTitleBarScrim(app, host, shown: false)
         }
 
         for (name, appearance, theme) in [("night", NSAppearance.Name.darkAqua, ""), ("day", .aqua, ""),
@@ -103,6 +106,7 @@ extension Scenarios {
             try expectDepth(model.openNewWorktree(plot: plot), "the New worktree sheet did not open")
             try await app.waitUntil("the New worktree sheet shows") { app.exists("new-worktree-start") }
             try await settledShot("\(name)-new-worktree")
+            try await expectTitleBarScrim(app, host, shown: true)
             model.closeNewWorktree()
             try await app.waitUntil("the New worktree sheet closes") { !app.exists("new-worktree-sheet") }
 

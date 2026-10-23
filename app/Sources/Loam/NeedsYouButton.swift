@@ -25,6 +25,12 @@ final class NeedsYouToolbarItem {
         refresh()
     }
 
+    /// False while a sheet shows (`AppModel.toolbarAllows`).
+    var isEnabled: Bool {
+        get { button.isEnabled }
+        set { button.isEnabled = newValue }
+    }
+
     @objc private func goToNext(_ sender: Any?) {
         model.goToNextPaneThatNeedsYou(elsewhere: true)
     }
