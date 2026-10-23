@@ -298,8 +298,8 @@ extension Scenarios {
         // 8. The switcher finds a worktree with a PR by its number, and Return opens its popover.
         try await openPopoverSwitcher(app)
         try app.fill("switcher-field", with: "#22")
-        try await app.waitUntil("the worktree row", timeout: 5) { app.text(of: "switcher-row-0")?.hasPrefix("link-labels") == true }
-        try await app.waitUntil("the preview of the worktree", timeout: 5) {
+        try await app.waitUntil("the worktree row") { app.text(of: "switcher-row-0")?.hasPrefix("link-labels") == true }
+        try await app.waitUntil("the preview of the worktree") {
             app.text(of: "switcher-preview-caption") == "Worktree \u{00B7} Ready to merge" && app.text(of: "switcher-footer-action") == "Show pull request"
         }
         app.screenshot("pr-switcher")
@@ -452,6 +452,6 @@ extension Scenarios {
 
     private static func openPopoverSwitcher(_ app: DriverApp) async throws {
         try app.pressMenuKey("p", flags: .command)
-        try await app.waitUntil("the switcher shows", timeout: 5) { app.exists("switcher-field") }
+        try await app.waitUntil("the switcher shows") { app.exists("switcher-field") }
     }
 }
