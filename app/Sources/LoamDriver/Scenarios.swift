@@ -6,7 +6,8 @@ import LoamTerminal
 /// One driver scenario. Keep each one short: a few seconds of real time.
 struct Scenario {
     let name: String
-    /// The time limit in seconds. Past it, the driver exits with code 4.
+    /// The time limit in seconds. Past it, the driver exits with code 4. It also ends a wait that never ends, so it
+    /// is far longer than the scenario takes on a busy machine.
     let limit: TimeInterval
     let body: @MainActor (DriverApp) async throws -> Void
 }
@@ -35,7 +36,7 @@ enum Scenarios {
         Scenario(name: "env", limit: 30, body: env),
         Scenario(name: "panel-edit", limit: 60, body: panelEdit),
         Scenario(name: "panel-review", limit: 60, body: panelReview),
-        Scenario(name: "panel-shot", limit: 90, body: panelShot),
+        Scenario(name: "panel-shot", limit: 180, body: panelShot),
         Scenario(name: "config-reload", limit: 45, body: configReload),
         Scenario(name: "keys", limit: 45, body: keys),
         Scenario(name: "switcher", limit: 60, body: switcher),
@@ -43,7 +44,7 @@ enum Scenarios {
         Scenario(name: "pane-resources", limit: 60, body: paneResources),
         Scenario(name: "window-shot", limit: 90, body: windowShot),
         Scenario(name: "empty-hint", limit: 60, body: emptyHint),
-        Scenario(name: "frame-shot", limit: 90, body: frameShot),
+        Scenario(name: "frame-shot", limit: 180, body: frameShot),
         Scenario(name: "actions", limit: 120, body: actions),
         Scenario(name: "sidebar-shot", limit: 90, body: sidebarShot),
         Scenario(name: "panes", limit: 90, body: panes),

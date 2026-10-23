@@ -75,7 +75,8 @@ struct PanelRig {
         process.standardOutput = out
         process.standardError = FileHandle.nullDevice
         try process.run()
-        let data = out.fileHandleForReading.readDataToEndOfFile()
+        // The read blocks the main thread until `loam` ends, which a busy machine can hold for more than 10 s.
+        let data = Watchdog.excuse { out.fileHandleForReading.readDataToEndOfFile() }
         process.waitUntilExit()
         let text = String(decoding: data, as: UTF8.self)
         guard process.terminationStatus == 0 else {
@@ -148,16 +149,20 @@ struct PanelRig {
             "clientInfo": ["name": "loam-driver", "version": "1"]]])
         try send(["jsonrpc": "2.0", "method": "notifications/initialized"])
         try send(call(2, "get_plot", ["plot": plot]))
-        try await Task.sleep(for: .milliseconds(400))
-        try send(call(3, "set_where_it_stands", ["plot": plot, "text": text]))
-        try await Task.sleep(for: .milliseconds(400))
+        // The write goes after the reply to the read, and stdin closes after the reply to the write. A wait for a
+        // time lost the write when a busy machine held the launch of `loam mcp` (ticket 125).
+        var output: [String] = []
+        for try await line in stdout.fileHandleForReading.bytes.lines {
+            output.append(line)
+            let reply = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any]
+            if reply?["id"] as? Int == 2 { try send(call(3, "set_where_it_stands", ["plot": plot, "text": text])) }
+            if reply?["id"] as? Int == 3 { break }
+        }
         try stdin.fileHandleForWriting.close()
         for _ in 0..<100 where process.isRunning { try await Task.sleep(for: .milliseconds(50)) }
         if process.isRunning { process.terminate() }
-        // The reply can be lost when stdin closes, so check the store.
         guard try lastChangeID(plot) > before else {
-            let output = String(decoding: stdout.fileHandleForReading.availableData, as: UTF8.self)
-            throw DriverFailure("the MCP write did not record a change: \(output)")
+            throw DriverFailure("the MCP write did not record a change: \(output.joined(separator: "\n"))")
         }
     }
 }
@@ -433,12 +438,7 @@ extension DriverApp {
     func openPanel(_ host: AppHost) async throws {
         try await waitUntil("a plot is active") { host.model.workspace.activePlotID != nil }
         try pressMenuKey("i")
-        do {
-            try await waitUntil("the plot panel shows", timeout: 5) { self.exists("plot-panel") && self.exists("panel-whereItStands") }
-        } catch {
-            dumpAccessibility()
-            throw error
-        }
+        try await waitUntil("the plot panel shows") { self.exists("plot-panel") && self.exists("panel-whereItStands") }
     }
 }
 
@@ -723,6 +723,29 @@ extension Scenarios {
         try await app.waitUntil("the panel shows again") { app.exists("panel-whereItStands") }
         await app.sleep(0.5)
         try check(!app.exists("panel-new-since"), "the new box shows after the changes were seen")
+
+        // 4b. A second ⌘I while the panel still slides counts from the first (ticket 125). Two quick presses hide
+        // the panel and show it again, or show it and hide it again. The end of the first slide does not undo
+        // the second press.
+        let column = try (host.window.contentViewController as? NSSplitViewController)?.splitViewItems.last
+            ?? { throw DriverFailure("no panel column") }()
+        func pressTwice(ending shown: Bool, _ what: String) async throws {
+            try app.pressMenuKey("i")
+            try app.pressMenuKey("i")
+            try check(host.model.panel.visible == shown, "the second ⌘I did not count from the first: \(what)")
+            try await app.waitUntil("the column ends as the model: \(what)") {
+                column.isCollapsed != shown && app.exists("panel-whereItStands") == shown
+            }
+            await app.sleep(0.5)  // The first slide ends by now, and must not change the column.
+            try check(column.isCollapsed != shown && app.exists("panel-whereItStands") == shown,
+                      "the end of the first slide undid the second ⌘I: \(what)")
+        }
+        try await pressTwice(ending: true, "hide and show")
+        try app.pressMenuKey("i")
+        try await app.waitUntil("the panel hides before the next two presses") { column.isCollapsed && !app.exists("panel-whereItStands") }
+        try await pressTwice(ending: false, "show and hide")
+        try app.pressMenuKey("i")
+        try await app.waitUntil("the panel shows after the two presses") { !column.isCollapsed && app.exists("panel-whereItStands") }
 
         // 5. A plot that is not active shows its count in the sidebar.
         try app.pressMenuKey("i")

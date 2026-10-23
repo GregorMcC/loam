@@ -164,7 +164,7 @@ extension Scenarios {
         host.model.openTab()
         host.model.activate(number: 1)
         host.model.selectTab(number: 1)
-        try await app.waitUntil("4 demo panes ran", timeout: 15) {
+        try await app.waitUntil("4 demo panes ran") {
             ((try? fm.contentsOfDirectory(atPath: "\(app.outFolder)/demo-runs"))?.count ?? 0) >= 4
         }
         let tabs = host.model.workspace.tabs(of: .plot(plot))
@@ -194,13 +194,13 @@ extension Scenarios {
             // Ticket 69: a branch switch in a pane moves HEAD, and the subtitle follows. Git writes a
             // lock file and renames it over HEAD, as this does. Ticket 71: the main checkout row follows too.
             try "ref: refs/heads/feature\n".write(to: repo.appendingPathComponent(".git/HEAD"), atomically: true, encoding: .utf8)
-            try await app.waitUntil("the subtitle follows HEAD", timeout: 5) { host.window.subtitle == "loam \u{00B7} feature" }
-            try await app.waitUntil("the main checkout row follows HEAD", timeout: 5) {
+            try await app.waitUntil("the subtitle follows HEAD") { host.window.subtitle == "loam \u{00B7} feature" }
+            try await app.waitUntil("the main checkout row follows HEAD") {
                 app.text(of: "main-checkout-\(plot)")?.contains("feature") == true
             }
             try "ref: refs/heads/main\n".write(to: repo.appendingPathComponent(".git/HEAD"), atomically: true, encoding: .utf8)
-            try await app.waitUntil("the subtitle goes back", timeout: 5) { host.window.subtitle == "loam \u{00B7} main" }
-            try await app.waitUntil("the main checkout row goes back", timeout: 5) {
+            try await app.waitUntil("the subtitle goes back") { host.window.subtitle == "loam \u{00B7} main" }
+            try await app.waitUntil("the main checkout row goes back") {
                 app.text(of: "main-checkout-\(plot)")?.contains("main") == true
             }
         }
@@ -230,28 +230,28 @@ extension Scenarios {
         func previewShots(_ name: String) async throws {
             // The switcher spans the well and the plot panel, so the preview shows with the panel open.
             try app.pressMenuKey("p")
-            try await app.waitUntil("\(name): the switcher shows", timeout: 5) { app.exists("switcher-field") }
+            try await app.waitUntil("\(name): the switcher shows") { app.exists("switcher-field") }
             try app.fill("switcher-field", with: "loam v1")
-            try await app.waitUntil("\(name): the plot preview", timeout: 10) {
+            try await app.waitUntil("\(name): the plot preview") {
                 app.text(of: "switcher-preview-title") == "Loam v1 build"
                     && app.text(of: "switcher-preview-caption")?.hasSuffix("links") == true
             }
             await app.sleep(0.6)
             app.screenshot("\(name)-switcher-preview-plot")
             try app.fill("switcher-field", with: "shell")
-            try await app.waitUntil("\(name): the pane preview", timeout: 5) {
+            try await app.waitUntil("\(name): the pane preview") {
                 app.text(of: "switcher-preview-caption")?.hasPrefix("Pane") == true
             }
             await app.sleep(0.4)
             app.screenshot("\(name)-switcher-preview-pane")
             try app.fill("switcher-field", with: "github")
-            try await app.waitUntil("\(name): the link preview", timeout: 5) {
+            try await app.waitUntil("\(name): the link preview") {
                 app.text(of: "switcher-preview-caption") == "GitHub link"
             }
             await app.sleep(0.4)
             app.screenshot("\(name)-switcher-preview-link")
             app.press(.escape)
-            try await app.waitUntil("\(name): the switcher closes", timeout: 5) { !app.exists("switcher-field") }
+            try await app.waitUntil("\(name): the switcher closes") { !app.exists("switcher-field") }
         }
 
         try await shot("night", .darkAqua)
@@ -264,8 +264,7 @@ extension Scenarios {
         // Selecting the pane row in the sidebar goes to the pane.
         try app.selectRow("pane-row-\(worktreePane.uuidString)")
         try await app.waitUntil("the worktree tab shows") { host.model.workspace.focusedPane == worktreePane }
-        await app.sleep(0.3)  // A fresh scan of the accessibility tree, with the tab on screen.
-        try check(app.exists("pane-ring-\(worktreePane.uuidString)"), "the worktree pane is not on screen")
+        try await app.waitUntil("the worktree pane is on screen") { app.exists("pane-ring-\(worktreePane.uuidString)") }
         try check(!app.exists("pane-state-\(worktreePane.uuidString)"), "the pane alone in its tab has a header")
         try await shot("night-one-pane", .darkAqua)
         // Selecting another plot makes it active. Its tree opens and the tree of the plot you left closes.
@@ -291,26 +290,26 @@ extension Scenarios {
         for (name, appearance) in [("night", NSAppearance.Name.darkAqua), ("day", .aqua)] {
             NSApp.appearance = NSAppearance(named: appearance)
             try app.pressMenuKey("p")
-            try await app.waitUntil("the switcher shows", timeout: 5) { app.exists("switcher-field") }
-            try await app.waitUntil("the switcher lists panes", timeout: 5) { app.exists("switcher-row-2") }
+            try await app.waitUntil("the switcher shows") { app.exists("switcher-field") }
+            try await app.waitUntil("the switcher lists panes") { app.exists("switcher-row-2") }
             await app.sleep(0.8)
             app.screenshot("\(name)-switcher")
             // Links show only after you type. They load with one `loam export`.
             try app.type("lo")
-            try await app.waitUntil("the switcher lists the links", timeout: 10) {
+            try await app.waitUntil("the switcher lists the links") {
                 host.model.switcher.results.contains { $0.item.kind == .link }
             }
             await app.sleep(0.8)
             app.screenshot("\(name)-switcher-query")
             app.press(.escape)
-            try await app.waitUntil("the switcher closes", timeout: 5) { !app.exists("switcher-field") }
+            try await app.waitUntil("the switcher closes") { !app.exists("switcher-field") }
             try await previewShots(name)
         }
 
         // A config reload with another theme: the chrome follows it at once.
         try app.writeConfig(extra + "\ntheme = Dracula\n")
         app.runtime.reloadConfig()
-        try await app.waitUntil("the chrome follows Dracula (#282a36)", timeout: 10) {
+        try await app.waitUntil("the chrome follows Dracula (#282a36)") {
             ChromePalette.shared.current?.bedrock == 0x282a36
         }
         try check(ChromePalette.shared.current?.horizonO == ChromeSurfaces.derive(background: 0x282a36).horizonO,
@@ -321,7 +320,7 @@ extension Scenarios {
         // the panes clear, so the desktop shows through. Back at 1 the window is solid again.
         try app.writeConfig(extra + "\ntheme = Dracula\nbackground-opacity = 0.8\nbackground-blur = 20\n")
         app.runtime.reloadConfig()
-        try await app.waitUntil("the window turns translucent", timeout: 10) {
+        try await app.waitUntil("the window turns translucent") {
             ChromePalette.shared.isTranslucent && !host.window.isOpaque
         }
         try check(ChromePalette.shared.windowOpacity == 0.8, "the palette opacity is \(ChromePalette.shared.windowOpacity)")
@@ -335,14 +334,14 @@ extension Scenarios {
         try await shot("night-translucent-clear", .darkAqua)
         try app.writeConfig(extra + "\ntheme = Dracula\n")
         app.runtime.reloadConfig()
-        try await app.waitUntil("the window turns solid again", timeout: 10) {
+        try await app.waitUntil("the window turns solid again") {
             !ChromePalette.shared.isTranslucent && host.window.isOpaque
         }
 
         // A third-party theme: Catppuccin Mocha (#1e1e2e). The switcher takes its surfaces from it.
         try app.writeConfig(extra + "\ntheme = Catppuccin Mocha\n")
         app.runtime.reloadConfig()
-        try await app.waitUntil("the chrome follows Catppuccin Mocha (#1e1e2e)", timeout: 10) {
+        try await app.waitUntil("the chrome follows Catppuccin Mocha (#1e1e2e)") {
             ChromePalette.shared.current?.bedrock == 0x1e1e2e
         }
         await app.sleep(1)

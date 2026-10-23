@@ -17,15 +17,12 @@ import SwiftUI
 @MainActor
 final class PlotDragController {
     private let model: AppModel
-    /// The plot under the press, the handle that took it, and the point in the window.
-    private var press: (plot: String, handle: NSView, point: CGPoint)?
+    /// The plot under the press, the handle that took it, and the press in window points.
+    private var press: (plot: String, handle: NSView, gesture: DragPress)?
     private var drag: Drag?
     private var escapeMonitor: Any?
 
     init(model: AppModel) { self.model = model }
-
-    /// A move this far from the press starts a drag. A shorter one is a click.
-    static let threshold: CGFloat = 4
 
     private struct Block {
         var rows: [NSView]
@@ -56,22 +53,25 @@ final class PlotDragController {
 
     func mouseDown(plot: String, handle: NSView, event: NSEvent) {
         guard drag == nil else { return }
-        press = (plot, handle, event.locationInWindow)
+        press = (plot, handle, DragPress(at: event.locationInWindow))
     }
 
     func mouseDragged(event: NSEvent) {
         let point = event.locationInWindow
-        if drag == nil, let press, hypot(point.x - press.point.x, point.y - press.point.y) >= Self.threshold {
-            begin(plot: press.plot, handle: press.handle, at: press.point)
+        if drag == nil, var press {
+            press.gesture.move(to: point)
+            self.press = press
+            // While the last move is not stored, no drag starts. A later move tries again (ticket 125).
+            if press.gesture.isDrag { begin(plot: press.plot, handle: press.handle, at: press.gesture.point) }
         }
         guard drag != nil else { return }
         move(to: point)
     }
 
-    /// Returns true when the release was a click: no drag started.
+    /// Returns true when the release was a click: the pointer moved less than 4 pt, so no drag started.
     func mouseUp(event: NSEvent) -> Bool {
         defer { press = nil }
-        guard let drag else { return press != nil }
+        guard let drag else { return press?.gesture.isClick == true }
         guard !drag.ending else { return false }
         guard let scroll = drag.outline.enclosingScrollView else { cancel(); return false }
         let inside = scroll.bounds.contains(scroll.convert(event.locationInWindow, from: nil))

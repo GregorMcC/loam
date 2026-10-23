@@ -7,10 +7,6 @@ import LoamTerminal
 /// panel ground follows the reload at once. The panes run the frame-shot demo script.
 @MainActor
 extension Scenarios {
-    private static func expect(_ condition: Bool, _ message: @autoclosure () -> String) throws {
-        if !condition { throw DriverFailure(message()) }
-    }
-
     static func panelShot(_ app: DriverApp) async throws {
         do { try await panelShotSteps(app) } catch { app.dumpAccessibility(); throw error }
     }
@@ -70,9 +66,9 @@ extension Scenarios {
         try await app.waitUntil("the panel shows again") { app.exists("panel-whereItStands") }
         try await rig.claudeSetsWhere(plot, "The frame and the color are done. The plot panel now uses native "
             + "form sections. Next: check the panel at 260 and 520 px in Night, Day, and a dark theme.")
-        try await app.waitUntil("the new change", timeout: 10) { app.exists("panel-new-since") }
+        try await app.waitUntil("the new change") { app.exists("panel-new-since") }
 
-        try await app.waitUntil("2 demo panes ran", timeout: 15) {
+        try await app.waitUntil("2 demo panes ran") {
             ((try? fm.contentsOfDirectory(atPath: "\(app.outFolder)/demo-runs"))?.count ?? 0) >= 2
         }
         /// Sets Night or Day and waits until the focused pane follows, as `frame-shot` does. A single
@@ -113,31 +109,34 @@ extension Scenarios {
         await appearance(.darkAqua)
         try app.writeConfig(config + "\ntheme = Dracula\n")
         app.runtime.reloadConfig()
-        try await app.waitUntil("the chrome follows Dracula (#282a36)", timeout: 10) {
+        try await app.waitUntil("the chrome follows Dracula (#282a36)") {
             ChromePalette.shared.current?.bedrock == 0x282a36
         }
         let want = ChromeSurfaces.derive(background: 0x282a36).horizonA
         setPanelWidth(host, 520)
-        await app.sleep(0.8)
-        let ground = try panelGround(app, host)
+        // A busy machine can hold the redraw past a fixed sleep, so read the ground until it is right.
+        var ground = (0, 0, 0)
+        try await app.waitUntil("the panel ground is the Dracula horizon-a") {
+            ground = (try? panelGround(app, host)) ?? ground
+            return near(ground, want)
+        }
         Log.line("RESULT panel ground after the reload: \(ground), want \(String(format: "%06x", want))")
-        try expect(near(ground, want), "the panel ground \(ground) is not the Dracula horizon-a")
         try await shots("dracula")
 
         // A third-party theme (ticket 87): Catppuccin Mocha, then the same one translucent.
         try app.writeConfig(config + "\ntheme = Catppuccin Mocha\n")
         app.runtime.reloadConfig()
-        try await app.waitUntil("the chrome follows Catppuccin Mocha (#1e1e2e)", timeout: 10) {
+        try await app.waitUntil("the chrome follows Catppuccin Mocha (#1e1e2e)") {
             ChromePalette.shared.current?.bedrock == ChromeSurfaces.derive(background: 0x1e1e2e).bedrock
         }
         try await shots("catppuccin")
         try app.writeConfig(config + "\ntheme = Catppuccin Mocha\nbackground-opacity = 0.8\nbackground-blur = 20\n")
         app.runtime.reloadConfig()
-        try await app.waitUntil("the window turns translucent", timeout: 10) { ChromePalette.shared.windowOpacity == 0.8 }
+        try await app.waitUntil("the window turns translucent") { ChromePalette.shared.windowOpacity == 0.8 }
         try await shots("translucent")
         try app.writeConfig(config + "\ntheme = Dracula\n")
         app.runtime.reloadConfig()
-        try await app.waitUntil("the chrome follows Dracula again", timeout: 10) {
+        try await app.waitUntil("the chrome follows Dracula again") {
             ChromePalette.shared.current?.bedrock == 0x282a36 && ChromePalette.shared.windowOpacity == 1
         }
 

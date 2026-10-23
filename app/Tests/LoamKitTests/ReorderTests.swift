@@ -79,6 +79,23 @@ import Testing
         #expect(drag.insertionPoint(slot: 2) == 258)
     }
 
+    @Test func aPressWithAMoveUnderFourPointsIsAClick() {
+        var press = DragPress(at: CGPoint(x: 10, y: 10))
+        #expect(press.isClick)
+        press.move(to: CGPoint(x: 12, y: 13))
+        #expect(press.isClick && !press.isDrag)
+    }
+
+    /// Ticket 125: a move of 4 pt makes the press a drag, and it stays one. So its release is never a click, also when
+    /// the drag could not start (the last plot move was not stored yet) or the pointer came back to the press point.
+    @Test func aPressThatMovesFourPointsIsNeverAClickAgain() {
+        var press = DragPress(at: CGPoint(x: 10, y: 10))
+        press.move(to: CGPoint(x: 10, y: 6))
+        #expect(press.isDrag && !press.isClick)
+        press.move(to: CGPoint(x: 10, y: 10))
+        #expect(press.isDrag && !press.isClick)
+    }
+
     @Test func aSlideEasesFromItsStartToItsEnd() {
         let slide = Slide(from: 0, to: 100, start: 10, duration: LoamTheme.durationBase)
         #expect(slide.value(at: 10) == 0)
