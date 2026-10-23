@@ -122,6 +122,17 @@ extension Scenarios {
 
         // Plot 1 is active at the quit, so plot 2 waits at the next launch.
         model.activate(plot: first)
+        // The sidebar and the plot panel show at the quit, wider than their first widths.
+        try app.pressMenuKey("i")
+        // A drag during the open animation does not stick, so it drags again until the width holds.
+        try await app.waitUntil("the panel width is saved") {
+            if columnWidth(host, sidebar: false) != restoredPanelWidth { setPanelWidth(host, restoredPanelWidth) }
+            return model.panelWidth == restoredPanelWidth
+        }
+        try await app.waitUntil("the sidebar width is saved") {
+            if columnWidth(host, sidebar: true) != restoredSidebarWidth { setSidebarWidth(host, restoredSidebarWidth) }
+            return model.sidebarWidth == restoredSidebarWidth
+        }
         var ids: [String: String] = [:]
         for pane in [firstSession, secondSession] {
             ids[pane.uuidString] = model.workspace.session(of: pane)?.sessionID
@@ -143,7 +154,12 @@ extension Scenarios {
         try expect(Set(file.panes.map(\.id)) == [firstSession, firstShell, secondSession],
                    "state.json lists \(file.panes.map(\.id)) after quit")
         try expect(file.layout.activePlot == first, "state.json has the active plot \(file.layout.activePlot ?? "none")")
+        try expect(file.window?.panelWidth == Double(restoredPanelWidth), "state.json has the panel width \(file.window?.panelWidth ?? 0)")
+        try expect(file.window?.sidebarWidth == Double(restoredSidebarWidth), "state.json has the sidebar width \(file.window?.sidebarWidth ?? 0)")
     }
+
+    private static let restoredPanelWidth: CGFloat = 440
+    private static let restoredSidebarWidth: CGFloat = 300
 
     /// Run 2: the same store and `state.json`. The active plot's session resumes at launch. The other
     /// plot waits, and its session resumes when the plot shows.
@@ -172,6 +188,11 @@ extension Scenarios {
         }
 
         try await app.waitUntil("the first plot is active") { model.workspace.activePlotID == saved.first }
+        try await app.waitUntil("the panel shows at its saved width") {
+            panelItem(host)?.isCollapsed == false && columnWidth(host, sidebar: false) == restoredPanelWidth
+        }
+        let sidebar = columnWidth(host, sidebar: true)
+        try expect(sidebar == restoredSidebarWidth, "the sidebar is \(sidebar ?? 0) wide, not \(restoredSidebarWidth)")
         try expect(model.workspace.tabs(of: .plot(saved.first)).map(\.tree) == saved.trees[saved.first], "plot 1 has another layout")
         try expect(model.workspace.tabs(of: .plot(saved.second)).map(\.tree) == saved.trees[saved.second], "plot 2 has another layout")
 

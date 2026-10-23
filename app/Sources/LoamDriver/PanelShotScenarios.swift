@@ -186,6 +186,18 @@ extension Scenarios {
         (host.window.contentViewController as? NSSplitViewController)?.splitViewItems.last
     }
 
+    /// The width of the first or the last column in the split view, as the divider sets it. The glass sidebar
+    /// sits inset in its column, so its own view is narrower.
+    static func columnWidth(_ host: AppHost, sidebar: Bool) -> CGFloat? {
+        let columns = (host.window.contentViewController as? NSSplitViewController)?.splitView.arrangedSubviews
+        return (sidebar ? columns?.first : columns?.last)?.frame.width
+    }
+
+    /// Drags the sidebar divider so the sidebar is `width` points wide.
+    static func setSidebarWidth(_ host: AppHost, _ width: CGFloat) {
+        (host.window.contentViewController as? NSSplitViewController)?.splitView.setPosition(width, ofDividerAt: 0)
+    }
+
     /// Drags the panel divider so the panel is `width` points wide.
     static func setPanelWidth(_ host: AppHost, _ width: CGFloat) {
         guard let split = host.window.contentViewController as? NSSplitViewController else { return }
