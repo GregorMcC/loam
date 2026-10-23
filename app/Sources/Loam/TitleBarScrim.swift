@@ -5,8 +5,9 @@ import LoamKit
 /// glass and the sidebar button too. Only the window buttons keep their look. The toolbar draws over every overlay of the
 /// window, so the scrim of a sheet (`SheetScrim`) stops under the title bar, and two views dim the rest. No point is dimmed twice.
 ///
-/// - `bar` sits over the toolbar. It dims the title bar except the window buttons, and takes the clicks there: a click
-///   closes the sheet like a click on the rest of the scrim, and a drag moves the window.
+/// - `bar` sits over the toolbar. It dims the title bar except the window buttons, and takes the presses there. A drag
+///   moves the window, as it does under a native sheet. A click does nothing: a double click, which zooms a window, must not
+///   close a sheet with a draft in it.
 /// - `buttons` sits under the toolbar. It dims the ground behind the window buttons, and the buttons draw over it.
 @MainActor
 final class TitleBarScrim {
@@ -14,6 +15,7 @@ final class TitleBarScrim {
     let buttons = TitleBarScrimView(part: .windowButtons)
     private(set) var isShown = false
     private weak var content: NSView?
+    private var constraints: [NSLayoutConstraint] = []
 
     init() {
         bar.setAccessibilityIdentifier("title-bar-scrim")
@@ -29,12 +31,13 @@ final class TitleBarScrim {
         content.addSubview(buttons, positioned: .above, relativeTo: split)
         frame.addSubview(bar, positioned: .above, relativeTo: nil)
         bar.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
+        constraints = [
             bar.topAnchor.constraint(equalTo: frame.topAnchor),
             bar.leadingAnchor.constraint(equalTo: frame.leadingAnchor),
             bar.trailingAnchor.constraint(equalTo: frame.trailingAnchor),
             bar.bottomAnchor.constraint(equalTo: content.safeAreaLayoutGuide.topAnchor),
-        ])
+        ]
+        NSLayoutConstraint.activate(constraints)
     }
 
     /// Shows or hides the scrim. It fades in as the scrim of the sheet does, and goes at once, as the sheet does.
@@ -43,12 +46,13 @@ final class TitleBarScrim {
         isShown = shown
         guard shown else {
             for view in [bar, buttons] {
+                view.layer?.removeAllAnimations()  // A fade in that has not ended must not show the view again.
                 view.isHidden = true
                 view.alphaValue = 0
             }
             return
         }
-        placeButtons()
+        update()
         for view in [bar, buttons] {
             view.alphaValue = 0
             view.isHidden = false
@@ -62,10 +66,16 @@ final class TitleBarScrim {
         }
     }
 
-    /// Puts `buttons` under the window buttons, and tells `bar` to leave them clear. The window buttons keep a place at the
-    /// top left of the window, so a resize calls this. No window buttons, in full screen, leave nothing to clear.
-    func placeButtons() {
+    /// Keeps `bar` over the title bar, puts `buttons` under the window buttons, and tells `bar` to leave them clear. The
+    /// window buttons keep a place at the top left of the window, so each layout of the window calls this. No window buttons,
+    /// in full screen, leave nothing to clear.
+    func update() {
         guard let content, let frame = bar.superview else { return }
+        // AppKit may add the title bar again (full screen, a toolbar that shows or hides). The bar must stay over it.
+        if frame.subviews.last !== bar {
+            frame.addSubview(bar, positioned: .above, relativeTo: nil)
+            NSLayoutConstraint.activate(constraints)
+        }
         bar.clearRect = windowButtonsRect(in: frame)
         buttons.frame = windowButtonsRect(in: content) ?? .zero
     }
@@ -88,11 +98,6 @@ extension MainWindowController {
               let frame = content.superview else { return }
         titleBarScrim.install(content: content, frame: frame, above: split)
         split.titleBarScrim = titleBarScrim
-        // A click on the scrim closes the sheet. A sheet that holds the window (a merge or a start) ignores it.
-        titleBarScrim.bar.onClick = { [weak self] in
-            self?.model.closeLandSheet()
-            self?.model.closeNewWorktree()
-        }
     }
 
     /// Shows the scrim over the title bar while a sheet shows, with the sheets.
@@ -106,8 +111,6 @@ final class TitleBarScrimView: NSView {
     enum Part { case bar, windowButtons }
 
     let part: Part
-    /// For `bar`: runs on a click that is not a drag.
-    var onClick: (() -> Void)?
     /// For `bar`: the box of the window buttons, in the coordinates of the frame that holds the bar. The bar leaves it clear.
     var clearRect: CGRect? {
         didSet { if clearRect != oldValue { needsDisplay = true } }
@@ -150,9 +153,9 @@ final class TitleBarScrimView: NSView {
         }
     }
 
-    // MARK: Clicks
+    // MARK: Presses
 
-    /// Only `bar` takes clicks, and not over the window buttons: they stay live.
+    /// Only `bar` takes presses, and not over the window buttons: they stay live.
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard part == .bar, !isHidden else { return nil }
         let local = convert(point, from: superview)
@@ -162,22 +165,6 @@ final class TitleBarScrimView: NSView {
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-    private var dragged = false
-
-    /// The view takes the press itself and hands a drag to the window (`mouseDragged`), so a click is not a drag.
-    override var mouseDownCanMoveWindow: Bool { false }
-
-    override func mouseDown(with event: NSEvent) { dragged = false }
-
-    /// The first drag hands the press to the window, which moves while the pointer drags, as the title bar does.
-    override func mouseDragged(with event: NSEvent) {
-        guard !dragged else { return }
-        dragged = true
-        window?.performDrag(with: event)
-    }
-
-    /// A press with no drag is a click.
-    override func mouseUp(with event: NSEvent) {
-        if !dragged { onClick?() }
-    }
+    /// The window takes the press and moves while the pointer drags, as the title bar does.
+    override var mouseDownCanMoveWindow: Bool { true }
 }

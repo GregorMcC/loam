@@ -40,6 +40,14 @@ extension Scenarios {
         try expectToolbar(abs(bar.frame.height - content.safeAreaInsets.top) < 0.5 && bar.frame.height > 0,
                           "the scrim is \(bar.frame.height) high, and the title bar is \(content.safeAreaInsets.top)")
         try expectToolbar(abs(bar.frame.maxY - frame.bounds.maxY) < 0.5, "the scrim does not start at the top of the window")
+        // The bar and the scrim of the sheet meet: the hosting view of the sheet has the same inset as the bar is high. A press
+        // on the bar moves the window, as on the title bar.
+        let hosts = content.subviews.filter { String(describing: Swift.type(of: $0)).contains("NSHostingView") && !$0.isHidden && $0.frame == content.bounds }
+        for hosting in hosts {
+            try expectToolbar(abs(hosting.safeAreaInsets.top - bar.frame.height) < 0.5,
+                              "the sheet starts \(hosting.safeAreaInsets.top) down, and the scrim over the title bar is \(bar.frame.height) high")
+        }
+        try expectToolbar(bar.mouseDownCanMoveWindow, "a press on the scrim over the title bar does not move the window")
         // The scrim is over the toolbar: a press on its items lands on the scrim.
         for id in ["new-session-button", "panel-button"] {
             guard let item = find(id, in: frame) else { throw DriverFailure("no toolbar item \(id)") }
@@ -97,16 +105,17 @@ extension Scenarios {
         // A resize moves the window buttons, so the scrim follows them, and the bar keeps the height of the title bar.
         host.window.setFrame(NSRect(x: 100, y: 100, width: 1000, height: 640), display: true)
         try await expectTitleBarScrim(app, host, shown: true)
+        // AppKit may add the title bar again, as it can in full screen. The next layout puts the scrim back on top.
+        if let frame = host.window.contentView?.superview,
+           let titleBar = frame.subviews.first(where: { String(describing: Swift.type(of: $0)).contains("TitlebarContainer") }) {
+            frame.addSubview(titleBar, positioned: .above, relativeTo: nil)
+            host.window.setFrame(NSRect(x: 100, y: 100, width: 1100, height: 660), display: true)
+            try await expectTitleBarScrim(app, host, shown: true)
+        }
 
-        // 3. A click on the scrim over the title bar closes the sheet, as a click on the rest of the scrim does. The scrim
-        // goes, and the items act. New session opens a tab, so the item works.
-        guard let frame = host.window.contentView?.superview, let bar = find("title-bar-scrim", in: frame),
-              let button = find("new-session-button", in: frame) else { throw DriverFailure("no scrim or no New session item") }
-        let point = centre(of: button, in: frame)
-        app.mouse(.leftMouseDown, at: point, on: bar)
-        app.mouse(.leftMouseUp, at: point, on: bar)
+        // 3. The sheet closes: the scrim goes, and the items act. New session opens a tab, so the item works.
+        model.closeNewWorktree()
         try await app.waitUntil("the sheet closes") { !app.exists("new-worktree-sheet") }
-        try expectToolbar(!model.newWorktreeSheet.isOpen, "a click on the scrim over the title bar did not close the sheet")
         try await expectTitleBarScrim(app, host, shown: false)
         try await app.waitUntil("the items come back") {
             AccessibilityProbe.shared.isEnabled("new-session-button") && AccessibilityProbe.shared.isEnabled("panel-button")

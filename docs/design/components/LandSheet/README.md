@@ -10,7 +10,7 @@ The Land sheet lands one worktree: it shows what GitHub checks, merges the PR, r
 ## The card
 
 - 560pt wide, `horizon-a`, radius `radius-lg`, a hairline edge, and each layer of `shadow-switcher` (`loamFloating`), over a dim scrim: near black at 40% in Night, so the shadow still shows, and the brown of the Day shadow at 28% in Day. A click on the scrim closes the sheet. The New worktree sheet has the same card (`sheetCard`).
-- The scrim covers the whole window, the title bar and the toolbar too, as the dim of a native macOS sheet does (ticket 126). The window buttons stay clear. A click on the title bar closes the sheet, and a drag there moves the window. While a sheet shows, the toolbar items are off: the sidebar button, "N elsewhere need you", New session and Plot panel take no click.
+- The scrim covers the whole window, the title bar and the toolbar too, as the dim of a native macOS sheet does (ticket 126). The window buttons stay clear. A drag on the title bar moves the window, and a click there does nothing, as under a native sheet. While a sheet shows, the toolbar items are off: the sidebar button, "N elsewhere need you", New session and Plot panel take no click.
 - It drops in from the toolbar row with `duration-slow` and `ease-settle`. Under Reduce Motion it fades only.
 - Title: "Land #142 Link labels from plot brief" in 15pt semibold. Under it, in mono: "link-labels → main · 9 commits". While the plan loads, the title and the line come from the row of the worktree, and the checklist shows a spinner.
 - The checklist "Before you merge" has one 30pt row for each check of `loam worktree land --dry-run`: a symbol, words, and a value at the trailing edge. `LandSheetContent` says what each row shows.

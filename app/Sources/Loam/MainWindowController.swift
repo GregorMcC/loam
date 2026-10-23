@@ -752,7 +752,7 @@ final class LoamSplitView: NSSplitView {
             newWorktreeSheet?.frame = convert(bounds, to: container)
             switcher?.frame = convert(switcherRect, to: container)
         }
-        if titleBarScrim?.isShown == true { titleBarScrim?.placeButtons() }
+        if titleBarScrim?.isShown == true { titleBarScrim?.update() }
         onLayout?()
     }
 
