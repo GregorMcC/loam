@@ -229,6 +229,14 @@ struct DriverTests {
         ])
     }
 
+    /// Ticket 120: the Land sheet, the PR popover, the New worktree sheet and the ⌘J menu over the window with the plot
+    /// panel open, in Loam Night, Loam Day and Catppuccin Mocha.
+    @Test func showsTheDepthOfTheSheetsAndThePopover() async throws {
+        try await expectPass("depth-shot", environment: [
+            "LOAM_DRIVER_LOAM": Self.loamBinary, "LOAM_DRIVER_FAKE_GH": Self.fakeGH, "XDG_CONFIG_HOME": "/nonexistent-loam-driver-xdg",
+        ])
+    }
+
     /// Ticket 48: archive a plot with a session, unarchive it and see the session resume, and delete an archived plot.
     /// Ticket 61: an unarchive and show at once still gives one `claude` for the session.
     @Test func archivesUnarchivesAndDeletesAPlot() async throws {

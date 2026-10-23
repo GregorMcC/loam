@@ -26,7 +26,7 @@ extension Scenarios {
     /// - 23 `unit-tests`: a check still runs, approved.
     ///
     /// With `refusal`, GitHub refuses each merge with that message. With `newHead`, PR 25 stands on that commit.
-    private static func landGitHub(head: String, newHead: String? = nil, refusal: String? = nil) throws -> Data {
+    static func landGitHub(head: String, newHead: String? = nil, refusal: String? = nil) throws -> Data {
         func pull(_ number: Int, _ branch: String, title: String, mergeState: String, head: String = head) -> [String: Any] {
             ["number": number, "title": title, "url": "https://github.com/example/widgets/pull/\(number)",
              "state": "OPEN", "mergeable": "MERGEABLE", "mergeStateStatus": mergeState, "reviewDecision": "APPROVED",
@@ -72,7 +72,7 @@ extension Scenarios {
     }
 
     /// The commit at the head of a folder.
-    private static func headCommit(of folder: String) throws -> String {
+    static func headCommit(of folder: String) throws -> String {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.arguments = ["rev-parse", "HEAD"]

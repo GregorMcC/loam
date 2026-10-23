@@ -334,8 +334,8 @@ struct LandSheetView: View {
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
-                .background(LoamColor.horizonB, in: RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(LoamColor.edge))
+                // The Where it stands card of the plot panel: `horizon-b`, `radius-md` and a hairline (ticket 120).
+                .loamFieldBox(LoamColor.horizonB, radius: LoamTheme.radiusMd)
                 .accessibilityIdentifier("land-sheet-where")
             Text("Loam saves this as a change. You can undo it.")
                 .font(.system(size: 11))
@@ -355,8 +355,10 @@ struct LandSheetView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("land-sheet-footer")
+            // A native button at the size of the primary button, so the two share one shape (ticket 120).
             Button("Cancel") { app.closeLandSheet() }
-                .buttonStyle(SheetCancelButtonStyle())
+                .loamSecondaryButton()
+                .controlSize(.large)
                 .disabled(sheet.isMerging)
                 .accessibilityIdentifier("land-sheet-cancel")
             Button { merge() } label: {

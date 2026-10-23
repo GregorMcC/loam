@@ -121,17 +121,80 @@ enum LoamAnimation {
 // MARK: Surfaces
 
 extension View {
-    /// A card on a surface: a ground, a `rule` hairline, and a radius. For popovers and sheets use
-    /// `loamFloating()`.
+    /// A card on a surface: a ground, a `rule` hairline, and a radius. For popovers, menus and sheets use
+    /// `loamFloating(_:ground:radius:)`.
     func loamCard(_ ground: Color = LoamColor.horizonB, radius: CGFloat = LoamTheme.radiusMd) -> some View {
         background(ground, in: RoundedRectangle(cornerRadius: radius))
             .overlay(RoundedRectangle(cornerRadius: radius).strokeBorder(LoamColor.rule))
     }
 
-    /// A sheet that floats over the panes: `horizon-b`, `radius-lg`, `shadow-switcher`.
-    func loamFloating() -> some View {
-        loamCard(LoamColor.horizonB, radius: LoamTheme.radiusLg)
-            .shadow(color: .black.opacity(0.35), radius: 24, y: 8)
+    /// A card that floats over the window (docs/design, Depth and shadow): its ground, a hairline edge, and each layer of a
+    /// shadow token. Popovers and menus take `shadow-raised` on `horizon-b`, and sheets take `shadow-switcher` on
+    /// `horizon-a`. The content is clipped to the card, so a list that scrolls stays inside the corners.
+    func loamFloating(_ shadow: LoamTheme.ShadowToken, ground: Color, radius: CGFloat) -> some View {
+        modifier(FloatingCard(shadow: shadow, ground: ground, radius: radius))
+    }
+
+    /// The box of a text field that Loam draws, in a sheet or a popover: a ground one step from the surface under it and
+    /// a hairline edge, as the Where it stands card of the plot panel has. Structure is felt, not seen, so the box has no
+    /// `edge` border.
+    func loamFieldBox(_ ground: Color = LoamColor.horizonB, radius: CGFloat = LoamTheme.radiusSm) -> some View {
+        background(ground, in: RoundedRectangle(cornerRadius: radius))
+            .overlay(RoundedRectangle(cornerRadius: radius).strokeBorder(LoamColor.inkHairline))
+    }
+}
+
+/// The card of `loamFloating`. Each shadow layer is a shape of its own behind the card, because a second `.shadow` on the
+/// card would cast the first shadow again. A layer with a spread and no blur is a ring around the card. An inset layer
+/// is a light line inside the hairline at the top edge, and it follows the corners, as CSS draws it.
+private struct FloatingCard: ViewModifier {
+    let shadow: LoamTheme.ShadowToken
+    let ground: Color
+    let radius: CGFloat
+    @Environment(\.colorScheme) private var scheme
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: radius)
+        let layers = Array(LoamTheme.shadow(shadow, dark: scheme == .dark).enumerated())
+        return content
+            .background(ground, in: shape)
+            .overlay(shape.strokeBorder(LoamColor.inkHairline))
+            .overlay {
+                ForEach(layers.filter { $0.element.inset }, id: \.offset) { _, layer in
+                    InsetLine(radius: radius - 1, x: layer.x, y: layer.y)
+                        .fill(Color(nsColor: layer.color))
+                        .padding(1)
+                }
+                .allowsHitTesting(false)
+            }
+            .clipShape(shape)
+            .background {
+                // CSS paints the first layer on top, and a ZStack paints the last on top, so the layers go in reverse.
+                ZStack {
+                    ForEach(layers.filter { !$0.element.inset }.reversed(), id: \.offset) { _, layer in
+                        if layer.blur == 0 {
+                            shape.inset(by: -layer.spread).fill(Color(nsColor: layer.color)).offset(x: layer.x, y: layer.y)
+                        } else {
+                            shape.fill(ground)
+                                .shadow(color: Color(nsColor: layer.color), radius: layer.radius, x: layer.x, y: layer.y)
+                        }
+                    }
+                }
+                .allowsHitTesting(false)
+            }
+    }
+}
+
+/// The band that an inset shadow lights: the card less the card moved by the offset. For a drop of 1 it is a line at the
+/// top edge that thins out down the corners.
+private struct InsetLine: Shape {
+    let radius: CGFloat
+    let x: CGFloat
+    let y: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        RoundedRectangle(cornerRadius: radius).path(in: rect)
+            .subtracting(RoundedRectangle(cornerRadius: radius).path(in: rect.offsetBy(dx: x, dy: y)))
     }
 }
 
@@ -204,6 +267,10 @@ extension View {
     /// The one primary button of a row, such as Save or Add: a native prominent button in `moss`
     /// with `on-moss` text. Other buttons stay native and untinted.
     func loamPrimaryButton() -> some View { modifier(LoamPrimaryButton()) }
+
+    /// A button beside the primary button, such as Cancel or Open on GitHub: a native bordered button. Give both the same
+    /// control size, so they share one shape and one height (a capsule at the large size on macOS 26).
+    func loamSecondaryButton() -> some View { buttonStyle(.bordered) }
 }
 
 /// A prominent button draws in its tint only in the key window. In other windows it draws as a

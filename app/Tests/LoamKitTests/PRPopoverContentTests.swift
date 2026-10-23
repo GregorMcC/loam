@@ -249,6 +249,17 @@ private func text(_ parts: [StatusLine.Part]) -> String { parts.map(\.text).join
         #expect(!content(try row(.readyToMerge, in: rows)).secondary.contains(.updateBranch))
     }
 
+    /// Ticket 120: the smaller buttons stand two to a row at the size of the primary button, so each one has room for its
+    /// words. A button with no partner takes a row of its own, at the full width.
+    @Test func theSmallerButtonsStandTwoToARow() {
+        let all: [PRSecondaryAction] = [.rerunFailed, .updateBranch, .openOnGitHub, .copyBranchName]
+        #expect(PRPopoverContent.secondaryRows([]).isEmpty)
+        #expect(PRPopoverContent.secondaryRows([.openOnGitHub]) == [[.openOnGitHub]])
+        #expect(PRPopoverContent.secondaryRows(Array(all.prefix(2))) == [[.rerunFailed, .updateBranch]])
+        #expect(PRPopoverContent.secondaryRows(Array(all.prefix(3))) == [[.rerunFailed, .updateBranch], [.openOnGitHub]])
+        #expect(PRPopoverContent.secondaryRows(all) == [[.rerunFailed, .updateBranch], [.openOnGitHub, .copyBranchName]])
+    }
+
     @Test func theOptionalChecksOfAReadyPRShowAsFailedChecks() throws {
         let unstable = content(try #require(try stageRows().last))
         #expect(unstable.stage == .readyToMerge)

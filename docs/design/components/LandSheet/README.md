@@ -9,7 +9,7 @@ The Land sheet lands one worktree: it shows what GitHub checks, merges the PR, r
 
 ## The card
 
-- 560pt wide, `horizon-a`, radius `radius-lg`, a hairline edge, `shadow-switcher`, over a dim scrim. A click on the scrim closes the sheet.
+- 560pt wide, `horizon-a`, radius `radius-lg`, a hairline edge, and each layer of `shadow-switcher` (`loamFloating`), over a dim scrim: near black at 40% in Night, so the shadow still shows, and the brown of the Day shadow at 28% in Day. A click on the scrim closes the sheet. The New worktree sheet has the same card (`sheetCard`).
 - It drops in from the toolbar row with `duration-slow` and `ease-settle`. Under Reduce Motion it fades only.
 - Title: "Land #142 Link labels from plot brief" in 15pt semibold. Under it, in mono: "link-labels → main · 9 commits". While the plan loads, the title and the line come from the row of the worktree, and the checklist shows a spinner.
 - The checklist "Before you merge" has one 30pt row for each check of `loam worktree land --dry-run`: a symbol, words, and a value at the trailing edge. `LandSheetContent` says what each row shows.
@@ -24,8 +24,8 @@ The Land sheet lands one worktree: it shows what GitHub checks, merges the PR, r
 - After the merge: three boxes, all on by default.
   - "Remove the worktree link-labels". With open panes it reads "Close its pane and remove the worktree" or "Close its 2 panes and remove the worktree". Off passes `--keep-worktree`.
   - "Delete the branch on GitHub". Off passes `--keep-remote-branch`.
-  - "Move Where it stands on". Under it, a box with the Where it stands text: "Merged #142 Link labels from plot brief." before the current text. The box selects that sentence when it takes the keys, so one key replaces it. Return adds a line, and a held Return adds lines. ⌘Return merges. The caption is "Loam saves this as a change. You can undo it."
-- Footer: "You cannot undo a merge." in `ink-muted`, then Cancel and the primary button.
+  - "Move Where it stands on". Under it, a box with the Where it stands text: "Merged #142 Link labels from plot brief." before the current text. The box selects that sentence when it takes the keys, so one key replaces it. Return adds a line, and a held Return adds lines. ⌘Return merges. The caption is "Loam saves this as a change. You can undo it." The box looks like the Where it stands card of the plot panel: `horizon-b`, `radius-md` and a hairline (`loamFieldBox`). It has no `edge` border.
+- Footer: "You cannot undo a merge." in `ink-muted`, then Cancel and the primary button. Both are native buttons at the large size, so they are capsules of one height (`loamSecondaryButton`, `loamPrimaryButton`).
 
 ## States
 

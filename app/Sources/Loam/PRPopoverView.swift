@@ -18,7 +18,6 @@ struct PRPopoverView: View {
     @FocusState private var goalFocused: Bool
     /// The window, to ask if an input method composes in the goal field.
     @State private var window = WindowRef()
-    @Environment(\.colorScheme) private var scheme
 
     static let width: CGFloat = 360
     private static let radius = LoamTheme.radiusMd
@@ -81,11 +80,7 @@ struct PRPopoverView: View {
 
     private func card(_ content: PRPopoverContent, status: WorktreeStatus) -> some View {
         cardContent(content, status: status)
-            .background(LoamColor.horizonB, in: RoundedRectangle(cornerRadius: Self.radius))
-            .overlay(RoundedRectangle(cornerRadius: Self.radius).strokeBorder(LoamColor.inkHairline))
-            .clipShape(RoundedRectangle(cornerRadius: Self.radius))
-            .shadow(color: Color(nsColor: LoamTheme.shadowRaised).opacity(LoamTheme.shadowRaisedAlpha(dark: scheme == .dark)),
-                    radius: 12, y: 8)
+            .loamFloating(.raised, ground: LoamColor.horizonB, radius: Self.radius)
             .accessibilityElement(children: .contain)
             .accessibilityLabel(content.title)
             .accessibilityIdentifier("pr-popover")
@@ -208,8 +203,7 @@ struct PRPopoverView: View {
                         .disabled(model.isSavingGoal)
                         .padding(.horizontal, 6)
                         .frame(height: 24)
-                        .background(LoamColor.horizonA, in: RoundedRectangle(cornerRadius: 5))
-                        .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(LoamColor.edge))
+                        .loamFieldBox(LoamColor.horizonA)
                         .accessibilityLabel("Goal")
                         .accessibilityIdentifier("pr-popover-goal-field")
                 } else {
@@ -279,8 +273,7 @@ struct PRPopoverView: View {
     // MARK: Buttons
 
     private func buttons(_ content: PRPopoverContent, status: WorktreeStatus, plan: SendPlan?) -> some View {
-        let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: content.hasPullRequest ? 3 : 2)
-        return VStack(spacing: 8) {
+        VStack(spacing: 8) {
             if let primary = content.primary {
                 Button { runPrimary(primary) } label: { primaryLabel(primary, plan: plan) }
                     .loamPrimaryButton()
@@ -289,9 +282,12 @@ struct PRPopoverView: View {
                     .accessibilityValue(plan?.typeTarget ?? "")
                     .accessibilityIdentifier("pr-popover-primary")
             }
-            LazyVGrid(columns: columns, spacing: 8) {
-                ForEach(content.secondary, id: \.self) { action in
-                    secondary(action, content: content, status: status)
+            // Each button fills its share of the row, so a button with no partner takes the full width.
+            ForEach(PRPopoverContent.secondaryRows(content.secondary), id: \.self) { row in
+                HStack(spacing: 8) {
+                    ForEach(row, id: \.self) { action in
+                        secondary(action, content: content, status: status)
+                    }
                 }
             }
         }
@@ -331,8 +327,12 @@ struct PRPopoverView: View {
                 Text(action.title)
                 if running == action { ProgressView().controlSize(.small).scaleEffect(0.7).frame(width: 12, height: 12) }
             }
+            .lineLimit(1)
+            .frame(maxWidth: .infinity)
         }
-        .buttonStyle(PopoverButtonStyle())
+        // A native button at the size of the primary button, two to a row, so all the buttons share one shape (ticket 120).
+        .loamSecondaryButton()
+        .controlSize(.large)
         // A command of the core runs one at a time for a worktree. Open and Copy run on this Mac and never wait.
         .disabled(running != nil && (action == .rerunFailed || action == .updateBranch))
         .accessibilityIdentifier("pr-popover-\(action.rawValue)")
@@ -504,25 +504,6 @@ private struct PassedChecksView: View {
         .accessibilityLabel(title)
         .accessibilityValue(isOpen ? "Shown" : "Hidden")
         .accessibilityIdentifier("pr-popover-passed-toggle")
-    }
-}
-
-/// A smaller button of the popover (the `.b2` of the boards): 28 pt high, radius 6, a fill and an `edge` border.
-private struct PopoverButtonStyle: ButtonStyle {
-    @Environment(\.isEnabled) private var enabled
-
-    func makeBody(configuration: Configuration) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 6)
-        configuration.label
-            .font(.system(size: 12.5, weight: .medium))
-            .foregroundStyle(LoamColor.ink)
-            .lineLimit(1)
-            .frame(maxWidth: .infinity)
-            .frame(height: 28)
-            .background(configuration.isPressed ? LoamColor.inkSelected : LoamColor.inkFill, in: shape)
-            .overlay(shape.strokeBorder(LoamColor.edge))
-            .opacity(enabled ? 1 : 0.5)
-            .contentShape(shape)
     }
 }
 
