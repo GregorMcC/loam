@@ -305,7 +305,8 @@ type CheckResult struct {
 	// SeedLine is the line that the seed of the plot gets for the worktree,
 	// such as "- web-fix-login: Fix the login form (#57, from origin/main)",
 	// with the goal, the link and the base of this check. It is empty when
-	// the name is not valid.
+	// the name is not valid. With no base given and no DefaultBase, it has
+	// no base: Create asks the remote for one, and the check does not.
 	SeedLine string `json:"seed_line,omitempty"`
 }
 

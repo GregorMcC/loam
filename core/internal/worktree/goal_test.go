@@ -391,3 +391,25 @@ func TestCheckDoesNotAskTheRemote(t *testing.T) {
 		t.Fatalf("%+v", res)
 	}
 }
+
+// With no origin/HEAD, the dry run does not know the base that Create finds by
+// asking the remote, so its seed line has no base. Create then writes the
+// line with the base, "from origin/main". The contract says so.
+func TestCheckSeedLineWithoutADefaultBaseHasNoBaseAndCreateAddsIt(t *testing.T) {
+	e := setup(t)
+	testutil.Git(t, e.repo, "remote", "set-head", "origin", "--delete")
+	o := worktree.CreateOptions{PlotID: e.plot.ID, Repo: e.repo, Name: "plain"}
+	res, err := worktree.Check(e.s, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.DefaultBase != "" || res.SeedLine != "- app-plain" {
+		t.Fatalf("default base %q, seed line %q", res.DefaultBase, res.SeedLine)
+	}
+	if _, err := worktree.Create(e.s, o); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.seedText(); !strings.Contains(got, "- app-plain (from origin/main)\n") {
+		t.Fatalf("the seed has no line with the base the remote gave:\n%s", got)
+	}
+}

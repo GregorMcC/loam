@@ -19,7 +19,7 @@
       "items": { "type": "string", "minLength": 1 }
     },
     "seed_line": {
-      "description": "The line that the seed of the plot gets for the worktree, with the goal, the link and the base of this check, such as '- web-fix-login: Fix the login form (#57, from origin/main)'. It is present only when valid_name is true.",
+      "description": "The line that the seed of the plot gets for the worktree, with the goal, the link and the base of this check, such as '- web-fix-login: Fix the login form (#57, from origin/main)'. It has no base when no base is given and default_base is empty: the dry run does not ask origin, and new does. It is present only when valid_name is true.",
       "type": "string",
       "minLength": 1
     }
