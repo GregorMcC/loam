@@ -61,9 +61,10 @@ extension Scenarios {
         }
     }
 
-    /// An item that AppKit adds for a window (ticket 132), and whether macOS turns it off under a native sheet. The sheet is the
+    /// An item that AppKit sends to a window (ticket 132), and whether macOS turns it off under a native sheet. The sheet is the
     /// key window then, and a sheet has none of these. A sheet of Loam is a view in the window, so the window has to turn them
-    /// off. Minimize and the window list stay on under a native sheet.
+    /// off. Minimize and the Window list stay on under a native sheet. This list is the table of the ticket. The window turns off
+    /// every action but those two, so an item that AppKit adds later is off too.
     private struct AppKitItem {
         var title: String
         var action: Selector
@@ -86,22 +87,29 @@ extension Scenarios {
         AppKitItem(title: "Window list", action: #selector(NSWindow.makeKeyAndOrderFront(_:)), offUnderSheet: false),
     ]
 
-    /// What the window answers for each AppKit item, as the menu asks it. AppKit sends an item with no target to the window, and
-    /// a background run has no key window, so the menu bar of the driver cannot show this. The answer is the same.
+    /// What the menu draws for each AppKit item when the window is its target, as AppKit sets it for these items. A menu that
+    /// updates asks the window `validateMenuItem`. The menu bar of a background run cannot show this: with no key window it
+    /// draws every item that has no target as off, whatever the window answers.
     static func appKitItemStates(_ host: AppHost) -> [String: Bool] {
-        Dictionary(uniqueKeysWithValues: appKitItems.map {
-            ($0.title, host.window.validateMenuItem(NSMenuItem(title: $0.title, action: $0.action, keyEquivalent: "")))
-        })
+        let menu = NSMenu(title: "AppKit items")
+        for item in appKitItems {
+            let menuItem = NSMenuItem(title: item.title, action: item.action, keyEquivalent: "")
+            menuItem.target = host.window
+            menu.addItem(menuItem)
+        }
+        menu.update()
+        return Dictionary(uniqueKeysWithValues: zip(appKitItems, menu.items).map { ($0.title, $1.isEnabled) })
     }
 
-    /// With no sheet, the window answers on for Hide Toolbar and Zoom, so the check under a sheet tests something. It returns the
-    /// answers, to compare after the sheet. It also logs the items of the menu bar that have no command of Loam, which are the
-    /// items that AppKit adds and the items of the app.
+    /// With no sheet, the window answers on for Hide Toolbar, Zoom, Close Window, Minimize and the Window list, so the check
+    /// under a sheet tests something. It returns the answers, to compare after the sheet. It logs them, and the items of the menu
+    /// bar that have no command of Loam, which are the items that AppKit adds and the items of the app.
     static func expectAppKitItemsOn(_ host: AppHost) throws -> [String: Bool] {
         let states = appKitItemStates(host)
         for title in ["Hide Toolbar", "Zoom", "Close Window", "Minimize Window", "Window list"] where states[title] != true {
             throw DriverFailure("\(title) is off with no sheet")
         }
+        Log.line("AppKit items with no sheet: " + appKitItems.map { "\($0.title) \(states[$0.title] == true ? "on" : "off")" }.joined(separator: ", "))
         for top in NSApp.mainMenu?.items ?? [] {
             guard let submenu = top.submenu else { continue }
             submenu.update()
@@ -113,8 +121,8 @@ extension Scenarios {
         return states
     }
 
-    /// A sheet of Loam shows or holds the window: the window turns off each AppKit item that macOS turns off under a native
-    /// sheet, and leaves the others as they were (`baseline`, or on). Any such item in the menu bar is off too.
+    /// A sheet shows over the window, a sheet of Loam or a native one: the window draws off each AppKit item that macOS turns
+    /// off under a native sheet, and leaves the others as they were (`baseline`, or on).
     static func expectAppKitItemsOff(_ host: AppHost, baseline: [String: Bool]? = nil) throws {
         let states = appKitItemStates(host)
         for item in appKitItems {
@@ -124,16 +132,14 @@ extension Scenarios {
                 throw DriverFailure("\(item.title) changed under the sheet")
             }
         }
-        for top in NSApp.mainMenu?.items ?? [] { top.submenu?.update() }
-        func check(_ menu: NSMenu) throws {
-            for item in menu.items {
-                if let action = item.action, appKitItems.contains(where: { $0.offUnderSheet && $0.action == action }), item.isEnabled {
-                    throw DriverFailure("\(item.title) is on in the menu under the sheet")
-                }
-                if let submenu = item.submenu { try check(submenu) }
-            }
+    }
+
+    /// The sheet is closed: each AppKit item draws as it did before the sheet.
+    static func expectAppKitItemsBack(_ host: AppHost, baseline: [String: Bool]) throws {
+        let states = appKitItemStates(host)
+        for item in appKitItems where states[item.title] != baseline[item.title] {
+            throw DriverFailure("\(item.title) is \(states[item.title] == true ? "on" : "off") after the sheet, and it was \(baseline[item.title] == true ? "on" : "off") before")
         }
-        if let main = NSApp.mainMenu { try check(main) }
     }
 
     /// A sheet is open over the window of `plot`: the Land sheet, the New worktree sheet, or a native sheet. Every menu item
@@ -144,8 +150,7 @@ extension Scenarios {
         let model = host.model
         guard model.sheetIsOpen || host.window.attachedSheet != nil else { throw DriverFailure("no sheet is open") }
         try expectWindowItems(enabled: false)
-        // A sheet of Loam: the window answers for the AppKit items. A native sheet is the key window, so AppKit answers then.
-        if model.sheetBlocksWindow { try expectAppKitItemsOff(host) }
+        try expectAppKitItemsOff(host)
 
         func state() -> String {
             "tabs \(model.workspace.tabs(of: .plot(plot)).count), selected \(String(describing: model.workspace.selectedTab(of: .plot(plot))?.id)), "

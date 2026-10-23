@@ -126,7 +126,7 @@ extension Scenarios {
         }
         try app.click("new-session-button")
         try await app.waitUntil("New session opens a tab") { model.workspace.tabs(of: .plot(plot)).count == tabs + 1 }
-        try expectToolbar(appKitItemStates(host) == appKitItems, "an AppKit item stayed off after the sheet")
+        try expectAppKitItemsBack(host, baseline: appKitItems)
 
         // 4. A native sheet (ticket 128): New Plot… asks for a name in a sheet. The commands that act on the window are off while
         // it shows, as under the sheets of Loam. Cancel closes it, and the commands run again.
