@@ -6,7 +6,7 @@ The PR popover shows the state of the PR of one worktree and the actions that go
 - ⌘⇧L, a worktree in the switcher, and Show pull request in the ⌘J menu open it at the chip of the action bar. When the chip is the PR of another worktree, or there is no chip, it opens at the left end of the bar.
 - The card follows the control that opened it when a resize of the window, a drag of a divider, or the sidebar or the plot panel moves the control. When the control goes, such as a row of a column that hides, the popover closes.
 - The popover has a state of its own. It opens for one worktree. It closes when the focus moves to another pane, tab or space, and when its worktree leaves the list. It also closes when the quick switcher, the actions menu, the Land sheet or the New worktree sheet opens.
-- One overlay shows at a time. When the popover opens, it closes the quick switcher and the actions menu. The [Land sheet](../LandSheet/README.md) and the [New worktree sheet](../NewWorktreeSheet/README.md) close the popover when they open.
+- One overlay shows at a time. The popover, the quick switcher and the actions menu close each other when they open. The [Land sheet](../LandSheet/README.md) and the [New worktree sheet](../NewWorktreeSheet/README.md) close the popover when they open.
 - The popover does not open while a sheet shows or keeps the window (a merge, or a worktree that is made). The keys and menu items that open it are off then, and the scrim takes the clicks. It would take the keys from that sheet.
 
 ## The card
