@@ -743,8 +743,10 @@ final class MainWindow: NSWindow {
     /// AppKit sends some items to the window: Enter Full Screen, Hide Toolbar, Zoom, Close, the tab bar items and the Move &
     /// Resize items. A native sheet is the key window and has none of them, so macOS turns them off. A sheet of Loam is a view
     /// in this window, so the window stays the key window, and it has to turn them off. It does so for every action but
-    /// `sheetOnActions`, also for an item that a later macOS adds. Copy, Paste, dictation and the emoji palette go to the field
-    /// that has the keys, so this window never sees them.
+    /// `sheetOnActions`, also for an item that a later macOS adds. An item that must work under a sheet needs its action in
+    /// that set. Copy, Paste, dictation and the emoji palette go to the field that has the keys, so this window never sees
+    /// them. A native sheet is the key window, so AppKit does not ask this window then, and `attachedSheet` only keeps the
+    /// answer the same if something does.
     override func validateMenuItem(_ item: NSMenuItem) -> Bool {
         // AppKit sets the title of the item here (Hide Toolbar or Show Toolbar), so it runs for an item that is off too.
         let valid = super.validateMenuItem(item)

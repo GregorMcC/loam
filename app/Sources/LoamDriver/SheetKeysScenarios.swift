@@ -102,14 +102,18 @@ extension Scenarios {
     }
 
     /// With no sheet, the window answers on for Hide Toolbar, Zoom, Close Window, Minimize and the Window list, so the check
-    /// under a sheet tests something. It returns the answers, to compare after the sheet. It logs them, and the items of the menu
-    /// bar that have no command of Loam, which are the items that AppKit adds and the items of the app.
+    /// under a sheet tests something. It returns the answers, to compare after the sheet, and logs them.
     static func expectAppKitItemsOn(_ host: AppHost) throws -> [String: Bool] {
         let states = appKitItemStates(host)
         for title in ["Hide Toolbar", "Zoom", "Close Window", "Minimize Window", "Window list"] where states[title] != true {
             throw DriverFailure("\(title) is off with no sheet")
         }
         Log.line("AppKit items with no sheet: " + appKitItems.map { "\($0.title) \(states[$0.title] == true ? "on" : "off")" }.joined(separator: ", "))
+        return states
+    }
+
+    /// Logs the items of the menu bar that have no command of Loam: the items that AppKit adds, and the items of the app.
+    static func logMenuItemsWithNoCommand() {
         for top in NSApp.mainMenu?.items ?? [] {
             guard let submenu = top.submenu else { continue }
             submenu.update()
@@ -118,7 +122,6 @@ extension Scenarios {
             }
             Log.line("menu \(submenu.title): items with no command of Loam: \(plain.isEmpty ? "none" : plain.joined(separator: "; "))")
         }
-        return states
     }
 
     /// A sheet shows over the window, a sheet of Loam or a native one: the window draws off each AppKit item that macOS turns

@@ -79,6 +79,7 @@ extension Scenarios {
         // 1. No sheet: the scrim is gone, and every item is on.
         try await expectTitleBarScrim(app, host, shown: false)
         let appKitItems = try expectAppKitItemsOn(host)
+        logMenuItemsWithNoCommand()
         for id in ["new-session-button", "panel-button"] {
             try expectToolbar(AccessibilityProbe.shared.isEnabled(id), "\(id) is off with no sheet")
         }
