@@ -146,6 +146,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         installActionBar()
         // Each overlay host goes in this list, so the window refuses the keys to it while it is hidden (ticket 130).
         window.overlays = [switcherHost, actionsHost, popoverHost, landHost, newWorktreeHost]
+        window.sheetBlocksWindow = { [weak model] in model?.sheetBlocksWindow ?? false }
         collapseObservation = sidebarItem.observe(\.isCollapsed, options: [.new]) { [weak self] _, _ in
             MainActor.assumeIsolated { self?.syncCollapse() }
         }
@@ -726,9 +727,34 @@ private let commandLog = Logger(subsystem: "dev.loam.Loam", category: "commands"
 /// The main window. It never gives the keys to a view in a hidden overlay (ticket 130). An overlay asks SwiftUI for the
 /// keys when it opens, and SwiftUI moves them at its next update. Sometimes the overlay closes before that update. The close
 /// gives the keys back first, and then the late move asks for them for a view that no longer shows. No key reaches that view.
+/// While a sheet shows over the window, the window also turns off the items that AppKit sends to it (ticket 132).
 final class MainWindow: NSWindow {
     /// The overlays over the split view: the quick switcher, the actions menu, the PR popover and the two sheets.
     var overlays: [NSView] = []
+
+    /// True while a sheet of Loam shows or holds the window (`AppModel.sheetBlocksWindow`). The controller sets it.
+    var sheetBlocksWindow: () -> Bool = { false }
+
+    /// The actions that stay on under a sheet: macOS keeps Minimize and the Window list for a native sheet.
+    static let sheetOnActions: Set<Selector> = [
+        #selector(NSWindow.performMiniaturize(_:)), #selector(NSWindow.makeKeyAndOrderFront(_:)),
+    ]
+
+    /// AppKit sends some items to the window: Enter Full Screen, Hide Toolbar, Zoom, Close, the tab bar items and the Move &
+    /// Resize items. A native sheet is the key window and has none of them, so macOS turns them off. A sheet of Loam is a view
+    /// in this window, so the window stays the key window, and it has to turn them off. It does so for every action but
+    /// `sheetOnActions`, also for an item that a later macOS adds. An item that must work under a sheet needs its action in
+    /// that set. Copy, Paste, dictation and the emoji palette go to the field that has the keys, so this window never sees
+    /// them. A native sheet is the key window, so AppKit does not ask this window then, and `attachedSheet` only keeps the
+    /// answer the same if something does.
+    override func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        // AppKit sets the title of the item here (Hide Toolbar or Show Toolbar), so it runs for an item that is off too.
+        let valid = super.validateMenuItem(item)
+        guard attachedSheet != nil || sheetBlocksWindow(), let action = item.action, !Self.sheetOnActions.contains(action) else {
+            return valid
+        }
+        return false
+    }
 
     override func makeFirstResponder(_ responder: NSResponder?) -> Bool {
         if let view = responder as? NSView, overlays.contains(where: { $0.isHidden && view.isDescendant(of: $0) }) { return false }
