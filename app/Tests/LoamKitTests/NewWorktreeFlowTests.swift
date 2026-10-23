@@ -30,6 +30,7 @@ import Testing
         func makes() -> [String] { args().filter { $0.hasPrefix("worktree new") && !$0.contains("--dry-run") } }
         func write(_ name: String, _ data: Data) throws { try data.write(to: dir.appendingPathComponent(name)) }
         func touch(_ name: String, _ text: String = "") throws { try Data(text.utf8).write(to: dir.appendingPathComponent(name)) }
+        func remove(_ name: String) { try? FileManager.default.removeItem(at: dir.appendingPathComponent(name)) }
 
         /// The answer of the next checks.
         func check(_ edit: (inout WorktreeCheck) -> Void = { _ in }) throws {
@@ -345,6 +346,84 @@ import Testing
         await starting.value
         #expect(rig.makes().count == 1)
         #expect(!rig.sheet.isOpen)
+    }
+
+    // MARK: Quit
+
+    /// Quit waits for the worktree that is made, since an app that quits in the middle leaves a worktree with no session.
+    /// A failed start leaves the sheet open with the message, so Quit stops. Done lets Quit go on.
+    @Test func quitWaitsForAWorktreeThatIsMade() async throws {
+        let rig = try await rig()
+        let model = rig.model
+        var ends: [Bool] = []
+        model.whenSheetWorkEnds { ends.append($0) }
+        #expect(ends == [false], "with no start, the answer is at once")
+        model.openNewWorktree(plot: plotID, from: linearLink)
+        await rig.settle()
+        model.whenSheetWorkEnds { ends.append($0) }
+        #expect(ends == [false, false], "an open sheet that does not start holds nothing")
+        try rig.touch("hold-new")
+        let starting = Task { await model.startNewWorktree() }
+        await rig.waitForStarting()
+        // Quit goes on a pass later (`applicationShouldTerminate`), so the session opens first.
+        let space = Space.plot(plotID)
+        var panesAtQuit: Int?
+        model.whenSheetWorkEnds {
+            ends.append($0)
+            Task { @MainActor in panesAtQuit = model.workspace.paneCount(of: space) }
+        }
+        #expect(ends == [false, false], "the worktree is not made yet")
+        rig.remove("hold-new")
+        await starting.value
+        await poll { panesAtQuit != nil }
+        #expect(ends == [false, false, false], "the start is done")
+        #expect(panesAtQuit == 1, "the session is open by the time that Quit goes on")
+        #expect(!rig.sheet.isOpen && rig.sheet.startError == nil)
+    }
+
+    @Test func quitStopsForAStartThatFails() async throws {
+        let rig = try await rig()
+        let model = rig.model
+        model.openNewWorktree(plot: plotID, from: linearLink)
+        await rig.settle()
+        var ends: [Bool] = []
+        try rig.touch("hold-new")
+        try rig.touch("fail-new")
+        let starting = Task { await model.startNewWorktree() }
+        await rig.waitForStarting()
+        var showsMessage: [Bool] = []
+        model.whenSheetWorkEnds {
+            ends.append($0)
+            showsMessage.append(rig.sheet.startError != nil)
+        }
+        #expect(ends.isEmpty)
+        rig.remove("hold-new")
+        await starting.value
+        #expect(ends == [true], "the start failed")
+        #expect(showsMessage == [true], "the sheet has the message when the wait ends")
+        #expect(rig.sheet.isOpen && rig.sheet.startError != nil)
+        // The next start begins from no failure.
+        rig.remove("fail-new")
+        try rig.touch("hold-new")
+        let again = Task { await model.startNewWorktree() }
+        await rig.waitForStarting()
+        model.whenSheetWorkEnds { ends.append($0) }
+        rig.remove("hold-new")
+        await again.value
+        #expect(ends == [true, false], "a start that follows a failure is done, not failed")
+    }
+
+    /// A start that waits for the check has made no worktree. A quit drops it, so it does not begin while the app closes.
+    @Test func aQuitDropsAStartThatWaitsForTheCheck() async throws {
+        let rig = try await rig()
+        rig.model.openNewWorktree(plot: plotID, from: linearLink)
+        await rig.model.startNewWorktree()
+        #expect(rig.sheet.startQueued)
+        rig.sheet.dropQueuedStart()
+        #expect(!rig.sheet.startQueued)
+        await rig.settle()
+        #expect(rig.makes().isEmpty && !rig.sheet.isStarting, "the check came back, and no worktree was made")
+        #expect(rig.sheet.isOpen && rig.sheet.canStart, "the sheet stays, and Start session works")
     }
 
     // MARK: A worktree that is made is never stopped

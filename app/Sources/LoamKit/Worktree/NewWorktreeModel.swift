@@ -88,7 +88,15 @@ public final class NewWorktreeModel {
     /// "What the seed adds" is open.
     public var showsSeed = false
     /// The worktree is made now. The fields lock, and Cancel is off.
-    public private(set) var isStarting = false
+    public private(set) var isStarting = false {
+        didSet {
+            guard oldValue, !isStarting else { return }
+            let waiting = startEndWaiters
+            let failed = startError != nil
+            startEndWaiters = []
+            for body in waiting { body(failed) }
+        }
+    }
     /// What went wrong when the worktree was made, in the words of the core. The sheet shows it in a `rust` callout.
     public private(set) var startError: String?
     /// Counts the changes of all fields.
@@ -107,6 +115,7 @@ public final class NewWorktreeModel {
     /// The start that a Return queued, once the check let it run. It has a task of its own: a new check or a new open
     /// cancels `checking`, and a cancel would stop `loam worktree new` in the middle.
     @ObservationIgnored var queuedStart: Task<Void, Never>?
+    @ObservationIgnored private var startEndWaiters: [(Bool) -> Void] = []
     /// Called after each change of a field, so `AppModel` runs the check again.
     @ObservationIgnored var onInput: (() -> Void)?
     /// Called when the sheet opens or closes. An open while it is open calls nothing.
@@ -401,6 +410,19 @@ public final class NewWorktreeModel {
         return true
     }
 
+    /// Runs `body` when the start ends. The argument says whether the start failed: the worktree was not made, and the
+    /// sheet shows the message. A start that is done closes the sheet and is not a failure. When no start runs, `body` runs
+    /// at once with false. Quit uses it through `AppModel.whenSheetWorkEnds`.
+    public func whenStartEnds(_ body: @escaping (_ failed: Bool) -> Void) {
+        if isStarting { startEndWaiters.append(body) } else { body(false) }
+    }
+
+    /// Quit began. A start that waits for the plot or the check does not run: the app closes soon, and `loam worktree new`
+    /// would stop in the middle. The sheet stays open, and Return queues the start again.
+    public func dropQueuedStart() {
+        startQueued = false
+    }
+
     /// True once when a start is queued. The caller starts then, if the answer allows it.
     func takeQueuedStart() -> Bool {
         defer { startQueued = false }
@@ -409,7 +431,7 @@ public final class NewWorktreeModel {
 
     /// The worktree was not made. The sheet stays open, with the message.
     func startFailed(_ message: String) {
-        isStarting = false
         startError = message
+        isStarting = false
     }
 }

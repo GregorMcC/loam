@@ -491,6 +491,30 @@ import Testing
         #expect(model.startError == nil)
     }
 
+    /// What Quit needs to know when a start ends: whether it failed. A failed start leaves the sheet open with the message
+    /// of the core, so Quit stops and the person reads it. A start that is done closes the sheet, and Quit goes on.
+    @Test func quitWaitsForAStartThatRuns() {
+        let model = open()
+        model.setBranch("fix-login")
+        answer(model, check("fix-login"))
+        var ends: [Bool] = []
+        model.whenStartEnds { ends.append($0) }
+        #expect(ends == [false], "with no start, the answer is at once")
+        model.beginStarting()
+        model.whenStartEnds { ends.append($0) }
+        model.whenStartEnds { ends.append($0) }
+        #expect(ends == [false], "the start runs")
+        model.startFailed("git could not make the worktree")
+        #expect(ends == [false, true, true], "each wait ends once, and says that the start failed")
+        model.setGoal("Fix the login form")
+        model.beginStarting()
+        model.whenStartEnds { ends.append($0) }
+        model.close()
+        #expect(ends == [false, true, true, false], "the sheet closes when the worktree is made: a start that follows a failure is done")
+        model.close()
+        #expect(ends.count == 4, "a wait ends once")
+    }
+
     @Test func aNewOpenStartsFromNothing() {
         let model = open(from: linear)
         model.setBranch("mine")
