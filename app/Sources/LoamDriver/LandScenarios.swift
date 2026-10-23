@@ -291,6 +291,13 @@ extension Scenarios {
                        "the refusal removed the worktree or closed the pane")
         try expectLand(try rig.lastChangeID(plot) == beforeKept, "a refused merge wrote a change")
         try await settledShot("land-sheet-refused")
+        // The box is off while the merge runs, so it loses the keys. After the refusal the card has them, as at the open, and
+        // Tab gives them to the box (ticket 123).
+        try await app.waitUntil("the card has the keys after the refusal") {
+            app.rootViewWithTheKeys() == "LandSheetView" && !(host.window.firstResponder is NSTextView)
+        }
+        app.press(.tab)
+        try await app.waitUntil("Tab gives the box the keys") { host.window.firstResponder is NSTextView }
 
         // GitHub takes the merge on the second try, with the first box on. The pane closes first, and then the worktree goes.
         try landGitHub(head: head).write(to: ghState)
@@ -344,6 +351,23 @@ extension Scenarios {
             try editor().setMarkedText(text, selectedRange: NSRange(location: text.count, length: 0),
                                        replacementRange: NSRange(location: NSNotFound, length: 0))
         }
+
+        // Tab and Shift-Tab keep the keys in the sheet (ticket 123). The box is its one field: Shift-Tab from the card gives
+        // the box the keys, and Tab and Shift-Tab in the box keep them there.
+        try expectLand(model.openLandSheet(rename.id), "the sheet did not open for rename-users")
+        try await app.waitUntil("the sheet shows the plan of rename-users") { sheetIsUp(25) }
+        await app.sleep(0.5)
+        try expectLand(app.rootViewWithTheKeys() == "LandSheetView" && !(host.window.firstResponder is NSTextView),
+                       "the card does not have the keys at the open: \(app.rootViewWithTheKeys() ?? "the window") has them")
+        app.press(.backtab)
+        try await app.waitUntil("Shift-Tab from the card gives the box the keys") { host.window.firstResponder is NSTextView }
+        app.press(.tab)
+        try expectLand(host.window.firstResponder is NSTextView, "Tab in the box gave the keys to \(app.rootViewWithTheKeys() ?? "the window")")
+        app.press(.backtab)
+        try expectLand(host.window.firstResponder is NSTextView,
+                       "Shift-Tab in the box gave the keys to \(app.rootViewWithTheKeys() ?? "the window")")
+        app.press(.escape)
+        try await sheetCloses()
 
         // The keys go to the box, and a Return with composed text comes in the same pass of the run loop. SwiftUI learns
         // about the focus of a field a short time after the window does, so for this Return its focus is still the sheet.

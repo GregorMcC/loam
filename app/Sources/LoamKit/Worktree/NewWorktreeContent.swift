@@ -36,6 +36,9 @@ public struct NewWorktreeContent: Equatable {
         public var kind: LinkKind
     }
 
+    /// A view of the sheet that can have the keys: the card itself, or a text field.
+    public enum Field: Hashable { case sheet, branch, goal, url }
+
     public static let title = "New worktree"
     public static let mainRepo = "Main repo"
     public static let goalHint = "One line. You can leave it empty."
@@ -112,6 +115,14 @@ public struct NewWorktreeContent: Equatable {
 
         seedText = model.seedLine ?? Self.seedWaiting
         primaryTitle = model.isStarting || model.startQueued ? "Starting\u{2026}" : "Start session"
+    }
+
+    /// The text fields in the order that the sheet draws them, from the top: the stops of Tab and Shift-Tab (`TabStops`,
+    /// ticket 123). None while the worktree is made, since the fields are off then, and none when the plot could not be read.
+    @MainActor
+    public static func fields(of model: NewWorktreeModel) -> [Field] {
+        if case .failed = model.phase { return [] }
+        return model.isStarting ? [] : [.branch, .goal] + (model.linkChoice == .pasted ? [.url] : [])
     }
 
     /// The name of a repo: its folder.

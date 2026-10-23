@@ -21,12 +21,12 @@ extension DriverApp {
     ]
 
     enum Key {
-        case returnKey, tab, delete, escape, up, down
+        case returnKey, tab, backtab, delete, escape, up, down
 
         var code: UInt16 {
             switch self {
             case .returnKey: 36
-            case .tab: 48
+            case .tab, .backtab: 48
             case .delete: 51
             case .escape: 53
             case .up: 126
@@ -38,6 +38,7 @@ extension DriverApp {
             switch self {
             case .returnKey: "\r"
             case .tab: "\t"
+            case .backtab: "\u{19}"
             case .delete: "\u{7F}"
             case .escape: "\u{1B}"
             case .up: "\u{F700}"
@@ -60,8 +61,10 @@ extension DriverApp {
         }
     }
 
+    /// Presses a key. The back tab goes with Shift, as AppKit sends Shift-Tab.
     func press(_ key: Key, flags: NSEvent.ModifierFlags = []) {
-        press(code: key.code, characters: key.characters, ignoringModifiers: key.characters, flags: flags)
+        press(code: key.code, characters: key.characters, ignoringModifiers: key.characters,
+              flags: key == .backtab ? flags.union(.shift) : flags)
     }
 
     /// Presses a letter key with modifiers, such as command-V or control-U.
@@ -91,6 +94,25 @@ extension DriverApp {
                              replacementRange: NSRange(location: NSNotFound, length: 0))
         guard editor.hasMarkedText() else { throw DriverFailure("the text field took no marked text") }
         return editor
+    }
+
+    /// The label of the text field that has the keys, such as "Branch", or nil when no text field has them.
+    func fieldWithTheKeys() -> String? {
+        guard let editor = window.firstResponder as? NSTextView, editor.isFieldEditor else { return nil }
+        return (editor.delegate as? NSView)?.accessibilityLabel()
+    }
+
+    /// The SwiftUI view whose control has the keys: the root view of the hosting view that holds the first responder, such
+    /// as "PRPopoverView" or "SidebarView". Nil when the window or a hosting view itself has the keys. A hosting view has
+    /// them before SwiftUI gives them to one of its controls.
+    func rootViewWithTheKeys() -> String? {
+        var view = (window.firstResponder as? NSView)?.superview
+        while let current = view {
+            let name = String(describing: Swift.type(of: current))
+            if name.hasPrefix("NSHostingView<") { return String(name.dropFirst("NSHostingView<".count).dropLast()) }
+            view = current.superview
+        }
+        return nil
     }
 
     /// One key down of a key that you hold: the first press, or with `isARepeat` a repeat that macOS sends while

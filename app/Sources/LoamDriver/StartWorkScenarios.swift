@@ -220,10 +220,23 @@ extension Scenarios {
         // The edit stays. Escape after it ends the edit, and the next Escape closes the popover.
         try expectStart(model.openPullRequest(made.id), "the PR popover did not open for the new worktree")
         try await app.waitUntil("the popover opens") { app.exists("pr-popover") && app.exists("pr-popover-goal") }
+        // Tab and Shift-Tab keep the keys in the popover (ticket 123). With no goal edit, it has no field, so the card keeps them.
+        try await app.waitUntil("the card of the popover has the keys") { app.rootViewWithTheKeys() == "PRPopoverView" }
+        app.press(.tab)
+        try expectStart(app.rootViewWithTheKeys() == "PRPopoverView", "Tab gave the keys to \(app.rootViewWithTheKeys() ?? "the window")")
+        app.press(.backtab)
+        try expectStart(app.rootViewWithTheKeys() == "PRPopoverView",
+                        "Shift-Tab gave the keys to \(app.rootViewWithTheKeys() ?? "the window")")
         try app.click("pr-popover-goal")
         try await app.waitUntil("the goal field shows") { app.exists("pr-popover-goal-field") }
         _ = AccessibilityProbe.shared.focus("pr-popover-goal-field")
         try await app.waitUntil("the goal field edits") { (app.window.firstResponder as? NSTextView)?.isFieldEditor == true }
+        // The goal field is the one field of the popover, so it keeps the keys.
+        app.press(.tab)
+        try expectStart(app.fieldWithTheKeys() == "Goal", "Tab in the goal field gave the keys to \(app.rootViewWithTheKeys() ?? "the window")")
+        app.press(.backtab)
+        try expectStart(app.fieldWithTheKeys() == "Goal",
+                        "Shift-Tab in the goal field gave the keys to \(app.rootViewWithTheKeys() ?? "the window")")
         guard let goalEditor = app.window.firstResponder as? NSTextView else { throw DriverFailure("the popover goal field has no editor") }
         goalEditor.setMarkedText("\u{306B}\u{307B}\u{3093}", selectedRange: NSRange(location: 3, length: 0),
                                  replacementRange: NSRange(location: NSNotFound, length: 0))
@@ -260,25 +273,23 @@ extension Scenarios {
         try await app.waitUntil("Escape closes the popover") { !model.prPopover.isOpen && !app.exists("pr-popover") }
 
         // 7. The plus of the Worktrees section opens the sheet with no link: nothing is filled, and Start session is off.
-        // The sheet gives Branch the keys as it opens, for a short time. A Tab at that time moves the keys off Branch, and
-        // they stay where the Tab put them.
-        /// The label of the text field that has the keys, or nil.
-        func fieldWithTheKeys() -> String? {
-            guard let editor = app.window.firstResponder as? NSTextView, editor.isFieldEditor else { return nil }
-            return (editor.delegate as? NSView)?.accessibilityLabel()
-        }
+        // The sheet gives Branch the keys as it opens, for a short time. A Tab at that time moves the keys to Goal, and they
+        // stay there.
         try app.click("panel-add-worktree")
         let clicked = Date()
-        while fieldWithTheKeys() != "Branch" {
+        while app.fieldWithTheKeys() != "Branch" {
             if Date().timeIntervalSince(clicked) > 5 { throw DriverFailure("Branch did not get the keys when the sheet opened") }
             try await Task.sleep(for: .milliseconds(5))
         }
         Log.line(String(format: "RESULT Branch has the keys %.3f s after the click", Date().timeIntervalSince(clicked)))
         app.press(.tab)
-        // The sheet tries for about 130 ms. For a second, the keys never go back to Branch.
+        // SwiftUI moves the keys on its next update. The sheet tries for about 130 ms. For a second after the move, the keys
+        // stay in Goal.
+        try await app.waitUntil("the Tab at the open gives Goal the keys") { app.fieldWithTheKeys() == "Goal" }
         let tabbed = Date()
         while Date().timeIntervalSince(tabbed) < 1 {
-            try expectStart(fieldWithTheKeys() != "Branch", "a Tab as the sheet opened went back to Branch")
+            try expectStart(app.fieldWithTheKeys() == "Goal",
+                            "after the Tab at the open, \(app.fieldWithTheKeys() ?? app.rootViewWithTheKeys() ?? "the window") has the keys")
             try await Task.sleep(for: .milliseconds(10))
         }
         try await app.waitUntil("the empty sheet opens") { sheet.isOpen && sheet.phase == .ready && app.exists("new-worktree-sheet") }
@@ -289,6 +300,30 @@ extension Scenarios {
         try expectStart(!AccessibilityProbe.shared.isEnabled("new-worktree-start"), "Start session is on with no branch")
         try expectStart(app.text(of: "new-worktree-goal-note") == NewWorktreeContent.goalHint,
                         "the goal note reads \(reads("new-worktree-goal-note"))")
+
+        // Tab and Shift-Tab move the keys through the fields in the order that the sheet draws them, round from the last
+        // field to the first, and never out of the sheet (ticket 123). Goal has the keys from the Tab at the open.
+        func keys(after key: DriverApp.Key, go field: String) async throws {
+            app.press(key)
+            try await app.waitUntil("\(key == .tab ? "Tab" : "Shift-Tab") gives \(field) the keys") { app.fieldWithTheKeys() == field }
+        }
+        try await keys(after: .tab, go: "Branch")
+        try await keys(after: .tab, go: "Goal")
+        try await keys(after: .tab, go: "Branch")
+        try await keys(after: .backtab, go: "Goal")
+        try await keys(after: .backtab, go: "Branch")
+        // The URL field shows under the Link popup when you paste a URL. It is the last field.
+        sheet.chooseLink(.pasted)
+        try await app.waitUntil("the URL field shows") { app.exists("new-worktree-url") }
+        try await keys(after: .tab, go: "Goal")
+        try await keys(after: .tab, go: "Link URL")
+        try await keys(after: .tab, go: "Branch")
+        try await keys(after: .backtab, go: "Link URL")
+        // The URL field goes when you choose no link. Branch takes the keys, so they do not go to the window.
+        sheet.chooseLink(.none)
+        try await app.waitUntil("the URL field goes, and Branch takes the keys") {
+            !app.exists("new-worktree-url") && app.fieldWithTheKeys() == "Branch"
+        }
 
         // A goal over 20 words still saves. The note warns.
         let long = (1...24).map { "word\($0)" }.joined(separator: " ")
@@ -309,6 +344,33 @@ extension Scenarios {
         editor.unmarkText()
         app.press(.escape)
         try await app.waitUntil("Escape closes the sheet") { !sheet.isOpen && !app.exists("new-worktree-sheet") }
+
+        // A start that fails turns the fields off and on again. Branch takes the keys back, so Return tries again and Tab
+        // stays in the sheet (ticket 123). A folder at the place of the worktree makes the core refuse the start.
+        try app.click("panel-add-worktree")
+        try await app.waitUntil("the sheet opens for a start that fails") {
+            sheet.isOpen && sheet.phase == .ready && app.fieldWithTheKeys() == "Branch"
+        }
+        try app.fill("new-worktree-branch", with: "fix-search")
+        try await app.waitUntil("fix-search is checked") { sheet.branchState == .new }
+        let blocker = rig.loamHome.appendingPathComponent("worktrees/\(plot)/widgets-fix-search")
+        try fm.createDirectory(at: blocker, withIntermediateDirectories: true)
+        app.press(.returnKey)
+        try await app.waitUntil("the start fails", timeout: 20) { sheet.startError?.contains("exists") == true }
+        try await app.waitUntil("Branch has the keys after the start failed") { app.fieldWithTheKeys() == "Branch" }
+        try await keys(after: .tab, go: "Goal")
+        app.press(.escape)
+        try await app.waitUntil("Escape closes the sheet after the start failed") { !sheet.isOpen }
+        try fm.removeItem(at: blocker)
+
+        // A plot with no repo: the sheet says so and has no field. The card holds the keys, so Escape closes the sheet.
+        let bare = try rig.newPlot("Gadgets")
+        try await app.waitUntil("the plot with no repo is listed") { model.plots.contains { $0.id == bare } }
+        try expectStart(model.openNewWorktree(plot: bare), "the sheet did not open for the plot with no repo")
+        try await app.waitUntil("the sheet says that the plot has no repo") { app.exists("new-worktree-read-error") }
+        try await app.waitUntil("the card has the keys") { app.rootViewWithTheKeys() == "NewWorktreeSheetView" }
+        app.press(.escape)
+        try await app.waitUntil("Escape closes the sheet with no field") { !sheet.isOpen }
 
         // 8. In the switcher, ⌘Return on the issue link runs Start work… and nothing else: the link does not open. Return on
         // the same link opens it and opens no sheet. The keys go through the window, as a key press does.

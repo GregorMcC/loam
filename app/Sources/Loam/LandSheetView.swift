@@ -42,6 +42,11 @@ struct LandSheetView: View {
             app.closeLandSheet()
             return .handled
         }
+        // Tab and Shift-Tab keep the keys in the sheet. The Where it stands box is its one field: Tab from the card goes to the
+        // box, and the box keeps the keys. Without this, Shift-Tab leaves the sheet (ticket 123).
+        .overlayTabKeys(composing: { window.isComposing }) { _ in
+            if showsBox { focus = .editor }
+        }
         // Only a first press of Return merges, and never one that the box takes. The box returns `.ignored` while an input
         // method has marked text, so a Return that commits that text must not reach the merge. The window says whether the
         // box has the keys (its field editor is a text view), because `focus` can be a short time behind it.
@@ -62,6 +67,13 @@ struct LandSheetView: View {
                 try? await Task.sleep(for: .milliseconds(30))
             }
         }
+        // The box is off while the merge runs, and a box that is off loses the keys to the window, where no key of the sheet
+        // works. After a merge that GitHub refused, the card takes the keys, as at the open: Return merges again, and Tab goes
+        // to the box (ticket 123).
+        .onChange(of: sheet.isMerging) {
+            guard !app.landSheet.isMerging, app.landSheet.isOpen, fieldEditor == nil else { return }
+            focus = .sheet
+        }
         // The sentence about the merge is selected when the box takes the keys, so one key replaces it.
         .onChange(of: focus) {
             guard focus == .editor, app.landSheet.whereText.hasPrefix(app.landSheet.whereSentence) else { return }
@@ -73,6 +85,14 @@ struct LandSheetView: View {
     /// itself, the terminal and a callout that you select are not.
     private var fieldEditor: NSTextView? {
         LandSheetKeys.editor(of: (window.window ?? NSApp.keyWindow)?.firstResponder)
+    }
+
+    /// True when the Where it stands box shows and is on: the plan is read, the PR is not merged yet, the third box is on,
+    /// and no merge runs.
+    private var showsBox: Bool {
+        let sheet = app.landSheet
+        guard case .plan = sheet.phase, let content = app.landContent, !content.isMerged, !sheet.isMerging else { return false }
+        return sheet.movesWhereItStandsOn && content.canMoveWhereItStandsOn
     }
 
     /// Return, or a click on the primary button. The model does nothing while a check blocks.

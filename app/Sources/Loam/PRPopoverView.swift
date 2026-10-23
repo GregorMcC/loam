@@ -50,6 +50,12 @@ struct PRPopoverView: View {
             if model.goalDraft != nil { app.cancelGoalEdit() } else { app.closePullRequest() }
             return .handled
         }
+        // Tab and Shift-Tab keep the keys in the popover. The goal field is its one field while you edit the goal: Tab from
+        // the card goes to the field, and the field keeps the keys. Without this, Tab from the card leaves the popover
+        // (ticket 123).
+        .overlayTabKeys(composing: { window.isComposing }) { _ in
+            if model.goalDraft != nil, !model.isSavingGoal { goalFocused = true }
+        }
         .onKeyPress(.return) {
             // Return in the goal field saves the goal. It never runs the button of the card.
             guard model.goalDraft == nil, let primary = currentPrimary else { return .ignored }
