@@ -183,7 +183,6 @@ struct ActionsMenuView: View {
     @FocusState private var fieldFocused: Bool
     /// The window of the menu, to ask whether an input method composes text in the filter.
     @State private var window = WindowRef()
-    @Environment(\.colorScheme) private var scheme
 
     static let width: CGFloat = 340
     /// From the right end of the bar, and from the bottom (over the bar).
@@ -260,11 +259,7 @@ struct ActionsMenuView: View {
             .frame(height: 42)
         }
         .frame(width: Self.width)
-        .background(LoamColor.horizonB, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(LoamColor.inkHairline))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .shadow(color: Color(nsColor: LoamTheme.shadowRaised).opacity(LoamTheme.shadowRaisedAlpha(dark: scheme == .dark)),
-                radius: 12, y: 8)
+        .loamFloating(.raised, ground: LoamColor.horizonB, radius: 12)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("actions-menu")
     }

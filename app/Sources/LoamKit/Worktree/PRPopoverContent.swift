@@ -127,6 +127,13 @@ public struct PRPopoverContent: Equatable, Sendable {
     /// "12 passed", the row that opens the passed checks. It has the words of the Checks row.
     public var passedTitle: String { StatusLine.passed(passedChecks.count) }
 
+    /// The rows of the smaller buttons under the primary button: two to a row, in order. A button with no partner, such as
+    /// a single button or the third of three, takes a row of its own at the full width. At the size of the primary button,
+    /// three buttons do not fit in one row of the 360 pt card (ticket 120).
+    public static func secondaryRows(_ buttons: [PRSecondaryAction]) -> [[PRSecondaryAction]] {
+        stride(from: 0, to: buttons.count, by: 2).map { Array(buttons[$0..<min($0 + 2, buttons.count)]) }
+    }
+
     /// `attemptedAt` is the time of the last refresh that the app asked for, which the offline line names.
     /// `now` and `timeZone` give the day and the clock of the times. `built` is the set of primary buttons
     /// that exist.

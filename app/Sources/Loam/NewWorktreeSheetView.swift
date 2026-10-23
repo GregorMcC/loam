@@ -390,8 +390,10 @@ struct NewWorktreeSheetView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("new-worktree-footer")
+            // A native button at the size of the primary button, so the two share one shape (ticket 120).
             Button("Cancel") { app.closeNewWorktree() }
-                .buttonStyle(SheetCancelButtonStyle())
+                .loamSecondaryButton()
+                .controlSize(.large)
                 .disabled(sheet.isStarting)
                 .accessibilityIdentifier("new-worktree-cancel")
             Button { start() } label: {
@@ -410,13 +412,13 @@ struct NewWorktreeSheetView: View {
     }
 }
 
-/// The look of a text field of the sheet (the `.tf` of the board): 28 pt high, radius 6, an `edge` border on `horizon-b`.
+/// The look of a text field of the sheet (the `.tf` of the board): 28 pt high, on `horizon-b` with `radius-sm` and a
+/// hairline, as the popups beside it (ticket 120).
 private extension View {
     func fieldBox() -> some View {
         padding(.horizontal, 9)
             .frame(height: 28)
-            .background(LoamColor.horizonB, in: RoundedRectangle(cornerRadius: 6))
-            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(LoamColor.edge))
+            .loamFieldBox()
     }
 }
 

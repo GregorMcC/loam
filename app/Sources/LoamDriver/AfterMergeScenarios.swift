@@ -323,22 +323,4 @@ extension Scenarios {
         }
         throw DriverFailure("no open menu has the item \(title)")
     }
-
-    /// The commit at the head of a folder.
-    private static func headCommit(of folder: String) throws -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        process.arguments = ["rev-parse", "HEAD"]
-        process.currentDirectoryURL = URL(fileURLWithPath: folder)
-        process.environment = ["PATH": "/usr/bin:/bin", "HOME": folder, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null"]
-        let out = Pipe()
-        process.standardOutput = out
-        process.standardError = FileHandle.nullDevice
-        try process.run()
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        let head = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard process.terminationStatus == 0, head.count == 40 else { throw DriverFailure("git rev-parse HEAD failed in \(folder)") }
-        return head
-    }
 }

@@ -167,8 +167,8 @@ final class DriverApp: NSObject, NSApplicationDelegate {
 
         // A fixed config in the out folder, so the run never reads or changes your Ghostty config.
         try? Self.baseConfig.write(toFile: configPath, atomically: true, encoding: .utf8)
-        // The `theme`, `pane-resources`, `frame-shot`, `panel-shot`, and `readme-shots` scenarios also load Loam's own theme defaults, as the app does.
-        let defaults = ["theme", "pane-resources", "frame-shot", "panel-shot", "sidebar-shot", "readme-shots", "actions"].contains(scenario) ? (TerminalThemeDefaults.writeDefaultsFile(cacheFolder: URL(fileURLWithPath: outFolder)).map { [$0] } ?? []) : []
+        // The `theme`, `pane-resources`, `frame-shot`, `panel-shot`, `readme-shots`, and `depth-shot` scenarios also load Loam's own theme defaults, as the app does.
+        let defaults = ["theme", "pane-resources", "frame-shot", "panel-shot", "sidebar-shot", "readme-shots", "actions", "depth-shot"].contains(scenario) ? (TerminalThemeDefaults.writeDefaultsFile(cacheFolder: URL(fileURLWithPath: outFolder)).map { [$0] } ?? []) : []
         runtime = TerminalRuntime(config: TerminalRuntime.ConfigSource(defaults: defaults, user: [configPath], watch: true))
         for diagnostic in runtime.configDiagnostics { Log.line("config: \(diagnostic)") }
         // A private pasteboard, so the run never touches your clipboard.
