@@ -19,7 +19,7 @@ import Testing
 /// Merged stage with PR #11. The fake `loam` logs its arguments. Removing a worktree can lose work, so the tests that
 /// matter most say what must not run. A refresh ends before its merges act, so `refresh` waits for both.
 @MainActor
-@Suite(.timeLimit(.minutes(1))) struct AfterMergeTests {
+@Suite(.waitLimit) struct AfterMergeTests {
     let plotID = "plotaaaaab"
     /// add-search, #11, Merged. Its repo is /tmp/loam-contract/repos/web.
     let merged = "wtreaaaaac"
@@ -128,10 +128,9 @@ import Testing
         func hold(_ name: String) throws { try touch("hold-\(name)") }
         func release(_ name: String) { remove("hold-\(name)") }
 
-        /// Waits until the fake `loam` logged a call that starts with `command`. Only the time limit of the suite ends
-        /// the wait early (see `waitUntil`).
+        /// Waits until the fake `loam` logged a call that starts with `command`.
         func waitForCall(_ command: String) async throws {
-            while calls(command).isEmpty, !Task.isCancelled { try? await Task.sleep(for: .milliseconds(5)) }
+            await poll { !calls(command).isEmpty }
             try #require(!calls(command).isEmpty, "no call \(command)")
         }
 
@@ -360,7 +359,7 @@ import Testing
 
     /// The spinner of a refresh does not wait for what the merge does, and a second refresh meanwhile decides nothing
     /// again.
-    @Test(.timeLimit(.minutes(1))) func theRefreshEndsBeforeItsMergeActs() async throws {
+    @Test func theRefreshEndsBeforeItsMergeActs() async throws {
         let rig = try await rig(.remove)
         let model = rig.model
         try rig.hold("show")
@@ -377,7 +376,7 @@ import Testing
 
     /// A merge whose row changes before it acts, such as to a refresh with no answer of GitHub, is not decided any more.
     /// A later refresh that finds it again acts on it. link-labels (#22) waits here for the action of add-search.
-    @Test(.timeLimit(.minutes(1))) func aMergeWhoseRowChangesBeforeItActsDecidesAgain() async throws {
+    @Test func aMergeWhoseRowChangesBeforeItActsDecidesAgain() async throws {
         let labels = MergedPR(worktree: ready, number: 22)
         func merge(_ note: PRNote) -> (inout [WorktreeStatus]) -> Void {
             { rows in

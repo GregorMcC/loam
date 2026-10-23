@@ -4,7 +4,7 @@ import Testing
 @testable import LoamKit
 
 @MainActor
-@Suite(.timeLimit(.minutes(1))) struct AppModelTests {
+@Suite(.waitLimit) struct AppModelTests {
     func plot(_ id: String, _ name: String) -> PlotSummary {
         PlotSummary(id: id, name: name, what: "", createdAt: "2026-01-01T00:00:00Z")
     }
@@ -73,7 +73,7 @@ import Testing
         let model = AppModel(client: fake.client())
         model.apply([plot("plotaaaaab", "Loam"), plot("plotaaaaac", "Loam Docs")])
         let move = Task { await model.movePlot("plotaaaaac", toSlot: 0) }
-        for _ in 0..<100 where model.plots.first?.id != "plotaaaaac" { await Task.yield() }
+        await waitUntil("the new order shows") { model.plots.first?.id == "plotaaaaac" }
         #expect(model.plots.map(\.id) == ["plotaaaaac", "plotaaaaab"])
         #expect(model.sidebar.noPanes.first?.number == 1)
         // A read that lands while the move runs keeps the new order.

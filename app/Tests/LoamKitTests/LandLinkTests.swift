@@ -51,7 +51,7 @@ import Testing
 }
 
 @MainActor
-@Suite(.timeLimit(.minutes(1))) struct LandLinkModelTests {
+@Suite(.waitLimit) struct LandLinkModelTests {
     let plotID = "plotaaaaab"
     let ready = "wtreaaaaao"
     let linkID = "lnkaaaaaaa"

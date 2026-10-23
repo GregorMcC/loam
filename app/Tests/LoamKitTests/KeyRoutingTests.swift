@@ -289,7 +289,7 @@ import Testing
 }
 
 @MainActor
-@Suite(.timeLimit(.minutes(1))) struct ConfigWatchTests {
+@Suite(.waitLimit) struct ConfigWatchTests {
     @Test func aBurstOfEventsIsOneReload() async throws {
         let (stream, continuation) = AsyncStream<Void>.makeStream()
         let watch = ConfigWatch(debounce: .milliseconds(50)) { _ in stream }

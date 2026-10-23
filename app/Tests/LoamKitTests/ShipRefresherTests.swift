@@ -84,7 +84,7 @@ final class RefreshProbe {
 /// The fakes wake the waits of the test when they change, so a busy machine cannot end a wait early. The time
 /// limit only ends a test whose wait never ends.
 @MainActor
-@Suite(.timeLimit(.minutes(1))) struct ShipRefresherTests {
+@Suite(.waitLimit) struct ShipRefresherTests {
     let sleep = ManualSleep()
     let probe = RefreshProbe()
     let refresher: ShipRefresher

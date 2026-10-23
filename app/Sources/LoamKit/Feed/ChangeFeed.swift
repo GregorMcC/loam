@@ -17,7 +17,7 @@ public enum FeedUpdate: Equatable, Sendable {
 public struct ChangeFeed: Sendable {
     public typealias Fetch = @Sendable (_ since: Int?) async throws -> [Change]
 
-    public typealias Sleep = @Sendable (Duration) async throws -> Void
+    typealias Sleep = @Sendable (Duration) async throws -> Void
 
     private let fetch: Fetch
     private let makeTriggers: @Sendable () -> AsyncStream<Void>
@@ -27,15 +27,18 @@ public struct ChangeFeed: Sendable {
 
     /// - Parameters:
     ///   - after: The highest change ID the UI has. Nil reads the log once at start to find it, and publishes nothing.
-    ///   - sleep: The wait of the debounce. Tests pass one that they end by hand.
-    public init(fetch: @escaping Fetch, triggers: AsyncStream<Void>, debounce: Duration = .milliseconds(250), after: Int? = nil,
-                sleep: @escaping Sleep = { try await Task.sleep(for: $0) }) {
-        self.init(fetch: fetch, makeTriggers: { triggers }, debounce: debounce, after: after, sleep: sleep)
+    public init(fetch: @escaping Fetch, triggers: AsyncStream<Void>, debounce: Duration = .milliseconds(250), after: Int? = nil) {
+        self.init(fetch: fetch, makeTriggers: { triggers }, debounce: debounce, after: after)
     }
 
     /// `makeTriggers` runs when `updates()` starts, so nothing watches before then.
-    public init(fetch: @escaping Fetch, makeTriggers: @escaping @Sendable () -> AsyncStream<Void>, debounce: Duration = .milliseconds(250), after: Int? = nil,
-                sleep: @escaping Sleep = { try await Task.sleep(for: $0) }) {
+    public init(fetch: @escaping Fetch, makeTriggers: @escaping @Sendable () -> AsyncStream<Void>, debounce: Duration = .milliseconds(250), after: Int? = nil) {
+        self.init(fetch: fetch, makeTriggers: makeTriggers, debounce: debounce, after: after) { try await Task.sleep(for: $0) }
+    }
+
+    /// `sleep` is the wait of the debounce. Tests pass one that they end by hand.
+    init(fetch: @escaping Fetch, makeTriggers: @escaping @Sendable () -> AsyncStream<Void>, debounce: Duration, after: Int?,
+         sleep: @escaping Sleep) {
         self.fetch = fetch
         self.makeTriggers = makeTriggers
         self.debounce = debounce

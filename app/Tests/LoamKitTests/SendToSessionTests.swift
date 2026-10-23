@@ -178,7 +178,7 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
 /// The session that gets the prompt, the rule for when Loam may type, and the model that types, copies, or starts a
 /// session.
 @MainActor
-@Suite(.timeLimit(.minutes(1))) struct SendToSessionTests {
+@Suite(.waitLimit) struct SendToSessionTests {
     let plotID = "plotaaaaab"
     /// native-panel, #16, Checks failed.
     let failed = "wtreaaaaah"

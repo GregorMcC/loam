@@ -6,7 +6,7 @@ import Testing
 
 /// Ticket 29: `state.json`, the restore plan, and the close and quit question.
 @MainActor
-@Suite(.timeLimit(.minutes(1))) struct RestoreTests {
+@Suite(.waitLimit) struct RestoreTests {
     func tempFile() -> AppStateFile {
         AppStateFile(url: FileManager.default.temporaryDirectory
             .appendingPathComponent("loam-restore-\(UUID().uuidString)/state.json"))

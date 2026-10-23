@@ -6,7 +6,7 @@ import Testing
 /// Ticket 113: a shell pane is idle only when the one shell is the only process on its terminal, apart from `login`,
 /// and the shell leads the foreground group. The app is pid 1 here. libghostty starts the shell of a pane under
 /// `/usr/bin/login` (pid 100), on the terminal 7.
-@Suite(.timeLimit(.minutes(1))) struct TerminalJobsTests {
+@Suite(.waitLimit) struct TerminalJobsTests {
     typealias Process = TerminalJobs.Process
 
     static let login = Process(pid: 100, parent: 1, group: 100, terminal: 7, foreground: 200, name: "login")
@@ -125,9 +125,9 @@ import Testing
             (TerminalJobs.onTerminal(shell.terminal) ?? []).filter { $0.pid != shell.pid }
         }
 
-        /// Waits until `condition` holds. Only the time limit of the suite ends the wait early (see `waitUntil`).
+        /// Waits until `condition` holds. Each look runs `pgrep`, so it looks less often than `poll` does by default.
         func until(_ what: String, _ condition: () -> Bool) async throws {
-            while !condition(), !Task.isCancelled { try? await Task.sleep(for: .milliseconds(20)) }
+            await poll(every: .milliseconds(20), until: condition)
             try #require(condition(), "\(what) did not happen")
         }
 

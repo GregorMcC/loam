@@ -24,9 +24,10 @@ enum FakeScript {
     /// Shell lines that set `n` to the number of this call among the calls that take a number for `name` in `dir`:
     /// `first` for the first call, and one more for each later call. A call takes its number when it makes the file
     /// `<name>-<n>`, and `set -C` lets only one call make each file. So two calls that run at the same time never get
-    /// the same number, however slow the machine is.
+    /// the same number, however slow the machine is. A call whose folder is gone exits with 1.
     static func takeNumber(_ name: String, in dir: URL, from first: Int = 0) -> String {
-        "set -C; n=\(first); until echo 2>/dev/null > '\(dir.path)/\(name)-'$n; do n=$((n + 1)); done; set +C"
+        "set -C; n=\(first); until echo 2>/dev/null > '\(dir.path)/\(name)-'$n; do [ -d '\(dir.path)' ] || exit 1; "
+            + "n=$((n + 1)); done; set +C"
     }
 }
 
@@ -349,7 +350,7 @@ struct FakeLoam {
     /// Many calls at once must all finish. A runner that blocked dispatch threads while it waited
     /// used up the pool (64 threads) and deadlocked for good. A regression can starve the test's own
     /// timer too, so it may show as a hung run rather than a failure.
-    @Test(.timeLimit(.minutes(1))) func manyCallsAtOnceAllFinish() async throws {
+    @Test(.waitLimit) func manyCallsAtOnceAllFinish() async throws {
         let client = try script("sleep 0.2; echo '{\"version\":\"x\",\"contract_version\":1}'")
         let calls = 80
         let finished = await withTaskGroup(of: Bool.self) { group in

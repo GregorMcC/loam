@@ -22,17 +22,19 @@ private actor FakeLog {
     func calls() -> [Int?] { sinceCalls }
 
     /// Waits until `count` fetches ran.
-    func waitForCalls(_ count: Int) async throws {
-        while sinceCalls.count < count { try await Task.sleep(for: .milliseconds(5)) }
+    func waitForCalls(_ count: Int) async {
+        await poll { sinceCalls.count >= count }
     }
 }
 
+/// A feed on `log`. With `sleep`, the test ends each debounce by hand.
 private func makeFeed(_ log: FakeLog, after: Int?, debounce: Duration = .milliseconds(80), sleep: ChangeFeed.Sleep? = nil)
     -> (ChangeFeed, AsyncStream<Void>.Continuation)
 {
     let (triggers, tc) = AsyncStream<Void>.makeStream()
-    let feed = ChangeFeed(fetch: { try await log.fetch($0) }, triggers: triggers, debounce: debounce, after: after,
-                          sleep: sleep ?? { try await Task.sleep(for: $0) })
+    let fetch: ChangeFeed.Fetch = { try await log.fetch($0) }
+    let feed = sleep.map { ChangeFeed(fetch: fetch, makeTriggers: { triggers }, debounce: debounce, after: after, sleep: $0) }
+        ?? ChangeFeed(fetch: fetch, triggers: triggers, debounce: debounce, after: after)
     return (feed, tc)
 }
 
@@ -50,14 +52,14 @@ private func nextChanges(_ it: inout AsyncStream<FeedUpdate>.Iterator) async -> 
 
 /// The waits end on what the fakes did, and the test ends the debounce by hand where it counts. The time limit only
 /// ends a test whose file event never comes.
-@Suite(.timeLimit(.minutes(1))) struct ChangeFeedTests {
+@Suite(.waitLimit) struct ChangeFeedTests {
     @MainActor @Test func aBurstOfEventsMakesOnePoll() async throws {
         let log = FakeLog([1, 2])
         let sleep = ManualSleep()
         let debounce = Duration.milliseconds(80)
         let (feed, triggers) = makeFeed(log, after: 2, debounce: debounce, sleep: { try await sleep.sleep($0) })
         var it = feed.updates().makeAsyncIterator()
-        try await log.waitForCalls(1)  // the start poll
+        await log.waitForCalls(1)  // the start poll
         await log.add(3)
         // Each trigger ends the debounce of the one before it and starts its own.
         for _ in 0..<10 { triggers.yield() }
@@ -99,7 +101,7 @@ private func nextChanges(_ it: inout AsyncStream<FeedUpdate>.Iterator) async -> 
         let log = FakeLog([1, 2, 3])
         let (feed, triggers) = makeFeed(log, after: nil)
         var it = feed.updates().makeAsyncIterator()
-        try await log.waitForCalls(1)  // the read that finds the cursor
+        await log.waitForCalls(1)  // the read that finds the cursor
         await log.add(4)
         triggers.yield()
         #expect(await next(&it) == .changes([change(4)]))
@@ -165,13 +167,13 @@ private func nextChanges(_ it: inout AsyncStream<FeedUpdate>.Iterator) async -> 
                 try Task.checkCancellation()  // a cancel would show here as a false failure
                 return since == 1 ? [change(2)] : []
             },
-            triggers: triggers, debounce: debounce, after: 1, sleep: { try await sleep.sleep($0) })
+            makeTriggers: { triggers }, debounce: debounce, after: 1, sleep: { try await sleep.sleep($0) })
         var it = feed.updates().makeAsyncIterator()
         #expect(await it.next() == .changes([change(2)]))  // the start poll
         tc.yield()
         await sleep.waitForBegun(1)
         sleep.release(debounce)
-        try await gate.waitForEntries(2)  // poll 2 runs
+        await gate.waitForEntries(2)  // poll 2 runs
         tc.yield()  // a trigger during the poll
         await sleep.waitForBegun(2)
         sleep.release(debounce)
@@ -256,7 +258,7 @@ private actor Gate {
     func count() -> Int { n }
 
     /// Waits until `count` fetches began.
-    func waitForEntries(_ count: Int) async throws {
-        while n < count { try await Task.sleep(for: .milliseconds(5)) }
+    func waitForEntries(_ count: Int) async {
+        await poll { n >= count }
     }
 }

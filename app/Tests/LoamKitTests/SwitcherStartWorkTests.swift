@@ -6,7 +6,7 @@ import Testing
 /// Ticket 115: ⌘Return on an issue link in the switcher starts work. Return still opens the link. The second action is a
 /// field of the item (`SwitcherItem.alternate`), so another kind can add one.
 @MainActor
-@Suite(.timeLimit(.minutes(1))) struct SwitcherStartWorkTests {
+@Suite(.waitLimit) struct SwitcherStartWorkTests {
     let plotID = "plotaaaaab"
     let linear = SwitcherLink(plotID: "plotaaaaab", linkID: "lnkaaaaaaa", label: "ENG-482 Link kinds for Figma",
                               target: "https://linear.app/example/issue/ENG-482/link-kinds-for-figma", kind: .linear)

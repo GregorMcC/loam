@@ -23,7 +23,7 @@ import Testing
 /// plans from the land fixtures. The fake `loam` logs its arguments, so a test can say which commands ran and in
 /// which order. The merge cannot be undone, so the tests that matter most say what must not run.
 @MainActor
-@Suite(.timeLimit(.minutes(1))) struct LandSheetModelTests {
+@Suite(.waitLimit) struct LandSheetModelTests {
     let plotID = "plotaaaaab"
     /// link-labels, #22, Ready to merge. Its path is `web-link-labels`.
     let ready = "wtreaaaaao"

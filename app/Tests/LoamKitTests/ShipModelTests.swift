@@ -57,7 +57,7 @@ private func settle() async { try? await Task.sleep(for: .milliseconds(200)) }
 /// Ticket 108: the app model asks for the ship state of the worktrees, applies the answer, and holds
 /// the notices, the sign-in pane, and the text that waits for a pane.
 @MainActor
-@Suite(.timeLimit(.minutes(1))) struct ShipModelTests {
+@Suite(.waitLimit) struct ShipModelTests {
     let plotB = "plotaaaaab"
     let plotC = "plotaaaaac"
     let plotD = "plotaaaaad"

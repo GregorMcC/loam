@@ -8,7 +8,7 @@ import Testing
 /// The worktrees come from the `worktree_list_stages` fixture (made-up example/widgets data), all in the
 /// plot `plotaaaaab`.
 @MainActor
-@Suite(.timeLimit(.minutes(1))) struct PullRequestPopoverModelTests {
+@Suite(.waitLimit) struct PullRequestPopoverModelTests {
     let plotID = "plotaaaaab"
     let nativePanel = "wtreaaaaah"  // Checks failed, #16.
 

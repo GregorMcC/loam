@@ -7,7 +7,7 @@ import Testing
 /// through `loam`. The fake `loam` logs its arguments. The check prints `check.json`, `worktree new` prints the
 /// fixture, and the list is the `worktree_list` fixture (made-up example/widgets data).
 @MainActor
-@Suite(.timeLimit(.minutes(1))) struct NewWorktreeFlowTests {
+@Suite(.waitLimit) struct NewWorktreeFlowTests {
     let plotID = "plotaaaaab"
     let linear = "lnkaaaaaaa"
 

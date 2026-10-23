@@ -3,14 +3,27 @@ import Testing
 
 // The waits of the tests. A wait ends when its condition holds, never at a time on the wall clock: a busy machine
 // (a full parallel run beside other builds) makes the async work slow, and a fixed limit then fails a test that is
-// right. A suite that waits has a time limit (`.timeLimit(.minutes(1))`), which ends a wait for a condition that
-// never comes. The wait then fails the test where it waits.
+// right. A suite that waits has the time limit `.waitLimit`, which ends a wait for a condition that never comes. The
+// wait then fails the test where it waits.
 
-/// Returns when `condition` holds, or when the test is cancelled at its time limit. It looks again every few
-/// milliseconds, so it suits a condition that another process changes, such as a fake `loam` that logs its calls.
-@MainActor
-func waitUntil(_ what: String, sourceLocation: SourceLocation = #_sourceLocation, _ condition: () -> Bool) async {
-    while !condition(), !Task.isCancelled { try? await Task.sleep(for: .milliseconds(5)) }
+extension Trait where Self == TimeLimitTrait {
+    /// The time limit of a test that waits. It only ends a wait that never ends, so it is far longer than a test takes.
+    /// A busy machine can hold the launch of each process for more than a minute: macOS checks the fake `loam` before
+    /// it runs, and that check waits when other builds and test runs use the machine.
+    static var waitLimit: Self { .timeLimit(.minutes(5)) }
+}
+
+/// Returns when `condition` holds, or when the test is cancelled at its time limit. It looks again every `interval`,
+/// so it suits a condition that another process changes, such as a fake `loam` that logs its calls. It runs on the
+/// actor of its caller, so `condition` can read the state of that actor. It records nothing: the caller checks after it.
+nonisolated(nonsending) func poll(every interval: Duration = .milliseconds(5), until condition: () -> Bool) async {
+    while !condition(), !Task.isCancelled { try? await Task.sleep(for: interval) }
+}
+
+/// `poll`, then an expectation that says what did not happen.
+nonisolated(nonsending) func waitUntil(_ what: String, sourceLocation: SourceLocation = #_sourceLocation,
+                                       _ condition: () -> Bool) async {
+    await poll(until: condition)
     #expect(condition(), "\(what) did not happen", sourceLocation: sourceLocation)
 }
 
