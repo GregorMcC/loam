@@ -106,6 +106,9 @@ public final class NewWorktreeModel {
     @ObservationIgnored var checking: Task<Void, Never>?
     /// The read of the plot that runs now.
     @ObservationIgnored var reading: Task<Void, Never>?
+    /// The start that a Return queued, once the check let it run. It has a task of its own: a new check or a new open
+    /// cancels `checking`, and a cancel would stop `loam worktree new` in the middle.
+    @ObservationIgnored var queuedStart: Task<Void, Never>?
     /// Called after each change of a field, so `AppModel` runs the check again.
     @ObservationIgnored var onInput: (() -> Void)?
     /// Called when the sheet opens or closes. An open while it is open calls nothing.
@@ -185,6 +188,7 @@ public final class NewWorktreeModel {
         links = plot.links
         guard let repo = plot.repos.first(where: \.main) ?? plot.repos.first else {
             phase = .failed("The plot has no repo. Add a repo first.")
+            startQueued = false
             return
         }
         repoID = repo.id

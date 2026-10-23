@@ -6,11 +6,16 @@ import Foundation
 extension AppModel {
     // MARK: Open and close
 
+    /// False while a merge runs, since the sheet would open over it, and while a worktree is made, since a new open would
+    /// take back the state of that start.
+    public var canOpenNewWorktree: Bool { !landSheet.isMerging && !newWorktreeSheet.isStarting }
+
     /// Opens the sheet for a plot, and reads its repos and links. `link` is the link of Start work…: the sheet takes the
-    /// branch, the goal and the Link field from it. Returns false while a merge runs, since the sheet would open over it.
+    /// branch, the goal and the Link field from it. Returns false when it cannot open (`canOpenNewWorktree`). Every entry
+    /// goes through here: the plot menu, the plus, the switcher and the link menu.
     @discardableResult
     public func openNewWorktree(plot: String, from link: PlotLink? = nil) -> Bool {
-        guard !landSheet.isMerging else { return false }
+        guard canOpenNewWorktree else { return false }
         let sheet = newWorktreeSheet
         sheet.onInput = { [weak self] in self?.scheduleNewWorktreeCheck() }
         sheet.open(plot: plot, link: link)
@@ -62,8 +67,11 @@ extension AppModel {
                 guard !Task.isCancelled, sheet.isCurrent(open) else { return }
                 sheet.checkFailed(Self.message(for: error), stamp: stamp)
             }
-            // A Return that waited for this answer starts now, if the answer allows it.
-            if sheet.takeQueuedStart() { await self.startNewWorktree() }
+            // A Return that waited for this answer starts now, if the answer allows it. The start has a task of its own: a
+            // change of a field cancels this task, and a cancel makes `LoamClient` stop `loam worktree new` in the middle.
+            if sheet.takeQueuedStart() {
+                sheet.queuedStart = Task { [weak self] in await self?.startNewWorktree() }
+            }
         }
     }
 

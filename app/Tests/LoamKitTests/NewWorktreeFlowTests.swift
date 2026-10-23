@@ -42,6 +42,16 @@ import Testing
         func settle() async {
             await sheet.reading?.value
             await sheet.checking?.value
+            await sheet.queuedStart?.value
+        }
+
+        /// Waits until `worktree new` runs for the sheet, or fails after 10 s.
+        func waitForStarting() async throws {
+            for _ in 0..<5000 {
+                if sheet.isStarting { return }
+                try await Task.sleep(for: .milliseconds(2))
+            }
+            Issue.record("the start never began")
         }
     }
 
@@ -267,6 +277,7 @@ import Testing
         await rig.model.startNewWorktree()
         #expect(rig.sheet.startQueued && rig.makes().isEmpty)
         await rig.sheet.checking?.value
+        await rig.sheet.queuedStart?.value
         #expect(rig.makes() == ["worktree new --json --actor app -- \(plotID) repoaaaaaa fix-login"])
     }
 
@@ -338,6 +349,84 @@ import Testing
         await starting.value
         #expect(rig.makes().count == 1)
         #expect(!rig.sheet.isOpen)
+    }
+
+    // MARK: A worktree that is made is never stopped
+
+    @Test func aQueuedStartIsNotStoppedByANewOpen() async throws {
+        let rig = try await rig()
+        rig.model.openNewWorktree(plot: plotID, from: linearLink)
+        try rig.touch("hold-new")
+        await rig.model.startNewWorktree()
+        #expect(rig.sheet.startQueued)
+        // The check comes back, and `worktree new` runs and waits.
+        try await rig.waitForStarting()
+        // Start work… on a link, the plus and the menu cannot open the sheet again: that would cancel the check task, and
+        // the cancel would end `worktree new` with SIGTERM in the middle of its work.
+        #expect(!rig.model.openNewWorktree(plot: plotID, from: linearLink))
+        #expect(!rig.model.openNewWorktree(plot: plotID))
+        #expect(rig.sheet.isOpen && rig.sheet.isStarting)
+        try FileManager.default.removeItem(at: rig.dir.appendingPathComponent("hold-new"))
+        await rig.settle()
+        #expect(rig.makes().count == 1)
+        #expect(FileManager.default.fileExists(atPath: rig.dir.appendingPathComponent("made").path), "worktree new ran to its end")
+        #expect(!rig.sheet.isOpen && rig.sheet.startError == nil)
+        #expect(rig.model.workspace.paneCount(of: .plot(plotID)) == 1, "the session opened in the new worktree")
+    }
+
+    @Test func aQueuedStartRunsInATaskOfItsOwn() async throws {
+        let rig = try await rig()
+        rig.model.openNewWorktree(plot: plotID, from: linearLink)
+        try rig.touch("hold-new")
+        await rig.model.startNewWorktree()
+        try await rig.waitForStarting()
+        // A change of a field asks for a new check, and a new check cancels the one before. The start goes on.
+        rig.sheet.checking?.cancel()
+        try FileManager.default.removeItem(at: rig.dir.appendingPathComponent("hold-new"))
+        await rig.settle()
+        #expect(FileManager.default.fileExists(atPath: rig.dir.appendingPathComponent("made").path))
+        #expect(!rig.sheet.isOpen)
+    }
+
+    @Test func noEntryOpensTheSheetWhileAWorktreeIsMade() async throws {
+        let rig = try await rig()
+        rig.model.openNewWorktree(plot: plotID, from: linearLink)
+        await rig.settle()
+        try rig.touch("hold-new")
+        let starting = Task { await rig.model.startNewWorktree() }
+        try await rig.waitForStarting()
+        #expect(!rig.model.openNewWorktree(plot: plotID))
+        #expect(!rig.model.openNewWorktree(plot: plotID, from: linearLink))
+        #expect(rig.sheet.isOpen && rig.sheet.isStarting, "a new open does not take back isStarting")
+        #expect(rig.sheet.branch == "eng-482-link-kinds-for-figma", "and it keeps the fields")
+        try FileManager.default.removeItem(at: rig.dir.appendingPathComponent("hold-new"))
+        await starting.value
+        #expect(rig.makes().count == 1 && !rig.sheet.isOpen)
+        // With the worktree made, the sheet opens again.
+        #expect(rig.model.openNewWorktree(plot: plotID))
+    }
+
+    @Test func theSwitcherDoesNotLeaveThePlotWhileAWorktreeIsMade() async throws {
+        let rig = try await rig()
+        rig.model.apply([PlotSummary(id: plotID, name: "Widgets", what: "", createdAt: "2026-01-01T00:00:00Z"),
+                         PlotSummary(id: "plotaaaaac", name: "Gadgets", what: "", createdAt: "2026-01-01T00:00:00Z")])
+        rig.model.openNewWorktree(plot: plotID, from: linearLink)
+        await rig.settle()
+        rig.model.activate(plot: "plotaaaaac")
+        try rig.touch("hold-new")
+        let starting = Task { await rig.model.startNewWorktree() }
+        try await rig.waitForStarting()
+        let link = SwitcherLink(plotID: plotID, linkID: linear, label: "ENG-482 Link kinds for Figma",
+                                target: "https://linear.app/example/issue/ENG-482/link-kinds-for-figma", kind: .linear)
+        let item = try #require(SwitcherModel.items(plots: rig.model.plots, workspace: rig.model.workspace, terminalTitles: [:],
+                                                    attention: { _ in .none }, savedPanes: [], links: [link], actions: [])
+            .first { $0.kind == .link })
+        rig.model.switcher.chooseAlternate(item)
+        #expect(rig.model.workspace.activeSpace == .plot("plotaaaaac"), "the switcher does not change the plot")
+        #expect(rig.sheet.isOpen && rig.sheet.isStarting)
+        try FileManager.default.removeItem(at: rig.dir.appendingPathComponent("hold-new"))
+        await starting.value
+        #expect(rig.makes().count == 1)
     }
 
     @Test func noSheetOpensOverAMerge() async throws {

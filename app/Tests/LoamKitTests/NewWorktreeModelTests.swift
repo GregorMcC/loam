@@ -357,6 +357,17 @@ import Testing
         #expect(!model.canStart)
     }
 
+    @Test func aPlotWithNoRepoTakesBackAStartThatWaitedForIt() {
+        let model = NewWorktreeModel()
+        model.open(plot: "plotaaaaab", link: linear)
+        #expect(model.queueStart(), "Return while the plot is read")
+        #expect(NewWorktreeContent(model).primaryTitle == "Starting\u{2026}")
+        model.loaded(plot(repos: []))
+        #expect(!model.startQueued, "nothing can start in a plot with no repo")
+        #expect(NewWorktreeContent(model).primaryTitle != "Starting\u{2026}", "the button does not say Starting beside the problem")
+        #expect(model.takeQueuedStart() == false)
+    }
+
     // MARK: Repo and base
 
     @Test func theMainRepoIsTheDefaultAndOtherReposAreNamedByFolder() {

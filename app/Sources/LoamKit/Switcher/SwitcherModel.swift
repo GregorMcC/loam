@@ -256,6 +256,8 @@ public final class SwitcherModel {
         switch alternate.action {
         case .startWork(let link):
             close()
+            // A worktree that is made now keeps the sheet, so the plot stays where it is.
+            guard app.canOpenNewWorktree else { return }
             useTimes?.record(item.id)
             app.activate(plot: link.plotID)
             app.openNewWorktree(plot: link.plotID, from: link.plotLink)
