@@ -99,6 +99,18 @@ Details of `not_ready`:
 
 - `checks` lists each check that blocks the land, in the order of the land result. See [Land, rerun, and update](#land-rerun-and-update). The list is empty when `--head` names another commit than the PR head: no check blocks, and the message says that the PR has new commits.
 
+Details of an `error` that refuses `loam worktree rm` (ticket 113). Other errors of kind `error` have no details.
+
+```json
+{ "refusal": "unsafe_work", "changed": 1, "unpushed": 2, "check_error": "git status failed" }
+{ "refusal": "open_panes", "open_panes": 1 }
+```
+
+- `refusal` is `unsafe_work` or `open_panes`.
+- `unsafe_work` has `changed`, `unpushed`, and `check_error`. Each one is left out when it is 0 or empty. `unpushed` leaves out the commits that the merged PR holds.
+- `open_panes` has the number of panes that are open in the worktree.
+- The message names flags of the CLI, such as `--force`. The app words the refusal from the details.
+
 ## Commands
 
 ### `loam version --json`
@@ -308,6 +320,8 @@ A worktree state, an item of `list`:
 - The worktree has uncommitted changes or unpushed commits, and `--force` is missing. When the work of the worktree is in the merged PR (see below), none of its commits counts as unpushed. After a squash or rebase merge, GitHub can delete the branch, and a fetch prunes `origin/<branch>`, so no remote branch holds those commits.
 
 `--dry-run` checks the work as a removal does and changes nothing. It does not check the open panes, so the app can run it before it closes the panes of the worktree (ticket 113). `branch_deleted` is `false` in a dry run.
+
+A refusal is an `error` with details. See [The JSON error](#the-json-error).
 
 The work of a worktree is in the merged PR when all of these are true. A land of a merged PR uses the same rule (the check `work_after_pr`).
 

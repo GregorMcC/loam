@@ -482,6 +482,11 @@ func scenario(t *testing.T) *harness {
 	if err := os.WriteFile(filepath.Join(h.home, "worktrees", loam, "web-local-work", "notes.txt"), []byte("x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// A removal that would lose work, and a removal with a pane open, give
+	// details. The app words them, since the messages name flags (ticket 113).
+	h.run("error_worktree_rm_unsafe", "error", 1, "worktree", "rm", loam, "local-work", "--dry-run")
+	h.run("error_worktree_rm_panes_open", "error", 1, "worktree", "rm", loam, "local-work",
+		"--open-pane", filepath.Join(h.home, "worktrees", loam, "web-local-work"))
 	// A merged or closed PR shows only when the worktree has its head checked
 	// out. Each worktree starts at the same commit, which changes from run to
 	// run, so the PR head in the state is a stand-in, and the fixture gets a

@@ -664,6 +664,33 @@
     "schema": "worktree-list"
   },
   {
+    "name": "error_worktree_rm_unsafe",
+    "args": [
+      "worktree",
+      "rm",
+      "plotaaaaab",
+      "local-work",
+      "--dry-run",
+      "--json"
+    ],
+    "exit_code": 1,
+    "schema": "error"
+  },
+  {
+    "name": "error_worktree_rm_panes_open",
+    "args": [
+      "worktree",
+      "rm",
+      "plotaaaaab",
+      "local-work",
+      "--open-pane",
+      "/tmp/loam-contract/loamhome/worktrees/plotaaaaab/web-local-work",
+      "--json"
+    ],
+    "exit_code": 1,
+    "schema": "error"
+  },
+  {
     "name": "error_gh_unavailable",
     "args": [
       "worktree",

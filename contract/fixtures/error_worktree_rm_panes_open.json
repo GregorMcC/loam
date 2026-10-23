@@ -1,0 +1,11 @@
+{
+  "error": {
+    "details": {
+      "open_panes": 1,
+      "refusal": "open_panes"
+    },
+    "exit_code": 1,
+    "kind": "error",
+    "message": "1 pane(s) are open in web-local-work. Close them, then remove the worktree: a pane is open in the worktree"
+  }
+}
