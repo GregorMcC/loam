@@ -76,9 +76,11 @@ extension Scenarios {
         }
         let before = state()
 
-        // The key through the main menu, as AppKit sends it when no view takes it.
+        // The key through the main menu, as AppKit sends it when no view takes it. The menu takes the key of an item that is off
+        // and does nothing. A pane that has the keys never sees it, so a Ghostty binding such as close_surface does not run.
         for item in windowItems {
-            if let letter = item.key.first { _ = try app.sendMenuKey(letter, flags: item.mask) }
+            guard let letter = item.key.first else { continue }
+            if !(try app.sendMenuKey(letter, flags: item.mask)) { throw DriverFailure("the main menu did not take the key of \(item.title)") }
         }
         // The action of each item sent by hand, as the quick switcher sends it.
         for item in windowItems {
