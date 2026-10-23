@@ -23,7 +23,14 @@ extension MainWindowController: NSMenuItemValidation {
             app: model, place: popoverPlace, runPrimary: { [weak self] in self?.runPrimaryAction($0) }))
         popover.sizingOptions = []
         popover.isHidden = true
-        setActionHosts(bar: bar, menu: menu, popover: popover)
+        let sheet = NSHostingView(rootView: LandSheetView(app: model))
+        sheet.sizingOptions = []
+        sheet.isHidden = true
+        setActionHosts(bar: bar, menu: menu, popover: popover, sheet: sheet)
+        model.landSheet.onOpenChange = { [weak self] open in self?.landSheetChanged(open: open) }
+        model.confirmClose = { [weak self] prompt in await self?.askClose(prompt) ?? false }
+        model.paneClosesFinished = { [weak self] in await self?.waitForPaneCloses() }
+        model.onOwnChange = { [actionBar] in actionBar.ignoreChange($0) }
         model.prPopover.onOpenChange = { [weak self] open in self?.pullRequestPopoverChanged(open: open) }
         model.prPopover.onOpen = { [weak self] in self?.placePullRequestPopover() }
         // Send to session (ticket 110): the toast after Loam typed a prompt, and the keys for the session.
@@ -36,8 +43,11 @@ extension MainWindowController: NSMenuItemValidation {
     /// ⌘J or a click on Actions: opens the menu with the actions that can run now, or closes it.
     func toggleActionsMenu() {
         if actionBar.menu.isOpen { return closeActionsMenu() }
+        // A merge that runs keeps the sheet. The menu stays shut then, since its commands would change the window under it.
+        if model.landSheet.isMerging { return }
         if model.switcher.isOpen { model.switcher.close() }
         model.closePullRequest()  // One overlay at a time: the popover would take the clicks of the menu.
+        model.closeLandSheet()
         let workspace = model.workspace
         let space = workspace.activeSpace
         let pane = workspace.focusedPane
@@ -122,7 +132,8 @@ extension MainWindowController: NSMenuItemValidation {
         return ActionMenu.isAvailable(command, hasSpace: workspace.activeSpace != nil, hasPlot: workspace.activePlotID != nil,
                                       hasPane: workspace.focusedPane != nil, hasWorktree: worktree != nil,
                                       hasPullRequest: worktree?.pr != nil,
-                                      checksFailed: worktree.map { model.canSendFailures($0.worktree.id) } ?? false)
+                                      checksFailed: worktree.map { model.canSendFailures($0.worktree.id) } ?? false,
+                                      readyToMerge: worktree?.stage == .readyToMerge)
     }
 
     /// The menu bar and the actions menu agree on what can run (`ActionMenu.isAvailable`).
@@ -141,17 +152,19 @@ struct ActionsContext: Equatable {
 }
 
 extension LoamSplitView {
-    /// Adds the action bar, the PR popover, the quick switcher and the actions menu overlay over the
+    /// Adds the action bar, the PR popover, the Land sheet, the quick switcher and the actions menu overlay over the
     /// split view, in its superview. The split view lays them out with its items (`layout`).
-    func install(bar: NSView, overlay: NSView, popover: NSView, switcher: NSView, barHeight: CGFloat) {
+    func install(bar: NSView, overlay: NSView, popover: NSView, sheet: NSView, switcher: NSView, barHeight: CGFloat) {
         self.bar = bar
         self.overlay = overlay
         self.popover = popover
+        self.sheet = sheet
         self.switcher = switcher
         self.barHeight = barHeight
         superview?.addSubview(bar, positioned: .above, relativeTo: self)
         superview?.addSubview(popover, positioned: .above, relativeTo: bar)
-        superview?.addSubview(switcher, positioned: .above, relativeTo: popover)
+        superview?.addSubview(sheet, positioned: .above, relativeTo: popover)
+        superview?.addSubview(switcher, positioned: .above, relativeTo: sheet)
         superview?.addSubview(overlay, positioned: .above, relativeTo: switcher)
         needsLayout = true
     }

@@ -97,7 +97,7 @@ Details of `not_ready`:
 { "checks": [{ "name": "conflicts", "state": "conflicting", "blocks": true }] }
 ```
 
-- `checks` lists each check that blocks the land, in the order of the land result. See [Land, rerun, and update](#land-rerun-and-update).
+- `checks` lists each check that blocks the land, in the order of the land result. See [Land, rerun, and update](#land-rerun-and-update). The list is empty when `--head` names another commit than the PR head: no check blocks, and the message says that the PR has new commits.
 
 ## Commands
 
@@ -264,7 +264,7 @@ A worktree is a separate checkout of one repo of a plot, on its own branch. It l
 | `loam worktree edit <plot> <worktree> --goal <text> [--repo <repo>] [--expect worktree:<id>=<version>]` | `{ "change_id": 44, "plot": "k3v9q2mxa7", "worktree": {...} }` |
 | `loam worktree list [<plot>] [--refresh [--worktree <worktree>] [--repo <repo>]]` | An array of worktree states, oldest first. It is `[]` when none exists. |
 | `loam worktree rm <plot> <worktree> [--repo <repo>] [--force] [--open-pane <folder>]` | `{ "worktree": {...}, "branch_deleted": false, "branch_note": "..." }` |
-| `loam worktree land <plot> <worktree> [--method squash\|merge\|rebase] [--auto] [--keep-worktree] [--keep-remote-branch] [--dry-run] [--repo <repo>] [--open-pane <folder>]` | A land result. See [Land, rerun, and update](#land-rerun-and-update). |
+| `loam worktree land <plot> <worktree> [--method squash\|merge\|rebase] [--auto] [--keep-worktree] [--keep-remote-branch] [--dry-run] [--head <commit>] [--repo <repo>] [--open-pane <folder>]` | A land result. See [Land, rerun, and update](#land-rerun-and-update). |
 | `loam worktree rerun <plot> <worktree> [--repo <repo>]` | `{ "worktree": {...}, "pr": {...}, "runs": [{ "id": 1234, "started": true }], "skipped_checks": ["ci/legacy"] }` |
 | `loam worktree update <plot> <worktree> [--repo <repo>]` | `{ "worktree": {...}, "pr": {...}, "fetched": true, "fetch_note": "..." }` |
 
@@ -455,6 +455,7 @@ A land runs these steps:
 
 1. It refreshes the PR.
    - A closed PR exits with code 1. Without `--dry-run`, the land clears the `land` that the worktree records, and the message says so.
+   - With `--head <commit>` and an open PR, a land that is not a dry run stops when the PR head is another commit: exit code 16 (`not_ready`) with no check in `checks`, and the message "PR #12 has new commits since you looked at it. Look again before you merge". It changes nothing and calls no action of gh. The app passes the head of the plan that its Land sheet shows, so a commit that GitHub got after the sheet read the PR is never merged unseen. A dry run and a merged PR ignore `--head`. A value that is not a full commit ID exits with code 2.
    - For a merged PR, the land runs the check `work_after_pr`. With `--dry-run`, it stops there and prints the result. A dry run can fetch the PR head too, because the fetch changes no ref. When the check blocks, the land removes nothing and deletes nothing, and exits with code 16 (`not_ready`). It keeps the `land` that the worktree records, so a land after the work is saved applies its keeps. Else the land skips to step 6.
 2. It reads the merge settings of the repo and of the base branch from GitHub.
 3. It runs the checks. With `--dry-run`, it stops here and prints the result, also when a check blocks (exit code 0). Else, when a check blocks, it exits with code 16 (`not_ready`).

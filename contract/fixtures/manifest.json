@@ -712,6 +712,20 @@
     "schema": "error"
   },
   {
+    "name": "error_not_ready_head",
+    "args": [
+      "worktree",
+      "land",
+      "plotaaaaab",
+      "link-labels",
+      "--head",
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "--json"
+    ],
+    "exit_code": 16,
+    "schema": "error"
+  },
+  {
     "name": "worktree_land",
     "args": [
       "worktree",

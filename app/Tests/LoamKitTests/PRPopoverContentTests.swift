@@ -367,11 +367,11 @@ private func text(_ parts: [StatusLine.Part]) -> String { parts.map(\.text).join
         ])
     }
 
-    /// Ticket 110 built the three Send buttons. Land… waits for ticket 112.
-    @Test func theSendButtonsAreBuiltAndLandIsNot() throws {
-        #expect(PRPrimaryAction.built == [.sendFailures, .sendReview, .sendConflicts])
+    /// Ticket 110 built the three Send buttons, and ticket 112 built Land….
+    @Test func everyPrimaryButtonIsBuilt() throws {
+        #expect(PRPrimaryAction.built == Set(PRPrimaryAction.allCases))
         for status in try stageRows() {
-            let expected: PRPrimaryAction? = status.stage.flatMap(PRPrimaryAction.init(stage:)).flatMap { $0 == .land ? nil : $0 }
+            let expected = status.stage.flatMap(PRPrimaryAction.init(stage:))
             #expect(PRPopoverContent(status, now: sameDay, timeZone: utc).primary == expected, "\(String(describing: status.stage))")
         }
     }

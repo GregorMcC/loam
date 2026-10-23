@@ -61,11 +61,23 @@ public final class AppModel {
         didSet {
             guard worktrees != oldValue else { return }
             followPullRequestRow()
+            followLandSheet()
             onWorkspaceChange?()
         }
     }
     /// The PR popover (ticket 109).
     @ObservationIgnored public let prPopover = PRPopoverModel()
+    /// The Land sheet (ticket 112).
+    @ObservationIgnored public let landSheet = LandSheetModel()
+    /// Asks the question of a close that ends a session in a turn, and returns true on the confirm button. The window
+    /// shows it as a sheet. The default says no, so a land with no window never stops a session.
+    @ObservationIgnored public var confirmClose: (ClosePrompt) async -> Bool = { _ in false }
+    /// Returns when the views of the closed panes are gone, and so are their processes. The window sets it. A land
+    /// removes the folder of the panes, so it waits for them.
+    @ObservationIgnored public var paneClosesFinished: () async -> Void = {}
+    /// Tells the action bar about a change that the app made itself, so the toast of the app is not replaced by
+    /// "You set Where it stands".
+    @ObservationIgnored public var onOwnChange: ((Int) -> Void)?
     /// Copies text to the clipboard (ticket 110). The window sets the clipboard of the Mac, and the driver a
     /// private one.
     @ObservationIgnored public var copyText: (String) -> Void = { _ in }
@@ -474,7 +486,7 @@ public final class AppModel {
         lastError = Self.message(for: error)
     }
 
-    private static func message(for error: Error) -> String {
+    static func message(for error: Error) -> String {
         (error as? LoamError)?.userMessage ?? String(describing: error)
     }
 
@@ -916,10 +928,11 @@ public final class AppModel {
     }
 
     /// ⌘⇧L and a click on the "Ready to merge" row: goes to the next ready worktree, in any plot, and
-    /// opens its PR popover. Returns false when no worktree is ready.
+    /// opens its PR popover. Returns false when no worktree is ready, and while a merge runs.
     @discardableResult
     public func goToNextReadyWorktree() -> Bool {
-        guard let row = nextReadyWorktree() else { return false }
+        // A merge that runs keeps the keys on the Land sheet, and the popover would take them.
+        guard !landSheet.isMerging, let row = nextReadyWorktree() else { return false }
         goToWorktree(row.id)
         openPullRequest(row.id)
         return true
@@ -1137,10 +1150,12 @@ public final class AppModel {
 
     /// Opens the PR popover for a worktree and asks GitHub about it (`refreshWorktree`), so the popover
     /// shows the state now. The popover shows the last state until the answer comes. A popover that is open
-    /// moves to the worktree. Returns false when the worktree is unknown.
+    /// moves to the worktree. Returns false when the worktree is unknown, and while a merge runs.
     @discardableResult
     public func openPullRequest(_ id: String, anchor: PopoverAnchor = .actionBar) -> Bool {
-        guard worktreeStatus(id) != nil else { return false }
+        // The popover would open under a sheet that merges and take its keys, so a merge that fails leaves the sheet
+        // with none.
+        guard !landSheet.isMerging, worktreeStatus(id) != nil else { return false }
         prPopover.open(id, anchor: anchor)
         worktreeRefresh(id)
         return true

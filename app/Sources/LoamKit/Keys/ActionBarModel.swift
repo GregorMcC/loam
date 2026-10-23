@@ -51,6 +51,8 @@ public final class ActionBarModel {
     public static let toastSeconds: Double = 6
 
     @ObservationIgnored private var lastChangeID: Int?
+    /// The changes that the app made and told about in its own toast (`ignoreChange`).
+    @ObservationIgnored private var ownChanges: Set<Int> = []
 
     public init() {}
 
@@ -60,10 +62,17 @@ public final class ActionBarModel {
         let newest = changes.map(\.id).max()
         defer { if let newest { lastChangeID = max(lastChangeID ?? newest, newest) } else if lastChangeID == nil { lastChangeID = 0 } }
         guard let seen = lastChangeID else { return }
-        guard let change = changes.filter({ $0.id > seen && $0.plotID == activePlot }).max(by: { $0.id < $1.id }) else { return }
+        guard let change = changes.filter({ $0.id > seen && $0.plotID == activePlot && !ownChanges.contains($0.id) })
+            .max(by: { $0.id < $1.id }) else { return }
         toast = ChangeRules.actorName(change.actor) + " " + ChangeRules.sentence(change)
         toastKind = .done
         toastID += 1
+    }
+
+    /// A change that the app made itself, such as the Where it stands of a land (ticket 112), has a toast of its own.
+    /// The next read of the log does not replace that toast with "You set Where it stands".
+    public func ignoreChange(_ id: Int) {
+        ownChanges.insert(id)
     }
 
     /// Shows a line from the app as the toast, such as "Loam typed the failures into ✳ Native panel spacing.

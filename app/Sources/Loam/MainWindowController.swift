@@ -36,6 +36,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     /// The PR popover over the window (ticket 109), the place of its chip in the action bar, the plot and
     /// the pane it was opened in, and the keys that the popover took from a field of the plot panel.
     private(set) var popoverHost: NSHostingView<PRPopoverView>!
+    /// The Land sheet over the window (ticket 112).
+    private(set) var landHost: NSHostingView<LandSheetView>!
     let chipProbe = AnchorProbe()
     let popoverPlace = PopoverPlace()
     var popoverContext: ActionsContext?
@@ -149,10 +151,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
     func setActionHosts(bar: NSHostingView<ActionBarView>, menu: NSHostingView<ActionsMenuView>,
-                        popover: NSHostingView<PRPopoverView>) {
+                        popover: NSHostingView<PRPopoverView>, sheet: NSHostingView<LandSheetView>) {
         barHost = bar
         actionsHost = menu
         popoverHost = popover
+        landHost = sheet
         let split = splitController.splitView as? LoamSplitView
         split?.onBarLayout = { [actionBar] inset in
             if actionBar.menu.trailingInset != inset { actionBar.menu.trailingInset = inset }
@@ -160,7 +163,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         // The split view lays out its columns first and their content after it, so the control of the popover
         // has its new place only once the pass is over.
         split?.onLayout = { [weak self] in DispatchQueue.main.async { self?.placePullRequestPopover() } }
-        split?.install(bar: bar, overlay: menu, popover: popover, switcher: switcherHost, barHeight: ActionBarView.height)
+        split?.install(bar: bar, overlay: menu, popover: popover, sheet: sheet, switcher: switcherHost, barHeight: ActionBarView.height)
     }
 
     /// The room under the well: the action bar.
@@ -275,6 +278,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     static let closePromptID = NSUserInterfaceItemIdentifier("dev.loam.close-prompt")
 
+    /// The question of a close as a sheet, for the model (`AppModel.confirmClose`): true on the confirm button.
+    func askClose(_ prompt: ClosePrompt) async -> Bool {
+        await withCheckedContinuation { continuation in
+            confirm(prompt, onCancel: { continuation.resume(returning: false) }, then: { continuation.resume(returning: true) })
+        }
+    }
+
+    /// Returns once no close of a pane view runs: the views of the panes that closed are gone, and so are their
+    /// processes (`AppModel.paneClosesFinished`).
+    func waitForPaneCloses() async {
+        await withCheckedContinuation { continuation in views.whenClosesFinish { continuation.resume() } }
+    }
+
     // MARK: Render
 
     private var rendering = false
@@ -340,11 +356,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         // changes (a pane event, a feed update, a refresh of the ship state), and they must not take the
         // keyboard from a field that you type in, such as one in the plot panel. The same holds when a
         // session ends: the bar takes the keys only from the terminal, or when nothing holds them. The open
-        // switcher, the open actions menu and the open PR popover keep the keyboard too.
+        // switcher, the open actions menu, the open PR popover and the open Land sheet keep the keyboard too.
         let target = tab.flatMap { paneArea.container(for: $0.focused) }?.focusTarget
         let holder = window?.firstResponder === window ? nil : window?.firstResponder
         if views.movesKeys(in: workspace, target: target, heldBy: holder), !model.switcher.isOpen, !actionBar.menu.isOpen,
-           !model.prPopover.isOpen, let target {
+           !model.prPopover.isOpen, !model.landSheet.isOpen, let target {
             window?.makeFirstResponder(target)
         }
         // A pane that opened with text to type (Sign in) has its terminal now.
@@ -600,6 +616,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         case .sendFailuresToSession:
             guard let id = model.focusedWorktree?.id, model.canSendFailures(id) else { return false }
             model.sendFromMenu(id)
+        case .landWorktree:
+            guard let id = model.focusedWorktree?.id, model.worktreeStatus(id)?.stage == .readyToMerge else { return false }
+            return model.openLandSheet(id)
         case .newPlotSession:
             guard let plot = model.workspace.activePlotID else { return false }
             model.openPlotSession(plot)
@@ -674,6 +693,8 @@ final class LoamSplitView: NSSplitView {
     var overlay: NSView?
     /// The PR popover (ticket 109), over the whole window like the actions menu.
     var popover: NSView?
+    /// The Land sheet (ticket 112), over the whole window with its own dim.
+    var sheet: NSView?
     /// Called with the room right of the bar: the plot panel, or 0.
     var onBarLayout: ((CGFloat) -> Void)?
     /// Called after each layout pass, which can move the control that the PR popover opened from.
@@ -704,6 +725,7 @@ final class LoamSplitView: NSSplitView {
             onBarLayout?(bounds.maxX - barRect.maxX)
             overlay?.frame = convert(bounds, to: container)
             popover?.frame = convert(bounds, to: container)
+            sheet?.frame = convert(bounds, to: container)
             switcher?.frame = convert(switcherRect, to: container)
         }
         onLayout?()

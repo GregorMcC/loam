@@ -287,7 +287,8 @@ extension Scenarios {
         try check(app.text(of: "pr-popover-row-review")?.contains("Approved") == true, "the review row reads \(app.text(of: "pr-popover-row-review") ?? "nothing")")
         try check(!app.exists("pr-popover-failed-checks") && !app.exists("pr-popover-rerun-failed") && !app.exists("pr-popover-update-branch"),
                   "a passing PR shows failed-check controls")
-        try check(app.exists("pr-popover-open-on-github") && !app.exists("pr-popover-primary"), "the buttons are wrong")
+        try check(app.exists("pr-popover-open-on-github") && AccessibilityProbe.shared.node("pr-popover-primary")?.description == "Land\u{2026}",
+                  "the buttons are wrong")
         let (plotName, readyButton) = try (frame("action-bar-plot"), frame("pr-popover-open-on-github"))
         try check(abs(readyButton.minX - plotName.minX) <= cardPadding, "the popover does not open at the left end of the bar: \(plotName) \(readyButton)")
         app.screenshot("pr-popover-ready")

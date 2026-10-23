@@ -172,6 +172,45 @@ func TestWorktreeLandNotReadyExits16(t *testing.T) {
 	}
 }
 
+// --head is the PR head that the caller looked at. Another head exits 16 with no check that blocks, and the merge
+// does not run. The commit that the caller names merges.
+func TestWorktreeLandHead(t *testing.T) {
+	_, _, head := landCLI(t, landState)
+	other := strings.Repeat("b", 40)
+	out, code := loam(t, "worktree", "land", "alpha", "fix-login", "--head", other, "--json")
+	if code != ExitNotReady {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+	var v struct {
+		Error struct {
+			Kind    string `json:"kind"`
+			Message string `json:"message"`
+			Details struct {
+				Checks []worktree.LandCheck `json:"checks"`
+			} `json:"details"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(out), &v); err != nil {
+		t.Fatal(err)
+	}
+	if v.Error.Kind != "not_ready" || !strings.Contains(v.Error.Message, "PR #15 has new commits since you looked at it") ||
+		v.Error.Details.Checks == nil || len(v.Error.Details.Checks) != 0 || !strings.Contains(out, `"checks": []`) {
+		t.Fatalf("%s", out)
+	}
+	if got := ghArgs(t); len(got) != 0 {
+		t.Fatalf("gh calls %q", got)
+	}
+	if out, code := loam(t, "worktree", "land", "alpha", "fix-login", "--head", "abc", "--json"); code != ExitInvalid {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+	if out, code := loam(t, "worktree", "land", "alpha", "fix-login", "--head", head, "--json"); code != 0 {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+	if got := ghArgs(t); len(got) == 0 || !strings.HasSuffix(got[0], "--match-head-commit "+head) {
+		t.Fatalf("gh calls %q", got)
+	}
+}
+
 // A dry run prints the one check of a merged PR.
 func TestWorktreeLandDryRunOfAMergedPR(t *testing.T) {
 	_, w, _ := landCLI(t, func(head string) string {

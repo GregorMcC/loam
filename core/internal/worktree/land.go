@@ -128,6 +128,27 @@ func (e *NotReadyError) ErrorDetails() any {
 	}{e.Checks}
 }
 
+// headChangedError is the error of a land whose PR has a commit that the caller did not look at. It is a land that
+// is not ready, with no check that blocks: the checks that the caller saw belong to another commit.
+type headChangedError struct {
+	number int
+	folder string
+}
+
+func (e *headChangedError) Error() string {
+	return fmt.Sprintf("%s is not ready to land: PR #%d has new commits since you looked at it. Look again before you merge", e.folder, e.number)
+}
+
+// Is makes the error match [ErrNotReady].
+func (e *headChangedError) Is(target error) bool { return target == ErrNotReady }
+
+// ErrorDetails is the details of the JSON error: no check blocks.
+func (e *headChangedError) ErrorDetails() any {
+	return struct {
+		Checks []LandCheck `json:"checks"`
+	}{[]LandCheck{}}
+}
+
 // ghUnavailableError keeps the message of its cause, and matches
 // [ErrGHUnavailable] and the cause.
 type ghUnavailableError struct{ err error }
@@ -164,6 +185,10 @@ type LandOptions struct {
 	OpenPanes []string
 	// Repo picks the repo when two repos have a worktree with the same name.
 	Repo string
+	// Head is the PR head that the caller looked at, such as the plan that the app showed. A land of an open PR
+	// that is not a dry run stops with [ErrNotReady] when GitHub has another head by the time of the refresh. Empty
+	// means no check. A dry run and a merged PR have no merge to hold, so they ignore it.
+	Head string
 }
 
 // LandResult says what a land did, or, for a dry run, what it would do.
@@ -240,6 +265,9 @@ func Land(ctx context.Context, s *store.Store, plotID, arg string, o LandOptions
 	if o.Method != "" && !slices.Contains(github.MergeMethods, o.Method) {
 		return nil, fmt.Errorf("%q is not a merge method. Use %s: %w", o.Method, joinMethods(github.MergeMethods), store.ErrInvalid)
 	}
+	if o.Head != "" && !oidPattern.MatchString(o.Head) {
+		return nil, fmt.Errorf("%q is not a full commit ID. --head takes the PR head: %w", o.Head, store.ErrInvalid)
+	}
 	w, err := Find(s, plotID, o.Repo, arg)
 	if err != nil {
 		return nil, err
@@ -247,6 +275,10 @@ func Land(ctx context.Context, s *store.Store, plotID, arg string, o LandOptions
 	t, err := openTarget(ctx, s, w)
 	if err != nil {
 		return nil, err
+	}
+	// First of all, so a land that stops here changes nothing, not even a stale land that it would clear.
+	if !o.DryRun && t.pr.State == "OPEN" && o.Head != "" && o.Head != t.pr.HeadOID {
+		return nil, &headChangedError{number: t.pr.Number, folder: filepath.Base(w.Path)}
 	}
 	res := &LandResult{Worktree: w, PR: t.pr, Stage: t.stage, Methods: []github.MergeMethod{}, Checks: []LandCheck{},
 		Auto: o.Auto, DryRun: o.DryRun}

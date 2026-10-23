@@ -88,10 +88,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Quit (spec 8.5): ask only when a session is mid-turn, then close every pane with the safe order.
     /// With no question, quit waits for the closes (`terminateLater`), so a logout is not stopped.
     /// With a question, this terminate stops, and a yes starts a new one once the panes are closed.
+    /// With a merge that runs, quit waits for the merge (`terminateLater`). A merge that fails cancels the quit. Any other end
+    /// does the same steps as a quit with no merge.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let controller = windowController, !readyToQuit else { return .terminateNow }
         guard !quitting else { return .terminateCancel }
         quitting = true
+        // A merge on GitHub cannot be undone, and an app that quits in the middle can leave it half done. This terminate
+        // waits for the end of the merge. A merge that failed cancels the quit, so the sheet shows the message of GitHub to
+        // you. Any other end goes on as a quit with no merge: the usual question when a session is mid-turn, and the safe
+        // close of the panes. Each path replies once: a cancel, or `requestQuit`, which ends once.
+        if controller.model.landSheet.isMerging {
+            controller.model.landSheet.whenMergeEnds { [weak self, weak controller] failed in
+                // A pass later, so the merge finishes ending first.
+                DispatchQueue.main.async {
+                    guard let controller else { return NSApp.reply(toApplicationShouldTerminate: true) }
+                    guard !failed else {
+                        self?.quitting = false
+                        return NSApp.reply(toApplicationShouldTerminate: false)
+                    }
+                    controller.requestQuit { quit in
+                        self?.quitting = false
+                        if quit { self?.readyToQuit = true }
+                        NSApp.reply(toApplicationShouldTerminate: quit)
+                    }
+                }
+            }
+            return .terminateLater
+        }
         guard controller.quitPrompt != nil else {
             controller.closeEveryPane { NSApp.reply(toApplicationShouldTerminate: true) }
             return .terminateLater

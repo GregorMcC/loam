@@ -14,6 +14,7 @@ extension MainWindowController {
             // One overlay at a time: the actions menu and the PR popover would take the clicks.
             closeActionsMenu()
             model.closePullRequest()
+            model.closeLandSheet()
         }
         switcherHost.isHidden = !open
         if open {

@@ -175,12 +175,14 @@ struct FakeLoam {
         let fake = try FakeLoam([("worktree_land_auto", 0), ("worktree_rerun", 0), ("worktree_update", 0)])
         let client = fake.client()
         let land = try await client.worktreeLand(plot: "Loam", worktree: "sign-commits", method: .squash, auto: true,
-                                                 keepRemoteBranch: true, openPanes: ["/p"])
+                                                 keepRemoteBranch: true, head: "3333333333333333333333333333333333333333",
+                                                 openPanes: ["/p"])
         #expect(land.mergeLater)
         _ = try await client.worktreeRerun(plot: "Loam", worktree: "native-panel")
         _ = try await client.worktreeUpdate(plot: "Loam", worktree: "update-deps")
         #expect(fake.args() == [
-            "worktree land Loam sign-commits --method squash --auto --keep-remote-branch --open-pane /p --json --actor app",
+            "worktree land Loam sign-commits --method squash --auto --keep-remote-branch "
+                + "--head 3333333333333333333333333333333333333333 --open-pane /p --json --actor app",
             "worktree rerun Loam native-panel --json --actor app",
             "worktree update Loam update-deps --json --actor app",
         ])

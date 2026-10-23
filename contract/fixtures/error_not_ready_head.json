@@ -1,0 +1,10 @@
+{
+  "error": {
+    "details": {
+      "checks": []
+    },
+    "exit_code": 16,
+    "kind": "not_ready",
+    "message": "web-link-labels is not ready to land: PR #22 has new commits since you looked at it. Look again before you merge"
+  }
+}

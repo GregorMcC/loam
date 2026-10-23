@@ -29,9 +29,9 @@ public enum PRPrimaryAction: String, CaseIterable, Sendable {
     }
 
     /// The buttons whose ticket is merged. The popover shows a primary button only when it is in this set,
-    /// so a later ticket adds its case here when it builds the button: Land… is ticket 112. The three Send
-    /// buttons are ticket 110.
-    public static let built: Set<PRPrimaryAction> = [.sendFailures, .sendReview, .sendConflicts]
+    /// so a later ticket adds its case here when it builds the button. The three Send buttons are ticket 110,
+    /// and Land… is ticket 112.
+    public static let built: Set<PRPrimaryAction> = [.land, .sendFailures, .sendReview, .sendConflicts]
 }
 
 /// The smaller buttons of the PR popover. The popover shows each one only when it can do something.
@@ -163,7 +163,7 @@ public struct PRPopoverContent: Equatable, Sendable {
     private static let openState = "OPEN"
 
     /// "link-labels → main · 9 commits".
-    private static func subtitle(of pr: PullRequest) -> String {
+    static func subtitle(of pr: PullRequest) -> String {
         var words = ["\(pr.head) \u{2192} \(pr.base)"]
         if pr.commits > 0 { words.append("\(pr.commits) \(pr.commits == 1 ? "commit" : "commits")") }
         return words.joined(separator: StatusLine.separator)

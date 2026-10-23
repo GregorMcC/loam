@@ -260,6 +260,19 @@ func decodeFixture(schema: String, data: Data) throws {
         #expect(details?.checks == [LandCheck(name: "github", state: "draft", blocks: true)])
     }
 
+    /// A land that names a PR head that GitHub no longer has: exit 16 with no check that blocks.
+    @Test func aNewCommitStopsTheLandWithNoBlockingCheck() throws {
+        let env = try JSONDecoder().decode(ErrorEnvelope.self, from: Fixtures.data("error_not_ready_head"))
+        let error = LoamError.from(exitCode: 16, message: env.error.message, details: env.error.details?.data)
+        guard case .notReady(let details, let message) = error else {
+            Issue.record("wrong case: \(error)")
+            return
+        }
+        #expect(details?.checks == [])
+        #expect(message.contains("has new commits since you looked at it. Look again before you merge"))
+        #expect(error.userMessage == message)
+    }
+
     @Test func theNewStageAndNoteDecode() throws {
         let json = Data(#""blocked""#.utf8)
         #expect(try JSONDecoder().decode(WorktreeStage.self, from: json) == .blocked)
