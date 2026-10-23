@@ -44,7 +44,9 @@ import Testing
         }
 
         func calls(_ command: String) -> [String] { args().filter { $0.hasPrefix(command) } }
-        func removals() -> [String] { calls("worktree rm") }
+        /// The removals that are not dry runs.
+        func removals() -> [String] { calls("worktree rm").filter { !$0.contains("--dry-run") } }
+        func dryRemovals() -> [String] { calls("worktree rm").filter { $0.contains("--dry-run") } }
         func dryRuns() -> [String] { calls("worktree land").filter { $0.contains("--dry-run") } }
         /// The lands that are not dry runs. For a PR that is not merged, one would merge it.
         func lands() -> [String] { calls("worktree land").filter { !$0.contains("--dry-run") } }
@@ -100,6 +102,9 @@ import Testing
         /// The next `loam worktree rm` fails with this message, as the core refuses work that is not on GitHub.
         func failRemoval(_ message: String) throws { try fail("rm", message) }
 
+        /// The next dry run of `loam worktree rm` fails with this message.
+        func failDryRemoval(_ message: String) throws { try fail("rm-dry", message) }
+
         /// The next `loam worktree land` that is not a dry run fails with this message.
         func failLand(_ message: String) throws { try fail("land", message) }
 
@@ -136,7 +141,7 @@ import Testing
 
     /// A model with the fixture rows, edited, and a fake `loam`. `worktree list` prints `list.json` until a removal or
     /// a land that removes ran, and `after.json` after it. A land prints `dry.json` for `--dry-run`, else `land.json`.
-    /// A land with `--keep-worktree` removes nothing.
+    /// A land with `--keep-worktree` removes nothing, and so does a dry run of `worktree rm`.
     func rig(_ setting: AfterMerge? = .ask, state: AppStateFile? = nil,
              rows edit: (inout [WorktreeStatus]) -> Void = { _ in }) async throws -> Rig {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("merge-\(UUID().uuidString)")
@@ -150,8 +155,12 @@ import Testing
               "show "*) while [ -f '\(d)/hold-show' ]; do sleep 0.02; done
                 cat '\(d)/show.json';;
               "worktree list") if [ -f '\(d)/gone' ]; then cat '\(d)/after.json'; else cat '\(d)/list.json'; fi;;
-              "worktree rm") [ -f '\(d)/fail-rm' ] && { cat '\(d)/fail-rm.json'; exit 1; }
-                touch '\(d)/gone'
+              "worktree rm")
+                case "$*" in
+                  *--dry-run*) [ -f '\(d)/fail-rm-dry' ] && { cat '\(d)/fail-rm-dry.json'; exit 1; };;
+                  *) [ -f '\(d)/fail-rm' ] && { cat '\(d)/fail-rm.json'; exit 1; }
+                    touch '\(d)/gone';;
+                esac
                 cat '\(d)/rm.json';;
               "worktree land")
                 case "$*" in
@@ -274,14 +283,17 @@ import Testing
         #expect(model.paneRunsAProcess(PaneID()))
     }
 
-    /// The core refuses too, such as for a file that changed after the refresh. Then the app asks.
+    /// The core refuses too, such as for a file that changed after the refresh. Then the app asks, and the panel shows
+    /// why.
     @Test func removeTheWorktreeAsksWhenTheCoreRefuses() async throws {
         let rig = try await rig(.remove)
+        await rig.model.panel.load(plotID: plotID)
         try rig.failRemoval("add-search has 1 file(s) with uncommitted changes. Commit or stash them, or remove it with --force")
         await refresh(rig)
         #expect(rig.removals().count == 1 && !rig.removals()[0].contains("--force"))
         #expect(rig.model.mergeAsks == [MergedPR(worktree: merged, number: 11)])
         #expect(rig.model.worktreeStatus(merged) != nil && rig.record.toasts.isEmpty)
+        #expect(rig.model.panel.errorMessage?.contains("uncommitted changes") == true)
     }
 
     @Test func doNothingLeavesTheFadedRow() async throws {
@@ -352,6 +364,37 @@ import Testing
         #expect(rig.calls("show").count == 1 && rig.removals().count == 1)
     }
 
+    /// A merge whose row changes before it acts, such as to a refresh with no answer of GitHub, is not decided any more.
+    /// A later refresh that finds it again acts on it. link-labels (#22) waits here for the action of add-search.
+    @Test(.timeLimit(.minutes(1))) func aMergeWhoseRowChangesBeforeItActsDecidesAgain() async throws {
+        let labels = MergedPR(worktree: ready, number: 22)
+        func merge(_ note: PRNote) -> (inout [WorktreeStatus]) -> Void {
+            { rows in
+                edit(ready, &rows) { row in
+                    row.stage = .merged
+                    row.pr?.state = "MERGED"
+                    row.prNote = note
+                }
+            }
+        }
+        let rig = try await rig(.remove, rows: merge(.noNote))
+        let model = rig.model
+        try rig.hold("show")
+        await model.refreshWorktrees(plot: plotID)
+        try await rig.waitForCall("show")
+        #expect(model.mergesDecided.contains(labels))
+        try rig.rows(merge(.offline))
+        await model.refreshWorktrees(plot: plotID)
+        rig.release("show")
+        await model.mergesSettled()
+        #expect(rig.calls("show").count == 1, "link-labels read the setting")
+        #expect(rig.removals().allSatisfy { !$0.contains(ready) } && !model.mergeAsks.contains(labels))
+        #expect(!model.mergesDecided.contains(labels), "the merge stays decided, so it never acts")
+        try rig.rows(merge(.noNote))
+        await refresh(rig)
+        #expect(rig.removals().filter { $0.contains(ready) }.count == 1, "the merge did not act after GitHub answered")
+    }
+
     @Test func eachMergeActsOnce() async throws {
         let rig = try await rig(.remove)
         try rig.failRemoval("add-search has 1 commit(s) that are not pushed")
@@ -399,19 +442,24 @@ import Testing
         try rig.land()
         try rig.failLand("gh stopped before GitHub answered")
         let shell = try pane(in: merged, rig.model)
+        await rig.model.panel.load(plotID: plotID)
         await refresh(rig)
         #expect(rig.lands().count == 1 && rig.removals().isEmpty)
         #expect(rig.model.workspace.allPaneIDs.contains(shell), "a pane closed before a land that failed")
         #expect(rig.model.mergeAsks == [MergedPR(worktree: merged, number: 11)])
         #expect(rig.record.toasts.isEmpty)
+        #expect(rig.model.panel.errorMessage?.contains("gh stopped before GitHub answered") == true)
     }
 
-    /// The land tidied up, and the core refuses the removal after it. The worktree stays, and the callout asks.
+    /// The land tidied up, and the core refuses the removal after it. The worktree stays, the callout asks, and the
+    /// panel shows the reason of the core.
     @Test func aRecordedLandWhoseRemovalTheCoreRefusesAsks() async throws {
         let rig = try await rig(.remove) { rows in edit(merged, &rows) { $0.worktree.land = recorded(11) } }
         try rig.land()
         try rig.failRemoval("add-search has 1 file(s) with uncommitted changes")
+        await rig.model.panel.load(plotID: plotID)
         await refresh(rig)
+        #expect(rig.model.panel.errorMessage?.contains("uncommitted changes") == true)
         #expect(rig.lands().count == 1 && rig.removals().count == 1)
         #expect(rig.model.mergeAsks == [MergedPR(worktree: merged, number: 11)])
         #expect(rig.record.toasts.map(\.text) == ["Merged #11. Loam kept the worktree add-search."])
@@ -538,7 +586,9 @@ import Testing
         await model.panel.load(plotID: plotID)
         await refresh(rig)
         await model.removeMergedWorktree(merged)
+        #expect(rig.dryRemovals() == ["worktree rm \(plotID) \(merged) --dry-run --json --actor app"])
         #expect(rig.removals() == ["worktree rm \(plotID) \(merged) --json --actor app"])
+        #expect(rig.calls("worktree rm").first?.contains("--dry-run") == true, "the removal ran before the dry run")
         #expect(!model.workspace.allPaneIDs.contains(shell))
         #expect(model.mergeAsks.isEmpty && model.worktreeStatus(merged) == nil)
         #expect(model.panel.shownText(of: .whereItStands) == "Merged #11 Add search. Building search.")
@@ -579,16 +629,13 @@ import Testing
         #expect(model.panel.drafts[.whereItStands] == nil && model.panel.whereSelection == nil)
     }
 
-    /// Remove worktree in the callout refuses work that the app knows is not on GitHub before it asks or closes a pane.
-    @Test(arguments: [Unsafe.changedFiles, .unpushedCommits, .failedCheck])
+    /// Remove worktree in the callout refuses changed files and a failed check of the row before it asks or closes a
+    /// pane.
+    @Test(arguments: [Unsafe.changedFiles, .failedCheck])
     func removeWorktreeInTheCalloutRefusesWorkThatIsNotOnGitHub(_ unsafe: Unsafe) async throws {
         let rig = try await rig(.ask) { rows in
             edit(merged, &rows) { row in
-                switch unsafe {
-                case .changedFiles: row.changed = 2
-                case .unpushedCommits: row.unpushed = 1
-                default: row.error = "git status failed"
-                }
+                if unsafe == .changedFiles { row.changed = 2 } else { row.error = "git status failed" }
             }
         }
         let model = rig.model
@@ -597,14 +644,58 @@ import Testing
         await model.panel.load(plotID: plotID)
         await refresh(rig)
         await model.removeMergedWorktree(merged)
+        #expect(rig.calls("worktree rm").isEmpty && rig.record.prompts.isEmpty)
+        #expect(model.workspace.allPaneIDs.contains(shell) && model.workspace.allPaneIDs.contains(session))
+        let message = unsafe == .changedFiles
+            ? "In the worktree add-search, 2 files have uncommitted changes. Removing it loses that work."
+            : "A check failed: git status failed. Loam cannot tell if the work is safe."
+        #expect(model.panel.errorMessage == message)
+        #expect(model.mergeAsks == [MergedPR(worktree: merged, number: 11)])
+    }
+
+    /// The callout leaves the commits that the row counts as unpushed to the core: after a squash merge, the merged PR
+    /// holds them. A dry run of `loam worktree rm` checks them before any question or pane close. Its refusal shows in
+    /// the panel, and every pane stays open.
+    @Test func removeWorktreeInTheCalloutLeavesUnpushedCommitsToTheCore() async throws {
+        let rig = try await rig(.ask) { rows in edit(merged, &rows) { $0.unpushed = 1 } }
+        let model = rig.model
+        let shell = try pane(in: merged, model)
+        let session = try pane(in: merged, model, .session, turn: "UserPromptSubmit")
+        await model.panel.load(plotID: plotID)
+        await refresh(rig)
+        try rig.failDryRemoval("add-search has 1 commit(s) that are not pushed. Push them, or remove it with --force")
+        await model.removeMergedWorktree(merged)
+        #expect(rig.dryRemovals() == ["worktree rm \(plotID) \(merged) --dry-run --json --actor app"], "no --force")
         #expect(rig.removals().isEmpty && rig.record.prompts.isEmpty)
         #expect(model.workspace.allPaneIDs.contains(shell) && model.workspace.allPaneIDs.contains(session))
-        let message = switch unsafe {
-        case .changedFiles: "In the worktree add-search, 2 files have uncommitted changes. Removing it loses that work."
-        case .unpushedCommits: "In the worktree add-search, 1 commit is not pushed. Removing it loses that work."
-        default: "A check failed: git status failed. Loam cannot tell if the work is safe."
+        #expect(model.panel.errorMessage?.contains("not pushed") == true)
+        #expect(model.mergeAsks == [MergedPR(worktree: merged, number: 11)])
+
+        // The merged PR holds the commits: the core says yes, and the worktree goes.
+        rig.remove("fail-rm-dry")
+        await model.removeMergedWorktree(merged)
+        #expect(rig.record.prompts.count == 1, "the session in a turn did not ask")
+        #expect(rig.dryRemovals().count == 3, "a dry run before the question and one after it")
+        #expect(rig.removals().count == 1 && !model.workspace.allPaneIDs.contains(shell))
+        #expect(model.mergeAsks.isEmpty)
+    }
+
+    /// A session in a turn can commit while the question shows. The dry run runs again after the question, and its
+    /// refusal leaves every pane open.
+    @Test func removeWorktreeInTheCalloutChecksTheWorkAgainAfterTheQuestion() async throws {
+        let rig = try await rig(.ask)
+        let model = rig.model
+        let session = try pane(in: merged, model, .session, turn: "UserPromptSubmit")
+        await model.panel.load(plotID: plotID)
+        await refresh(rig)
+        model.confirmClose = { [rig] _ in
+            try? rig.failDryRemoval("add-search has 1 commit(s) that are not pushed. Push them, or remove it with --force")
+            return true
         }
-        #expect(model.panel.errorMessage == message)
+        await model.removeMergedWorktree(merged)
+        #expect(rig.dryRemovals().count == 2 && rig.removals().isEmpty)
+        #expect(model.workspace.allPaneIDs.contains(session), "the session stopped before a removal that the core refused")
+        #expect(model.panel.errorMessage?.contains("not pushed") == true)
         #expect(model.mergeAsks == [MergedPR(worktree: merged, number: 11)])
     }
 
