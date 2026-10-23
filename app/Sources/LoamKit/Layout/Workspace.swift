@@ -372,12 +372,12 @@ public struct Workspace: Codable, Equatable, Sendable {
 
     // MARK: Sessions in panes
 
-    /// Applies a line from the pane's socket. A shell pane raises no state (spec 8.4), so it
+    /// Applies a line from the pane's socket that came at `now`. A shell pane raises no state (spec 8.4), so it
     /// ignores the line. Returns true when the pane changed.
     @discardableResult
-    public mutating func apply(_ event: PaneEvent, to pane: PaneID) -> Bool {
+    public mutating func apply(_ event: PaneEvent, to pane: PaneID, now: Date) -> Bool {
         guard specs[pane]?.kind == .session else { return false }
-        return sessions[pane]?.apply(event) ?? false
+        return sessions[pane]?.apply(event, now: now) ?? false
     }
 
     /// The pane's process exited. A seeded pane stays and shows "Session ended".
@@ -389,6 +389,16 @@ public struct Workspace: Codable, Equatable, Sendable {
     @discardableResult
     public mutating func typed(in pane: PaneID) -> Bool {
         sessions[pane]?.typed() ?? false
+    }
+
+    /// You put something into the pane at `now` (ticket 110).
+    public mutating func input(_ input: PaneInput, in pane: PaneID, now: Date) {
+        sessions[pane]?.input(input, now: now)
+    }
+
+    /// Send to session typed `prompt` into the input of the pane (ticket 110).
+    public mutating func prompted(_ prompt: String, in pane: PaneID) {
+        sessions[pane]?.prompted(prompt)
     }
 
     /// You looked at the pane: done, unread clears (spec 8.4). Returns true when it cleared.

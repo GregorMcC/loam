@@ -99,12 +99,10 @@ extension Scenarios {
         let local = try makeWorktree(rig, plot: plot, repo: widgets, name: "local-work")
         try git(widgets, ["remote", "set-url", "origin", "https://github.com/example/widgets.git"])
 
-        // The client's environment is the pane's environment. The shells read an empty `.zshrc` of the fake HOME, so
+        // The client's environment is the pane's environment. The shells read the `.zshrc` of the fake HOME, so
         // the real startup files of the Mac do not set their prompt or their title.
-        try "".write(to: rig.fakeHome.appendingPathComponent(".zshrc"), atomically: true, encoding: .utf8)
-        let client = LoamClient(binary: rig.binary, environment: rig.environment.merging([
+        let client = LoamClient(binary: rig.binary, environment: rig.environment.merging(try rig.neutralPrompt()) { $1 }.merging([
             "LOAM_GH": fakeGH, "LOAM_FAKE_GH_STATE": ghState.path, "LOAM_FAKE_GH_LOG": ghLog.path,
-            "ZDOTDIR": rig.fakeHome.path,
         ]) { $1 })
         // The timers are far away, so only the launch and the popover make a refresh.
         let host = try await app.launchApp(client: client, state: rig.stateFile, terminals: true) { host in
@@ -149,8 +147,8 @@ extension Scenarios {
         app.screenshot("pr-chip")
 
         // 3. A click on the chip opens the popover for the worktree and asks GitHub about that worktree
-        // only. The rows, the failed checks and the buttons come from the row; no primary button shows
-        // (tickets 110 and 112 build them).
+        // only. The rows, the failed checks and the buttons come from the row. The worktree has only a shell, so
+        // the primary button starts a session with the prompt (ticket 110, the `send-to-session` scenario).
         try app.click("action-bar-pr-chip")
         try await app.waitUntil("the popover opens") { app.exists("pr-popover") && model.prPopover.worktreeID == panel.id }
         try await app.waitUntil("the popover asked about the worktree") { refreshes(ofOneWorktree: true) == 1 && !model.prPopover.isRefreshing }
@@ -170,7 +168,8 @@ extension Scenarios {
         try check(app.exists("pr-popover-rerun-failed") && app.exists("pr-popover-update-branch") && app.exists("pr-popover-open-on-github"),
                   "a button is missing")
         try check(!app.exists("pr-popover-copy-branch-name"), "a worktree with a PR offers Copy branch name")
-        try check(!app.exists("pr-popover-primary"), "a primary button shows before tickets 110 and 112")
+        try check(AccessibilityProbe.shared.node("pr-popover-primary")?.description == "Start session with prompt",
+                  "the primary button reads \(AccessibilityProbe.shared.node("pr-popover-primary")?.description ?? "nothing")")
         // The popover opens above the chip and starts at its left edge, or as far left as the window edge allows. The
         // frame of `pr-popover` is the whole overlay, so the buttons give the left and the bottom edge of the card.
         func frame(_ id: String) throws -> CGRect {

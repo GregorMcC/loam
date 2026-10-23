@@ -282,6 +282,14 @@
     "schema": "pane-event"
   },
   {
+    "name": "pane_user_prompt_submit",
+    "args": [
+      "hook"
+    ],
+    "exit_code": 0,
+    "schema": "pane-event"
+  },
+  {
     "name": "pane_stop",
     "args": [
       "hook"
@@ -299,6 +307,22 @@
   },
   {
     "name": "pane_notification_permission",
+    "args": [
+      "hook"
+    ],
+    "exit_code": 0,
+    "schema": "pane-event"
+  },
+  {
+    "name": "pane_notification_elicitation_response",
+    "args": [
+      "hook"
+    ],
+    "exit_code": 0,
+    "schema": "pane-event"
+  },
+  {
+    "name": "pane_post_tool_use_failure",
     "args": [
       "hook"
     ],

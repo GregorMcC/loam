@@ -230,6 +230,12 @@ final class DriverApp: NSObject, NSApplicationDelegate {
         guard let hostFactory else { throw DriverFailure("this build has no app host") }
         let host = hostFactory(client, state, terminals ? runtime : nil)
         self.host = host
+        // The app copies to the private pasteboard of the run, so a run never touches your clipboard.
+        let pasteboard = runtime.pasteboard
+        host.model.copyText = { text in
+            pasteboard.clearContents()
+            pasteboard.setString(text, forType: .string)
+        }
         prepare(host)
         AccessibilityProbe.shared.start()
         window.orderOut(nil)

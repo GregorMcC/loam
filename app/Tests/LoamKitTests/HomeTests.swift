@@ -32,7 +32,7 @@ import Testing
         var ws = Workspace()
         let a1 = ws.openTab(shell("A", "/repo/a"))
         let home1 = ws.openTab(session(.home, "h1"))
-        ws.apply(event("SessionStart", "h1"), to: home1)
+        ws.apply(event("SessionStart", "h1"), to: home1, now: anyTime)
         let home2 = ws.openTab(shell(.home))
         ws.activate(.home)
         return (ws, home1, home2, a1)
@@ -287,7 +287,7 @@ import Testing
 
     @Test func theSidebarShowsHomeAboveThePlots() {
         var s = sample()
-        s.ws.apply(event("PermissionRequest", "h1"), to: s.home1)
+        s.ws.apply(event("PermissionRequest", "h1"), to: s.home1, now: anyTime)
         let model = SidebarModel(plots: [plot("A", "Alpha")], workspace: s.ws, collapsed: false, arriving: [s.home1])
         #expect(model.home == .init(paneCount: 2, isActive: true, needsYouCount: 1, hasDoneUnread: false, isArriving: true))
         #expect(model.activeSpace == .home)
@@ -305,8 +305,8 @@ import Testing
     @Test func theNeedsYouListPutsHomeFirst() {
         var s = sample()
         let a = s.ws.openTab(session("A", "a1"))
-        s.ws.apply(event("PermissionRequest", "a1"), to: a)
-        s.ws.apply(event("PermissionRequest", "h1"), to: s.home1)
+        s.ws.apply(event("PermissionRequest", "a1"), to: a, now: anyTime)
+        s.ws.apply(event("PermissionRequest", "h1"), to: s.home1, now: anyTime)
         s.ws.activate("A")
         let model = SidebarModel(plots: [plot("A", "Alpha")], workspace: s.ws, collapsed: false)
         #expect(model.needsYou.map(\.id) == [s.home1, a])

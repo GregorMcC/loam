@@ -367,10 +367,13 @@ private func text(_ parts: [StatusLine.Part]) -> String { parts.map(\.text).join
         ])
     }
 
-    /// Tickets 110 and 112 build the buttons. Until then no stage shows one.
-    @Test func noPrimaryButtonIsBuiltYet() throws {
-        #expect(PRPrimaryAction.built.isEmpty)
-        for status in try stageRows() { #expect(PRPopoverContent(status, now: sameDay, timeZone: utc).primary == nil) }
+    /// Ticket 110 built the three Send buttons. Land… waits for ticket 112.
+    @Test func theSendButtonsAreBuiltAndLandIsNot() throws {
+        #expect(PRPrimaryAction.built == [.sendFailures, .sendReview, .sendConflicts])
+        for status in try stageRows() {
+            let expected: PRPrimaryAction? = status.stage.flatMap(PRPrimaryAction.init(stage:)).flatMap { $0 == .land ? nil : $0 }
+            #expect(PRPopoverContent(status, now: sameDay, timeZone: utc).primary == expected, "\(String(describing: status.stage))")
+        }
     }
 
     @Test func aBuiltButtonShowsAtItsStageOnly() throws {

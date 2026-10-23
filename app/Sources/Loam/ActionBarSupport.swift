@@ -26,6 +26,10 @@ extension MainWindowController: NSMenuItemValidation {
         setActionHosts(bar: bar, menu: menu, popover: popover)
         model.prPopover.onOpenChange = { [weak self] open in self?.pullRequestPopoverChanged(open: open) }
         model.prPopover.onOpen = { [weak self] in self?.placePullRequestPopover() }
+        // Send to session (ticket 110): the toast after Loam typed a prompt, and the keys for the session.
+        model.onToast = { [weak self] in self?.actionBar.show($0, kind: $1) }
+        model.onPromptTyped = { [weak self] _ in self?.focusActivePane() }
+        model.copyText = SystemActions.copy
         columnBottomInset(ActionBarView.height)
     }
 
@@ -117,7 +121,8 @@ extension MainWindowController: NSMenuItemValidation {
         let worktree = model.focusedWorktree.flatMap { model.worktreeStatus($0.id) }
         return ActionMenu.isAvailable(command, hasSpace: workspace.activeSpace != nil, hasPlot: workspace.activePlotID != nil,
                                       hasPane: workspace.focusedPane != nil, hasWorktree: worktree != nil,
-                                      hasPullRequest: worktree?.pr != nil)
+                                      hasPullRequest: worktree?.pr != nil,
+                                      checksFailed: worktree.map { model.canSendFailures($0.worktree.id) } ?? false)
     }
 
     /// The menu bar and the actions menu agree on what can run (`ActionMenu.isAvailable`).

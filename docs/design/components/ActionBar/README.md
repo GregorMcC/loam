@@ -9,6 +9,7 @@ The action bar is the 40pt strip at the bottom of the window (ticket 89). It sit
   - the label of the focused pane in `ink-muted`, the same label as its tab
   - the toast: a small `moss` check and the newest change of the active plot in `ink-faint`, for example "Claude set Where it stands"
   - the PR chip, for a pane that runs in a worktree with a PR (see below)
+- Send to session (ticket 110) shows its own line as the toast, such as "Loam typed the failures into ✳ Native panel spacing. Press Return to send." When a session that Loam started sends no SessionStart in 30 seconds, the toast is a notice: "The session in native-panel did not start in 30 seconds. Loam did not type the prompt." When the new session cannot take the prompt at its SessionStart, the notice says why, such as "Loam did not type the prompt into the new session, because the session has your text. Copy the prompt from the PR popover." When Loam opens no session, a notice says so too. A notice shows `exclamationmark.circle` (11pt) in `ink-muted` in place of the `moss` check, because nothing went through (`ActionBarModel.ToastKind`).
 - The toast shows for 6 seconds after a change, then fades. A change that was in the log when the app started does not show. The toast hides when the bar is too narrow for it. The toast and the chip share one place, and the toast wins while it shows.
 - Right side: "New session" with its keycaps, a 16pt vertical rule (the ink at 13%), then "Actions" with its keycaps.
 - The two buttons are text buttons: 28pt high, radius 7, `ink` text. They take the ink at 9% as a fill on hover. Actions keeps that fill while its menu is open.
@@ -28,7 +29,7 @@ The action bar is the 40pt strip at the bottom of the window (ticket 89). It sit
 - The menu is a card above the Actions button: 340pt wide, radius 12, on `horizon-b`, with a hairline edge and `shadow-raised`. It sits 10pt from the right end of the bar and 6pt above it.
 - The menu has up to four sections. The heading of each section is in `ink-faint`.
   - The focused pane, with its label as the heading: New session, Split right, Split down, Close pane.
-  - The worktree of the focused pane, with its branch as the heading: Show pull request (only when the worktree has a PR) and Refresh. A pane that runs in no worktree has no such section. Show pull request opens the PR popover. Refresh asks GitHub about the worktree and shows no popover.
+  - The worktree of the focused pane, with its branch as the heading: Send failures to session (only when the checks of its PR failed, ticket 110), Show pull request (only when the worktree has a PR) and Refresh. A pane that runs in no worktree has no such section. Show pull request opens the PR popover. Refresh asks GitHub about the worktree and shows no popover. Send failures to session does what the button of the PR popover does, and opens the popover when Loam cannot type, so you see why.
   - The active plot, with its name as the heading: Edit brief, Add link, Add repo, Archive plot.
 - Each row is 34pt high. It has a symbol in `ink-muted`, the label in `ink`, and the keycaps of the command on the right. The selected row has the ink at 9% as a fill, radius 8.
 - A search field is at the bottom, under a hairline. It has the keys when the menu opens. Each word of the query must be in the label of a row. A section with no rows left does not show.

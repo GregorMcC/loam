@@ -75,14 +75,17 @@ struct PRPopoverView: View {
     }
 
     private func cardContent(_ content: PRPopoverContent, status: WorktreeStatus) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        // One plan for each render: the button and the line under the buttons say the same thing.
+        let plan = content.primary == nil ? nil : app.sendPlan(for: status.worktree.id)
+        return VStack(alignment: .leading, spacing: 12) {
             if let stage = content.stage { header(stage, content) }
             titleBlock(content)
             if let notice = content.notice { footnote(notice, id: "pr-popover-notice") }
             rows(content)
             if let note = content.stageNote { footnote(note, id: "pr-popover-stage-note") }
             if !content.failedChecks.isEmpty { failedChecks(content) }
-            if content.primary != nil || !content.secondary.isEmpty { buttons(content, status: status) }
+            if content.primary != nil || !content.secondary.isEmpty { buttons(content, status: status, plan: plan) }
+            if let plan { footnote(plan.footnote, id: "pr-popover-send-note") }
             if let note = app.prPopover.note { footnote(note, id: "pr-popover-note") }
         }
         .padding(EdgeInsets(top: 14, leading: 16, bottom: 16, trailing: 16))
@@ -185,13 +188,15 @@ struct PRPopoverView: View {
 
     // MARK: Buttons
 
-    private func buttons(_ content: PRPopoverContent, status: WorktreeStatus) -> some View {
+    private func buttons(_ content: PRPopoverContent, status: WorktreeStatus, plan: SendPlan?) -> some View {
         let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: content.hasPullRequest ? 3 : 2)
         return VStack(spacing: 8) {
             if let primary = content.primary {
-                Button { runPrimary(primary) } label: { Text(primary.title).frame(maxWidth: .infinity) }
+                Button { runPrimary(primary) } label: { primaryLabel(primary, plan: plan) }
                     .loamPrimaryButton()
                     .controlSize(.large)
+                    .accessibilityLabel(plan?.buttonTitle ?? primary.title)
+                    .accessibilityValue(plan?.typeTarget ?? "")
                     .accessibilityIdentifier("pr-popover-primary")
             }
             LazyVGrid(columns: columns, spacing: 8) {
@@ -200,6 +205,23 @@ struct PRPopoverView: View {
                 }
             }
         }
+    }
+
+    /// The words of the primary button. A Send button that types names the session that gets the prompt, in
+    /// `on-moss` at 75% (board 2.1, ticket 110). When Loam cannot type, the button says Copy prompt or Start
+    /// session with prompt, and the line under the buttons says why (`SendPlan`).
+    private func primaryLabel(_ primary: PRPrimaryAction, plan: SendPlan?) -> some View {
+        HStack(spacing: 8) {
+            Text(plan?.buttonTitle ?? primary.title)
+            if let pane = plan?.typeTarget {
+                Text(pane)
+                    .font(.system(size: 12, weight: .medium))
+                    .opacity(0.75)
+                    .truncationMode(.middle)
+            }
+        }
+        .lineLimit(1)
+        .frame(maxWidth: .infinity)
     }
 
     private func secondary(_ action: PRSecondaryAction, content: PRPopoverContent, status: WorktreeStatus) -> some View {
@@ -211,7 +233,7 @@ struct PRPopoverView: View {
             case .openOnGitHub:
                 if let page = content.githubPage { SystemActions.open(page) }
             case .copyBranchName:
-                SystemActions.copy(status.worktree.branch)
+                app.copyText(status.worktree.branch)
                 app.prPopover.say("Copied the branch name.")
             }
         } label: {

@@ -76,13 +76,28 @@ extension DriverApp {
 
     private func press(code: UInt16, characters: String, ignoringModifiers: String, flags: NSEvent.ModifierFlags) {
         for type in [NSEvent.EventType.keyDown, .keyUp] {
-            guard let event = NSEvent.keyEvent(
-                with: type, location: .zero, modifierFlags: flags,
-                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
-                context: nil, characters: characters, charactersIgnoringModifiers: ignoringModifiers,
-                isARepeat: false, keyCode: code) else { continue }
-            deliver(event)
+            send(type, code: code, characters: characters, ignoringModifiers: ignoringModifiers, flags: flags, isARepeat: false)
         }
+    }
+
+    /// One key down of a key that you hold: the first press, or with `isARepeat` a repeat that macOS sends while
+    /// the key stays down. `keyUp` ends the hold.
+    func keyDown(_ key: Key, isARepeat: Bool = false) {
+        send(.keyDown, code: key.code, characters: key.characters, ignoringModifiers: key.characters, flags: [], isARepeat: isARepeat)
+    }
+
+    func keyUp(_ key: Key) {
+        send(.keyUp, code: key.code, characters: key.characters, ignoringModifiers: key.characters, flags: [], isARepeat: false)
+    }
+
+    private func send(_ type: NSEvent.EventType, code: UInt16, characters: String, ignoringModifiers: String,
+                      flags: NSEvent.ModifierFlags, isARepeat: Bool) {
+        guard let event = NSEvent.keyEvent(
+            with: type, location: .zero, modifierFlags: flags,
+            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+            context: nil, characters: characters, charactersIgnoringModifiers: ignoringModifiers,
+            isARepeat: isARepeat, keyCode: code) else { return }
+        deliver(event)
     }
 
     /// The path that NSApplication.sendEvent takes for a key in the key window.

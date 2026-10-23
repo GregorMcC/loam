@@ -29,9 +29,9 @@ public enum PRPrimaryAction: String, CaseIterable, Sendable {
     }
 
     /// The buttons whose ticket is merged. The popover shows a primary button only when it is in this set,
-    /// so a later ticket adds its case here when it builds the button: Land… is ticket 112, and the three
-    /// Send buttons are ticket 110.
-    public static let built: Set<PRPrimaryAction> = []
+    /// so a later ticket adds its case here when it builds the button: Land… is ticket 112. The three Send
+    /// buttons are ticket 110.
+    public static let built: Set<PRPrimaryAction> = [.sendFailures, .sendReview, .sendConflicts]
 }
 
 /// The smaller buttons of the PR popover. The popover shows each one only when it can do something.

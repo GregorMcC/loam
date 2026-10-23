@@ -40,11 +40,17 @@ extension MainWindowController {
         if popoverContext != ActionsContext(space: workspace.activeSpace, pane: workspace.focusedPane) { model.closePullRequest() }
     }
 
-    /// Return on the primary button, or a click on it. No primary button shows until its ticket is built
-    /// (`PRPrimaryAction.built`), so nothing reaches this yet. Ticket 110 builds the three Send buttons and
-    /// ticket 112 builds Land….
+    /// Return on the primary button, or a click on it. The three Send buttons type the prompt into the session
+    /// of the worktree, copy it, or start a session (ticket 110). No Land… button shows until ticket 112 builds it
+    /// (`PRPrimaryAction.built`).
     func runPrimaryAction(_ action: PRPrimaryAction) {
-        assertionFailure("The primary button \(action) shows before its ticket is built")
+        switch action {
+        case .sendFailures, .sendReview, .sendConflicts:
+            guard let id = model.prPopover.worktreeID else { return }
+            model.sendToSession(id)
+        case .land:
+            assertionFailure("The primary button \(action) shows before its ticket is built")
+        }
     }
 
     // MARK: Place

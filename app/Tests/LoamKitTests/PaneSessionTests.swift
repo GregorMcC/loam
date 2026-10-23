@@ -3,12 +3,15 @@ import Testing
 
 @testable import LoamKit
 
+/// The time of a pane event in a test that does not look at the clock (ticket 110).
+let anyTime = Date(timeIntervalSince1970: 1_800_000_000)
+
 func paneEvent(_ name: String, _ id: String, source: String? = nil, notification: String? = nil) -> PaneEvent {
     PaneEvent(event: name, sessionID: id, cwd: "/tmp", at: "2026-10-03T09:00:00Z", source: source, notificationType: notification)
 }
 
 /// `#expect` cannot call a mutating method.
-private func applied(_ session: inout PaneSession, _ event: PaneEvent) -> Bool { session.apply(event) }
+private func applied(_ session: inout PaneSession, _ event: PaneEvent) -> Bool { session.apply(event, now: anyTime) }
 private func typed(_ session: inout PaneSession) -> Bool { session.typed() }
 
 /// The pane state machine (spec 8.4, phase 3 events): session ID, working or idle, ended.
@@ -16,28 +19,28 @@ private func typed(_ session: inout PaneSession) -> Bool { session.typed() }
     @Test func aSeededPaneRunsUntilItsSessionStarts() {
         var s = PaneSession(sessionID: "a")
         #expect(s.state == .running && !s.started)
-        let changed = s.apply(paneEvent("SessionStart", "a", source: "startup"))
+        let changed = s.apply(paneEvent("SessionStart", "a", source: "startup"), now: anyTime)
         #expect(changed)
         #expect(s.state == .idle && s.started && s.sessionID == "a")
     }
 
     @Test func aPromptMeansWorkingAndStopMeansIdle() {
         var s = PaneSession(sessionID: "a")
-        s.apply(paneEvent("SessionStart", "a", source: "startup"))
-        s.apply(paneEvent("UserPromptSubmit", "a"))
+        s.apply(paneEvent("SessionStart", "a", source: "startup"), now: anyTime)
+        s.apply(paneEvent("UserPromptSubmit", "a"), now: anyTime)
         #expect(s.state == .working)
-        s.apply(paneEvent("PostToolUse", "a"))
+        s.apply(paneEvent("PostToolUse", "a"), now: anyTime)
         #expect(s.state == .working)
-        s.apply(paneEvent("Stop", "a"))
+        s.apply(paneEvent("Stop", "a"), now: anyTime)
         #expect(s.state == .idle)
     }
 
     @Test func clearChangesTheSessionIDAndKeepsTheOldOne() {
         var s = PaneSession(sessionID: "a")
-        s.apply(paneEvent("SessionStart", "a", source: "startup"))
-        s.apply(paneEvent("SessionEnd", "a"))
+        s.apply(paneEvent("SessionStart", "a", source: "startup"), now: anyTime)
+        s.apply(paneEvent("SessionEnd", "a"), now: anyTime)
         #expect(s.state == .ended)
-        s.apply(paneEvent("SessionStart", "b", source: "clear"))
+        s.apply(paneEvent("SessionStart", "b", source: "clear"), now: anyTime)
         #expect(s.sessionID == "b" && s.state == .idle && !s.exited)
         #expect(s.pastSessionIDs == ["a"])
         #expect(s.ran("a") && s.ran("b") && !s.ran("c"))
@@ -45,15 +48,15 @@ private func typed(_ session: inout PaneSession) -> Bool { session.typed() }
 
     @Test func aCompactInTheMiddleOfATurnKeepsWorking() {
         var s = PaneSession(sessionID: "a")
-        s.apply(paneEvent("SessionStart", "a", source: "startup"))
-        s.apply(paneEvent("UserPromptSubmit", "a"))
-        s.apply(paneEvent("SessionStart", "a", source: "compact"))
+        s.apply(paneEvent("SessionStart", "a", source: "startup"), now: anyTime)
+        s.apply(paneEvent("UserPromptSubmit", "a"), now: anyTime)
+        s.apply(paneEvent("SessionStart", "a", source: "compact"), now: anyTime)
         #expect(s.state == .working && s.pastSessionIDs.isEmpty)
     }
 
     @Test func anEventOfAnotherSessionChangesNothing() {
         var s = PaneSession(sessionID: "a")
-        s.apply(paneEvent("SessionStart", "a", source: "startup"))
+        s.apply(paneEvent("SessionStart", "a", source: "startup"), now: anyTime)
         #expect(!applied(&s, paneEvent("UserPromptSubmit", "other")))
         #expect(!applied(&s, paneEvent("SessionEnd", "other")))
         #expect(s.state == .idle)
@@ -61,7 +64,7 @@ private func typed(_ session: inout PaneSession) -> Bool { session.typed() }
 
     @Test func unknownEventsChangeNothing() {
         var s = PaneSession(sessionID: "a")
-        s.apply(paneEvent("SessionStart", "a", source: "startup"))
+        s.apply(paneEvent("SessionStart", "a", source: "startup"), now: anyTime)
         #expect(!applied(&s, paneEvent("SomeLaterEvent", "a")))
         #expect(!applied(&s, paneEvent("Notification", "a", notification: "idle_prompt")))
         #expect(!applied(&s, paneEvent("Notification", "a")))
@@ -70,7 +73,7 @@ private func typed(_ session: inout PaneSession) -> Bool { session.typed() }
 
     @Test func theProcessExitEndsThePaneForGood() {
         var s = PaneSession(sessionID: "a")
-        s.apply(paneEvent("SessionStart", "a", source: "startup"))
+        s.apply(paneEvent("SessionStart", "a", source: "startup"), now: anyTime)
         s.processExited()
         #expect(s.state == .ended && s.exited)
         #expect(!applied(&s, paneEvent("SessionStart", "b", source: "startup")))
@@ -79,9 +82,9 @@ private func typed(_ session: inout PaneSession) -> Bool { session.typed() }
 
     @Test func aPaneWithNoIDTakesTheFirstSession() {
         var s = PaneSession()
-        s.apply(paneEvent("UserPromptSubmit", "x"))
+        s.apply(paneEvent("UserPromptSubmit", "x"), now: anyTime)
         #expect(s.state == .working)
-        s.apply(paneEvent("SessionStart", "x", source: "startup"))
+        s.apply(paneEvent("SessionStart", "x", source: "startup"), now: anyTime)
         #expect(s.sessionID == "x" && s.pastSessionIDs.isEmpty)
     }
 }
@@ -90,8 +93,8 @@ private func typed(_ session: inout PaneSession) -> Bool { session.typed() }
 @Suite struct PaneAttentionTests {
     private func started() -> PaneSession {
         var s = PaneSession(sessionID: "a")
-        s.apply(paneEvent("SessionStart", "a", source: "startup"))
-        s.apply(paneEvent("UserPromptSubmit", "a"))
+        s.apply(paneEvent("SessionStart", "a", source: "startup"), now: anyTime)
+        s.apply(paneEvent("UserPromptSubmit", "a"), now: anyTime)
         return s
     }
 
@@ -105,7 +108,7 @@ private func typed(_ session: inout PaneSession) -> Bool { session.typed() }
         for (type, reason) in [("elicitation_dialog", NeedsYouReason.question), ("elicitation_url_dialog", .question),
                                ("agent_needs_input", .input)] {
             var s = started()
-            s.apply(paneEvent("Notification", "a", notification: type))
+            s.apply(paneEvent("Notification", "a", notification: type), now: anyTime)
             #expect(s.state == .needsYou && s.waitsOn == reason, "\(type)")
         }
         for type in ["idle_prompt", "auth_success", "agent_completed", "elicitation_complete", "elicitation_response"] {
@@ -125,28 +128,28 @@ private func typed(_ session: inout PaneSession) -> Bool { session.typed() }
 
     @Test func aPermissionPromptAfterAPermissionRequestChangesNothing() {
         var s = started()
-        s.apply(paneEvent("PermissionRequest", "a"))
+        s.apply(paneEvent("PermissionRequest", "a"), now: anyTime)
         #expect(!applied(&s, paneEvent("Notification", "a", notification: "permission_prompt")))
         #expect(s.state == .needsYou && s.waitsOn == .permission)
         var q = started()
-        q.apply(paneEvent("Notification", "a", notification: "elicitation_dialog"))
+        q.apply(paneEvent("Notification", "a", notification: "elicitation_dialog"), now: anyTime)
         #expect(!applied(&q, paneEvent("Notification", "a", notification: "permission_prompt")))
         #expect(q.waitsOn == .question)
     }
 
     @Test func aPermissionPromptNeedsYouClearsOnALaterHook() {
         var s = started()
-        s.apply(paneEvent("Notification", "a", notification: "permission_prompt"))
-        s.apply(paneEvent("PostToolUse", "a"))
+        s.apply(paneEvent("Notification", "a", notification: "permission_prompt"), now: anyTime)
+        s.apply(paneEvent("PostToolUse", "a"), now: anyTime)
         #expect(s.state == .working)
-        s.apply(paneEvent("Notification", "a", notification: "permission_prompt"))
+        s.apply(paneEvent("Notification", "a", notification: "permission_prompt"), now: anyTime)
         s.processExited()
         #expect(s.state == .ended)
     }
 
     @Test func aTurnThatStopsOnAnAPIErrorNeedsYou() {
         var s = started()
-        s.apply(paneEvent("StopFailure", "a"))
+        s.apply(paneEvent("StopFailure", "a"), now: anyTime)
         #expect(s.state == .needsYou && s.waitsOn == .apiError)
         #expect(!s.doneUnread)
     }
@@ -154,13 +157,13 @@ private func typed(_ session: inout PaneSession) -> Bool { session.typed() }
     @Test func needsYouClearsWhenTheSessionMovesOn() {
         for next in ["PostToolUse", "UserPromptSubmit"] {
             var s = started()
-            s.apply(paneEvent("PermissionRequest", "a"))
-            s.apply(paneEvent(next, "a"))
+            s.apply(paneEvent("PermissionRequest", "a"), now: anyTime)
+            s.apply(paneEvent(next, "a"), now: anyTime)
             #expect(s.state == .working && s.waitsOn == nil, "\(next)")
         }
         var s = started()
-        s.apply(paneEvent("PermissionRequest", "a"))
-        s.apply(paneEvent("Stop", "a"))
+        s.apply(paneEvent("PermissionRequest", "a"), now: anyTime)
+        s.apply(paneEvent("Stop", "a"), now: anyTime)
         #expect(s.state == .idle && s.waitsOn == nil)
     }
 
@@ -168,34 +171,34 @@ private func typed(_ session: inout PaneSession) -> Bool { session.typed() }
         // A denied permission prompt sends no hook, so a key in the pane is the only sign.
         var s = started()
         #expect(!typed(&s))  // Working: nothing to clear.
-        s.apply(paneEvent("PermissionRequest", "a"))
+        s.apply(paneEvent("PermissionRequest", "a"), now: anyTime)
         #expect(typed(&s))
         #expect(s.state == .working && s.waitsOn == nil)
         // After an API error the turn is over, so a key gives idle.
-        s.apply(paneEvent("StopFailure", "a"))
+        s.apply(paneEvent("StopFailure", "a"), now: anyTime)
         #expect(typed(&s))
         #expect(s.state == .idle)
     }
 
     @Test func aCompactKeepsNeedsYou() {
         var s = started()
-        s.apply(paneEvent("PermissionRequest", "a"))
-        s.apply(paneEvent("SessionStart", "a", source: "compact"))
+        s.apply(paneEvent("PermissionRequest", "a"), now: anyTime)
+        s.apply(paneEvent("SessionStart", "a", source: "compact"), now: anyTime)
         #expect(s.state == .needsYou)
     }
 
     @Test func theEndClearsNeedsYou() {
         var s = started()
-        s.apply(paneEvent("PermissionRequest", "a"))
-        s.apply(paneEvent("SessionEnd", "a"))
+        s.apply(paneEvent("PermissionRequest", "a"), now: anyTime)
+        s.apply(paneEvent("SessionEnd", "a"), now: anyTime)
         #expect(s.state == .ended && s.waitsOn == nil)
         var t = started()
-        t.apply(paneEvent("PermissionRequest", "a"))
+        t.apply(paneEvent("PermissionRequest", "a"), now: anyTime)
         t.processExited()
         #expect(t.state == .ended && t.waitsOn == nil)
         // A state set from outside, such as `Workspace.setState`, also clears the reason.
         var u = started()
-        u.apply(paneEvent("PermissionRequest", "a"))
+        u.apply(paneEvent("PermissionRequest", "a"), now: anyTime)
         u.state = .idle
         #expect(u.waitsOn == nil)
     }
@@ -203,10 +206,10 @@ private func typed(_ session: inout PaneSession) -> Bool { session.typed() }
     @Test func aFinishedTurnIsDoneUnread() {
         var s = started()
         #expect(!s.doneUnread)
-        s.apply(paneEvent("Stop", "a"))
+        s.apply(paneEvent("Stop", "a"), now: anyTime)
         #expect(s.state == .idle && s.doneUnread)
         // A new turn keeps the mark until you look at the pane.
-        s.apply(paneEvent("UserPromptSubmit", "a"))
+        s.apply(paneEvent("UserPromptSubmit", "a"), now: anyTime)
         #expect(s.doneUnread)
     }
 

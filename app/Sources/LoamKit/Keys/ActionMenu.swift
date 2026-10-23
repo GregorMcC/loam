@@ -41,8 +41,9 @@ public enum ActionMenu {
         Entry(command: .closePane, title: "Close pane", symbol: "xmark"),
     ]
 
-    /// The worktree of the focused pane (ticket 109).
+    /// The worktree of the focused pane (ticket 109). Send failures to session is ticket 110.
     static let worktreeEntries = [
+        Entry(command: .sendFailuresToSession, title: "Send failures to session", symbol: "paperplane"),
         Entry(command: .showWorktreePullRequest, title: "Show pull request", symbol: "arrow.triangle.pull"),
         Entry(command: .refreshWorktree, title: "Refresh", symbol: "arrow.clockwise"),
     ]
@@ -103,8 +104,9 @@ public enum ActionMenu {
     /// the actions list agree. Tab commands need an active space (Home or a plot), pane commands a
     /// focused pane, and plot commands an active plot. A move to a plot needs a tab in Home. The worktree
     /// commands need a focused pane in a worktree (ticket 109), and Show pull request needs a PR as well.
+    /// Send failures to session needs a PR whose checks failed (ticket 110).
     public static func isAvailable(_ command: AppCommand, hasSpace: Bool, hasPlot: Bool, hasPane: Bool,
-                                   hasWorktree: Bool = false, hasPullRequest: Bool = false) -> Bool {
+                                   hasWorktree: Bool = false, hasPullRequest: Bool = false, checksFailed: Bool = false) -> Bool {
         switch command {
         case .newTab, .newShellTab: hasSpace
         case .newPlotSession, .editBrief, .addLink, .addRepo, .archivePlot, .togglePlotPanel: hasPlot
@@ -112,6 +114,7 @@ public enum ActionMenu {
         case .moveTabToPlot, .moveTabToNewPlot: hasSpace && !hasPlot && hasPane
         case .refreshWorktree: hasWorktree
         case .showWorktreePullRequest: hasWorktree && hasPullRequest
+        case .sendFailuresToSession: hasWorktree && hasPullRequest && checksFailed
         default: true
         }
     }

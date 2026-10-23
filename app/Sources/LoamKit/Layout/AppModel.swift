@@ -36,6 +36,10 @@ public final class AppModel {
             if storedWorkspace.focusedPane != oldValue.focusedPane || storedWorkspace.activeSpace != oldValue.activeSpace {
                 endWorktreeSelection()
             }
+            if let pane = storedWorkspace.focusedPane, pane != oldValue.focusedPane {
+                focusCount += 1
+                lastFocus[pane] = focusCount
+            }
             attentionChanged()
             closedShipPanes()
             onWorkspaceChange?()
@@ -62,6 +66,23 @@ public final class AppModel {
     }
     /// The PR popover (ticket 109).
     @ObservationIgnored public let prPopover = PRPopoverModel()
+    /// Copies text to the clipboard (ticket 110). The window sets the clipboard of the Mac, and the driver a
+    /// private one.
+    @ObservationIgnored public var copyText: (String) -> Void = { _ in }
+    /// Shows a line in the toast of the action bar (ticket 110). The window sets it.
+    @ObservationIgnored public var onToast: ((String, ActionBarModel.ToastKind) -> Void)?
+    /// Send to session typed a prompt into the pane and focused it. The window gives the keys to its terminal.
+    @ObservationIgnored public var onPromptTyped: ((PaneID) -> Void)?
+    /// How long Start session with prompt waits for the `SessionStart` of the new session (ticket 110). The toast
+    /// after it says 30 seconds. Tests make the wait short.
+    @ObservationIgnored public var sessionStartWait: Duration = .seconds(30)
+    /// When each pane last had the focus, as a count that goes up. Send to session types into the session of
+    /// the worktree that you focused last.
+    @ObservationIgnored private var lastFocus: [PaneID: Int] = [:]
+    @ObservationIgnored private var focusCount = 0
+    /// The sessions that Start session with prompt opened, until their first `SessionStart`: the worktree whose
+    /// prompt each gets, and the wait that ends at `sessionStartWait`.
+    @ObservationIgnored private var startPrompts: [PaneID: (worktree: String, wait: Task<Void, Never>)] = [:]
     /// The refresh of one worktree that runs now, for each worktree (`refreshWorktree`).
     @ObservationIgnored private var worktreeRefreshes: [String: Task<Bool, Never>] = [:]
     /// Panes that were saved and have not resumed, as folders. Removal refuses while one lies in the
@@ -780,13 +801,18 @@ public final class AppModel {
 
     // MARK: Sessions in panes
 
+    /// The clock of the composer rule (ticket 110). Tests set it.
+    @ObservationIgnored public var now: () -> Date = { Date() }
+
     /// A line from the pane's socket.
     public func apply(_ event: PaneEvent, to pane: PaneID) {
-        let accepted = workspace.apply(event, to: pane)
+        let accepted = workspace.apply(event, to: pane, now: now())
         // A session that ends a turn in a plot may have pushed, or changed a PR (ticket 108).
         if accepted, event.event == "Stop", let plot = workspace.spec(of: pane)?.space.plotID {
             shipRefresh.stopped(in: plot)
         }
+        // A session that Start session with prompt opened gets its prompt now (ticket 110).
+        if event.event == "SessionStart" { typeStartPrompt(into: pane) }
     }
 
     // MARK: Attention (spec 8.4)
@@ -806,6 +832,19 @@ public final class AppModel {
     public func typed(in pane: PaneID) {
         guard workspace.state(of: pane) == .needsYou else { return }
         workspace.typed(in: pane)
+    }
+
+    /// You put something into the pane: a key, a paste, a drop, or text from dictation. An arrow key can recall a
+    /// prompt and Tab can complete one, so they count too. Send to session does not type into the pane until
+    /// Claude Code takes the composer (the composer rule of `PaneSession`). A key changes the workspace only when
+    /// it is the first input after a Return or a submit, and each submit Return changes it once.
+    public func input(_ input: PaneInput, in pane: PaneID) {
+        guard var session = workspace.session(of: pane) else { return }
+        let before = session
+        let time = now()
+        session.input(input, now: time)
+        guard session != before else { return }
+        workspace.input(input, in: pane, now: time)
     }
 
     /// Loam became frontmost or stopped being frontmost. Done, unread of the pane that you see clears.
@@ -940,6 +979,7 @@ public final class AppModel {
     /// The pane's process exited. A seeded pane stays and shows "Session ended".
     public func paneExited(_ pane: PaneID) {
         workspace.processExited(pane)
+        startPrompts.removeValue(forKey: pane)?.wait.cancel()
         // A worktree pane that ends may have lost its folder. Read the list again for the ended note.
         if workspace.spec(of: pane)?.worktree != nil { Task { await reloadWorktrees() } }
     }
@@ -1158,6 +1198,109 @@ public final class AppModel {
         await refreshWorktree(id, afterChange: true)
     }
 
+    // MARK: Send to session (ticket 110)
+
+    /// What Send to session does for the worktree now. Nil for a stage that no prompt fixes, and for an unknown
+    /// worktree.
+    public func sendPlan(for id: String) -> SendPlan? {
+        guard let status = worktreeStatus(id), let prompt = FixPrompt(status) else { return nil }
+        return SendPlan(prompt: prompt, worktree: status.worktree, in: workspace, lastFocus: lastFocus, titles: terminalTitles)
+    }
+
+    /// True when the checks of the worktree failed. The Worktree actions menu and ⌘J then offer Send failures
+    /// to session.
+    public func canSendFailures(_ id: String) -> Bool {
+        worktreeStatus(id).flatMap(FixPrompt.init)?.kind == .failures
+    }
+
+    /// The primary button of the PR popover for a worktree that needs a fix. It types the prompt into the
+    /// session of the worktree and focuses the session, copies the prompt when Loam cannot type, or starts a
+    /// session that gets the prompt after its `SessionStart`. Returns the plan that ran. Nil for a stage that no
+    /// prompt fixes.
+    @discardableResult
+    public func sendToSession(_ id: String) -> SendPlan? {
+        guard let plan = sendPlan(for: id), let worktree = worktreeStatus(id)?.worktree else { return nil }
+        switch plan.step {
+        case .type(let pane):
+            closePullRequest()
+            goToPane(pane)
+            // A second click finds the prompt in the input already, and Loam does not type it twice.
+            if workspace.session(of: pane)?.loamPrompt != plan.prompt.text {
+                guard typePrompt(plan.prompt.text, into: pane) else { return plan }
+            }
+            onPromptTyped?(pane)
+            if let toast = plan.toast { onToast?(toast, .done) }
+        case .copy:
+            copyText(plan.prompt.text)
+            prPopover.say("Copied the prompt.")
+        case .start:
+            closePullRequest()
+            let before = Set(workspace.allPaneIDs)
+            openWorktreePane(worktree)
+            guard let pane = workspace.focusedPane, !before.contains(pane) else {
+                onToast?(SendPlan.startNoPaneToast, .notice)
+                return plan
+            }
+            let wait = sessionStartWait
+            startPrompts[pane] = (id, Task { [weak self] in
+                try? await Task.sleep(for: wait)
+                guard !Task.isCancelled else { return }
+                self?.sessionDidNotStart(pane)
+            })
+        }
+        return plan
+    }
+
+    /// Send failures to session from the Worktree actions menu or ⌘J. When Loam cannot type, the PR popover
+    /// opens instead, so you see why, and its button copies the prompt.
+    public func sendFromMenu(_ id: String) {
+        guard let plan = sendPlan(for: id) else { return }
+        if case .copy = plan.step { openPullRequest(id) } else { sendToSession(id) }
+    }
+
+    /// Types the prompt into the input of the pane, with no Return, and keeps it as the prompt of the pane.
+    /// False when the terminal refuses the text, and `lastError` says why.
+    private func typePrompt(_ prompt: String, into pane: PaneID) -> Bool {
+        do { try type(prompt, into: pane) } catch {
+            report(error)
+            return false
+        }
+        workspace.prompted(prompt, in: pane)
+        return true
+    }
+
+    /// The first `SessionStart` of a session that Start session with prompt opened. Loam types the prompt that
+    /// the worktree needs now. The pane does not take the focus, since you may work in another pane by now. When
+    /// Loam cannot type, a notice says why.
+    private func typeStartPrompt(into pane: PaneID) {
+        guard let start = startPrompts.removeValue(forKey: pane) else { return }
+        start.wait.cancel()
+        guard let status = worktreeStatus(start.worktree) else {
+            onToast?(SendPlan.startLostWorktreeToast, .notice)
+            return
+        }
+        guard let prompt = FixPrompt(status) else {
+            onToast?(SendPlan.startNotTypedToast(nil), .notice)
+            return
+        }
+        let step = workspace.session(of: pane).map { SendPlan.step(for: pane, session: $0, prompt: prompt.text) } ?? .start
+        guard step == .type(pane) else {
+            onToast?(SendPlan.startNotTypedToast(step), .notice)
+            return
+        }
+        // `typePrompt` reports its own error.
+        guard typePrompt(prompt.text, into: pane) else { return }
+        onToast?(SendPlan.toastForNewSession(prompt.kind), .done)
+    }
+
+    /// No `SessionStart` came in `sessionStartWait`, such as when the setup command waits for an answer. Loam
+    /// types nothing into the session, and a toast says so. The PR popover does not open, because the pane can
+    /// still show the setup question, and Return would then run Copy prompt.
+    private func sessionDidNotStart(_ pane: PaneID) {
+        guard let id = startPrompts.removeValue(forKey: pane)?.worktree else { return }
+        onToast?(SendPlan.notStartedToast(worktree: worktreeStatus(id)?.worktree.name), .notice)
+    }
+
     // MARK: The PR of a pane
 
     /// The PR of the worktree that the pane runs in, as the action bar chip and the pane header show it.
@@ -1338,12 +1481,13 @@ public final class AppModel {
     }
 
     /// The text for a pane that closed never arrives. A plot whose Sign in pane closed refreshes, since
-    /// the sign-in may be done.
+    /// the sign-in may be done. A pane that closed gets no prompt from Send to session, and its focus time goes.
     private func closedShipPanes() {
-        guard !unsentText.isEmpty || !signInPanes.isEmpty || !shellWaits.isEmpty else { return }
         let open = Set(storedWorkspace.allPaneIDs)
         unsentText = unsentText.filter { open.contains($0.key) }
+        lastFocus = lastFocus.filter { open.contains($0.key) }
         for pane in shellWaits.keys where !open.contains(pane) { shellWaits.removeValue(forKey: pane)?.cancel() }
+        for pane in startPrompts.keys where !open.contains(pane) { startPrompts.removeValue(forKey: pane)?.wait.cancel() }
         let closed = signInPanes.filter { !open.contains($0.key) }
         for pane in closed.keys { signInPanes[pane] = nil }
         for plot in Set(closed.values) { Task { await shipRefresh.refresh(plot) } }

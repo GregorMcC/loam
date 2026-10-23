@@ -11,13 +11,16 @@ import (
 // registers and that `loam hook` forwards to the pane socket. To forward one
 // more event, add its name here and to contract/schema/pane-event.json.
 var paneEvents = []string{"SessionStart", "SessionEnd", "UserPromptSubmit", "Stop",
-	"PermissionRequest", "Notification", "PostToolUse", "StopFailure"}
+	"PermissionRequest", "Notification", "PostToolUse", "PostToolUseFailure", "StopFailure"}
 
-// attentionNotifications are the notification types that raise an alert. Other
-// types, such as idle_prompt, raise nothing. permission_prompt raises one for
-// the dialogs that send no PermissionRequest hook. SubagentStop is not in the event
-// table, so a subagent stop raises nothing either.
-var attentionNotifications = []string{"elicitation_dialog", "elicitation_url_dialog", "agent_needs_input", "permission_prompt"}
+// paneNotifications are the notification types that the app uses. The first
+// four raise an alert. permission_prompt raises one for the dialogs that send
+// no PermissionRequest hook. elicitation_response and elicitation_complete
+// say that a question closed. Other types, such as idle_prompt, raise
+// nothing. SubagentStop is not in the event table, so a subagent stop raises
+// nothing either.
+var paneNotifications = []string{"elicitation_dialog", "elicitation_url_dialog", "agent_needs_input", "permission_prompt",
+	"elicitation_response", "elicitation_complete"}
 
 // PaneEvents returns the names in the event table.
 func PaneEvents() []string { return slices.Clone(paneEvents) }
@@ -35,7 +38,8 @@ type PaneLine struct {
 	Event     string `json:"event"`
 	SessionID string `json:"session_id"`
 	Cwd       string `json:"cwd"`
-	// Source is the source of a SessionStart.
+	// Source is the source of a SessionStart, or what started the turn of a
+	// UserPromptSubmit, such as "user" or "system".
 	Source string `json:"source,omitempty"`
 	// NotificationType is the type of a Notification.
 	NotificationType string `json:"notification_type,omitempty"`
@@ -48,11 +52,11 @@ func paneLine(h hookInput, now time.Time) (PaneLine, bool) {
 	if !slices.Contains(paneEvents, h.Event) {
 		return PaneLine{}, false
 	}
-	if h.Event == "Notification" && !slices.Contains(attentionNotifications, h.NotificationType) {
+	if h.Event == "Notification" && !slices.Contains(paneNotifications, h.NotificationType) {
 		return PaneLine{}, false
 	}
 	l := PaneLine{Event: h.Event, SessionID: h.SessionID, Cwd: h.Cwd, At: now.UTC().Format(time.RFC3339)}
-	if h.Event == "SessionStart" {
+	if h.Event == "SessionStart" || h.Event == "UserPromptSubmit" {
 		l.Source = h.Source
 	}
 	if h.Event == "Notification" {

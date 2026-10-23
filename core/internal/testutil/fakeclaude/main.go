@@ -22,6 +22,12 @@
 //
 // The first SessionStart has source "resume" for --resume and "startup" otherwise.
 //
+// With LOAM_FAKE_CLAUDE_PROMPTS set to a file, each prompt line is added to
+// that file before its UserPromptSubmit, so a test sees what was sent.
+// LOAM_FAKE_CLAUDE_TITLES is a JSON object from the base name of the working
+// folder to a terminal title. A session in a folder named there sets that
+// title at its start, as Claude Code sets the topic of a session.
+//
 // With LOAM_FAKE_CLAUDE_HUP_WAIT set to a duration, a SIGHUP and the EOF of
 // stdin do not end the process at once. It waits that long, then exits 0, as
 // Claude Code takes time to end a session. A hang-up gives both: the pane's
@@ -37,6 +43,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -124,6 +131,7 @@ func session(args []string, cwd string) (eof bool) {
 	}
 
 	run("SessionStart", map[string]string{"source": source})
+	setTitle(cwd)
 	fmt.Printf("fake claude: session %s\n> ", id)
 	in := bufio.NewScanner(os.Stdin)
 	// answer reads the line that answers a prompt. False at EOF.
@@ -192,6 +200,7 @@ func session(args []string, cwd string) (eof bool) {
 			fmt.Println("fake claude: API error")
 		case "":
 		default:
+			recordPrompt(line)
 			startTurn()
 			run("Stop", nil)
 			fmt.Println("fake claude: done")
@@ -200,6 +209,38 @@ func session(args []string, cwd string) (eof bool) {
 	}
 	run("SessionEnd", nil)
 	return true
+}
+
+// recordPrompt adds the prompt to the file named in LOAM_FAKE_CLAUDE_PROMPTS.
+func recordPrompt(line string) {
+	path := os.Getenv("LOAM_FAKE_CLAUDE_PROMPTS")
+	if path == "" {
+		return
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err == nil {
+		_, err = fmt.Fprintln(f, line)
+		if cerr := f.Close(); err == nil {
+			err = cerr
+		}
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "fakeclaude: prompts:", err)
+	}
+}
+
+// setTitle sets the terminal title that LOAM_FAKE_CLAUDE_TITLES gives the
+// working folder, with an OSC 2 sequence.
+func setTitle(cwd string) {
+	titles := map[string]string{}
+	if s := os.Getenv("LOAM_FAKE_CLAUDE_TITLES"); s != "" {
+		if err := json.Unmarshal([]byte(s), &titles); err != nil {
+			fmt.Fprintln(os.Stderr, "fakeclaude: titles:", err)
+		}
+	}
+	if title, ok := titles[filepath.Base(cwd)]; ok {
+		fmt.Printf("\x1b]2;%s\x07", title)
+	}
 }
 
 // readHooks returns the hook commands of each event in a Claude Code settings file.

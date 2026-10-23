@@ -388,10 +388,14 @@ func scenario(t *testing.T) *harness {
 			filepath.Join(h.root, "repos", "core"), event, extra)
 	}
 	h.pane("pane_session_start", "pane-event", hookIn("SessionStart", `,"source":"startup"`))
+	h.pane("pane_user_prompt_submit", "pane-event", hookIn("UserPromptSubmit", `,"source":"user"`))
 	h.pane("pane_stop", "pane-event", hookIn("Stop", ""))
 	h.pane("pane_notification", "pane-event", hookIn("Notification", `,"notification_type":"agent_needs_input"`))
 
 	h.pane("pane_notification_permission", "pane-event", hookIn("Notification", `,"notification_type":"permission_prompt"`))
+	h.pane("pane_notification_elicitation_response", "pane-event",
+		hookIn("Notification", `,"notification_type":"elicitation_response"`))
+	h.pane("pane_post_tool_use_failure", "pane-event", hookIn("PostToolUseFailure", `,"tool_name":"Bash","error":"exit 1"`))
 
 	h.run("move", "move", 0, "move", "Loam Docs", "1")
 

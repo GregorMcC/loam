@@ -33,13 +33,13 @@ import Testing
     func sample() -> (ws: Workspace, a1: PaneID, aShell: PaneID, a2: PaneID, bShell: PaneID) {
         var ws = Workspace()
         let a1 = ws.openTab(session("A", "s1"))
-        ws.apply(event("SessionStart", "s1"), to: a1)
+        ws.apply(event("SessionStart", "s1"), to: a1, now: anyTime)
         let aShell = ws.split(in: "A", axis: .sideBySide, shell("A", "/repo/a"))!
         ws.setRatio(0.3, at: [], in: "A")
         ws.focus(a1)
         let a2 = ws.openTab(session("A", "s2", repo: "web"))
-        ws.apply(event("SessionStart", "s2", cwd: "/repo/web"), to: a2)
-        ws.apply(event("SessionStart", "s3", cwd: "/repo/web"), to: a2)  // /clear: a new ID.
+        ws.apply(event("SessionStart", "s2", cwd: "/repo/web"), to: a2, now: anyTime)
+        ws.apply(event("SessionStart", "s3", cwd: "/repo/web"), to: a2, now: anyTime)  // /clear: a new ID.
         let bShell = ws.openTab(shell("B", "/repo/b"))
         ws.activate("A")
         return (ws, a1, aShell, a2, bShell)
@@ -374,9 +374,9 @@ import Testing
         let seeded = ws.openTab(session("A", "s1"))
         let sh = ws.openTab(shell("A", "/x"))
         #expect(ClosePrompt.make(.quit, closing: [seeded, sh], in: ws) == nil)  // Running, before SessionStart.
-        ws.apply(event("SessionStart", "s1"), to: seeded)
+        ws.apply(event("SessionStart", "s1"), to: seeded, now: anyTime)
         #expect(ClosePrompt.make(.pane, closing: [seeded], in: ws) == nil)  // Idle.
-        ws.apply(event("UserPromptSubmit", "s1"), to: seeded)
+        ws.apply(event("UserPromptSubmit", "s1"), to: seeded, now: anyTime)
         #expect(ClosePrompt.asks(for: seeded, in: ws))
         #expect(!ClosePrompt.asks(for: sh, in: ws))
         #expect(ClosePrompt.make(.pane, closing: [sh], in: ws) == nil)
@@ -385,9 +385,9 @@ import Testing
         #expect(quit?.message.hasPrefix("1 session is mid-turn.") == true)
         #expect(quit?.confirm == "Quit")
         #expect(ClosePrompt.make(.pane, closing: [seeded], in: ws)?.confirm == "Close")
-        ws.apply(event("Stop", "s1"), to: seeded)
+        ws.apply(event("Stop", "s1"), to: seeded, now: anyTime)
         #expect(ClosePrompt.make(.tab, closing: [seeded], in: ws) == nil)
-        ws.apply(event("UserPromptSubmit", "s1"), to: seeded)
+        ws.apply(event("UserPromptSubmit", "s1"), to: seeded, now: anyTime)
         ws.processExited(seeded)
         #expect(ClosePrompt.make(.quit, closing: [seeded], in: ws) == nil)  // Ended.
     }
@@ -396,7 +396,7 @@ import Testing
         var ws = Workspace()
         let panes = (1...2).map { i -> PaneID in
             let p = ws.openTab(session("A", "s\(i)"))
-            ws.apply(event("UserPromptSubmit", "s\(i)"), to: p)
+            ws.apply(event("UserPromptSubmit", "s\(i)"), to: p, now: anyTime)
             return p
         }
         #expect(ClosePrompt.make(.quit, closing: panes, in: ws)?.message.hasPrefix("2 sessions are mid-turn.") == true)
@@ -407,23 +407,23 @@ import Testing
     @Test func asksWhenASessionNeedsYou() {
         var ws = Workspace()
         let pane = ws.openTab(session("A", "s1"))
-        ws.apply(event("SessionStart", "s1"), to: pane)
-        ws.apply(event("UserPromptSubmit", "s1"), to: pane)
-        ws.apply(event("PermissionRequest", "s1"), to: pane)
+        ws.apply(event("SessionStart", "s1"), to: pane, now: anyTime)
+        ws.apply(event("UserPromptSubmit", "s1"), to: pane, now: anyTime)
+        ws.apply(event("PermissionRequest", "s1"), to: pane, now: anyTime)
         #expect(ClosePrompt.asks(for: pane, in: ws))
         #expect(ClosePrompt.make(.pane, closing: [pane], in: ws)?.message.hasPrefix("The session in this pane needs you.") == true)
         #expect(ClosePrompt.make(.quit, closing: [pane], in: ws)?.message.hasPrefix("1 session needs you.") == true)
         #expect(ClosePrompt.make(.archive, closing: [pane], in: ws)?.message.hasPrefix("1 session in this plot needs you.") == true)
         let other = ws.openTab(session("A", "s2"))
-        ws.apply(event("SessionStart", "s2"), to: other)
-        ws.apply(event("UserPromptSubmit", "s2"), to: other)
+        ws.apply(event("SessionStart", "s2"), to: other, now: anyTime)
+        ws.apply(event("UserPromptSubmit", "s2"), to: other, now: anyTime)
         let both = ClosePrompt.make(.quit, closing: [pane, other], in: ws)
         #expect(both?.message.hasPrefix("1 session is mid-turn and 1 needs you. If you quit, the sessions stop") == true)
         // A key in the pane clears needs you, and the session is mid-turn again.
         ws.typed(in: pane)
         #expect(ClosePrompt.make(.tab, closing: [pane], in: ws)?.message.hasPrefix("1 session in this tab is mid-turn.") == true)
         // An API error ends the turn, but the pane needs you, so the question still shows.
-        ws.apply(event("StopFailure", "s1"), to: pane)
+        ws.apply(event("StopFailure", "s1"), to: pane, now: anyTime)
         #expect(ClosePrompt.asks(for: pane, in: ws))
     }
 }

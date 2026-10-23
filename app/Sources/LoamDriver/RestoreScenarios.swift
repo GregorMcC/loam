@@ -41,9 +41,8 @@ extension Scenarios {
             if fresh {
                 try fm.createDirectory(at: bin, withIntermediateDirectories: true)
                 try fm.copyItem(atPath: fake, toPath: bin.appendingPathComponent("claude").path)
-                try "".write(to: rig.fakeHome.appendingPathComponent(".zshrc"), atomically: true, encoding: .utf8)
             }
-            environment = rig.environment.merging([
+            environment = rig.environment.merging(try rig.neutralPrompt()) { $1 }.merging([
                 "PATH": bin.path + ":" + (env["PATH"] ?? "/usr/bin:/bin"),
                 "LOAM_FAKE_CLAUDE_OUT": rig.root.appendingPathComponent("claude-invocation.json").path,
                 "LOAM_FAKE_CLAUDE_HOOKS": "1",
