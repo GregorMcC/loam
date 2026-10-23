@@ -255,8 +255,9 @@ public final class AppModel {
     public var restoredSpace: Space? { pendingRestore?.layout.active }
     /// The window frame. The window sets it after a move or a resize.
     @ObservationIgnored public var windowFrame: CGRect? { didSet { if windowFrame != oldValue { saveLayout() } } }
-    /// The widths of the sidebar and the plot panel. The window sets each one when the open column changes width.
+    /// The width of the sidebar. The window sets it each time the open sidebar changes width.
     @ObservationIgnored public var sidebarWidth: CGFloat? { didSet { if sidebarWidth != oldValue { saveLayout() } } }
+    /// The width of the plot panel. The window sets it each time the open panel changes width.
     @ObservationIgnored public var panelWidth: CGFloat? { didSet { if panelWidth != oldValue { saveLayout() } } }
 
     public init(client: LoamClient = LoamClient(), stateFile: AppStateFile = AppStateFile(),
