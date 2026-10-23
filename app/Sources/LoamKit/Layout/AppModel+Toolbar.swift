@@ -1,0 +1,24 @@
+import Foundation
+
+/// The items of the window toolbar that act (ticket 126).
+public enum ToolbarAction: CaseIterable, Sendable {
+    case toggleSidebar
+    /// "N elsewhere need you".
+    case needsYou
+    case newSession
+    case plotPanel
+}
+
+extension AppModel {
+    /// True while a sheet shows over the window: the Land sheet or the New worktree sheet. Its scrim covers the title bar
+    /// then, as the dim of a native sheet does.
+    public var sheetIsOpen: Bool { landSheet.isOpen || newWorktreeSheet.isOpen }
+
+    /// Whether a toolbar item takes a click. None does while a sheet shows or holds the window (`sheetHoldsWindow`): the scrim
+    /// covers the toolbar, and a click there would change the window under the sheet (a new tab, the panel, the sidebar or
+    /// the plot). Home has no plot panel (ticket 99).
+    public func toolbarAllows(_ action: ToolbarAction) -> Bool {
+        guard !sheetIsOpen, !sheetHoldsWindow else { return false }
+        return action != .plotPanel || workspace.activePlotID != nil
+    }
+}

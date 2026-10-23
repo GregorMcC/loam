@@ -28,6 +28,7 @@ extension MainWindowController: NSMenuItemValidation {
         sheet.isHidden = true
         setActionHosts(bar: bar, menu: menu, popover: popover, sheet: sheet)
         installNewWorktreeSheet()
+        installTitleBarScrim()
         model.landSheet.onOpenChange = { [weak self] open in self?.landSheetChanged(open: open) }
         model.confirmClose = { [weak self] prompt in await self?.askClose(prompt) ?? false }
         model.paneClosesFinished = { [weak self] in await self?.waitForPaneCloses() }

@@ -7,7 +7,8 @@ import SwiftUI
 // native: Cancel is `loamSecondaryButton()` and the primary button is `loamPrimaryButton()`, both at the large size
 // (ticket 120). The sheets and the PR popover move the keys on Tab themselves (ticket 123).
 
-/// The dim layer behind a sheet. A click on it closes the sheet.
+/// The dim layer behind a sheet. A click on it closes the sheet. It stops under the title bar: the toolbar draws over the
+/// overlays of the window, and `TitleBarScrim` dims the title bar (ticket 126).
 struct SheetScrim: View {
     var arrived: Bool
     var close: () -> Void
@@ -16,7 +17,7 @@ struct SheetScrim: View {
     var body: some View {
         Color(nsColor: LoamTheme.scrim)
             .opacity(LoamTheme.scrimAlpha(dark: scheme == .dark))
-            .ignoresSafeArea()
+            .ignoresSafeArea(edges: [.bottom, .horizontal])
             .contentShape(Rectangle())
             .onTapGesture(perform: close)
             .opacity(arrived ? 1 : 0)

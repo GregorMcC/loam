@@ -248,6 +248,12 @@ struct DriverTests {
         ])
     }
 
+    /// Ticket 126: the scrim of a sheet covers the title bar and the toolbar, and keeps the window buttons clear. While the New
+    /// worktree sheet shows, no toolbar item takes a press. With the sheet closed, the scrim goes and the items act.
+    @Test func coversTheToolbarUnderASheet() async throws {
+        try await expectPass("toolbar-sheet", environment: ["LOAM_DRIVER_LOAM": Self.loamBinary])
+    }
+
     /// Ticket 48: archive a plot with a session, unarchive it and see the session resume, and delete an archived plot.
     /// Ticket 61: an unarchive and show at once still gives one `claude` for the session.
     @Test func archivesUnarchivesAndDeletesAPlot() async throws {

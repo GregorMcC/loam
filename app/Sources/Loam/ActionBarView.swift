@@ -259,7 +259,7 @@ struct ActionsMenuView: View {
             .frame(height: 42)
         }
         .frame(width: Self.width)
-        .loamFloating(.raised, ground: LoamColor.horizonB, radius: 12)
+        .loamFloating(.raised, ground: LoamColor.horizonB, radius: LoamTheme.radiusMd)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("actions-menu")
     }
