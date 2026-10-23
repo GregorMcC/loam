@@ -26,8 +26,10 @@ extension AppModel {
     }
 
     /// Whether a command runs now. While a sheet shows or holds the window, only the commands of the app run (ticket 128). A
-    /// menu item, a fixed key and a Ghostty action all ask this, so a key does what its menu item does.
-    public func commandAllowed(_ command: AppCommand) -> Bool {
-        !command.actsOnWindow || !sheetBlocksWindow
+    /// menu item, a fixed key and a Ghostty action all ask this, so a key does what its menu item does. `nativeSheetShows` is
+    /// true while a native sheet is on the window (the close question, the Ghostty config errors, the plot name dialog): the
+    /// window controller knows it, and the rule is the same.
+    public func commandAllowed(_ command: AppCommand, nativeSheetShows: Bool = false) -> Bool {
+        !command.actsOnWindow || !(sheetBlocksWindow || nativeSheetShows)
     }
 }

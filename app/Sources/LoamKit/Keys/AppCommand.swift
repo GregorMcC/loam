@@ -80,9 +80,9 @@ public enum AppCommand: Hashable, Sendable {
     }
 
     /// Whether the command changes the window: its tabs, panes, spaces, panels, overlays or dialogs. Such a command is off
-    /// while a sheet shows over the window (`AppModel.commandAllowed` for a Loam sheet, and the window controller for a native
-    /// sheet), as the items of a document window are off under a native sheet. Only the commands of the app stay on:
-    /// Settings, the Ghostty config and Quit. The switch lists every case, so a new command needs a choice here.
+    /// while a sheet shows over the window (`AppModel.commandAllowed`), as the items of a document window are off under a
+    /// native sheet. Only the commands of the app stay on: Settings, the Ghostty config and Quit. The switch lists every
+    /// case, so a new command needs a choice here.
     public var actsOnWindow: Bool {
         switch self {
         case .openSettings, .openConfig, .reloadConfig, .quit:

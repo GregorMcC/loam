@@ -80,6 +80,20 @@ struct CommandGuardTests {
         #expect(allowed(model) == Self.windowCommands + Self.appCommands)
     }
 
+    /// The window controller says when a native sheet is on the window: the close question, the Ghostty config errors or the
+    /// plot name dialog. The rule is the same as for a sheet of Loam.
+    @Test func onlyTheCommandsOfTheAppRunWhileANativeSheetShows() {
+        let model = model()
+        func allowed(nativeSheetShows: Bool) -> [AppCommand] {
+            (Self.windowCommands + Self.appCommands).filter { model.commandAllowed($0, nativeSheetShows: nativeSheetShows) }
+        }
+        #expect(allowed(nativeSheetShows: true) == Self.appCommands)
+        #expect(allowed(nativeSheetShows: false) == Self.windowCommands + Self.appCommands, "the commands run again when it closes")
+        model.landSheet.open("wtreeaaaaa")
+        #expect(allowed(nativeSheetShows: true) == Self.appCommands, "a native sheet on a Loam sheet changes nothing")
+        #expect(allowed(nativeSheetShows: false) == Self.appCommands)
+    }
+
     /// The hold counts with no open sheet too, as it does for the toolbar.
     @Test func aHoldAloneTurnsOffTheCommandsOfTheWindow() {
         let model = model()

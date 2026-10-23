@@ -591,11 +591,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     /// Runs the Ghostty config commands (open and reload). The app sets it.
     var onConfigCommand: ((AppCommand) -> Void)?
 
-    /// Whether a command runs now (ticket 128). The model says no while a Loam sheet shows or holds the window
-    /// (`AppModel.commandAllowed`). A native sheet on the window says no too: the close question, the Ghostty config errors and
-    /// the plot name dialog. Only the commands of the app run then. `perform(_:)` and the menu validation both ask it.
+    /// Whether a command runs now (ticket 128). The rule is `AppModel.commandAllowed`: only the commands of the app run while a
+    /// Loam sheet shows or holds the window, or a native sheet is on the window (the close question, the Ghostty config
+    /// errors, the plot name dialog). `perform(_:)` and the menu validation both ask it.
     func commandAllowed(_ command: AppCommand) -> Bool {
-        model.commandAllowed(command) && (!command.actsOnWindow || window?.attachedSheet == nil)
+        model.commandAllowed(command, nativeSheetShows: window?.attachedSheet != nil)
     }
 
     /// Runs one command on the active space: a menu item, a fixed Loam key in a pane, or a Ghostty
