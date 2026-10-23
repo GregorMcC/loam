@@ -149,8 +149,10 @@ public struct LoamClient: Sendable {
 
     /// `loam worktree rm`. `openPanes` are the folders of the panes that are open or saved, so the core
     /// can refuse. `force` skips the checks for changes and unpushed commits, never the pane check.
-    public func worktreeRemove(plot: String, worktree: String, force: Bool = false, openPanes: [String] = []) async throws -> WorktreeRmResult {
-        try await write(["worktree", "rm", plot, worktree] + (force ? ["--force"] : [])
+    /// `dryRun` checks the work, changes nothing, and does not check the panes (ticket 113).
+    public func worktreeRemove(plot: String, worktree: String, force: Bool = false, dryRun: Bool = false,
+                               openPanes: [String] = []) async throws -> WorktreeRmResult {
+        try await write(["worktree", "rm", plot, worktree] + (force ? ["--force"] : []) + (dryRun ? ["--dry-run"] : [])
             + openPanes.flatMap { ["--open-pane", $0] })
     }
 
