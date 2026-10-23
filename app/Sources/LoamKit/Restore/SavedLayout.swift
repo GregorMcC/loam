@@ -126,8 +126,9 @@ public struct SavedLayout: Codable, Equatable, Sendable {
         public var frame: [Double]?
         public var sidebarCollapsed: Bool
         public var panelOpen: Bool
-        /// The widths of the sidebar and the plot panel in points. Nil until the column first changes width.
+        /// The width of the sidebar in points. Nil until it first changes width.
         public var sidebarWidth: Double?
+        /// The width of the plot panel in points. Nil until it first changes width.
         public var panelWidth: Double?
 
         public init(frame: CGRect? = nil, sidebarCollapsed: Bool = false, panelOpen: Bool = false,

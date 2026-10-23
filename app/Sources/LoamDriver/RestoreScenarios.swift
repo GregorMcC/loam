@@ -126,13 +126,11 @@ extension Scenarios {
         try app.pressMenuKey("i")
         // A drag during the open animation does not stick, so it drags again until the width holds.
         try await app.waitUntil("the panel width is saved") {
-            if panelItem(host)?.viewController.view.frame.width != restoredPanelWidth { setPanelWidth(host, restoredPanelWidth) }
+            if columnWidth(host, sidebar: false) != restoredPanelWidth { setPanelWidth(host, restoredPanelWidth) }
             return model.panelWidth == restoredPanelWidth
         }
         try await app.waitUntil("the sidebar width is saved") {
-            if sidebarWidth(host) != restoredSidebarWidth {
-                (host.window.contentViewController as? NSSplitViewController)?.splitView.setPosition(restoredSidebarWidth, ofDividerAt: 0)
-            }
+            if columnWidth(host, sidebar: true) != restoredSidebarWidth { setSidebarWidth(host, restoredSidebarWidth) }
             return model.sidebarWidth == restoredSidebarWidth
         }
         var ids: [String: String] = [:]
@@ -163,11 +161,6 @@ extension Scenarios {
     private static let restoredPanelWidth: CGFloat = 440
     private static let restoredSidebarWidth: CGFloat = 300
 
-    /// The width of the sidebar column. Its glass view sits inset in the column, so it is narrower.
-    private static func sidebarWidth(_ host: AppHost) -> CGFloat? {
-        (host.window.contentViewController as? NSSplitViewController)?.splitView.arrangedSubviews.first?.frame.width
-    }
-
     /// Run 2: the same store and `state.json`. The active plot's session resumes at launch. The other
     /// plot waits, and its session resumes when the plot shows.
     static func restoreRelaunch(_ app: DriverApp) async throws {
@@ -196,9 +189,10 @@ extension Scenarios {
 
         try await app.waitUntil("the first plot is active") { model.workspace.activePlotID == saved.first }
         try await app.waitUntil("the panel shows at its saved width") {
-            panelItem(host)?.isCollapsed == false && panelItem(host)?.viewController.view.frame.width == restoredPanelWidth
+            panelItem(host)?.isCollapsed == false && columnWidth(host, sidebar: false) == restoredPanelWidth
         }
-        try expect(sidebarWidth(host) == restoredSidebarWidth, "the sidebar is \(sidebarWidth(host) ?? 0) wide, not \(restoredSidebarWidth)")
+        let sidebar = columnWidth(host, sidebar: true)
+        try expect(sidebar == restoredSidebarWidth, "the sidebar is \(sidebar ?? 0) wide, not \(restoredSidebarWidth)")
         try expect(model.workspace.tabs(of: .plot(saved.first)).map(\.tree) == saved.trees[saved.first], "plot 1 has another layout")
         try expect(model.workspace.tabs(of: .plot(saved.second)).map(\.tree) == saved.trees[saved.second], "plot 2 has another layout")
 
