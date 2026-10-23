@@ -254,6 +254,29 @@ func decodeFixture(schema: String, data: Data) throws {
         #expect(failed.failedChecks.map(\.runID) == [301, 302])
     }
 
+    /// Ticket 113: a refused `loam worktree rm` carries what it refused, so the app words it.
+    @Test func aRefusedRemovalCarriesItsDetails() throws {
+        func error(_ fixture: String) throws -> LoamError {
+            let env = try JSONDecoder().decode(ErrorEnvelope.self, from: Fixtures.data(fixture))
+            return LoamError.from(exitCode: 1, message: env.error.message, details: env.error.details?.data)
+        }
+        guard case .refusedRemoval(let unsafe, let message) = try error("error_worktree_rm_unsafe") else {
+            Issue.record("not a refused removal")
+            return
+        }
+        #expect(unsafe == RemovalRefusal(refusal: .unsafeWork, changed: 1))
+        #expect(message.contains("--force"), "the message of the core names the flag that the app words away")
+        guard case .refusedRemoval(let panes, _) = try error("error_worktree_rm_panes_open") else {
+            Issue.record("not a refused removal")
+            return
+        }
+        #expect(panes == RemovalRefusal(refusal: .openPanes, openPanes: 1))
+        guard case .failed = try error("error_generic") else {
+            Issue.record("an error with no details is not .failed")
+            return
+        }
+    }
+
     @Test func notReadyCarriesTheBlockingChecks() throws {
         let env = try JSONDecoder().decode(ErrorEnvelope.self, from: Fixtures.data("error_not_ready"))
         let error = LoamError.from(exitCode: 16, message: env.error.message, details: env.error.details?.data)

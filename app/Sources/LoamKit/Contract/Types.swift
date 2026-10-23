@@ -635,6 +635,27 @@ public struct NotReadyDetails: Codable, Equatable, Sendable {
     public var checks: [LandCheck]
 }
 
+/// The details of a refused `loam worktree rm` (ticket 113). The message names flags of the CLI, so the app words the
+/// refusal from these.
+public struct RemovalRefusal: Codable, Equatable, Sendable {
+    public enum Reason: String, Codable, Sendable {
+        case unsafeWork = "unsafe_work"
+        case openPanes = "open_panes"
+    }
+    public var refusal: Reason
+    /// The files with uncommitted changes.
+    public var changed: Int?
+    /// The commits that are not pushed and that the merged PR does not hold.
+    public var unpushed: Int?
+    /// The error of a check that failed.
+    public var checkError: String?
+    /// The panes that are open in the worktree.
+    public var openPanes: Int?
+    enum CodingKeys: String, CodingKey {
+        case refusal, changed, unpushed, checkError = "check_error", openPanes = "open_panes"
+    }
+}
+
 public struct DeleteResult: Codable, Equatable, Sendable {
     public var plot: String
     public var name: String

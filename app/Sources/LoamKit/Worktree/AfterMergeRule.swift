@@ -82,6 +82,26 @@ public enum AfterMergeRule {
     public static func removed(_ merge: MergedPR, name: String) -> String {
         "\(StageMark.numberText(merge.number)) was merged on GitHub. Loam removed the worktree \(name)."
     }
+
+    /// The words of a `loam` call that failed for the worktree, for the panel. The app has no flags such as `--force`,
+    /// so the words never name one. A refused `loam worktree rm` gets the words of the Remove worktree dialog. Another
+    /// error shows its message without each sentence that names a flag.
+    public static func refusal(_ error: Error, for worktree: Worktree) -> String {
+        if case .refusedRemoval(let details, _) = error as? LoamError {
+            let plan: WorktreeRemovalPlan = switch details.refusal {
+            case .unsafeWork:
+                .needsForce(changed: details.changed ?? 0, unpushed: details.unpushed ?? 0, checkError: details.checkError)
+            case .openPanes: .refusedOpenPanes(open: details.openPanes ?? 0, saved: 0)
+            }
+            let text = plan.message(for: worktree)
+            if !text.isEmpty { return text }
+        }
+        let message = (error as? LoamError)?.userMessage ?? String(describing: error)
+        let kept = message.components(separatedBy: ". ").filter { $0.range(of: "--[a-z]", options: .regularExpression) == nil }
+        guard !kept.isEmpty else { return "Loam could not finish the step for the worktree \(worktree.name)." }
+        let text = kept.joined(separator: ". ")
+        return text.hasSuffix(".") ? text : text + "."
+    }
 }
 
 /// The merges that you chose to keep, by worktree, with the PR number. A worktree that you kept shows the faded Merged

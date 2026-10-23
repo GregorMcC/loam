@@ -57,7 +57,7 @@ extension AppModel {
     }
 
     private func act(on merge: MergedPR) async {
-        guard stillDecided(merge), let row = currentRow(merge) else { return }
+        guard stillDecided(merge), let row = rowBeforeActing(merge) else { return }
         switch AfterMergeRule.action(for: merge, land: row.worktree.land) {
         case .tidy(let land): await tidyUp(merge, as: land)
         case .follow:
@@ -84,10 +84,17 @@ extension AppModel {
 
     /// The row of the merge as the app knows it now, or nil when the worktree left the list or is not at that merge,
     /// such as after a refresh with no answer of GitHub. An action reads it again after each wait, since the row can
-    /// change meanwhile. A nil row also takes the merge out of the decided merges, so a later refresh that finds the
-    /// merge decides it again.
+    /// change meanwhile.
     private func currentRow(_ merge: MergedPR) -> WorktreeStatus? {
-        guard let row = worktreeStatus(merge.worktree), AfterMergeRule.merge(of: row) == merge else {
+        guard let row = worktreeStatus(merge.worktree), AfterMergeRule.merge(of: row) == merge else { return nil }
+        return row
+    }
+
+    /// `currentRow` for an action that has not acted yet: no land, removal or callout. A nil row also takes the merge
+    /// out of the decided merges, so a later refresh that finds the merge decides it again. A merge that acted stays
+    /// decided, so a later change of the setting does not act on it.
+    private func rowBeforeActing(_ merge: MergedPR) -> WorktreeStatus? {
+        guard let row = currentRow(merge) else {
             mergesDecided.remove(merge)
             return nil
         }
@@ -110,15 +117,16 @@ extension AppModel {
 
     /// The setting Remove the worktree.
     private func removeAfterMerge(_ merge: MergedPR) async {
-        guard let row = currentRow(merge), await removeOrAsk(merge, row: row) else { return }
+        guard let row = rowBeforeActing(merge), await removeOrAsk(merge, row: row) else { return }
         await reloadWorktrees()
         onToast?(AfterMergeRule.removed(merge, name: row.worktree.name), .done)
     }
 
     /// Removes the worktree when it can go with no question. Else asks. A refusal of the core asks too, and shows in
-    /// the panel. Returns true when the worktree is gone.
+    /// the panel. Remove worktree in a callout owns its worktree while it runs, also while its close question shows,
+    /// so then this asks and closes nothing. Returns true when the worktree is gone.
     private func removeOrAsk(_ merge: MergedPR, row: WorktreeStatus) async -> Bool {
-        guard canRemove(row) else {
+        guard canRemove(row), !mergeRemovals.contains(row.worktree.id) else {
             ask(merge)
             return false
         }
@@ -126,7 +134,7 @@ extension AppModel {
             try await removeWorktree(of: row)
             return true
         } catch {
-            showRefusal(Self.message(for: error), plot: row.worktree.plotID)
+            showRefusal(AfterMergeRule.refusal(error, for: row.worktree), plot: row.worktree.plotID)
             ask(merge)
             return false
         }
@@ -153,26 +161,26 @@ extension AppModel {
     /// safe, and when a step fails. The panel shows why a step failed.
     private func tidyUp(_ merge: MergedPR, as land: PendingLand) async {
         let removes = !land.keepWorktree
-        guard let first = currentRow(merge) else { return }
+        guard let first = rowBeforeActing(merge) else { return }
         guard !removes || canRemove(first) else { return ask(merge) }
         let plan: LandResult
         do {
             plan = try await client.worktreeLand(plot: first.worktree.plotID, worktree: merge.worktree, dryRun: true)
         } catch {
-            showRefusal(Self.message(for: error), plot: first.worktree.plotID)
+            showRefusal(AfterMergeRule.refusal(error, for: first.worktree), plot: first.worktree.plotID)
             return ask(merge)
         }
         guard stillDecided(merge) else { return }
         guard plan.merged, plan.pr.state == "MERGED", plan.pr.number == merge.number, plan.worktree.land?.pr == merge.number
         else { return ask(merge) }
-        guard let row = currentRow(merge) else { return }
+        guard let row = rowBeforeActing(merge) else { return }
         guard !removes || canRemove(row) else { return ask(merge) }
         var result: LandResult
         do {
             result = try await client.worktreeLand(plot: row.worktree.plotID, worktree: merge.worktree, keepWorktree: true,
                                                    head: plan.pr.headOID)
         } catch {
-            showRefusal(Self.message(for: error), plot: row.worktree.plotID)
+            showRefusal(AfterMergeRule.refusal(error, for: row.worktree), plot: row.worktree.plotID)
             return ask(merge)
         }
         if removes {
@@ -237,7 +245,7 @@ extension AppModel {
         do {
             try await removeWorktree(of: row)
         } catch {
-            showRefusal(Self.message(for: error), plot: row.worktree.plotID)
+            showRefusal(AfterMergeRule.refusal(error, for: row.worktree), plot: row.worktree.plotID)
             return
         }
         mergeAsks.removeAll { $0 == merge }
@@ -257,7 +265,7 @@ extension AppModel {
             _ = try await client.worktreeRemove(plot: row.worktree.plotID, worktree: row.worktree.id, dryRun: true)
             return true
         } catch {
-            showRefusal(Self.message(for: error), plot: row.worktree.plotID)
+            showRefusal(AfterMergeRule.refusal(error, for: row.worktree), plot: row.worktree.plotID)
             return false
         }
     }

@@ -100,16 +100,26 @@ import Testing
         }
 
         /// The next `loam worktree rm` fails with this message, as the core refuses work that is not on GitHub.
-        func failRemoval(_ message: String) throws { try fail("rm", message) }
+        func failRemoval(_ message: String, details: [String: Any]? = nil) throws { try fail("rm", message, details: details) }
 
         /// The next dry run of `loam worktree rm` fails with this message.
-        func failDryRemoval(_ message: String) throws { try fail("rm-dry", message) }
+        func failDryRemoval(_ message: String, details: [String: Any]? = nil) throws {
+            try fail("rm-dry", message, details: details)
+        }
+
+        /// The next dry run of `loam worktree rm` prints this JSON error of the real core.
+        func failDryRemoval(fixture: String) throws {
+            try Fixtures.data(fixture).write(to: dir.appendingPathComponent("fail-rm-dry.json"))
+            try touch("fail-rm-dry")
+        }
 
         /// The next `loam worktree land` that is not a dry run fails with this message.
         func failLand(_ message: String) throws { try fail("land", message) }
 
-        private func fail(_ command: String, _ message: String) throws {
-            let body = ["error": ["kind": "error", "exit_code": 1, "message": message] as [String: Any]]
+        private func fail(_ command: String, _ message: String, details: [String: Any]? = nil) throws {
+            var error: [String: Any] = ["kind": "error", "exit_code": 1, "message": message]
+            if let details { error["details"] = details }
+            let body = ["error": error]
             try JSONSerialization.data(withJSONObject: body).write(to: dir.appendingPathComponent("fail-\(command).json"))
             try touch("fail-\(command)")
         }
@@ -288,12 +298,13 @@ import Testing
     @Test func removeTheWorktreeAsksWhenTheCoreRefuses() async throws {
         let rig = try await rig(.remove)
         await rig.model.panel.load(plotID: plotID)
-        try rig.failRemoval("add-search has 1 file(s) with uncommitted changes. Commit or stash them, or remove it with --force")
+        try rig.failRemoval("web-add-search has 1 file(s) with uncommitted changes. Run again with --force to remove it anyway: the worktree holds work that is not saved")
         await refresh(rig)
         #expect(rig.removals().count == 1 && !rig.removals()[0].contains("--force"))
         #expect(rig.model.mergeAsks == [MergedPR(worktree: merged, number: 11)])
         #expect(rig.model.worktreeStatus(merged) != nil && rig.record.toasts.isEmpty)
-        #expect(rig.model.panel.errorMessage?.contains("uncommitted changes") == true)
+        #expect(rig.model.panel.errorMessage == "web-add-search has 1 file(s) with uncommitted changes.",
+                "the app has no --force, so a message of the core with no details loses the sentence that names it")
     }
 
     @Test func doNothingLeavesTheFadedRow() async throws {
@@ -663,12 +674,13 @@ import Testing
         let session = try pane(in: merged, model, .session, turn: "UserPromptSubmit")
         await model.panel.load(plotID: plotID)
         await refresh(rig)
-        try rig.failDryRemoval("add-search has 1 commit(s) that are not pushed. Push them, or remove it with --force")
+        try rig.failDryRemoval("web-add-search has 1 commit(s) that are not pushed. Run again with --force to remove it anyway: the worktree holds work that is not saved",
+                               details: ["refusal": "unsafe_work", "unpushed": 1])
         await model.removeMergedWorktree(merged)
         #expect(rig.dryRemovals() == ["worktree rm \(plotID) \(merged) --dry-run --json --actor app"], "no --force")
         #expect(rig.removals().isEmpty && rig.record.prompts.isEmpty)
         #expect(model.workspace.allPaneIDs.contains(shell) && model.workspace.allPaneIDs.contains(session))
-        #expect(model.panel.errorMessage?.contains("not pushed") == true)
+        #expect(model.panel.errorMessage == "In the worktree add-search, 1 commit is not pushed. Removing it loses that work.")
         #expect(model.mergeAsks == [MergedPR(worktree: merged, number: 11)])
 
         // The merged PR holds the commits: the core says yes, and the worktree goes.
@@ -697,6 +709,82 @@ import Testing
         #expect(model.workspace.allPaneIDs.contains(session), "the session stopped before a removal that the core refused")
         #expect(model.panel.errorMessage?.contains("not pushed") == true)
         #expect(model.mergeAsks == [MergedPR(worktree: merged, number: 11)])
+    }
+
+    /// The core names `--force` in its refusals, and the app has none. The panel words a refusal from the details of
+    /// the error, here the JSON error of the real core.
+    @Test func aRefusalOfTheCoreNamesNoFlagInThePanel() async throws {
+        let rig = try await rig(.ask)
+        let model = rig.model
+        await model.panel.load(plotID: plotID)
+        await refresh(rig)
+        try rig.failDryRemoval(fixture: "error_worktree_rm_unsafe")
+        await model.removeMergedWorktree(merged)
+        #expect(model.panel.errorMessage == "In the worktree add-search, 1 file has uncommitted changes. Removing it loses that work.")
+        #expect(model.panel.errorMessage?.contains("--") == false)
+        #expect(rig.removals().isEmpty && model.mergeAsks == [MergedPR(worktree: merged, number: 11)])
+    }
+
+    @Test func eachKindOfRefusalHasTheWordsOfTheApp() throws {
+        let row = try #require(try JSONDecoder().decode([WorktreeStatus].self, from: Fixtures.data("worktree_list_stages")).first)
+        func words(_ fixture: String) throws -> String {
+            let env = try JSONDecoder().decode(ErrorEnvelope.self, from: Fixtures.data(fixture))
+            let error = LoamError.from(exitCode: 1, message: env.error.message, details: env.error.details?.data)
+            return AfterMergeRule.refusal(error, for: row.worktree)
+        }
+        #expect(try words("error_worktree_rm_unsafe") == "In the worktree add-search, 1 file has uncommitted changes. Removing it loses that work.")
+        #expect(try words("error_worktree_rm_panes_open") == "1 pane is open in the worktree add-search. Close it first.")
+        let failed = LoamError.refusedRemoval(RemovalRefusal(refusal: .unsafeWork, checkError: "git status failed"), message: "x")
+        #expect(AfterMergeRule.refusal(failed, for: row.worktree) == "A check failed: git status failed. Loam cannot tell if the work is safe.")
+        // An unknown kind shows the message of the core, without each sentence that names a flag.
+        let land = LoamError.failed(message: "\"abc\" is not a full commit ID. --head takes the PR head: invalid")
+        #expect(AfterMergeRule.refusal(land, for: row.worktree) == "\"abc\" is not a full commit ID.")
+        let onlyAFlag = LoamError.failed(message: "Run again with --force")
+        #expect(AfterMergeRule.refusal(onlyAFlag, for: row.worktree) == "Loam could not finish the step for the worktree add-search.")
+        #expect(AfterMergeRule.refusal(LoamError.failed(message: "gh stopped"), for: row.worktree) == "gh stopped.")
+    }
+
+    /// Remove worktree in the callout owns its worktree while it runs, also while its close question shows. Here the
+    /// turn ends and GitHub merges a later PR of the worktree while the question shows, with the setting Remove the
+    /// worktree. The later merge asks and closes nothing, so Cancel still keeps every pane.
+    @Test func noRemovalRunsUnderTheQuestionOfTheCallout() async throws {
+        let rig = try await rig(.ask)
+        let model = rig.model
+        let session = try pane(in: merged, model, .session, turn: "UserPromptSubmit")
+        let sessionID = try #require(model.workspace.session(of: session)?.sessionID)
+        await refresh(rig)
+        #expect(model.mergeAsks == [MergedPR(worktree: merged, number: 11)])
+        try rig.setting(.remove)
+        let later = MergedPR(worktree: merged, number: 31)
+        model.confirmClose = { [rig] _ in
+            model.apply(paneEvent("Stop", sessionID), to: session)
+            try? rig.rows { rows in self.edit(self.merged, &rows) { $0.pr?.number = 31 } }
+            await model.refreshWorktrees(plot: self.plotID)
+            await model.mergesSettled()
+            return false
+        }
+        await model.removeMergedWorktree(merged)
+        #expect(rig.calls("show").count == 2, "the later merge did not read the setting Remove the worktree")
+        #expect(rig.removals().isEmpty, "a removal ran under the question")
+        #expect(model.workspace.allPaneIDs.contains(session), "Cancel did not keep the session")
+        #expect(model.mergesDecided.contains(later) && model.mergeAsks.contains(later))
+    }
+
+    /// A merge that asked stays decided. A refresh with no answer of GitHub drops its callout, and a later refresh does
+    /// not act on the merge, also after a change of the setting to Remove the worktree.
+    @Test func aMergeThatAskedStaysDecided() async throws {
+        let rig = try await rig(.ask)
+        let merge = MergedPR(worktree: merged, number: 11)
+        await refresh(rig)
+        #expect(rig.model.mergeAsks == [merge])
+        try rig.rows { rows in edit(merged, &rows) { $0.prNote = .offline } }
+        await refresh(rig)
+        #expect(rig.model.mergeAsks.isEmpty)
+        try rig.setting(.remove)
+        try rig.rows { rows in edit(merged, &rows) { $0.prNote = .noNote } }
+        await refresh(rig)
+        #expect(rig.calls("show").count == 1 && rig.removals().isEmpty, "the merge acted again with no click")
+        #expect(rig.model.mergesDecided.contains(merge))
     }
 
     /// The panel shows a refusal only while it shows the plot of the worktree.
