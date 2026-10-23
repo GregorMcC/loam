@@ -178,7 +178,7 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
 /// The session that gets the prompt, the rule for when Loam may type, and the model that types, copies, or starts a
 /// session.
 @MainActor
-@Suite struct SendToSessionTests {
+@Suite(.waitLimit) struct SendToSessionTests {
     let plotID = "plotaaaaab"
     /// native-panel, #16, Checks failed.
     let failed = "wtreaaaaah"
@@ -700,10 +700,4 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
         bar.show("Loam typed the review into the new session. Press Return to send.")
         #expect(bar.toastKind == .done)
     }
-}
-
-@MainActor private func waitUntil(_ what: String, _ condition: () -> Bool) async {
-    let deadline = Date().addingTimeInterval(5)
-    while !condition(), Date() < deadline { try? await Task.sleep(for: .milliseconds(5)) }
-    #expect(condition(), "\(what) did not happen")
 }

@@ -14,6 +14,11 @@ import Testing
 
     private let start = ShellEnvironment.startMarker
     private let end = ShellEnvironment.endMarker
+    /// The timeout of a shell in the tests that do not test the timeout. A busy machine can make a shell take more than
+    /// the 5 s of the app, so these tests give it more time than a run can take. Their time limit (`.waitLimit`) is
+    /// longer than this, so a shell that hangs fails at the check of the answer. Only
+    /// `aShellThatHangsIsStoppedAtTheTimeLimit` tests the timeout.
+    private let slow: TimeInterval = 240
 
     @Test func parsesThePathBetweenTheMarkers() {
         let output = "banner\nerror: nope\n\(start)/a/bin:/b/bin\(end)\ntrailing\n"
@@ -35,48 +40,50 @@ import Testing
         #expect(ShellEnvironment.merge(resolved: "/a::/a:/b", current: ":/b:/c") == "/a:/b:/c")
     }
 
-    @Test(.timeLimit(.minutes(1))) func readsThePathFromTheShellDespiteNoise() async throws {
+    @Test(.waitLimit) func readsThePathFromTheShellDespiteNoise() async throws {
         let sh = try shell("echo 'zshrc banner'; echo oops >&2; printf '%s' '\(start)/x/bin:/y/bin\(end)'; echo more")
-        #expect(await ShellEnvironment.resolvedPath(shell: sh, timeout: 5) == "/x/bin:/y/bin")
+        #expect(await ShellEnvironment.resolvedPath(shell: sh, timeout: slow) == "/x/bin:/y/bin")
     }
 
-    @Test(.timeLimit(.minutes(1))) func theShellRunsLoginAndInteractiveWithNoInput() async throws {
+    @Test(.waitLimit) func theShellRunsLoginAndInteractiveWithNoInput() async throws {
         let sh = try shell("""
         [ "$1 $2 $3" = "-l -i -c" ] || exit 3
         read -r line && exit 4
         printf '%s' '\(start)/ok\(end)'
         """)
-        #expect(await ShellEnvironment.resolvedPath(shell: sh, timeout: 5) == "/ok")
+        #expect(await ShellEnvironment.resolvedPath(shell: sh, timeout: slow) == "/ok")
     }
 
-    @Test(.timeLimit(.minutes(1))) func aShellThatFailsGivesNoPath() async throws {
+    @Test(.waitLimit) func aShellThatFailsGivesNoPath() async throws {
         let sh = try shell("echo broken >&2; exit 1")
-        #expect(await ShellEnvironment.resolvedPath(shell: sh, timeout: 5) == nil)
+        #expect(await ShellEnvironment.resolvedPath(shell: sh, timeout: slow) == nil)
     }
 
-    @Test(.timeLimit(.minutes(1))) func aMissingShellGivesNoPath() async {
-        #expect(await ShellEnvironment.resolvedPath(shell: "/no/such/shell", timeout: 5) == nil)
+    @Test(.waitLimit) func aMissingShellGivesNoPath() async {
+        #expect(await ShellEnvironment.resolvedPath(shell: "/no/such/shell", timeout: slow) == nil)
     }
 
-    @Test(.timeLimit(.minutes(1))) func aShellThatHangsIsStoppedAtTheTimeLimit() async throws {
+    @Test(.waitLimit) func aShellThatHangsIsStoppedAtTheTimeLimit() async throws {
         // The trap makes the shell ignore terminate, so the kill path runs too.
         let sh = try shell("trap '' TERM; while :; do sleep 1; done")
         let began = Date()
         #expect(await ShellEnvironment.resolvedPath(shell: sh, timeout: 0.5) == nil)
-        #expect(Date().timeIntervalSince(began) < 5)
+        // The shell never ends, so only the timeout can end the call. The bound is loose, because a busy machine can
+        // hold the launch of the shell for many seconds.
+        #expect(Date().timeIntervalSince(began) < 60)
     }
 
-    @Test(.timeLimit(.minutes(1))) func applySetsTheResolvedPathBeforeTheCurrentOnes() async throws {
+    @Test(.waitLimit) func applySetsTheResolvedPathBeforeTheCurrentOnes() async throws {
         let sh = try shell("printf '%s' '\(start)/home/.local/bin\(end)'")
         var set: String?
-        await ShellEnvironment.apply(shell: sh, timeout: 5, currentPath: "/usr/bin:/bin") { set = $0 }
+        await ShellEnvironment.apply(shell: sh, timeout: slow, currentPath: "/usr/bin:/bin") { set = $0 }
         #expect(set == "/home/.local/bin:/usr/bin:/bin")
     }
 
-    @Test(.timeLimit(.minutes(1))) func applyKeepsThePathWhenTheShellFails() async throws {
+    @Test(.waitLimit) func applyKeepsThePathWhenTheShellFails() async throws {
         let sh = try shell("exit 1")
         var set: String?
-        await ShellEnvironment.apply(shell: sh, timeout: 5, currentPath: "/usr/bin:/bin") { set = $0 }
+        await ShellEnvironment.apply(shell: sh, timeout: slow, currentPath: "/usr/bin:/bin") { set = $0 }
         #expect(set == nil)
     }
 

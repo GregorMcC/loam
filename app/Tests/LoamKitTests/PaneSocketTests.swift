@@ -11,9 +11,9 @@ final class EventBox: @unchecked Sendable {
     func add(_ event: PaneEvent) { lock.withLock { events.append(event) } }
     var all: [PaneEvent] { lock.withLock { events } }
 
-    func wait(for count: Int, timeout: TimeInterval = 5) async throws -> [PaneEvent] {
-        let deadline = Date().addingTimeInterval(timeout)
-        while all.count < count, Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
+    /// Returns the events once `count` came, or at the time limit of the test.
+    func wait(for count: Int) async -> [PaneEvent] {
+        await poll { all.count >= count }
         return all
     }
 }
@@ -40,7 +40,7 @@ func sendToSocket(_ path: String, _ text: String, close: Bool = true) throws -> 
     return fd
 }
 
-@Suite struct PaneSocketTests {
+@Suite(.waitLimit) struct PaneSocketTests {
     func folder() -> PaneSocketFolder {
         // The temp folder of a test run can be long. /tmp keeps the path under 104 bytes.
         PaneSocketFolder(base: URL(fileURLWithPath: "/tmp/loam-test-\(UUID().uuidString.prefix(8))"))
@@ -69,7 +69,7 @@ func sendToSocket(_ path: String, _ text: String, close: Bool = true) throws -> 
         _ = try sendToSocket(server.path, #"{"event":"SessionStart","session_id":"a","cwd":"/x","source":"startup","at":"t"}"# + "\n")
         _ = try sendToSocket(server.path, #"{"event":"UserPromptSubmit","session_id":"a","cwd":"/x","at":"t"}"# + "\n" +
                                           #"{"event":"Stop","session_id":"a","cwd":"/x","at":"t"}"#)  // The last line has no newline.
-        let events = try await box.wait(for: 3)
+        let events = await box.wait(for: 3)
         #expect(events.map(\.event) == ["SessionStart", "UserPromptSubmit", "Stop"])
     }
 
@@ -95,10 +95,10 @@ func sendToSocket(_ path: String, _ text: String, close: Bool = true) throws -> 
         defer { server.close() }
         let open = try sendToSocket(server.path, #"{"event":"Stop","session_id":"slow","cwd":"/x","at":"t"}"#, close: false)
         _ = try sendToSocket(server.path, #"{"event":"Stop","session_id":"fast","cwd":"/x","at":"t"}"# + "\n")
-        let events = try await box.wait(for: 1)
+        let events = await box.wait(for: 1)
         #expect(events.map(\.sessionID) == ["fast"])
         Darwin.close(open)
-        #expect(try await box.wait(for: 2).map(\.sessionID) == ["fast", "slow"])
+        #expect(await box.wait(for: 2).map(\.sessionID) == ["fast", "slow"])
     }
 
     @Test func aConnectionWithAHugeLineIsDropped() async throws {
@@ -110,7 +110,7 @@ func sendToSocket(_ path: String, _ text: String, close: Bool = true) throws -> 
         let open = try sendToSocket(server.path, String(repeating: "x", count: PaneSocketServer.maxLineBytes + 4096), close: false)
         defer { Darwin.close(open) }
         _ = try sendToSocket(server.path, #"{"event":"Stop","session_id":"ok","cwd":"/x","at":"t"}"# + "\n")
-        #expect(try await box.wait(for: 1).map(\.sessionID) == ["ok"])
+        #expect(await box.wait(for: 1).map(\.sessionID) == ["ok"])
     }
 
     @Test func anAcceptErrorDoesNotSpin() async throws {
@@ -138,7 +138,7 @@ func sendToSocket(_ path: String, _ text: String, close: Bool = true) throws -> 
         #expect(box.all.isEmpty)
         // When accept works again, the waiting connection gets through.
         failing.value = false
-        #expect(try await box.wait(for: 1).map(\.sessionID) == ["late"])
+        #expect(await box.wait(for: 1).map(\.sessionID) == ["late"])
     }
 
     @Test func aHungWriterIsClosedAfterTheReadTimeout() async throws {
@@ -157,7 +157,7 @@ func sendToSocket(_ path: String, _ text: String, close: Bool = true) throws -> 
         setsockopt(open, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
         #expect(Darwin.read(open, &byte, 1) == 0)
         // The connection ends as if the writer closed it, so the last line counts.
-        #expect(try await box.wait(for: 1).map(\.sessionID) == ["hung"])
+        #expect(await box.wait(for: 1).map(\.sessionID) == ["hung"])
     }
 
     @Test func closingAServerFromAnotherServersQueueRunsOnItsOwnQueue() async throws {
@@ -173,12 +173,12 @@ func sendToSocket(_ path: String, _ text: String, close: Bool = true) throws -> 
         }
         defer { b.close() }
         _ = try sendToSocket(b.path, #"{"event":"Stop","session_id":"b","cwd":"/x","at":"t"}"# + "\n")
-        #expect(try await done.wait(for: 1).map(\.sessionID) == ["b"])
+        #expect(await done.wait(for: 1).map(\.sessionID) == ["b"])
         #expect(!FileManager.default.fileExists(atPath: a.path))
         #expect(throws: (any Error).self) { _ = try sendToSocket(a.path, "x") }
         // B still works.
         _ = try sendToSocket(b.path, #"{"event":"Stop","session_id":"b2","cwd":"/x","at":"t"}"# + "\n")
-        #expect(try await done.wait(for: 2).map(\.sessionID) == ["b", "b2"])
+        #expect(await done.wait(for: 2).map(\.sessionID) == ["b", "b2"])
     }
 
     @Test func aPathThatIsTooLongFails() {

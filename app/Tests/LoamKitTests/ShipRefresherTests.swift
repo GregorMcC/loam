@@ -3,20 +3,21 @@ import Testing
 
 @testable import LoamKit
 
-/// A sleep that a test ends by hand: `release` wakes the sleeps of one length. A sleep that the
-/// refresher cancels ends with a `CancellationError`, as `Task.sleep` does.
+/// A sleep that a test ends by hand: `release` wakes the sleeps of one length. A sleep that the code under
+/// test cancels ends with a `CancellationError`, as `Task.sleep` does.
 @MainActor
 final class ManualSleep {
     private var waiters: [(id: Int, length: Duration, wake: CheckedContinuation<Void, Error>)] = []
     private var next = 0
+    private let changes = Changes()
 
     func sleep(_ length: Duration) async throws {
         let id = next
         next += 1
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (wake: CheckedContinuation<Void, Error>) in
-                if Task.isCancelled { wake.resume(throwing: CancellationError()); return }
-                waiters.append((id, length, wake))
+                if Task.isCancelled { wake.resume(throwing: CancellationError()) } else { waiters.append((id, length, wake)) }
+                changes.changed()
             }
         } onCancel: {
             Task { @MainActor in self.cancel(id) }
@@ -26,6 +27,7 @@ final class ManualSleep {
     private func cancel(_ id: Int) {
         guard let index = waiters.firstIndex(where: { $0.id == id }) else { return }
         waiters.remove(at: index).wake.resume(throwing: CancellationError())
+        changes.changed()
     }
 
     /// The lengths of the sleeps that wait now.
@@ -38,13 +40,19 @@ final class ManualSleep {
         let woken = waiters.filter { $0.length == length }
         waiters.removeAll { $0.length == length }
         for waiter in woken { waiter.wake.resume() }
+        changes.changed()
     }
 
-    /// Yields until `count` sleeps of this length wait. Fails the test after a second.
-    func waiting(for length: Duration, count wanted: Int = 1) async {
-        let deadline = Date().addingTimeInterval(1)
-        while count(length) < wanted, Date() < deadline { await Task.yield() }
-        #expect(count(length) >= wanted, "\(count(length)) sleeps of \(length) wait, not \(wanted)")
+    /// Returns when `count` sleeps began, of any length, ended or not.
+    func waitForBegun(_ count: Int, sourceLocation: SourceLocation = #_sourceLocation) async {
+        await changes.wait { self.next >= count }
+        #expect(next >= count, "\(next) sleeps began, not \(count)", sourceLocation: sourceLocation)
+    }
+
+    /// Returns when `count` sleeps of this length wait.
+    func waiting(for length: Duration, count wanted: Int = 1, sourceLocation: SourceLocation = #_sourceLocation) async {
+        await changes.wait { self.count(length) >= wanted }
+        #expect(count(length) >= wanted, "\(count(length)) sleeps of \(length) wait, not \(wanted)", sourceLocation: sourceLocation)
     }
 }
 
@@ -53,29 +61,32 @@ final class ManualSleep {
 final class RefreshProbe {
     private(set) var started: [String] = []
     private var held: [CheckedContinuation<Void, Never>] = []
+    private let changes = Changes()
     /// While true, each refresh waits for `finishOne`.
     var holds = false
 
     func run(_ plot: String) async {
         started.append(plot)
+        changes.changed()
         if holds { await withCheckedContinuation { held.append($0) } }
     }
 
     func finishOne() { if !held.isEmpty { held.removeFirst().resume() } }
 
-    /// Yields until `count` refreshes started. Fails the test after a second.
-    func waitForStarted(_ count: Int) async {
-        let deadline = Date().addingTimeInterval(1)
-        while started.count < count, Date() < deadline { await Task.yield() }
-        #expect(started.count >= count, "\(started.count) refreshes started, not \(count)")
+    /// Returns when `count` refreshes started.
+    func waitForStarted(_ count: Int, sourceLocation: SourceLocation = #_sourceLocation) async {
+        await changes.wait { self.started.count >= count }
+        #expect(started.count >= count, "\(started.count) refreshes started, not \(count)", sourceLocation: sourceLocation)
     }
 
     /// Yields many times, so a refresh that should not start has the time to start.
     func settle() async { for _ in 0..<50 { await Task.yield() } }
 }
 
+/// The fakes wake the waits of the test when they change, so a busy machine cannot end a wait early. The time
+/// limit only ends a test whose wait never ends.
 @MainActor
-@Suite struct ShipRefresherTests {
+@Suite(.waitLimit) struct ShipRefresherTests {
     let sleep = ManualSleep()
     let probe = RefreshProbe()
     let refresher: ShipRefresher

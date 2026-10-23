@@ -23,7 +23,7 @@ import Testing
 /// plans from the land fixtures. The fake `loam` logs its arguments, so a test can say which commands ran and in
 /// which order. The merge cannot be undone, so the tests that matter most say what must not run.
 @MainActor
-@Suite struct LandSheetModelTests {
+@Suite(.waitLimit) struct LandSheetModelTests {
     let plotID = "plotaaaaab"
     /// link-labels, #22, Ready to merge. Its path is `web-link-labels`.
     let ready = "wtreaaaaao"
@@ -123,19 +123,12 @@ import Testing
         model.onOwnChange = { record.ownChanges.append($0) }
         model.confirmClose = { prompt in
             record.prompts.append(prompt)
-            while record.holdsTheQuestion { try? await Task.sleep(for: .milliseconds(5)) }
+            await poll { !record.holdsTheQuestion }
             return record.answer
         }
         let rig = Rig(dir: dir, model: model, record: record)
         try rig.plan()
         return rig
-    }
-
-    /// Waits until `condition` holds. Fails the test after 5 s.
-    func waitUntil(_ what: String, _ condition: () -> Bool) async {
-        let deadline = Date().addingTimeInterval(5)
-        while !condition(), Date() < deadline { try? await Task.sleep(for: .milliseconds(5)) }
-        #expect(condition(), "\(what) did not happen")
     }
 
     /// Opens the sheet and waits for the plan.

@@ -4,7 +4,7 @@ import Testing
 @testable import LoamKit
 
 @MainActor
-@Suite struct AppModelTests {
+@Suite(.waitLimit) struct AppModelTests {
     func plot(_ id: String, _ name: String) -> PlotSummary {
         PlotSummary(id: id, name: name, what: "", createdAt: "2026-01-01T00:00:00Z")
     }
@@ -73,7 +73,7 @@ import Testing
         let model = AppModel(client: fake.client())
         model.apply([plot("plotaaaaab", "Loam"), plot("plotaaaaac", "Loam Docs")])
         let move = Task { await model.movePlot("plotaaaaac", toSlot: 0) }
-        for _ in 0..<100 where model.plots.first?.id != "plotaaaaac" { await Task.yield() }
+        await waitUntil("the new order shows") { model.plots.first?.id == "plotaaaaac" }
         #expect(model.plots.map(\.id) == ["plotaaaaac", "plotaaaaab"])
         #expect(model.sidebar.noPanes.first?.number == 1)
         // A read that lands while the move runs keeps the new order.
@@ -259,10 +259,7 @@ import Testing
         let feed = ChangeFeed(fetch: { _ in [] }, triggers: triggers, debounce: .milliseconds(1), after: 0)
         model.startFeed(feed: feed)
         cont.yield()  // A move or delete writes no new change.
-        for _ in 0..<1000 {  // Up to 10 s: the suite runs in parallel and a launch can be slow.
-            if !model.plots.isEmpty { break }
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        await waitUntil("the plot list loaded") { !model.plots.isEmpty }
         model.stopFeed()
         cont.finish()
         #expect(model.plots.map(\.id) == ["plotaaaaab", "plotaaaaac"])

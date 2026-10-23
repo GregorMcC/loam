@@ -63,8 +63,9 @@ public final class PRPopoverModel {
     public private(set) var goalProblem: String?
     /// The save of the goal runs.
     public private(set) var isSavingGoal = false
-    /// The worktrees whose refresh runs now (`AppModel.refreshWorktree`), shown or not.
-    private var refreshing: Set<String> = []
+    /// The worktrees whose refresh runs now (`AppModel.refreshWorktree`), shown or not. A test reads it to know when
+    /// the app has taken the answer of a refresh.
+    private(set) var refreshing: Set<String> = []
     /// The button that runs for each worktree. One runs at a time for a worktree.
     private var buttons: [String: PRSecondaryAction] = [:]
     /// Called when the popover opens or closes. A new open while it is open calls nothing.

@@ -6,7 +6,7 @@ import Testing
 /// Ticket 115: ⌘Return on an issue link in the switcher starts work. Return still opens the link. The second action is a
 /// field of the item (`SwitcherItem.alternate`), so another kind can add one.
 @MainActor
-@Suite struct SwitcherStartWorkTests {
+@Suite(.waitLimit) struct SwitcherStartWorkTests {
     let plotID = "plotaaaaab"
     let linear = SwitcherLink(plotID: "plotaaaaab", linkID: "lnkaaaaaaa", label: "ENG-482 Link kinds for Figma",
                               target: "https://linear.app/example/issue/ENG-482/link-kinds-for-figma", kind: .linear)
@@ -96,13 +96,11 @@ import Testing
     }
 
     /// Opens the switcher, types the query, and waits for the links.
-    func search(_ rig: Rig, _ query: String) async {
+    func search(_ rig: Rig, _ query: String, sourceLocation: SourceLocation = #_sourceLocation) async {
         rig.app.switcher.open()
         rig.app.switcher.query = query
-        // The wait is long, since a full run of the tests keeps the machine busy.
-        let deadline = Date().addingTimeInterval(30)
-        while !rig.app.switcher.results.contains(where: { $0.item.kind == .link }), Date() < deadline {
-            try? await Task.sleep(for: .milliseconds(5))
+        await waitUntil("the links show", sourceLocation: sourceLocation) {
+            rig.app.switcher.results.contains { $0.item.kind == .link }
         }
     }
 
@@ -127,8 +125,7 @@ import Testing
         rig.app.switcher.chooseSelected()
         #expect(!rig.app.switcher.isOpen)
         #expect(!rig.app.newWorktreeSheet.isOpen)
-        let deadline = Date().addingTimeInterval(5)
-        while !rig.args().contains(where: { $0.hasPrefix("open") }), Date() < deadline { try? await Task.sleep(for: .milliseconds(5)) }
+        await waitUntil("the link opened") { rig.args().contains { $0.hasPrefix("open") } }
         #expect(rig.args().contains("open \(plotID) \(linear.linkID) --json --actor app"))
     }
 

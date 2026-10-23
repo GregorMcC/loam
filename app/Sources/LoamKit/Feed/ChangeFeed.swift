@@ -17,10 +17,13 @@ public enum FeedUpdate: Equatable, Sendable {
 public struct ChangeFeed: Sendable {
     public typealias Fetch = @Sendable (_ since: Int?) async throws -> [Change]
 
+    typealias Sleep = @Sendable (Duration) async throws -> Void
+
     private let fetch: Fetch
     private let makeTriggers: @Sendable () -> AsyncStream<Void>
     private let debounce: Duration
     private let after: Int?
+    private let sleep: Sleep
 
     /// - Parameters:
     ///   - after: The highest change ID the UI has. Nil reads the log once at start to find it, and publishes nothing.
@@ -30,10 +33,17 @@ public struct ChangeFeed: Sendable {
 
     /// `makeTriggers` runs when `updates()` starts, so nothing watches before then.
     public init(fetch: @escaping Fetch, makeTriggers: @escaping @Sendable () -> AsyncStream<Void>, debounce: Duration = .milliseconds(250), after: Int? = nil) {
+        self.init(fetch: fetch, makeTriggers: makeTriggers, debounce: debounce, after: after) { try await Task.sleep(for: $0) }
+    }
+
+    /// `sleep` is the wait of the debounce. Tests pass one that they end by hand.
+    init(fetch: @escaping Fetch, makeTriggers: @escaping @Sendable () -> AsyncStream<Void>, debounce: Duration, after: Int?,
+         sleep: @escaping Sleep) {
         self.fetch = fetch
         self.makeTriggers = makeTriggers
         self.debounce = debounce
         self.after = after
+        self.sleep = sleep
     }
 
     /// Watches the store files and polls through `client`. The home is `LOAM_HOME` from
@@ -54,6 +64,7 @@ public struct ChangeFeed: Sendable {
         AsyncStream { continuation in
             let poller = Poller(fetch: fetch, cursor: after, continuation: continuation)
             let debounce = debounce
+            let sleep = sleep
             let triggers = makeTriggers()
             let polls = PollSet()
             let task = Task {
@@ -62,7 +73,7 @@ public struct ChangeFeed: Sendable {
                 for await _ in triggers {
                     pending?.cancel()  // Cancels the sleep only. A poll in progress runs on a detached task.
                     pending = Task {
-                        try? await Task.sleep(for: debounce)
+                        try? await sleep(debounce)
                         guard !Task.isCancelled else { return }
                         // Detached, so a later trigger cannot cancel the poll and kill the child.
                         let poll = Task.detached { await poller.poll(idleUpdate: true) }
