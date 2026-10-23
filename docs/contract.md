@@ -265,7 +265,7 @@ A worktree is a separate checkout of one repo of a plot, on its own branch. It l
 | `loam worktree new <plot> <repo> <name> --dry-run [--base <branch>] [--goal <text>] [--link <link-id or URL>]` | A check result. See below. |
 | `loam worktree edit <plot> <worktree> --goal <text> [--repo <repo>] [--expect worktree:<id>=<version>]` | `{ "change_id": 44, "plot": "k3v9q2mxa7", "worktree": {...} }` |
 | `loam worktree list [<plot>] [--refresh [--worktree <worktree>] [--repo <repo>]]` | An array of worktree states, oldest first. It is `[]` when none exists. |
-| `loam worktree rm <plot> <worktree> [--repo <repo>] [--force] [--open-pane <folder>]` | `{ "worktree": {...}, "branch_deleted": false, "branch_note": "..." }` |
+| `loam worktree rm <plot> <worktree> [--repo <repo>] [--force] [--dry-run] [--open-pane <folder>]` | `{ "worktree": {...}, "branch_deleted": false, "branch_note": "..." }`. A dry run adds `"dry_run": true`. |
 | `loam worktree land <plot> <worktree> [--method squash\|merge\|rebase] [--auto] [--keep-worktree] [--keep-remote-branch] [--dry-run] [--head <commit>] [--repo <repo>] [--open-pane <folder>]` | A land result. See [Land, rerun, and update](#land-rerun-and-update). |
 | `loam worktree rerun <plot> <worktree> [--repo <repo>]` | `{ "worktree": {...}, "pr": {...}, "runs": [{ "id": 1234, "started": true }], "skipped_checks": ["ci/legacy"] }` |
 | `loam worktree update <plot> <worktree> [--repo <repo>]` | `{ "worktree": {...}, "pr": {...}, "fetched": true, "fetch_note": "..." }` |
@@ -306,6 +306,8 @@ A worktree state, an item of `list`:
 
 - A pane is open in the worktree. The app passes the folder of each open pane with `--open-pane` (repeatable). The core also reads the panes in `state.json`. `--force` does not skip this check.
 - The worktree has uncommitted changes or unpushed commits, and `--force` is missing. When the work of the worktree is in the merged PR (see below), none of its commits counts as unpushed. After a squash or rebase merge, GitHub can delete the branch, and a fetch prunes `origin/<branch>`, so no remote branch holds those commits.
+
+`--dry-run` checks the work as a removal does and changes nothing. It does not check the open panes, so the app can run it before it closes the panes of the worktree (ticket 113). `branch_deleted` is `false` in a dry run.
 
 The work of a worktree is in the merged PR when all of these are true. A land of a merged PR uses the same rule (the check `work_after_pr`).
 

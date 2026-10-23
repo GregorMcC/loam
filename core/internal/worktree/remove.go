@@ -105,6 +105,10 @@ type RemoveOptions struct {
 	OpenPanes []string
 	// Repo picks the repo when two repos have a worktree with the same name.
 	Repo string
+	// DryRun checks the work and changes nothing. It skips the check of the
+	// open panes: the app runs it while the panes are open, and closes them
+	// after it.
+	DryRun bool
 }
 
 // RemoveResult says what a removal did.
@@ -113,6 +117,8 @@ type RemoveResult struct {
 	BranchDeleted bool           `json:"branch_deleted"`
 	// BranchNote says why the local branch is still there.
 	BranchNote string `json:"branch_note,omitempty"`
+	// DryRun is true for a dry run, which removed nothing.
+	DryRun bool `json:"dry_run,omitempty"`
 	// Warnings are for a person to read, such as a seed that was not written.
 	// They are not in the JSON: the CLI prints them on stderr.
 	Warnings []string `json:"-"`
@@ -135,12 +141,14 @@ func Remove(s *store.Store, plotID, arg string, o RemoveOptions) (*RemoveResult,
 	if err != nil {
 		return nil, err
 	}
-	n, err := panesIn(w, o.OpenPanes)
-	if err != nil {
-		return nil, err
-	}
-	if n > 0 {
-		return nil, fmt.Errorf("%d pane(s) are open in %s. Close them, then remove the worktree: %w", n, filepath.Base(w.Path), ErrPanesOpen)
+	if !o.DryRun {
+		n, err := panesIn(w, o.OpenPanes)
+		if err != nil {
+			return nil, err
+		}
+		if n > 0 {
+			return nil, fmt.Errorf("%d pane(s) are open in %s. Close them, then remove the worktree: %w", n, filepath.Base(w.Path), ErrPanesOpen)
+		}
 	}
 
 	st := Inspect(w)
@@ -165,6 +173,9 @@ func Remove(s *store.Store, plotID, arg string, o RemoveOptions) (*RemoveResult,
 		if len(why) > 0 {
 			return nil, &unsafeError{folder: filepath.Base(w.Path), why: why}
 		}
+	}
+	if o.DryRun {
+		return &RemoveResult{Worktree: w, DryRun: true}, nil
 	}
 
 	if st.Missing {

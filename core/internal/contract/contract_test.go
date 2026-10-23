@@ -462,6 +462,7 @@ func scenario(t *testing.T) *harness {
 	h.run("worktree_new", "worktree-new", 0, "worktree", "new", loam, gitRepo, "fix-login",
 		"--goal", "Fix the login form", "--link", "https://github.com/example/widgets/issues/57")
 	h.run("worktree_list", "worktree-list", 0, "worktree", "list", loam)
+	h.run("worktree_rm_dry_run", "worktree-rm", 0, "worktree", "rm", loam, "fix-login", "--dry-run")
 	h.run("worktree_rm", "worktree-rm", 0, "worktree", "rm", loam, "fix-login")
 	h.run("worktree_list_empty", "worktree-list", 0, "worktree", "list", loam)
 

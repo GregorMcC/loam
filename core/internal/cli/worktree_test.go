@@ -195,6 +195,19 @@ func TestWorktreeNewListRm(t *testing.T) {
 	if _, _, err := lrRun(t, "", "worktree", "rm", "alpha", "fix-x", "--force", "--open-pane", w.Path); !errors.Is(err, worktree.ErrPanesOpen) {
 		t.Fatalf("%v", err)
 	}
+	// A dry run refuses the same work, skips the panes, and removes nothing.
+	if _, _, err := lrRun(t, "", "worktree", "rm", "alpha", "fix-x", "--dry-run", "--open-pane", w.Path); !errors.Is(err, worktree.ErrUnsafe) {
+		t.Fatalf("%v", err)
+	}
+	os.Remove(filepath.Join(w.Path, "x.txt"))
+	if text, _, err := lrRun(t, "", "worktree", "rm", "alpha", "fix-x", "--dry-run", "--open-pane", w.Path); err != nil ||
+		!strings.Contains(text, "Dry run: Loam can remove the worktree app-fix-x.") {
+		t.Fatalf("%q %v", text, err)
+	}
+	if ws, _ := s.ListWorktrees(p.ID); len(ws) != 1 {
+		t.Fatalf("the dry run removed the worktree: %v", ws)
+	}
+	os.WriteFile(filepath.Join(w.Path, "x.txt"), []byte("x"), 0o644)
 	out, _, err = lrRun(t, "", "worktree", "rm", "alpha", "fix-x", "--force", "--open-pane", repo, "--json")
 	if err != nil {
 		t.Fatal(err)

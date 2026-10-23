@@ -440,6 +440,28 @@ func TestRemoveRefusesUnsafeWorktreesUnlessForced(t *testing.T) {
 	}
 }
 
+// A dry run refuses uncommitted changes as a removal does, and changes nothing.
+func TestRemoveDryRunRefusesUncommittedChanges(t *testing.T) {
+	e := setup(t)
+	w := e.create("work", "").Worktree
+	os.WriteFile(filepath.Join(w.Path, "scratch.txt"), []byte("x"), 0o644)
+	if _, err := worktree.Remove(e.s, e.plot.ID, w.ID, worktree.RemoveOptions{DryRun: true}); !errors.Is(err, worktree.ErrUnsafe) ||
+		!strings.Contains(err.Error(), "uncommitted") {
+		t.Fatalf("dirty: %v", err)
+	}
+	os.Remove(filepath.Join(w.Path, "scratch.txt"))
+	res, err := worktree.Remove(e.s, e.plot.ID, w.ID, worktree.RemoveOptions{DryRun: true})
+	if err != nil || !res.DryRun {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if _, err := os.Stat(w.Path); err != nil {
+		t.Fatal("the dry run removed the folder")
+	}
+	if out := testutil.Git(t, e.repo, "branch", "--list", "work"); out == "" {
+		t.Fatal("the dry run deleted the branch")
+	}
+}
+
 func TestRemoveDeletesTheMergedLocalBranchAndNeverTheRemoteBranch(t *testing.T) {
 	e := setup(t)
 	w := e.create("work", "").Worktree
