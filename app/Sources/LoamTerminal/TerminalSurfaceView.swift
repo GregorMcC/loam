@@ -286,6 +286,17 @@ public final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClien
         surface.map { ghostty_surface_process_exited($0) } ?? true
     }
 
+    /// True when the pane runs anything apart from its shell at a prompt (ticket 113). libghostty says so when a close
+    /// needs a question: with shell integration, the cursor is not at a prompt. `TerminalJobs` says so for each
+    /// process on the terminal apart from the shell, such as a job in the background or a job that ⌃Z stopped, also
+    /// when your Ghostty config turns that question off (`confirm-close-surface = false`). Either one counts.
+    public var runsAProcess: Bool {
+        guard let surface, !ghostty_surface_process_exited(surface) else { return false }
+        if ghostty_surface_needs_confirm_quit(surface) { return true }
+        let group = pid_t(truncatingIfNeeded: ghostty_surface_foreground_pid(surface))
+        return TerminalJobs.busy(foreground: group, app: getpid(), read: TerminalJobs.read, onTerminal: TerminalJobs.onTerminal)
+    }
+
     /// Runs a Ghostty binding action, such as "copy_to_clipboard".
     @discardableResult
     public func perform(action: String) -> Bool {

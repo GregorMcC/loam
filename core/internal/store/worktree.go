@@ -10,12 +10,14 @@ import (
 	"time"
 )
 
-// RepoSettings are the worktree settings of one repo path: a setup command
-// and the files to copy into each new worktree. Every plot that holds the
-// path shares them. A change to them is not a change in the change log.
+// RepoSettings are the worktree settings of one repo path: a setup command,
+// the files to copy into each new worktree, and what the app does after a
+// merge on GitHub. Every plot that holds the path shares them. A change to
+// them is not a change in the change log.
 type RepoSettings struct {
-	Setup string   `json:"setup,omitempty"`
-	Copy  []string `json:"copy,omitempty"`
+	Setup      string     `json:"setup,omitempty"`
+	Copy       []string   `json:"copy,omitempty"`
+	AfterMerge AfterMerge `json:"after_merge"`
 	// SetupApproved is the setup command that you last approved. A setup
 	// command runs with no question only when it is equal to Setup.
 	SetupApproved string `json:"-"`
@@ -29,13 +31,37 @@ func decodeCopy(s string) []string {
 	return out
 }
 
+// AfterMerge says what the app does when a refresh finds that GitHub merged
+// the PR of a worktree of the repo. The core only keeps the setting.
+type AfterMerge string
+
+const (
+	// AfterMergeAsk shows a callout with Keep and Remove worktree. It is the
+	// default.
+	AfterMergeAsk AfterMerge = "ask"
+	// AfterMergeRemove removes the worktree when it holds no work and no
+	// session in it is in a turn. Else the app asks.
+	AfterMergeRemove AfterMerge = "remove"
+	// AfterMergeKeep does nothing: the worktree stays at the Merged stage.
+	AfterMergeKeep AfterMerge = "keep"
+)
+
+// ParseAfterMerge reads ask, remove, or keep. Any other value is invalid.
+func ParseAfterMerge(v string) (AfterMerge, error) {
+	switch m := AfterMerge(v); m {
+	case AfterMergeAsk, AfterMergeRemove, AfterMergeKeep:
+		return m, nil
+	}
+	return "", fmt.Errorf("%q is not an after merge setting. Use ask, remove, or keep: %w", v, ErrInvalid)
+}
+
 // RepoSettings returns the settings of a repo path. A path with no record has
-// empty settings.
+// empty settings and Ask after a merge.
 func (s *Store) RepoSettings(path string) (RepoSettings, error) {
-	var out RepoSettings
+	out := RepoSettings{AfterMerge: AfterMergeAsk}
 	err := s.readTx(func(q queryer) error {
 		var copyJSON string
-		err := q.QueryRowContext(context.Background(), `SELECT setup, copy, setup_approved FROM repo_settings WHERE path = ?`, filepath.Clean(path)).Scan(&out.Setup, &copyJSON, &out.SetupApproved)
+		err := q.QueryRowContext(context.Background(), `SELECT setup, copy, setup_approved, after_merge FROM repo_settings WHERE path = ?`, filepath.Clean(path)).Scan(&out.Setup, &copyJSON, &out.SetupApproved, &out.AfterMerge)
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}
@@ -91,6 +117,27 @@ func (s *Store) SetRepoSettings(path string, setup *string, copyFiles *[]string)
 		if err := w.exec(`UPDATE repo_settings SET copy = ? WHERE path = ?`, string(b), path); err != nil {
 			return err
 		}
+	}
+	return w.commit()
+}
+
+// SetAfterMerge sets what the app does after a merge on GitHub, for every
+// worktree of a repo path. The path must be absolute, and the value one of
+// ask, remove, or keep.
+func (s *Store) SetAfterMerge(path string, v AfterMerge) error {
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("a repo path must be absolute: %w", ErrInvalid)
+	}
+	if _, err := ParseAfterMerge(string(v)); err != nil {
+		return err
+	}
+	w, err := s.beginWrite()
+	if err != nil {
+		return err
+	}
+	defer w.rollback()
+	if err := w.exec(`INSERT INTO repo_settings(path, after_merge) VALUES (?, ?) ON CONFLICT(path) DO UPDATE SET after_merge = excluded.after_merge`, filepath.Clean(path), string(v)); err != nil {
+		return err
 	}
 	return w.commit()
 }

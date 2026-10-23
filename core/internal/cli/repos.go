@@ -41,17 +41,21 @@ func newRepoCmd() *cobra.Command {
 // settingsFlags are the worktree settings of a repo. A nil field means that
 // the person did not give the flag.
 type settingsFlags struct {
-	setup *string
-	copy  *[]string
+	setup      *string
+	copy       *[]string
+	afterMerge *store.AfterMerge
 }
 
-// addSettingsFlags adds --setup and --copy, and returns a function that reads them.
-func addSettingsFlags(c *cobra.Command) func() settingsFlags {
-	var setup string
+// addSettingsFlags adds --setup, --copy, and --after-merge, and returns a
+// function that reads them. It fails for an --after-merge value that is not
+// ask, remove, or keep.
+func addSettingsFlags(c *cobra.Command) func() (settingsFlags, error) {
+	var setup, afterMerge string
 	var files []string
 	c.Flags().StringVar(&setup, "setup", "", "the setup command that runs in each new worktree of the repo. An empty value clears it.")
 	c.Flags().StringArrayVar(&files, "copy", nil, "a file or glob, relative to the repo, to copy into each new worktree (repeatable). --copy \"\" clears the list.")
-	return func() settingsFlags {
+	c.Flags().StringVar(&afterMerge, "after-merge", "", "what the app does when GitHub merged the PR of a worktree of the repo: ask, remove, or keep. The default is ask.")
+	return func() (settingsFlags, error) {
 		var f settingsFlags
 		if c.Flags().Changed("setup") {
 			f.setup = &setup
@@ -65,16 +69,23 @@ func addSettingsFlags(c *cobra.Command) func() settingsFlags {
 			}
 			f.copy = &kept
 		}
-		return f
+		if c.Flags().Changed("after-merge") {
+			m, err := store.ParseAfterMerge(afterMerge)
+			if err != nil {
+				return settingsFlags{}, err
+			}
+			f.afterMerge = &m
+		}
+		return f, nil
 	}
 }
 
-func (f settingsFlags) any() bool { return f.setup != nil || f.copy != nil }
+func (f settingsFlags) any() bool { return f.setup != nil || f.copy != nil || f.afterMerge != nil }
 
 func newRepoAddCmd() *cobra.Command {
 	var note string
 	var expect []string
-	var settings func() settingsFlags
+	var settings func() (settingsFlags, error)
 	c := &cobra.Command{
 		Use:   "add <plot> <path>",
 		Short: "Add a repo to a plot",
@@ -82,9 +93,13 @@ func newRepoAddCmd() *cobra.Command {
 			"The repo's remote (origin, else the first remote) is added as a link, unless the plot has it.\n" +
 			"Loam then fetches origin and switches the checkout to the default branch of origin, at its latest commit.\n" +
 			"A checkout with uncommitted changes keeps its branch, with a warning.\n" +
-			"--setup and --copy set the worktree settings of the repo path. Every plot that holds the path shares them.",
+			"--setup, --copy, and --after-merge set the worktree settings of the repo path. Every plot that holds the path shares them.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			set, err := settings()
+			if err != nil {
+				return err
+			}
 			// A leading ~ is your home folder. The app runs loam in /, so Abs alone would give "/~/...".
 			abs, err := filepath.Abs(linkkind.Expand(args[1]))
 			if err != nil {
@@ -93,7 +108,7 @@ func newRepoAddCmd() *cobra.Command {
 			if err := store.CheckRepoFolder(abs); err != nil {
 				return err
 			}
-			return writeRepo(cmd, args[0], expect, settings(), worktree.SwitchToDefault, func(p *store.Plot) ([]store.Edit, error) {
+			return writeRepo(cmd, args[0], expect, set, worktree.SwitchToDefault, func(p *store.Plot) ([]store.Edit, error) {
 				edits := []store.Edit{{Op: store.OpAddRepo, Path: store.S(abs), Note: store.S(note)}}
 				// The repo's remote comes as a link in the same change, so one undo removes both.
 				if link, ok := gitremote.LinkEdit(*p, abs); ok {
@@ -112,18 +127,23 @@ func newRepoAddCmd() *cobra.Command {
 func newRepoEditCmd() *cobra.Command {
 	var note string
 	var expect []string
-	var settings func() settingsFlags
+	var settings func() (settingsFlags, error)
 	c := &cobra.Command{
 		Use:   "edit <plot> <repo>",
 		Short: "Change the note or the worktree settings of a repo",
 		Long: "Change a repo. <repo> is a repo ID or a path.\n" +
-			"--setup and --copy set the worktree settings of the repo path. Every plot that holds the path shares them.",
+			"--setup, --copy, and --after-merge set the worktree settings of the repo path. Every plot that holds the path shares them.\n" +
+			"--after-merge says what the app does when GitHub merged the PR of a worktree: ask (the default), remove the worktree, or keep it.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if !cmd.Flags().Changed("note") && !settings().any() {
-				return fmt.Errorf("give --note, --setup, or --copy: %w", store.ErrInvalid)
+			set, err := settings()
+			if err != nil {
+				return err
 			}
-			return writeRepo(cmd, args[0], expect, settings(), nil, func(p *store.Plot) ([]store.Edit, error) {
+			if !cmd.Flags().Changed("note") && !set.any() {
+				return fmt.Errorf("give --note, --setup, --copy, or --after-merge: %w", store.ErrInvalid)
+			}
+			return writeRepo(cmd, args[0], expect, set, nil, func(p *store.Plot) ([]store.Edit, error) {
 				r, err := worktree.FindRepo(*p, args[1])
 				if err != nil {
 					return nil, err
@@ -263,8 +283,15 @@ func writeRepo(cmd *cobra.Command, plotArg string, expectVals []string, settings
 				path = r.Path
 			}
 		}
-		if err := s.SetRepoSettings(path, settings.setup, settings.copy); err != nil {
-			return err
+		if settings.setup != nil || settings.copy != nil {
+			if err := s.SetRepoSettings(path, settings.setup, settings.copy); err != nil {
+				return err
+			}
+		}
+		if settings.afterMerge != nil {
+			if err := s.SetAfterMerge(path, *settings.afterMerge); err != nil {
+				return err
+			}
 		}
 		// You typed this setup command, so it needs no question before it runs.
 		if settings.setup != nil {

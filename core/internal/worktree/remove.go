@@ -105,6 +105,10 @@ type RemoveOptions struct {
 	OpenPanes []string
 	// Repo picks the repo when two repos have a worktree with the same name.
 	Repo string
+	// DryRun checks the work and changes nothing. It skips the check of the
+	// open panes: the app runs it while the panes are open, and closes them
+	// after it.
+	DryRun bool
 }
 
 // RemoveResult says what a removal did.
@@ -113,6 +117,8 @@ type RemoveResult struct {
 	BranchDeleted bool           `json:"branch_deleted"`
 	// BranchNote says why the local branch is still there.
 	BranchNote string `json:"branch_note,omitempty"`
+	// DryRun is true for a dry run, which removed nothing.
+	DryRun bool `json:"dry_run,omitempty"`
 	// Warnings are for a person to read, such as a seed that was not written.
 	// They are not in the JSON: the CLI prints them on stderr.
 	Warnings []string `json:"-"`
@@ -135,12 +141,14 @@ func Remove(s *store.Store, plotID, arg string, o RemoveOptions) (*RemoveResult,
 	if err != nil {
 		return nil, err
 	}
-	n, err := panesIn(w, o.OpenPanes)
-	if err != nil {
-		return nil, err
-	}
-	if n > 0 {
-		return nil, fmt.Errorf("%d pane(s) are open in %s. Close them, then remove the worktree: %w", n, filepath.Base(w.Path), ErrPanesOpen)
+	if !o.DryRun {
+		n, err := panesIn(w, o.OpenPanes)
+		if err != nil {
+			return nil, err
+		}
+		if n > 0 {
+			return nil, &panesOpenError{folder: filepath.Base(w.Path), n: n}
+		}
 	}
 
 	st := Inspect(w)
@@ -153,18 +161,24 @@ func Remove(s *store.Store, plotID, arg string, o RemoveOptions) (*RemoveResult,
 	inPR := workInPR(w, st, branchTip(w), head)
 	if !o.Force {
 		var why []string
+		d := RefusalDetails{Refusal: RefusalUnsafeWork, CheckError: st.Error}
 		if st.Changed > 0 {
 			why = append(why, fmt.Sprintf("%d file(s) with uncommitted changes", st.Changed))
+			d.Changed = st.Changed
 		}
 		if st.Unpushed > 0 && !inPR {
 			why = append(why, fmt.Sprintf("%d commit(s) that are not pushed", st.Unpushed))
+			d.Unpushed = st.Unpushed
 		}
 		if st.Error != "" {
 			why = append(why, "a check failed: "+st.Error)
 		}
 		if len(why) > 0 {
-			return nil, &unsafeError{folder: filepath.Base(w.Path), why: why}
+			return nil, &unsafeError{folder: filepath.Base(w.Path), why: why, details: d}
 		}
+	}
+	if o.DryRun {
+		return &RemoveResult{Worktree: w, DryRun: true}, nil
 	}
 
 	if st.Missing {
@@ -205,12 +219,36 @@ func Remove(s *store.Store, plotID, arg string, o RemoveOptions) (*RemoveResult,
 	return res, nil
 }
 
+// The kinds of a refused removal, in [RefusalDetails].
+const (
+	RefusalUnsafeWork = "unsafe_work"
+	RefusalOpenPanes  = "open_panes"
+)
+
+// RefusalDetails is the details of a refused removal in the JSON error. The
+// app words the refusal from them, since the message names flags of the CLI
+// (ticket 113).
+type RefusalDetails struct {
+	// Refusal is [RefusalUnsafeWork] or [RefusalOpenPanes].
+	Refusal string `json:"refusal"`
+	// Changed is the number of files with uncommitted changes.
+	Changed int `json:"changed,omitempty"`
+	// Unpushed is the number of commits that are not pushed and that the
+	// merged PR does not hold.
+	Unpushed int `json:"unpushed,omitempty"`
+	// CheckError is the error of a check that failed.
+	CheckError string `json:"check_error,omitempty"`
+	// OpenPanes is the number of panes that are open in the worktree.
+	OpenPanes int `json:"open_panes,omitempty"`
+}
+
 // unsafeError is the error of a removal that would lose work. It matches
 // [ErrUnsafe].
 type unsafeError struct {
 	folder string
 	// why lists the work that the removal would lose, for a person to read.
-	why []string
+	why     []string
+	details RefusalDetails
 }
 
 func (e *unsafeError) Error() string {
@@ -220,8 +258,30 @@ func (e *unsafeError) Error() string {
 // Is makes the error match [ErrUnsafe].
 func (e *unsafeError) Is(target error) bool { return target == ErrUnsafe }
 
+// ErrorDetails gives the details of the JSON error.
+func (e *unsafeError) ErrorDetails() any { return e.details }
+
 // work says what work the removal would lose.
 func (e *unsafeError) work() string { return strings.Join(e.why, " and ") }
+
+// panesOpenError is the error of a removal while a pane is open in the
+// worktree. It matches [ErrPanesOpen].
+type panesOpenError struct {
+	folder string
+	n      int
+}
+
+func (e *panesOpenError) Error() string {
+	return fmt.Sprintf("%d pane(s) are open in %s. Close them, then remove the worktree: %v", e.n, e.folder, ErrPanesOpen)
+}
+
+// Is makes the error match [ErrPanesOpen].
+func (e *panesOpenError) Is(target error) bool { return target == ErrPanesOpen }
+
+// ErrorDetails gives the details of the JSON error.
+func (e *panesOpenError) ErrorDetails() any {
+	return RefusalDetails{Refusal: RefusalOpenPanes, OpenPanes: e.n}
+}
 
 // panesIn counts the open panes in the worktree: the panes of state.json and
 // the extra folders.

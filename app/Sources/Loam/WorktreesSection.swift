@@ -111,7 +111,8 @@ private struct WorktreeRowView: View {
                         .truncationMode(.tail)
                 }
                 Spacer(minLength: 4)
-                pill
+                // A narrow panel cuts the name, never the pill.
+                pill.fixedSize()
             }
             // A narrow panel cuts a long line, so the tooltip holds all of it.
             .help(line.text)

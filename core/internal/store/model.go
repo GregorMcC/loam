@@ -99,10 +99,12 @@ type Repo struct {
 	Note    string `json:"note"`
 	Main    bool   `json:"main"`
 	Version int64  `json:"version"`
-	// Setup and Copy are the worktree settings of the repo path. Every plot
-	// that holds the path sees the same values. They are not in the change log.
-	Setup string   `json:"setup,omitempty"`
-	Copy  []string `json:"copy,omitempty"`
+	// Setup, Copy, and AfterMerge are the worktree settings of the repo path.
+	// Every plot that holds the path sees the same values. They are not in the
+	// change log.
+	Setup      string     `json:"setup,omitempty"`
+	Copy       []string   `json:"copy,omitempty"`
+	AfterMerge AfterMerge `json:"after_merge"`
 }
 
 // PlotInput is the content of a new plot. Link and repo edits use the same

@@ -174,3 +174,73 @@ func TestRemoveRepoRefusedWhilePlotHasWorktrees(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// The after merge setting is per repo path, as the other settings are. Ask is
+// the default, also for a path with no record.
+func TestAfterMergeSetting(t *testing.T) {
+	s := openStore(t)
+	a, b := newPlot(t, s, "A"), newPlot(t, s, "B")
+	addRepo(t, s, a.ID, "/work/app")
+	addRepo(t, s, b.ID, "/work/app")
+	p, err := s.GetPlot(a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := p.Repos[0].AfterMerge; got != store.AfterMergeAsk {
+		t.Fatalf("default %q", got)
+	}
+	if got, err := s.RepoSettings("/other"); err != nil || got.AfterMerge != store.AfterMergeAsk {
+		t.Fatalf("%+v %v", got, err)
+	}
+
+	before := p.Revision
+	if err := s.SetAfterMerge("/work/app", store.AfterMergeRemove); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{a.ID, b.ID} {
+		p, err := s.GetPlot(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if p.Repos[0].AfterMerge != store.AfterMergeRemove {
+			t.Fatalf("plot %s repo %+v", id, p.Repos[0])
+		}
+		if id == a.ID && p.Revision != before {
+			t.Fatalf("the setting made a change: revision %d, was %d", p.Revision, before)
+		}
+	}
+	// The other settings stay.
+	if err := s.SetRepoSettings("/work/app", store.S("make"), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetAfterMerge("/work/app", store.AfterMergeKeep); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.RepoSettings("/work/app"); err != nil || got.Setup != "make" || got.AfterMerge != store.AfterMergeKeep {
+		t.Fatalf("%+v %v", got, err)
+	}
+
+	// A value that is not ask, remove, or keep changes nothing.
+	for _, bad := range []store.AfterMerge{"", "never", "Ask"} {
+		if err := s.SetAfterMerge("/work/app", bad); !errors.Is(err, store.ErrInvalid) {
+			t.Fatalf("%q: want invalid, got %v", bad, err)
+		}
+	}
+	if got, _ := s.RepoSettings("/work/app"); got.AfterMerge != store.AfterMergeKeep {
+		t.Fatalf("%+v", got)
+	}
+	if err := s.SetAfterMerge("relative", store.AfterMergeAsk); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("want invalid, got %v", err)
+	}
+}
+
+func TestParseAfterMerge(t *testing.T) {
+	for _, v := range []string{"ask", "remove", "keep"} {
+		if got, err := store.ParseAfterMerge(v); err != nil || string(got) != v {
+			t.Fatalf("%q: %q %v", v, got, err)
+		}
+	}
+	if _, err := store.ParseAfterMerge("delete"); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("want invalid, got %v", err)
+	}
+}

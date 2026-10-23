@@ -4,6 +4,8 @@ import Foundation
 public enum LoamError: Error, Equatable, Sendable {
     /// Exit 1.
     case failed(message: String)
+    /// Exit 1 with the details of a refused `loam worktree rm` (ticket 113).
+    case refusedRemoval(RemovalRefusal, message: String)
     /// Exit 2: bad flag, argument, or value.
     case invalid(message: String)
     /// Exit 10: a write used an out-of-date version. Nothing was written.
@@ -42,7 +44,7 @@ public enum LoamError: Error, Equatable, Sendable {
             details.flatMap { try? JSONDecoder().decode(type, from: $0) }
         }
         switch exitCode {
-        case 1: return .failed(message: message)
+        case 1: return decode(RemovalRefusal.self).map { .refusedRemoval($0, message: message) } ?? .failed(message: message)
         case 2: return .invalid(message: message)
         case 10: return .stale(decode(StaleDetails.self), message: message)
         case 11: return .undoClash(decode(UndoClashDetails.self), message: message)
@@ -59,7 +61,7 @@ public enum LoamError: Error, Equatable, Sendable {
     /// Text for the blocking screen or an alert.
     public var userMessage: String {
         switch self {
-        case .failed(let m), .invalid(let m), .contractMismatch(let m),
+        case .failed(let m), .refusedRemoval(_, let m), .invalid(let m), .contractMismatch(let m),
              .unknownPlot(let m), .linkPathMissing(_, let m), .ambiguous(let m), .stale(_, let m), .undoClash(_, let m),
              .notReady(_, let m), .ghUnavailable(let m), .unknown(_, let m):
             return m

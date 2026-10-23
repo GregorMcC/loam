@@ -99,6 +99,18 @@ Details of `not_ready`:
 
 - `checks` lists each check that blocks the land, in the order of the land result. See [Land, rerun, and update](#land-rerun-and-update). The list is empty when `--head` names another commit than the PR head: no check blocks, and the message says that the PR has new commits.
 
+Details of an `error` that refuses `loam worktree rm` (ticket 113). Other errors of kind `error` have no details.
+
+```json
+{ "refusal": "unsafe_work", "changed": 1, "unpushed": 2, "check_error": "git status failed" }
+{ "refusal": "open_panes", "open_panes": 1 }
+```
+
+- `refusal` is `unsafe_work` or `open_panes`.
+- `unsafe_work` has `changed`, `unpushed`, and `check_error`. Each one is left out when it is 0 or empty. `unpushed` leaves out the commits that the merged PR holds.
+- `open_panes` has the number of panes that are open in the worktree.
+- The message names flags of the CLI, such as `--force`. The app words the refusal from the details.
+
 ## Commands
 
 ### `loam version --json`
@@ -129,13 +141,13 @@ An array in the stored plot order. It is `[]` when no plot exists. Archived plot
   "created_at": "2026-10-02T09:00:00Z",
   "archived": false,
   "links": [{ "id": "...", "label": "...", "target": "...", "note": "", "position": 0, "version": 12, "kind": "url" }],
-  "repos": [{ "id": "...", "path": "/abs/path", "note": "", "main": true, "version": 12, "setup": "npm ci", "copy": [".env"] }],
+  "repos": [{ "id": "...", "path": "/abs/path", "note": "", "main": true, "version": 12, "setup": "npm ci", "copy": [".env"], "after_merge": "ask" }],
   "versions": { "name": 12, "what": 12, "why": 12, "where": 40, "link:<id>": 12, "repo:<id>": 12 },
   "revision": 40
 }
 ```
 
-- `setup` and `copy` in a repo are the worktree settings of the repo path. They are left out when empty. See "Worktrees".
+- `setup`, `copy`, and `after_merge` in a repo are the worktree settings of the repo path. `setup` and `copy` are left out when empty. `after_merge` is always present: `ask` (the default), `remove`, or `keep`. See "Worktrees".
 - `versions` maps each item to the ID of the change that last set it. Pass these as `--expect`. Each worktree of the plot is an item, `worktree:<id>`. Its version is 0 until a change sets its goal.
 - `revision` is the highest change ID of the plot.
 - `archived` is always present. It is not a versioned item, so it is not in `versions`.
@@ -211,8 +223,8 @@ These commands print the change ID, the plot ID, and the link or repo that the c
 | `loam link add <plot> [<label>] <target> [--note]` | `change_id`, `plot`, `link` |
 | `loam link edit <plot> <link> [--label] [--target] [--note]` | `change_id`, `plot`, `link` |
 | `loam link rm <plot> <link>` | `change_id`, `plot` |
-| `loam repo add <plot> <path> [--note] [--setup] [--copy]` | `change_id`, `plot`, `repo` |
-| `loam repo edit <plot> <repo> [--note] [--setup] [--copy]` | `change_id`, `plot`, `repo` |
+| `loam repo add <plot> <path> [--note] [--setup] [--copy] [--after-merge]` | `change_id`, `plot`, `repo` |
+| `loam repo edit <plot> <repo> [--note] [--setup] [--copy] [--after-merge]` | `change_id`, `plot`, `repo` |
 | `loam repo main <plot> <repo>` | `change_id`, `plot`, `repo` |
 | `loam repo rm <plot> <repo> [--main <repo>]` | `change_id`, `plot` |
 
@@ -228,7 +240,9 @@ After the add, `loam repo add` puts the checkout on the default branch of `origi
 
 `loam repo rm` fails with exit code 1 while the plot has worktrees of the repo. The same holds for MCP `remove_repo`.
 
-`--setup` and `--copy` set the worktree settings of the repo path. `--copy` is repeatable. An empty value clears the setting. The settings are not a change: they have no change log entry and no undo, so `change_id` is 0 when only they changed. Every plot that holds the path shows the same settings.
+`--setup`, `--copy`, and `--after-merge` set the worktree settings of the repo path. `--copy` is repeatable. An empty value of `--setup` or `--copy` clears the setting. The settings are not a change: they have no change log entry and no undo, so `change_id` is 0 when only they changed. Every plot that holds the path shows the same settings.
+
+`--after-merge` says what the app does when a refresh finds that GitHub merged the PR of a worktree of the repo, outside Loam: `ask` (the default) shows a callout with Keep and Remove worktree, `remove` removes the worktree when it holds no work, and `keep` does nothing. Any other value exits with code 2 (`invalid`) and changes nothing. MCP `add_repo` and `update_repo` take the same values as `after_merge`. The core only keeps the setting: it removes nothing by itself.
 
 ### Worktrees
 
@@ -263,7 +277,7 @@ A worktree is a separate checkout of one repo of a plot, on its own branch. It l
 | `loam worktree new <plot> <repo> <name> --dry-run [--base <branch>] [--goal <text>] [--link <link-id or URL>]` | A check result. See below. |
 | `loam worktree edit <plot> <worktree> --goal <text> [--repo <repo>] [--expect worktree:<id>=<version>]` | `{ "change_id": 44, "plot": "k3v9q2mxa7", "worktree": {...} }` |
 | `loam worktree list [<plot>] [--refresh [--worktree <worktree>] [--repo <repo>]]` | An array of worktree states, oldest first. It is `[]` when none exists. |
-| `loam worktree rm <plot> <worktree> [--repo <repo>] [--force] [--open-pane <folder>]` | `{ "worktree": {...}, "branch_deleted": false, "branch_note": "..." }` |
+| `loam worktree rm <plot> <worktree> [--repo <repo>] [--force] [--dry-run] [--open-pane <folder>]` | `{ "worktree": {...}, "branch_deleted": false, "branch_note": "..." }`. A dry run adds `"dry_run": true`. |
 | `loam worktree land <plot> <worktree> [--method squash\|merge\|rebase] [--auto] [--keep-worktree] [--keep-remote-branch] [--dry-run] [--head <commit>] [--repo <repo>] [--open-pane <folder>]` | A land result. See [Land, rerun, and update](#land-rerun-and-update). |
 | `loam worktree rerun <plot> <worktree> [--repo <repo>]` | `{ "worktree": {...}, "pr": {...}, "runs": [{ "id": 1234, "started": true }], "skipped_checks": ["ci/legacy"] }` |
 | `loam worktree update <plot> <worktree> [--repo <repo>]` | `{ "worktree": {...}, "pr": {...}, "fetched": true, "fetch_note": "..." }` |
@@ -304,6 +318,10 @@ A worktree state, an item of `list`:
 
 - A pane is open in the worktree. The app passes the folder of each open pane with `--open-pane` (repeatable). The core also reads the panes in `state.json`. `--force` does not skip this check.
 - The worktree has uncommitted changes or unpushed commits, and `--force` is missing. When the work of the worktree is in the merged PR (see below), none of its commits counts as unpushed. After a squash or rebase merge, GitHub can delete the branch, and a fetch prunes `origin/<branch>`, so no remote branch holds those commits.
+
+`--dry-run` checks the work as a removal does and changes nothing. It does not check the open panes, so the app can run it before it closes the panes of the worktree (ticket 113). `branch_deleted` is `false` in a dry run.
+
+A refusal is an `error` with details. See [The JSON error](#the-json-error).
 
 The work of a worktree is in the merged PR when all of these are true. A land of a merged PR uses the same rule (the check `work_after_pr`).
 

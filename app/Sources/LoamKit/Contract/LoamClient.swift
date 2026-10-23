@@ -126,8 +126,11 @@ public struct LoamClient: Sendable {
         try await write(["repo", "add", plot, path] + noteArg(note) + expectArgs(expect))
     }
 
-    public func repoEdit(plot: String, repo: String, note: String? = nil, expect: [String: Int] = [:]) async throws -> WriteResult {
-        try await write(["repo", "edit", plot, repo] + noteArg(note) + expectArgs(expect))
+    /// `afterMerge` sets what the app does when GitHub merged the PR of a worktree of the repo (ticket 113).
+    public func repoEdit(plot: String, repo: String, note: String? = nil, afterMerge: AfterMerge? = nil,
+                         expect: [String: Int] = [:]) async throws -> WriteResult {
+        try await write(["repo", "edit", plot, repo] + noteArg(note) + (afterMerge.map { ["--after-merge", $0.rawValue] } ?? [])
+            + expectArgs(expect))
     }
 
     public func repoMain(plot: String, repo: String, expect: [String: Int] = [:]) async throws -> WriteResult {
@@ -146,8 +149,10 @@ public struct LoamClient: Sendable {
 
     /// `loam worktree rm`. `openPanes` are the folders of the panes that are open or saved, so the core
     /// can refuse. `force` skips the checks for changes and unpushed commits, never the pane check.
-    public func worktreeRemove(plot: String, worktree: String, force: Bool = false, openPanes: [String] = []) async throws -> WorktreeRmResult {
-        try await write(["worktree", "rm", plot, worktree] + (force ? ["--force"] : [])
+    /// `dryRun` checks the work, changes nothing, and does not check the panes (ticket 113).
+    public func worktreeRemove(plot: String, worktree: String, force: Bool = false, dryRun: Bool = false,
+                               openPanes: [String] = []) async throws -> WorktreeRmResult {
+        try await write(["worktree", "rm", plot, worktree] + (force ? ["--force"] : []) + (dryRun ? ["--dry-run"] : [])
             + openPanes.flatMap { ["--open-pane", $0] })
     }
 

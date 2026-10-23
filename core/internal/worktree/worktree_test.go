@@ -440,6 +440,54 @@ func TestRemoveRefusesUnsafeWorktreesUnlessForced(t *testing.T) {
 	}
 }
 
+// A dry run refuses uncommitted changes as a removal does, and changes nothing.
+func TestRemoveDryRunRefusesUncommittedChanges(t *testing.T) {
+	e := setup(t)
+	w := e.create("work", "").Worktree
+	os.WriteFile(filepath.Join(w.Path, "scratch.txt"), []byte("x"), 0o644)
+	if _, err := worktree.Remove(e.s, e.plot.ID, w.ID, worktree.RemoveOptions{DryRun: true}); !errors.Is(err, worktree.ErrUnsafe) ||
+		!strings.Contains(err.Error(), "uncommitted") {
+		t.Fatalf("dirty: %v", err)
+	}
+	os.Remove(filepath.Join(w.Path, "scratch.txt"))
+	res, err := worktree.Remove(e.s, e.plot.ID, w.ID, worktree.RemoveOptions{DryRun: true})
+	if err != nil || !res.DryRun {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if _, err := os.Stat(w.Path); err != nil {
+		t.Fatal("the dry run removed the folder")
+	}
+	if out := testutil.Git(t, e.repo, "branch", "--list", "work"); out == "" {
+		t.Fatal("the dry run deleted the branch")
+	}
+}
+
+// A refused removal gives details for the JSON error, so the app can word it
+// without the flags of the CLI (ticket 113).
+func TestRemoveRefusalsGiveDetails(t *testing.T) {
+	e := setup(t)
+	w := e.create("work", "").Worktree
+	commit(t, w.Path, "f.txt", "f\n")
+	os.WriteFile(filepath.Join(w.Path, "scratch.txt"), []byte("x"), 0o644)
+	details := func(err error) any {
+		var d interface{ ErrorDetails() any }
+		if !errors.As(err, &d) {
+			t.Fatalf("no details: %v", err)
+		}
+		return d.ErrorDetails()
+	}
+	_, err := worktree.Remove(e.s, e.plot.ID, w.ID, worktree.RemoveOptions{DryRun: true})
+	want := worktree.RefusalDetails{Refusal: worktree.RefusalUnsafeWork, Changed: 1, Unpushed: 1}
+	if got := details(err); got != want {
+		t.Fatalf("unsafe work: %+v, want %+v", got, want)
+	}
+	_, err = worktree.Remove(e.s, e.plot.ID, w.ID, worktree.RemoveOptions{OpenPanes: []string{w.Path}})
+	want = worktree.RefusalDetails{Refusal: worktree.RefusalOpenPanes, OpenPanes: 1}
+	if got := details(err); got != want || !errors.Is(err, worktree.ErrPanesOpen) {
+		t.Fatalf("open pane: %+v %v, want %+v", got, err, want)
+	}
+}
+
 func TestRemoveDeletesTheMergedLocalBranchAndNeverTheRemoteBranch(t *testing.T) {
 	e := setup(t)
 	w := e.create("work", "").Worktree

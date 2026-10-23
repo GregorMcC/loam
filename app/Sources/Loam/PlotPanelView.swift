@@ -6,8 +6,8 @@ import SwiftUI
 /// of the active plot, as a calm inspector. It is the sibling of the glass sidebar: plain sections with
 /// sentence-case headings, property rows, a raised "Where it stands" card, and rows with a neutral
 /// hover. It renders `PlotPanelModel` and `ReviewModel`. Every write goes through the models and
-/// `loam`. The callouts (an error, a clash, a missing link, and the changes that are new since you
-/// looked) stand at the top.
+/// `loam`. The callouts (an error, a merge on GitHub, a clash, a missing link, and the changes that are new
+/// since you looked) stand at the top.
 struct PlotPanelView: View {
     let model: PlotPanelModel
     let review: ReviewModel
@@ -75,6 +75,7 @@ struct PlotPanelView: View {
         .background(WindowReader(ref: window))
         .animation(LoamAnimation.arrive, value: model.clash != nil)
         .animation(LoamAnimation.arrive, value: review.clash != nil)
+        .animation(LoamAnimation.arrive, value: app.mergeAsks)
         .onChange(of: model.plot?.id) { closeEditors() }
         // Add link and Add repo from the actions menu (ticket 89). They wait for the plot, because a
         // plot load closes the editors.
@@ -100,6 +101,7 @@ struct PlotPanelView: View {
                 PanelCallout(message).accessibilityIdentifier("panel-review-error")
             }
         }
+        ForEach(app.mergeAsks(in: plot.id)) { merge in mergedCallout(merge) }
         if let message = model.notice {
             CalloutCard {
                 PanelCallout(message).accessibilityIdentifier("panel-notice")
@@ -112,6 +114,23 @@ struct PlotPanelView: View {
         if let prompt = review.clash { UndoClashSection(review: review, prompt: prompt) }
         if let missing = model.missingLink { missingSection(missing) }
         NewSinceSection(review: review, plot: plot.id)
+    }
+
+    /// A merge on GitHub that the repo setting asks about (ticket 113, board 4.1).
+    @ViewBuilder private func mergedCallout(_ merge: MergedPR) -> some View {
+        if let name = app.worktreeStatus(merge.worktree)?.worktree.name {
+            CalloutCard(tone: .neutral) {
+                PanelCallout(AfterMergeRule.question(merge, name: name))
+                    .accessibilityIdentifier("panel-merged-\(merge.worktree)")
+                TrailingButtons(pill: true) {
+                    Button("Keep") { app.keepMerged(merge.worktree) }
+                        .accessibilityIdentifier("panel-merged-keep-\(merge.worktree)")
+                    Button("Remove worktree") { Task { await app.removeMergedWorktree(merge.worktree) } }
+                        .accessibilityIdentifier("panel-merged-remove-\(merge.worktree)")
+                }
+            }
+            .transition(LoamAnimation.growIn)
+        }
     }
 
     private func clashSection(_ clash: EditClash) -> some View {
@@ -251,9 +270,19 @@ struct PlotPanelView: View {
                 HoverMenuRow(menuLabel: "Repo actions", menuID: "panel-repo-menu-\(repo.id)", kind: repo.main ? "Main" : nil) {
                     RepoRowContent(repo: repo)
                 } actions: {
+                    afterMergeMenu(repo)
+                    Divider()
                     Button("Remove repo", role: .destructive) { Task { await model.removeRepo(id: repo.id) } }
                 }
                 .accessibilityIdentifier("panel-repo-\(repo.id)")
+                // The submenu does not reach the actions of the row, so the row names each setting.
+                .accessibilityActions {
+                    ForEach(AfterMerge.allCases, id: \.self) { setting in
+                        Button("\(AfterMergeRule.menuTitle): \(AfterMergeRule.title(setting))") {
+                            Task { await model.setAfterMerge(repo: repo.id, to: setting) }
+                        }
+                    }
+                }
             }
             if adding == .repo {
                 addRepoRow.padding(.horizontal, 8).padding(.vertical, 4)
@@ -287,6 +316,20 @@ struct PlotPanelView: View {
             focus = .newRepo
             await model.loadRepoSuggestions()
         }
+    }
+
+    /// What the app does when GitHub merged the PR of a worktree of the repo (ticket 113, board 4.2). The setting is per
+    /// repo, so it applies to each plot that holds the repo. A picker in the menu style is a submenu with a check on the
+    /// setting.
+    private func afterMergeMenu(_ repo: Repo) -> some View {
+        Picker(AfterMergeRule.menuTitle, selection: Binding(
+            get: { repo.afterMerge ?? .ask },
+            set: { value in Task { await model.setAfterMerge(repo: repo.id, to: value) } })) {
+            ForEach(AfterMerge.allCases, id: \.self) { setting in
+                Text(AfterMergeRule.title(setting)).tag(setting)
+            }
+        }
+        .pickerStyle(.menu)
     }
 
     private func addRepo() {
@@ -540,7 +583,8 @@ struct PanelGround: View {
 
 /// A brief field: the text of What, Why, or Where it stands. It reads as plain text. A hover or the
 /// focus gives it a neutral fill, and a click makes it an editor. A multiline field commits on Return and selects
-/// all its text, so Return adds a new line as in the old text editor, and Command-Return saves.
+/// all its text, so Return adds a new line as in the old text editor, and Command-Return saves. Escape leaves the
+/// field and keeps the draft, with its Revert and Save buttons.
 struct BriefText: View {
     let model: PlotPanelModel
     let window: WindowRef
@@ -573,6 +617,15 @@ struct BriefText: View {
                 editor.insertNewlineIgnoringFieldEditor(nil)
                 return .handled
             }
+            .onKeyPress(.escape) {
+                // During input method composition, Escape cancels the composed text.
+                if let editor = (window.window ?? NSApp.keyWindow)?.firstResponder as? NSTextView, editor.hasMarkedText() {
+                    return .ignored
+                }
+                focused = false
+                Task { model.onEditorClosed?() }
+                return .handled
+            }
             .padding(.horizontal, inset)
             .padding(.vertical, inset == 0 ? 0 : 4)
             .background(
@@ -587,6 +640,20 @@ struct BriefText: View {
                 model.request = nil
                 for _ in 0..<5 {
                     focused = true
+                    try? await Task.sleep(for: .milliseconds(30))
+                }
+            }
+            // After Remove worktree in a merge callout (ticket 113), Where it stands takes the keys with the sentence about
+            // the merge selected, so one key replaces it.
+            .task(id: model.whereSelection?.id) {
+                guard field == .whereItStands, let ask = model.whereSelection else { return }
+                defer { model.whereSelection = nil }
+                for _ in 0..<20 {
+                    focused = true
+                    if let editor = window.window?.firstResponder as? NSTextView, editor.string.hasPrefix(ask.sentence) {
+                        editor.setSelectedRange(NSRange(location: 0, length: (ask.sentence as NSString).length))
+                        return
+                    }
                     try? await Task.sleep(for: .milliseconds(30))
                 }
             }

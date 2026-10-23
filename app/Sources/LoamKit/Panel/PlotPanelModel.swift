@@ -84,6 +84,10 @@ public final class PlotPanelModel {
     @ObservationIgnored public var onEditorClosed: (() -> Void)?
     /// The plot that `request` is for. A hidden panel keeps its last plot until it shows again.
     public var requestPlot: String?
+    /// The sentence that Where it stands selects when it takes the keys, after Remove worktree in a merge callout
+    /// (ticket 113). The field sets it back to nil.
+    public var whereSelection: WhereSelection?
+    @ObservationIgnored private var selectionCount = 0
     /// The request, once its plot has loaded. Before that, the panel shows the plot it had.
     public var readyRequest: PanelRequest? {
         guard let plot, plot.id == requestPlot else { return nil }
@@ -96,6 +100,12 @@ public final class PlotPanelModel {
     /// The app model sets them from `repo_folders` in the settings file.
     @ObservationIgnored public var suggestionRoots: [String] = LoamSettings.defaults
         .expandedRepoFolders(home: FileManager.default.homeDirectoryForCurrentUser.path)
+
+    /// A sentence at the start of the Where it stands draft for the field to select. `id` makes each ask new.
+    public struct WhereSelection: Equatable, Sendable {
+        public var sentence: String
+        public var id: Int
+    }
 
     /// The text and the version it was edited from. A save expects `base`, so a change by another
     /// writer after the edit began shows as a clash.
@@ -163,6 +173,15 @@ public final class PlotPanelModel {
     }
 
     public func revert(_ field: BriefField) { drafts[field] = nil }
+
+    /// After Remove worktree in a merge callout (ticket 113): "Merged #142 Link labels." goes before the text of Where it
+    /// stands as a draft, and the field takes the keys with the sentence selected. ⌘Return saves it as one change.
+    public func prefillMerged(_ number: Int, title: String) {
+        let made = LandSheetContent.whereItStands(merged: number, title: title, current: shownText(of: .whereItStands))
+        edit(.whereItStands, to: made.text)
+        selectionCount += 1
+        whereSelection = WhereSelection(sentence: made.sentence, id: selectionCount)
+    }
 
     /// Words in the brief: what, why, and where it stands, as shown (drafts included).
     public var briefWordCount: Int {
@@ -273,6 +292,19 @@ public final class PlotPanelModel {
     public func removeRepo(id: String) async {
         guard let plot, let repo = plot.repos.first(where: { $0.id == id }) else { return }
         await perform(.repoRemove(id: id), plotID: plot.id, expect: ["repo:\(id)": repo.version])
+    }
+
+    /// Sets what the app does when GitHub merged the PR of a worktree of the repo (ticket 113). The setting is per repo,
+    /// so it applies to each plot that holds the repo. It is not a change of the plot, so it has no `--expect`.
+    public func setAfterMerge(repo id: String, to value: AfterMerge) async {
+        guard let plot, plot.repos.contains(where: { $0.id == id }) else { return }
+        do {
+            _ = try await client.repoEdit(plot: plot.id, repo: id, afterMerge: value)
+            errorMessage = nil
+            await load(plotID: plot.id)
+        } catch {
+            report(error)
+        }
     }
 
     // MARK: Open

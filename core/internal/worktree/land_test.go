@@ -1258,6 +1258,44 @@ func TestRemoveAfterASquashMergeWithAPrunedBranch(t *testing.T) {
 	}
 }
 
+// A dry run of Remove checks the work as a removal does, and changes nothing.
+// It skips the check of the open panes, because the app runs it while the
+// panes are open, and closes them after it (ticket 113). The commits of a
+// merged PR whose branch GitHub deleted do not count as unpushed. A commit
+// after the PR head does.
+func TestRemoveDryRunChecksTheWorkAndChangesNothing(t *testing.T) {
+	for name, more := range map[string]bool{"at the PR head": false, "a commit after the PR head": true} {
+		t.Run(name, func(t *testing.T) {
+			e := setup(t)
+			w, _ := e.landing(mergedState)
+			if err := worktree.RefreshPRs(context.Background(), e.s, []store.Worktree{w}); err != nil {
+				t.Fatal(err)
+			}
+			e.pruneBranch(w)
+			if more {
+				commit(t, w.Path, "more.txt", "m\n")
+			}
+			res, err := worktree.Remove(e.s, e.plot.ID, "fix-login", worktree.RemoveOptions{DryRun: true, OpenPanes: []string{w.Path}})
+			if more {
+				if !errors.Is(err, worktree.ErrUnsafe) || !strings.Contains(err.Error(), "2 commit(s) that are not pushed") {
+					t.Fatalf("%+v %v", res, err)
+				}
+			} else if err != nil || !res.DryRun || res.BranchDeleted {
+				t.Fatalf("%+v %v", res, err)
+			}
+			if _, err := os.Stat(w.Path); err != nil {
+				t.Fatal("the dry run removed the folder")
+			}
+			if _, err := e.s.GetWorktree(w.ID); err != nil {
+				t.Fatal("the dry run removed the record")
+			}
+			if !e.branchExists("fix-login") {
+				t.Fatal("the dry run deleted the branch")
+			}
+		})
+	}
+}
+
 // After loam worktree update, the PR has a merge commit that the worktree does
 // not have. Then GitHub merged the PR with a squash. The branch tip is an
 // earlier commit of the PR, and the local repo has the PR head. Remove uses

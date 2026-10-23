@@ -295,12 +295,13 @@ type linkView struct {
 }
 
 type repoView struct {
-	ID    string   `json:"id"`
-	Path  string   `json:"path"`
-	Note  string   `json:"note"`
-	Main  bool     `json:"main"`
-	Setup string   `json:"setup,omitempty"`
-	Copy  []string `json:"copy,omitempty"`
+	ID         string           `json:"id"`
+	Path       string           `json:"path"`
+	Note       string           `json:"note"`
+	Main       bool             `json:"main"`
+	Setup      string           `json:"setup,omitempty"`
+	Copy       []string         `json:"copy,omitempty"`
+	AfterMerge store.AfterMerge `json:"after_merge"`
 }
 
 func viewOf(p store.Plot) plotView {
@@ -316,7 +317,7 @@ func viewOf(p store.Plot) plotView {
 		}
 	}
 	for i, r := range p.Repos {
-		v.Repos[i] = repoView{r.ID, r.Path, r.Note, r.Main, r.Setup, r.Copy}
+		v.Repos[i] = repoView{r.ID, r.Path, r.Note, r.Main, r.Setup, r.Copy, r.AfterMerge}
 	}
 	return v
 }

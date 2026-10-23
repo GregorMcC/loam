@@ -457,10 +457,12 @@ func scenario(t *testing.T) *harness {
 	}
 	parse(h.run("repo_add_git", "repo-add", 0, "repo", "add", loam, gitRepo, "--setup", "make setup", "--copy", ".env"), &c)
 	h.run("repo_edit_setup", "repo-edit", 0, "repo", "edit", loam, c.Repo.ID, "--setup", "npm ci")
+	h.run("repo_edit_after_merge", "repo-edit", 0, "repo", "edit", loam, c.Repo.ID, "--after-merge", "remove")
 	h.run("worktree_new_dry_run", "worktree-new-dry-run", 0, "worktree", "new", loam, gitRepo, "fix-login", "--dry-run")
 	h.run("worktree_new", "worktree-new", 0, "worktree", "new", loam, gitRepo, "fix-login",
 		"--goal", "Fix the login form", "--link", "https://github.com/example/widgets/issues/57")
 	h.run("worktree_list", "worktree-list", 0, "worktree", "list", loam)
+	h.run("worktree_rm_dry_run", "worktree-rm", 0, "worktree", "rm", loam, "fix-login", "--dry-run")
 	h.run("worktree_rm", "worktree-rm", 0, "worktree", "rm", loam, "fix-login")
 	h.run("worktree_list_empty", "worktree-list", 0, "worktree", "list", loam)
 
@@ -480,6 +482,11 @@ func scenario(t *testing.T) *harness {
 	if err := os.WriteFile(filepath.Join(h.home, "worktrees", loam, "web-local-work", "notes.txt"), []byte("x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// A removal that would lose work, and a removal with a pane open, give
+	// details. The app words them, since the messages name flags (ticket 113).
+	h.run("error_worktree_rm_unsafe", "error", 1, "worktree", "rm", loam, "local-work", "--dry-run")
+	h.run("error_worktree_rm_panes_open", "error", 1, "worktree", "rm", loam, "local-work",
+		"--open-pane", filepath.Join(h.home, "worktrees", loam, "web-local-work"))
 	// A merged or closed PR shows only when the worktree has its head checked
 	// out. Each worktree starts at the same commit, which changes from run to
 	// run, so the PR head in the state is a stand-in, and the fixture gets a

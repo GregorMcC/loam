@@ -129,6 +129,9 @@ ALTER TABLE worktrees ADD COLUMN link_id TEXT NOT NULL DEFAULT '';
 	// merge queue), as JSON. It is empty when no land waits. It is not in the
 	// change log.
 	`ALTER TABLE worktrees ADD COLUMN land TEXT NOT NULL DEFAULT '';`,
+	// 9: what the app does when a refresh finds that GitHub merged the PR of
+	// a worktree of the repo path: ask, remove, or keep.
+	`ALTER TABLE repo_settings ADD COLUMN after_merge TEXT NOT NULL DEFAULT 'ask';`,
 }
 
 // SchemaVersion is the schema version of this binary.

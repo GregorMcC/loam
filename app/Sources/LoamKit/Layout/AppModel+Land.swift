@@ -119,6 +119,8 @@ extension AppModel {
         }
 
         var toast = LandSheetContent.toast(for: result, asked: asked)
+        // A worktree that you kept asks nothing after the merge (ticket 113).
+        if result.merged, !result.worktreeRemoved, asked.keepWorktree { keepLanded(id, number: result.pr.number) }
         if result.merged, landSheet.movesWhereItStandsOn, content.canMoveWhereItStandsOn,
            let problem = await saveWhereItStands(worktree.plotID, merged: result.pr.number) {
             toast = (toast.text + " " + problem, .notice)

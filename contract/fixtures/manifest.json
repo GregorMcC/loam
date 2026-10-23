@@ -572,6 +572,20 @@
     "schema": "repo-edit"
   },
   {
+    "name": "repo_edit_after_merge",
+    "args": [
+      "repo",
+      "edit",
+      "plotaaaaab",
+      "repoaaaaae",
+      "--after-merge",
+      "remove",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "repo-edit"
+  },
+  {
     "name": "worktree_new_dry_run",
     "args": [
       "worktree",
@@ -614,6 +628,19 @@
     "schema": "worktree-list"
   },
   {
+    "name": "worktree_rm_dry_run",
+    "args": [
+      "worktree",
+      "rm",
+      "plotaaaaab",
+      "fix-login",
+      "--dry-run",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "worktree-rm"
+  },
+  {
     "name": "worktree_rm",
     "args": [
       "worktree",
@@ -635,6 +662,33 @@
     ],
     "exit_code": 0,
     "schema": "worktree-list"
+  },
+  {
+    "name": "error_worktree_rm_unsafe",
+    "args": [
+      "worktree",
+      "rm",
+      "plotaaaaab",
+      "local-work",
+      "--dry-run",
+      "--json"
+    ],
+    "exit_code": 1,
+    "schema": "error"
+  },
+  {
+    "name": "error_worktree_rm_panes_open",
+    "args": [
+      "worktree",
+      "rm",
+      "plotaaaaab",
+      "local-work",
+      "--open-pane",
+      "/tmp/loam-contract/loamhome/worktrees/plotaaaaab/web-local-work",
+      "--json"
+    ],
+    "exit_code": 1,
+    "schema": "error"
   },
   {
     "name": "error_gh_unavailable",

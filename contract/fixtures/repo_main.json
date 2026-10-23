@@ -2,6 +2,7 @@
   "change_id": 12,
   "plot": "plotaaaaab",
   "repo": {
+    "after_merge": "ask",
     "id": "repoaaaaac",
     "main": true,
     "note": "Swift app",

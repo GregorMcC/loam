@@ -94,6 +94,20 @@ func decodeFixture(schema: String, data: Data) throws {
         #expect(plot.repos[0].main)
     }
 
+    /// Ticket 113: each repo says what the app does after a merge on GitHub. A value that the app does not know, and
+    /// a core with no setting, read as Ask, so they never remove a worktree.
+    @Test func theRepoSettingAfterAMergeDecodes() throws {
+        let plot = try JSONDecoder().decode(Plot.self, from: Fixtures.data("show_full"))
+        #expect(plot.repos[0].afterMerge == .ask)
+        func repo(_ extra: String) throws -> Repo {
+            try JSONDecoder().decode(Repo.self, from: Data(#"{"id":"repoaaaaaa","path":"/tmp/web","note":"","main":true,"version":1\#(extra)}"#.utf8))
+        }
+        #expect(try repo(#","after_merge":"remove""#).afterMerge == .remove)
+        #expect(try repo(#","after_merge":"keep""#).afterMerge == .keep)
+        #expect(try repo(#","after_merge":"archive""#).afterMerge == .ask)
+        #expect(try repo("").afterMerge == nil)
+    }
+
     @Test func setupCheckDrivesTheBanner() throws {
         let check = try JSONDecoder().decode(SetupCheck.self, from: Fixtures.data("setup_check"))
         #expect(check.needsBanner)
@@ -238,6 +252,29 @@ func decodeFixture(schema: String, data: Data) throws {
         let list = try d.decode([WorktreeStatus].self, from: Fixtures.data("worktree_list_stages"))
         let failed = try #require(list.first { $0.stage == .checksFailed }?.pr)
         #expect(failed.failedChecks.map(\.runID) == [301, 302])
+    }
+
+    /// Ticket 113: a refused `loam worktree rm` carries what it refused, so the app words it.
+    @Test func aRefusedRemovalCarriesItsDetails() throws {
+        func error(_ fixture: String) throws -> LoamError {
+            let env = try JSONDecoder().decode(ErrorEnvelope.self, from: Fixtures.data(fixture))
+            return LoamError.from(exitCode: 1, message: env.error.message, details: env.error.details?.data)
+        }
+        guard case .refusedRemoval(let unsafe, let message) = try error("error_worktree_rm_unsafe") else {
+            Issue.record("not a refused removal")
+            return
+        }
+        #expect(unsafe == RemovalRefusal(refusal: .unsafeWork, changed: 1))
+        #expect(message.contains("--force"), "the message of the core names the flag that the app words away")
+        guard case .refusedRemoval(let panes, _) = try error("error_worktree_rm_panes_open") else {
+            Issue.record("not a refused removal")
+            return
+        }
+        #expect(panes == RemovalRefusal(refusal: .openPanes, openPanes: 1))
+        guard case .failed = try error("error_generic") else {
+            Issue.record("an error with no details is not .failed")
+            return
+        }
     }
 
     @Test func notReadyCarriesTheBlockingChecks() throws {

@@ -379,16 +379,17 @@ var noteText = map[worktree.PRNote]string{
 }
 
 func newWorktreeRmCmd() *cobra.Command {
-	var force bool
+	var force, dryRun bool
 	var panes []string
 	var repo string
 	c := &cobra.Command{
-		Use:   "rm <plot> <worktree> [--repo <repo>] [--force]",
+		Use:   "rm <plot> <worktree> [--repo <repo>] [--force] [--dry-run]",
 		Short: "Remove a worktree",
 		Long: "Remove a worktree. <worktree> is an ID, a folder name, or a name.\n" +
 			"The command refuses while a pane is open in the worktree. It reads the panes of state.json in ~/Library/Application Support/Loam, and the folders of each --open-pane. --force does not skip this check.\n" +
 			"It also refuses a worktree with uncommitted changes or commits that are not pushed, unless you give --force.\n" +
-			"It deletes the local branch with git branch -d, so a branch that is not merged stays. After a squash or rebase merge, git sees the branch as not merged. So when the last refresh says that the PR of the branch is merged, and the branch tip is the PR head, it uses git branch -D. It never deletes a branch on the remote.",
+			"It deletes the local branch with git branch -d, so a branch that is not merged stays. After a squash or rebase merge, git sees the branch as not merged. So when the last refresh says that the PR of the branch is merged, and the branch tip is the PR head, it uses git branch -D. It never deletes a branch on the remote.\n" +
+			"--dry-run checks the work and changes nothing. It does not check the open panes.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := openStore()
@@ -400,7 +401,7 @@ func newWorktreeRmCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			res, err := worktree.Remove(s, p.ID, args[1], worktree.RemoveOptions{Force: force, OpenPanes: panes, Repo: repo})
+			res, err := worktree.Remove(s, p.ID, args[1], worktree.RemoveOptions{Force: force, OpenPanes: panes, Repo: repo, DryRun: dryRun})
 			if err != nil {
 				return err
 			}
@@ -409,6 +410,10 @@ func newWorktreeRmCmd() *cobra.Command {
 				return printJSON(cmd, res)
 			}
 			out := cmd.OutOrStdout()
+			if res.DryRun {
+				fmt.Fprintf(out, "Dry run: Loam can remove the worktree %s. The open panes were not checked.\n", filepath.Base(res.Worktree.Path))
+				return nil
+			}
 			fmt.Fprintf(out, "Removed the worktree %s.\n", filepath.Base(res.Worktree.Path))
 			if res.BranchDeleted {
 				fmt.Fprintf(out, "Deleted the local branch %s.\n", res.Worktree.Branch)
@@ -419,6 +424,7 @@ func newWorktreeRmCmd() *cobra.Command {
 		},
 	}
 	c.Flags().BoolVar(&force, "force", false, "remove a worktree that has uncommitted changes or unpushed commits")
+	c.Flags().BoolVar(&dryRun, "dry-run", false, "check the work and change nothing. The open panes are not checked")
 	c.Flags().StringVar(&repo, "repo", "", "the repo of the worktree, when two repos have a worktree with that name")
 	c.Flags().StringArrayVar(&panes, "open-pane", nil, "the folder of an open pane (repeatable). The app passes its open panes.")
 	return c

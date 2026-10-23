@@ -168,12 +168,22 @@ func (s *Server) registerWorktrees(srv *mcp.Server) {
 }
 
 // saveSettings sets the worktree settings of a repo of the plot. The settings
-// belong to the repo path and are not a change.
-func (s *Server) saveSettings(plot store.Plot, repoID string, setup *string, files *[]string) error {
+// belong to the repo path and are not a change. A nil argument keeps the
+// stored value.
+func (s *Server) saveSettings(plot store.Plot, repoID string, setup *string, files *[]string, afterMerge *store.AfterMerge) error {
 	for _, r := range plot.Repos {
-		if r.ID == repoID {
-			return s.st.SetRepoSettings(r.Path, setup, files)
+		if r.ID != repoID {
+			continue
 		}
+		if setup != nil || files != nil {
+			if err := s.st.SetRepoSettings(r.Path, setup, files); err != nil {
+				return err
+			}
+		}
+		if afterMerge != nil {
+			return s.st.SetAfterMerge(r.Path, *afterMerge)
+		}
+		return nil
 	}
 	return errors.New("no repo has the ID " + repoID + " in this plot: call get_plot to see the repo IDs")
 }

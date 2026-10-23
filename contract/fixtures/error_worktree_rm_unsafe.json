@@ -1,0 +1,11 @@
+{
+  "error": {
+    "details": {
+      "changed": 1,
+      "refusal": "unsafe_work"
+    },
+    "exit_code": 1,
+    "kind": "error",
+    "message": "web-local-work has 1 file(s) with uncommitted changes. Run again with --force to remove it anyway: the worktree holds work that is not saved"
+  }
+}

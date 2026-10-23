@@ -72,6 +72,79 @@ func TestRepoSettingsFlags(t *testing.T) {
 	}
 }
 
+// --after-merge sets what the app does after a merge on GitHub. It is a
+// setting of the repo path, not a change, and the repo JSON shows it.
+func TestRepoAfterMergeFlag(t *testing.T) {
+	s, p := linkRepoEnv(t, store.PlotInput{})
+	d := lrRepoDirs(t, 2)
+	type written struct {
+		ChangeID int64      `json:"change_id"`
+		Repo     store.Repo `json:"repo"`
+	}
+	read := func(out string) written {
+		t.Helper()
+		var w written
+		if err := json.Unmarshal([]byte(out), &w); err != nil {
+			t.Fatalf("%v: %s", err, out)
+		}
+		return w
+	}
+
+	// A new repo asks by default.
+	out, _, err := lrRun(t, "", "repo", "add", "alpha", d[0], "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := read(out).Repo.AfterMerge; got != store.AfterMergeAsk {
+		t.Fatalf("default %q: %s", got, out)
+	}
+	if !strings.Contains(out, `"after_merge": "ask"`) {
+		t.Fatalf("the repo JSON has no after_merge: %s", out)
+	}
+	// repo add takes the flag too.
+	out, _, err = lrRun(t, "", "repo", "add", "alpha", d[1], "--after-merge", "keep", "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := read(out).Repo.AfterMerge; got != store.AfterMergeKeep {
+		t.Fatalf("add %q", got)
+	}
+
+	before := lrPlot(t, s, p.ID).Revision
+	out, _, err = lrRun(t, "", "repo", "edit", "alpha", d[0], "--after-merge", "remove", "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := read(out); w.ChangeID != 0 || w.Repo.AfterMerge != store.AfterMergeRemove {
+		t.Fatalf("%+v", w)
+	}
+	if got := lrPlot(t, s, p.ID); got.Revision != before || got.Repos[0].AfterMerge != store.AfterMergeRemove {
+		t.Fatalf("revision %d (was %d), repos %+v", got.Revision, before, got.Repos)
+	}
+	if text, _, err := lrRun(t, "", "repo", "edit", "alpha", d[0], "--after-merge", "ask"); err != nil || !strings.Contains(text, "Saved") {
+		t.Fatalf("%q %v", text, err)
+	}
+
+	// A value that is not ask, remove, or keep exits with code 2 and changes nothing.
+	for _, bad := range []string{"never", "", "Remove"} {
+		_, _, err := lrRun(t, "", "repo", "edit", "alpha", d[0], "--after-merge", bad, "--json")
+		if !errors.Is(err, store.ErrInvalid) || classify(err).ExitCode != ExitInvalid {
+			t.Fatalf("%q: %v", bad, err)
+		}
+	}
+	if got := lrPlot(t, s, p.ID).Repos[0].AfterMerge; got != store.AfterMergeAsk {
+		t.Fatalf("a bad value changed the setting to %q", got)
+	}
+	// A bad value on repo add adds no repo.
+	d2 := lrRepoDirs(t, 1)
+	if _, _, err := lrRun(t, "", "repo", "add", "alpha", d2[0], "--after-merge", "later"); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("%v", err)
+	}
+	if n := len(lrPlot(t, s, p.ID).Repos); n != 2 {
+		t.Fatalf("%d repos after a bad add", n)
+	}
+}
+
 func TestWorktreeNewListRm(t *testing.T) {
 	s, p, repo := wtCLI(t)
 	out, errOut, err := lrRun(t, "", "worktree", "new", "alpha", repo, "fix-x", "--json")
@@ -122,6 +195,19 @@ func TestWorktreeNewListRm(t *testing.T) {
 	if _, _, err := lrRun(t, "", "worktree", "rm", "alpha", "fix-x", "--force", "--open-pane", w.Path); !errors.Is(err, worktree.ErrPanesOpen) {
 		t.Fatalf("%v", err)
 	}
+	// A dry run refuses the same work, skips the panes, and removes nothing.
+	if _, _, err := lrRun(t, "", "worktree", "rm", "alpha", "fix-x", "--dry-run", "--open-pane", w.Path); !errors.Is(err, worktree.ErrUnsafe) {
+		t.Fatalf("%v", err)
+	}
+	os.Remove(filepath.Join(w.Path, "x.txt"))
+	if text, _, err := lrRun(t, "", "worktree", "rm", "alpha", "fix-x", "--dry-run", "--open-pane", w.Path); err != nil ||
+		!strings.Contains(text, "Dry run: Loam can remove the worktree app-fix-x.") {
+		t.Fatalf("%q %v", text, err)
+	}
+	if ws, _ := s.ListWorktrees(p.ID); len(ws) != 1 {
+		t.Fatalf("the dry run removed the worktree: %v", ws)
+	}
+	os.WriteFile(filepath.Join(w.Path, "x.txt"), []byte("x"), 0o644)
 	out, _, err = lrRun(t, "", "worktree", "rm", "alpha", "fix-x", "--force", "--open-pane", repo, "--json")
 	if err != nil {
 		t.Fatal(err)

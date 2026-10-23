@@ -528,6 +528,7 @@
       "name": "Loam",
       "repos": [
         {
+          "after_merge": "ask",
           "id": "repoaaaaad",
           "main": true,
           "note": "",

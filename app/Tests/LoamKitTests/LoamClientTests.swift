@@ -78,6 +78,21 @@ struct FakeLoam {
         #expect(fake.args() == ["link add Loam Spec https://example.com/spec --note The v1 spec --json --actor app"])
     }
 
+    /// Ticket 113: the setting after a merge on GitHub goes as `--after-merge`. It is no change of the plot, so no `--expect`.
+    @Test func repoEditSetsTheSettingAfterAMerge() async throws {
+        let fake = try FakeLoam([("repo_edit_after_merge", 0)])
+        _ = try await fake.client().repoEdit(plot: "Loam", repo: "repoaaaaae", afterMerge: .remove)
+        #expect(fake.args() == ["repo edit Loam repoaaaaae --after-merge remove --json --actor app"])
+    }
+
+    /// Ticket 113: a dry run of `worktree rm` checks the work before the panes close.
+    @Test func worktreeRemoveDryRun() async throws {
+        let fake = try FakeLoam([("worktree_rm_dry_run", 0)])
+        let result = try await fake.client().worktreeRemove(plot: "Loam", worktree: "fix-login", dryRun: true)
+        #expect(fake.args() == ["worktree rm Loam fix-login --dry-run --json --actor app"])
+        #expect(result.worktree.name == "fix-login" && !result.branchDeleted)
+    }
+
     @Test func setSendsTextOnStdinWithExpectedVersions() async throws {
         let fake = try FakeLoam([("set", 0)])
         let plot = try await fake.client().set(plot: "Loam", field: .whereItStands, text: "-dash text\nline 2", expect: ["where": 4, "name": 1])

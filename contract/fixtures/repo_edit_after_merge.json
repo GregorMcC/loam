@@ -1,0 +1,16 @@
+{
+  "change_id": 0,
+  "plot": "plotaaaaab",
+  "repo": {
+    "after_merge": "remove",
+    "copy": [
+      ".env"
+    ],
+    "id": "repoaaaaae",
+    "main": false,
+    "note": "",
+    "path": "/tmp/loam-contract/repos/web",
+    "setup": "npm ci",
+    "version": 24
+  }
+}

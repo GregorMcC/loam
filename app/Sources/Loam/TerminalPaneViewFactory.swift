@@ -101,6 +101,8 @@ final class TerminalPaneViewFactory: PaneViewFactory {
         onKeyInput = { [weak model] in model?.typed(in: $0) }
         onInput = { [weak model] pane, kind in model?.input(kind, in: pane) }
         model.typeIntoPane = { [weak self] pane, text in try self?.surfaces[pane]?.pasteWithoutReturn(text) ?? false }
+        // A pane with no terminal started no process.
+        model.paneRunsAProcess = { [weak self] pane in self?.surfaces[pane]?.runsAProcess ?? false }
     }
 
     /// Removes every socket. The app calls it at quit.

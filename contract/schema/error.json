@@ -20,7 +20,10 @@
         "details": { "type": "object" }
       },
       "allOf": [
-        { "if": { "properties": { "kind": { "const": "error" } } }, "then": { "properties": { "exit_code": { "const": 1 } } } },
+        {
+          "if": { "properties": { "kind": { "const": "error" } } },
+          "then": { "properties": { "exit_code": { "const": 1 }, "details": { "$ref": "#/$defs/refusalDetails" } } }
+        },
         { "if": { "properties": { "kind": { "const": "invalid" } } }, "then": { "properties": { "exit_code": { "const": 2 } } } },
         {
           "if": { "properties": { "kind": { "const": "stale" } } },
@@ -58,6 +61,19 @@
     }
   },
   "$defs": {
+    "refusalDetails": {
+      "description": "A refused loam worktree rm. unsafe_work has changed, unpushed and check_error, each left out when it is 0 or empty. unpushed leaves out the commits that the merged PR holds. open_panes has open_panes.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["refusal"],
+      "properties": {
+        "refusal": { "enum": ["unsafe_work", "open_panes"] },
+        "changed": { "type": "integer", "minimum": 1 },
+        "unpushed": { "type": "integer", "minimum": 1 },
+        "check_error": { "type": "string", "minLength": 1 },
+        "open_panes": { "type": "integer", "minimum": 1 }
+      }
+    },
     "staleDetails": {
       "type": "object",
       "additionalProperties": false,
