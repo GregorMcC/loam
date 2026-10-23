@@ -50,15 +50,17 @@ extension Scenarios {
             rows.allSatisfy { app.exists("actions-row-\($0)") }
         }
         try await app.waitUntil("the search field has the keys") { host.window.firstResponder is NSTextView }
+        let menuKeys = app.keyView
         await app.sleep(0.5)
         app.screenshot("night-menu")
 
-        // ⌘J again closes it, and the pane has the keys again.
+        // ⌘J again closes it, and the pane has the keys again. The closed menu does not take them back (ticket 130).
         try app.pressMenuKey("j")
         try await app.waitUntil("⌘J closes the menu") { !app.exists("actions-menu") }
         try await app.waitUntil("the pane has the keys again") {
             host.model.workspace.focusedPane.map { host.window.firstResponder === host.paneView($0) } ?? false
         }
+        try app.checkClosedOverlayTakesNoKeys(menuKeys, "the closed menu")
 
         // Escape in the middle of a composition (marked text, as an input method makes it) is for the input method. The menu
         // stays open. No input method runs in the driver, so the scenario ends the composition. The next Escape closes the

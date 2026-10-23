@@ -17,6 +17,9 @@ extension Scenarios {
         do { try await prPopoverSteps(app) } catch { app.dumpAccessibility(); throw error }
     }
 
+    /// The runs of the ⌘J path to the popover in step 10 (ticket 130).
+    private static let menuRounds = 5
+
     /// The checks of PR 16 that passed: `build` and then `job-1` and on. There are more than a window shows, so
     /// the list of the passed checks has to scroll.
     private static let passedCheckCount = 40
@@ -295,9 +298,11 @@ extension Scenarios {
         app.press(.escape)
         try await app.waitUntil("Escape closes the popover of the ready worktree") { !app.exists("pr-popover") }
 
-        // 8. The switcher finds a worktree with a PR by its number, and Return opens its popover.
+        // 8. The switcher finds a worktree with a PR by its number, and Return opens its popover. Neither the closed switcher
+        // nor the closed popover takes the keys back (ticket 130).
         try await openPopoverSwitcher(app)
         try app.fill("switcher-field", with: "#22")
+        let switcherKeys = app.keyView
         try await app.waitUntil("the worktree row") { app.text(of: "switcher-row-0")?.hasPrefix("link-labels") == true }
         try await app.waitUntil("the preview of the worktree") {
             app.text(of: "switcher-preview-caption") == "Worktree \u{00B7} Ready to merge" && app.text(of: "switcher-footer-action") == "Show pull request"
@@ -305,8 +310,11 @@ extension Scenarios {
         app.screenshot("pr-switcher")
         app.press(.returnKey)
         try await app.waitUntil("Return opens the popover") { !app.exists("switcher-field") && app.exists("pr-popover") && model.prPopover.worktreeID == labels.id }
+        let switcherPopoverKeys = app.keyView
         app.press(.escape)
         try await app.waitUntil("Escape closes that popover") { !app.exists("pr-popover") }
+        try app.checkClosedOverlayTakesNoKeys(switcherKeys, "the closed switcher")
+        try app.checkClosedOverlayTakesNoKeys(switcherPopoverKeys, "the popover from the switcher")
 
         // 9. A row of the sidebar has the action "Show pull request".
         try app.perform("Show pull request", on: "worktree-\(labels.id)")
@@ -316,22 +324,35 @@ extension Scenarios {
         try check(!AccessibilityProbe.shared.performAction("worktree-\(local.id)", named: "Show pull request"), "a worktree with no PR has the action")
 
         // 10. The ⌘J menu of a pane in a worktree has the worktree section: Show pull request opens the popover,
-        // and Refresh asks GitHub about the worktree without one.
+        // and Refresh asks GitHub about the worktree without one. The path runs a few times in a row (ticket 130). Each
+        // time the terminal has the keys after Escape, and neither the closed menu nor the closed popover takes them back.
         model.goToPane(panelPane)
         try await app.waitUntil("the shell of native-panel has the keys") { terminalHasTheKeys() && focusedWorktreeID() == panel.id }
-        app.press(letter: "j", flags: .command)
-        try await app.waitUntil("the menu opens") { app.exists("actions-menu") }
-        try await app.waitUntil("the menu has the worktree rows") { app.exists("actions-row-Show pull request") && app.exists("actions-row-Refresh") }
-        app.screenshot("pr-actions-menu")
-        try await app.waitUntil("the search field has the keys") { host.window.firstResponder is NSTextView }
-        try app.type("pull request")
-        try await app.waitUntil("the filter leaves Show pull request") { app.exists("actions-row-Show pull request") && !app.exists("actions-row-Refresh") }
-        app.press(.returnKey)
-        try await app.waitUntil("Return opens the popover") { !app.exists("actions-menu") && app.exists("pr-popover") && model.prPopover.worktreeID == panel.id }
-        try await app.waitUntil("the popover is done") { !model.prPopover.isRefreshing }
-        app.press(.escape)
-        try await app.waitUntil("Escape closes the popover from the menu") { !app.exists("pr-popover") }
-        try await app.waitUntil("the terminal has the keys after the menu") { terminalHasTheKeys() }
+        for round in 1...menuRounds {
+            app.press(letter: "j", flags: .command)
+            try await app.waitUntil("the menu opens (\(round))") { app.exists("actions-menu") }
+            try await app.waitUntil("the menu has the worktree rows (\(round))") {
+                app.exists("actions-row-Show pull request") && app.exists("actions-row-Refresh")
+            }
+            if round == 1 { app.screenshot("pr-actions-menu") }
+            try await app.waitUntil("the search field has the keys (\(round))") { host.window.firstResponder is NSTextView }
+            let menuKeys = app.keyView
+            try app.type("pull request")
+            try await app.waitUntil("the filter leaves Show pull request (\(round))") {
+                app.exists("actions-row-Show pull request") && !app.exists("actions-row-Refresh")
+            }
+            app.press(.returnKey)
+            try await app.waitUntil("Return opens the popover (\(round))") {
+                !app.exists("actions-menu") && app.exists("pr-popover") && model.prPopover.worktreeID == panel.id
+            }
+            try await app.waitUntil("the popover is done (\(round))") { !model.prPopover.isRefreshing }
+            let popoverKeys = app.keyView
+            app.press(.escape)
+            try await app.waitUntil("Escape closes the popover from the menu (\(round))") { !app.exists("pr-popover") }
+            try await app.waitUntil("the terminal has the keys after the menu (\(round))") { terminalHasTheKeys() }
+            try app.checkClosedOverlayTakesNoKeys(menuKeys, "the closed menu")
+            try app.checkClosedOverlayTakesNoKeys(popoverKeys, "the popover from the menu")
+        }
         let narrowBeforeRefresh = refreshes(ofOneWorktree: true)
         app.press(letter: "j", flags: .command)
         try await app.waitUntil("the menu opens again") { app.exists("actions-menu") }
@@ -362,12 +383,14 @@ extension Scenarios {
         try await app.waitUntil("the first pane has the keys") { focusedWorktreeID() == panel.id && terminalHasTheKeys() }
         model.openPullRequest(panel.id)
         try await app.waitUntil("the popover opens again") { app.exists("pr-popover") }
+        let movedPopoverKeys = app.keyView
         model.goToPane(splitPane)
         try await app.waitUntil("a move to another pane closes the popover") { !app.exists("pr-popover") && !model.prPopover.isOpen }
         // The popover closed at once after it opened, and it does not take the keys back from the new pane.
         try await app.waitUntil("the terminal of the new pane has the keys") { terminalHasTheKeys() }
         await app.sleep(0.3)
         try check(terminalHasTheKeys(), "the closed popover took the keys")
+        try app.checkClosedOverlayTakesNoKeys(movedPopoverKeys, "the popover that a move closed")
 
         // 13. The popover follows the control that opened it: the mark of a sidebar row. A resize of the window and
         // a drag of the sidebar divider move the mark, and the card moves with it. A hidden sidebar hides the mark, so

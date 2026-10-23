@@ -49,11 +49,9 @@ struct SwitcherView: View {
         .task(id: model.openCount) {
             arrived = false
             withAnimation(LoamAnimation.arrive) { arrived = true }
-            // The hosting view becomes first responder after this view appears.
-            for _ in 0..<5 {
-                fieldFocused = true
-                try? await Task.sleep(for: .milliseconds(30))
-            }
+            // The hosting view becomes first responder after this view appears. The field takes the keys.
+            await window.giveKeysToAControl(of: NSHostingView<SwitcherView>.self, while: { model.isOpen },
+                                            isFocused: { fieldFocused }, focus: { fieldFocused = $0 })
         }
     }
 

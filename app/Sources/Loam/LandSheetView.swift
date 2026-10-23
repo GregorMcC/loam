@@ -60,12 +60,9 @@ struct LandSheetView: View {
             arrived = false
             selection = nil
             withAnimation(LoamAnimation.arrive) { arrived = true }
-            // The hosting view becomes first responder after this view appears.
-            for _ in 0..<5 {
-                guard app.landSheet.isOpen else { return }
-                focus = .sheet
-                try? await Task.sleep(for: .milliseconds(30))
-            }
+            // The hosting view becomes first responder after this view appears. The card takes the keys.
+            await window.giveKeysToAControl(of: NSHostingView<LandSheetView>.self, while: { app.landSheet.isOpen },
+                                            isFocused: { focus != nil }, focus: { focus = $0 ? .sheet : nil })
         }
         // The box is off while the merge runs, and a box that is off loses the keys to the window, where no key of the sheet
         // works. After a merge that GitHub refused, the card takes the keys, as at the open: Return merges again, and Tab goes

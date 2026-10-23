@@ -414,9 +414,33 @@ extension DriverApp {
         Log.line("fill \(id)")
     }
 
-    /// Logs the accessibility identifiers, for a failed run.
+    /// Logs the view that has the keys and the accessibility identifiers, for a failed run. A wait for the keys that never
+    /// ends then names the view that has them (ticket 130).
     func dumpAccessibility() {
+        let holder = window.firstResponder
+        let name = holder.map { String(describing: Swift.type(of: $0)) } ?? "nothing"
+        let root = rootViewWithTheKeys().map { " in \($0)" } ?? ""
+        let hidden = (holder as? NSView)?.isHiddenOrHasHiddenAncestor == true ? ", in a hidden view" : ""
+        Log.line("keys: \(name)\(root)\(hidden)")
         for line in AccessibilityProbe.shared.dump() { Log.line("AX " + line) }
+    }
+
+    /// The view that has the keys. For a field editor it is its text field, since SwiftUI gives the keys to the field.
+    var keyView: NSResponder? {
+        guard let editor = window.firstResponder as? NSTextView, editor.isFieldEditor else { return window.firstResponder }
+        return editor.delegate as? NSView ?? editor
+    }
+
+    /// Ticket 130: an overlay asks SwiftUI for the keys after it opens, and SwiftUI moves them at its next update. When the
+    /// overlay closes before that update, the late move comes after the close gave the keys back. This makes that late move:
+    /// the view that had the keys in the open overlay asks for them again. The window refuses, and the keys stay.
+    func checkClosedOverlayTakesNoKeys(_ view: NSResponder?, _ what: String) throws {
+        // A view that left the window or still shows would test nothing here.
+        guard let view = view as? NSView, view.window === window, view.isHiddenOrHasHiddenAncestor else {
+            throw DriverFailure("\(what) left no hidden view that had the keys")
+        }
+        let holder = window.firstResponder
+        if window.makeFirstResponder(view) || window.firstResponder !== holder { throw DriverFailure("\(what) took the keys back") }
     }
 
     /// Presses a menu key equivalent such as command-I through the main menu.

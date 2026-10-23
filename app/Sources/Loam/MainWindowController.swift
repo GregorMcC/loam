@@ -84,7 +84,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         switcherHost.sizingOptions = []
         switcherHost.isHidden = true
 
-        let window = NSWindow(
+        let window = MainWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1100, height: 700),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
@@ -144,6 +144,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         model.panel.onEditorClosed = { [weak self] in self?.giveKeysBackFromPanel() }
         connectSwitcher()
         installActionBar()
+        // Each overlay host goes in this list, so the window refuses the keys to it while it is hidden (ticket 130).
+        window.overlays = [switcherHost, actionsHost, popoverHost, landHost, newWorktreeHost]
         collapseObservation = sidebarItem.observe(\.isCollapsed, options: [.new]) { [weak self] _, _ in
             MainActor.assumeIsolated { self?.syncCollapse() }
         }
@@ -720,6 +722,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 }
 
 private let commandLog = Logger(subsystem: "dev.loam.Loam", category: "commands")
+
+/// The main window. It never gives the keys to a view in a hidden overlay (ticket 130). An overlay asks SwiftUI for the
+/// keys when it opens, and SwiftUI moves them at its next update. Sometimes the overlay closes before that update. The close
+/// gives the keys back first, and then the late move asks for them for a view that no longer shows. No key reaches that view.
+final class MainWindow: NSWindow {
+    /// The overlays over the split view: the quick switcher, the actions menu, the PR popover and the two sheets.
+    var overlays: [NSView] = []
+
+    override func makeFirstResponder(_ responder: NSResponder?) -> Bool {
+        if let view = responder as? NSView, overlays.contains(where: { $0.isHidden && view.isDescendant(of: $0) }) { return false }
+        return super.makeFirstResponder(responder)
+    }
+}
 
 /// A split view with `rule` dividers (docs/design: separate regions with a hairline).
 final class LoamSplitView: NSSplitView {
