@@ -126,7 +126,7 @@ extension Scenarios {
         Log.line("RESULT shell after the move: \(after)")
 
         // 5. The session resumes its current ID in Alpha, seeded, in the home folder.
-        try await app.waitUntil("the session resumed", timeout: 15) { setup.invocation()?.args.contains("--resume") == true }
+        try await app.waitUntil("the session resumed") { setup.invocation()?.args.contains("--resume") == true }
         let resumed = setup.invocation()!
         Log.line("RESULT claude args after the move: \(resumed.args.joined(separator: " "))")
         try expect(resumed.args.contains(current), "claude did not resume \(current)")
@@ -161,12 +161,12 @@ extension Scenarios {
         try expect(model.plots.count == 1, "a plot was made before the answer")
         app.screenshot("move-question")
         button("Move", in: app.window.attachedSheet?.contentView)!.performClick(nil)
-        try await app.waitUntil("Beta has the tab", timeout: 10) {
+        try await app.waitUntil("Beta has the tab") {
             guard let beta = model.plots.first(where: { $0.name == "Beta" })?.id else { return false }
             return model.workspace.activeSpace == .plot(beta) && model.workspace.selectedTab(of: .plot(beta))?.id == second.id
         }
         try expect(model.workspace.tabs(of: .home).isEmpty, "Home still has the second tab")
-        try await app.waitUntil("the second session started again", timeout: 15) {
+        try await app.waitUntil("the second session started again") {
             setup.invocation()?.args.starts(with: ["--session-id", secondID]) == true
         }
         Log.line("RESULT New Plot… asked first, then moved the tab to Beta, and the session started again with \(secondID)")
@@ -189,13 +189,13 @@ extension Scenarios {
         try FileManager.default.removeItem(at: setup.invocationFile)
         let host = try await setup.launch(app)
         let model = host.model
-        try await app.waitUntil("the plots arrive", timeout: 10) { model.plots.count == 2 }
+        try await app.waitUntil("the plots arrive") { model.plots.count == 2 }
         try expect(model.workspace.tabs(of: .plot(saved.plot)).map(\.tree) == [saved.tree], "Alpha has another layout")
         try expect(model.workspace.tabs(of: .home).isEmpty, "Home has tabs again")
         model.activate(plot: saved.plot)
         let command = model.workspace.spec(of: saved.session)?.command ?? ""
         try expect(command.hasSuffix("resume \(saved.sessionID)'"), "the moved pane runs \(command)")
-        try await app.waitUntil("the session resumed", timeout: 15) {
+        try await app.waitUntil("the session resumed") {
             model.workspace.session(of: saved.session)?.started == true && setup.invocation() != nil
         }
         try expect(model.workspace.session(of: saved.session)?.sessionID == saved.sessionID, "the pane runs another session")

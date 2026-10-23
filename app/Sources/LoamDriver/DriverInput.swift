@@ -229,7 +229,8 @@ extension DriverApp {
     /// Waits until the condition is true. The wait has no time limit of its own, as in the LoamKit tests (ticket 125): a
     /// busy machine makes the app slow, and a fixed limit then fails a scenario that is right. The time limit of the
     /// scenario ends a wait that never ends, and the FAIL line names the wait. With `timeout`, the wait fails after
-    /// that time, for a scenario that goes on when the condition does not come (`try?`).
+    /// that time. Use it only for a wait that can never end, such as a `try?` wait for a scenario that goes on when the
+    /// condition does not come, or for a test of a time that a person would notice (ticket 131).
     func waitUntil(_ what: String, timeout: TimeInterval? = nil, _ condition: () -> Bool) async throws {
         let start = Date()
         waiting = what

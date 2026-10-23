@@ -115,9 +115,9 @@ final class Watchdog: @unchecked Sendable {
         lock.unlock()
     }
 
-    /// Runs `body`, in which the main thread reads the output of a process that the driver started, such as `loam`.
-    /// The main thread does not beat then, but the app does not hang: a busy machine can hold the launch of a process
-    /// for more than 10 s (ticket 125). So the limit is `excusedLimit` until `body` returns.
+    /// Runs `body`, in which the main thread starts a process, reads its output, or waits for it, such as `loam`, `git`
+    /// or `ps`. The main thread does not beat then, but the app does not hang: a busy machine can hold the launch of a
+    /// process for more than 10 s (tickets 125 and 131). So the limit is `excusedLimit` until `body` returns.
     static func excuse<T>(_ body: () throws -> T) rethrows -> T {
         current?.excuse(1)
         defer { current?.excuse(-1) }

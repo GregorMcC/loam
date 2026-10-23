@@ -190,7 +190,7 @@ extension Scenarios {
         try await app.waitUntil("the session got the prompt") { sent() == failuresPrompt + "\n" }
         try await app.waitUntil("the turn runs") { model.workspace.state(of: session) == .working }
         // The toast of the typed prompt fades first, so the shot of the busy session does not show it.
-        try await app.waitUntil("the toast fades", timeout: ActionBarModel.toastSeconds + 3) { !app.exists("action-bar-toast") }
+        try await app.waitUntil("the toast fades") { !app.exists("action-bar-toast") }
         try await openPopover()
         try expectSend(primary()?.title == "Copy prompt" && primary()?.pane.isEmpty == true,
                        "the busy button reads \(String(describing: primary()))")
@@ -233,7 +233,7 @@ extension Scenarios {
 
         // 6. Claude Code keeps the text that you typed during the turn, so after the Stop the input can still hold
         // your text. The button copies again, and the ⌘J row opens the popover, so you see why.
-        try await app.waitUntil("the turn ends", timeout: turnSeconds + 5) { model.workspace.state(of: session) == .idle }
+        try await app.waitUntil("the turn ends") { model.workspace.state(of: session) == .idle }
         try expectSend(model.workspace.session(of: session)?.typedSinceSubmit == true, "the Stop emptied the input")
         try await openPopover()
         try expectSend(primary()?.title == "Copy prompt", "the button after a key reads \(String(describing: primary()))")

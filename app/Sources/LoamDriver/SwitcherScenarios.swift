@@ -20,7 +20,7 @@ extension Scenarios {
         } else {
             try app.pressMenuKey("p", flags: .command)
         }
-        try await app.waitUntil("the switcher shows", timeout: 5) { app.exists("switcher-field") }
+        try await app.waitUntil("the switcher shows") { app.exists("switcher-field") }
     }
 
     /// Performs the menu item whose key and modifiers equal these. `NSMenu.performKeyEquivalent`
@@ -40,7 +40,7 @@ extension Scenarios {
     }
 
     private static func closed(_ app: DriverApp) async throws {
-        try await app.waitUntil("the switcher closes", timeout: 5) { !app.exists("switcher-field") }
+        try await app.waitUntil("the switcher closes") { !app.exists("switcher-field") }
     }
 
     private static func switcherSteps(_ app: DriverApp) async throws {
@@ -63,7 +63,7 @@ extension Scenarios {
 
         // Empty query: the plot used last is first, and Escape closes.
         try await openSwitcher(app)
-        try await app.waitUntil("the first row", timeout: 5) { app.exists("switcher-row-0") }
+        try await app.waitUntil("the first row") { app.exists("switcher-row-0") }
         try expect(app.text(of: "switcher-row-0")?.hasPrefix("Alpha plot") == true,
                    "row 0 is not the plot used last: \(app.text(of: "switcher-row-0") ?? "none")")
         try expect(!app.exists("switcher-row-5"), "the empty query lists links or actions")
@@ -73,10 +73,10 @@ extension Scenarios {
         // A pane, found by its terminal title.
         try await openSwitcher(app)
         try app.fill("switcher-field", with: "zebra")
-        try await app.waitUntil("the pane row", timeout: 5) { app.text(of: "switcher-row-0")?.hasPrefix("zebra build") == true }
+        try await app.waitUntil("the pane row") { app.text(of: "switcher-row-0")?.hasPrefix("zebra build") == true }
         app.screenshot("switcher-pane")
         // Ticket 90: the preview of a pane, with its footer.
-        try await app.waitUntil("the pane preview", timeout: 5) {
+        try await app.waitUntil("the pane preview") {
             app.text(of: "switcher-preview-title") == "zebra build" && app.text(of: "switcher-preview-caption")?.hasPrefix("Pane") == true
         }
         try expect(app.text(of: "switcher-footer-action") == "Go to pane", "the footer says \(app.text(of: "switcher-footer-action") ?? "none")")
@@ -89,8 +89,8 @@ extension Scenarios {
         // A plot.
         try await openSwitcher(app)
         try app.fill("switcher-field", with: "alpha")
-        try await app.waitUntil("the plot row", timeout: 5) { app.text(of: "switcher-row-0")?.hasPrefix("Alpha plot") == true }
-        try await app.waitUntil("the plot preview", timeout: 10) {
+        try await app.waitUntil("the plot row") { app.text(of: "switcher-row-0")?.hasPrefix("Alpha plot") == true }
+        try await app.waitUntil("the plot preview") {
             app.text(of: "switcher-preview-title") == "Alpha plot" && app.text(of: "switcher-preview-caption") == "Plot · 0 panes · 0 links"
         }
         try expect(app.text(of: "switcher-footer-action") == "Open plot", "the footer says \(app.text(of: "switcher-footer-action") ?? "none")")
@@ -102,23 +102,23 @@ extension Scenarios {
         // A link, from another plot, through `loam open`.
         try await openSwitcher(app)
         try app.fill("switcher-field", with: "zeta")
-        try await app.waitUntil("the link row", timeout: 10) { app.text(of: "switcher-row-0")?.hasPrefix("Zeta docs") == true }
-        try await app.waitUntil("the link preview", timeout: 5) { app.text(of: "switcher-preview-caption") == "Web link" }
+        try await app.waitUntil("the link row") { app.text(of: "switcher-row-0")?.hasPrefix("Zeta docs") == true }
+        try await app.waitUntil("the link preview") { app.text(of: "switcher-preview-caption") == "Web link" }
         try expect(app.text(of: "switcher-footer-action") == "Open link", "the footer says \(app.text(of: "switcher-footer-action") ?? "none")")
         app.screenshot("switcher-link")
         app.press(.returnKey)
         try await closed(app)
-        try await app.waitUntil("loam open ran", timeout: 10) { rig.openCalls.contains { $0.contains("example.test/zeta") } }
+        try await app.waitUntil("loam open ran") { rig.openCalls.contains { $0.contains("example.test/zeta") } }
 
         // A menu action, with ⌘⇧P.
         let collapsed = model.sidebarCollapsed
         try await openSwitcher(app, actionsOnly: true)
-        try await app.waitUntil("the field holds '>'", timeout: 5) { app.text(of: "switcher-field") == ">" }
+        try await app.waitUntil("the field holds '>'") { app.text(of: "switcher-field") == ">" }
         try app.fill("switcher-field", with: ">toggle sidebar")
-        try await app.waitUntil("the action row", timeout: 5) { app.text(of: "switcher-row-0")?.hasPrefix("Toggle Sidebar") == true }
+        try await app.waitUntil("the action row") { app.text(of: "switcher-row-0")?.hasPrefix("Toggle Sidebar") == true }
         app.press(.returnKey)
         try await closed(app)
-        try await app.waitUntil("the sidebar toggled", timeout: 5) { model.sidebarCollapsed != collapsed }
+        try await app.waitUntil("the sidebar toggled") { model.sidebarCollapsed != collapsed }
 
         // A workspace change while the switcher is open (a pane event, a feed update) keeps the keyboard in the field.
         try await openSwitcher(app)
@@ -127,7 +127,7 @@ extension Scenarios {
         try expect(app.exists("switcher-field"), "the switcher closed on a workspace change")
         try expect(!(app.window.firstResponder is TerminalSurfaceView), "a workspace change gave the keys to the terminal")
         try app.fill("switcher-field", with: "q")
-        try await app.waitUntil("the field holds the query", timeout: 5) { app.text(of: "switcher-field") == "q" }
+        try await app.waitUntil("the field holds the query") { app.text(of: "switcher-field") == "q" }
         app.press(.escape)
         try await closed(app)
 
@@ -135,7 +135,7 @@ extension Scenarios {
         // switcher stays open. No input method runs in the driver, so the scenario ends the composition. The next Escape
         // closes the switcher.
         try await openSwitcher(app)
-        try await app.waitUntil("the field has the keys", timeout: 5) { (app.window.firstResponder as? NSTextView)?.isFieldEditor == true }
+        try await app.waitUntil("the field has the keys") { (app.window.firstResponder as? NSTextView)?.isFieldEditor == true }
         let editor = try app.compose()
         app.press(.escape)
         await app.sleep(0.5)
@@ -145,12 +145,9 @@ extension Scenarios {
         try await closed(app)
 
         // The use times reached the temp state.json. The writes wait up to 1 s, so they are joined.
-        var times: [String: Double]?
-        try? await app.waitUntil("use times in state.json", timeout: 10) {
-            times = rig.stateFile.value(forKey: UseTimes.key) as? [String: Double]
+        try await app.waitUntil("use times in state.json") {
+            let times = rig.stateFile.value(forKey: UseTimes.key) as? [String: Double]
             return times?["plot:\(alpha)"] != nil && times?["pane:\(first.uuidString)"] != nil
         }
-        try expect(times?["plot:\(alpha)"] != nil && times?["pane:\(first.uuidString)"] != nil,
-                   "state.json holds no use times: \(String(describing: times))")
     }
 }

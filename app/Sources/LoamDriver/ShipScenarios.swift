@@ -245,7 +245,7 @@ extension Scenarios {
         }
         try check(Date().timeIntervalSince(firstStop) < model.shipRefresh.timing.stopWindow.seconds, "the second Stop came after the window")
         try check(refreshes() == beforeStops, "a refresh ran before the window ended")
-        try await app.waitUntil("one refresh after the Stops", timeout: 10) { refreshes() == beforeStops + 1 }
+        try await app.waitUntil("one refresh after the Stops") { refreshes() == beforeStops + 1 }
         try await app.waitUntil("review required") { line(labels) == "link-labels #22, Review required" }
         await app.sleep(1.5)
         try check(refreshes() == beforeStops + 1, "\(refreshes() - beforeStops) refreshes for two Stops")
@@ -286,8 +286,11 @@ extension Scenarios {
         let sqlite = Process()
         sqlite.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
         sqlite.arguments = [database.path, ".timeout 5000", "UPDATE pr_cache SET checked_at = checked_at - 600000 WHERE checked_at > 0;"]
-        try sqlite.run()
-        sqlite.waitUntilExit()
+        // A busy machine can hold the launch of `sqlite3` for more than 10 s (ticket 131).
+        try Watchdog.excuse {
+            try sqlite.run()
+            sqlite.waitUntilExit()
+        }
         try check(sqlite.terminationStatus == 0, "sqlite3 exited \(sqlite.terminationStatus)")
         try "offline".write(to: ghMode, atomically: true, encoding: .utf8)
         try refresh(panel)

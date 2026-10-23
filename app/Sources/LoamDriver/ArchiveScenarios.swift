@@ -153,9 +153,14 @@ extension Scenarios {
         let out = Pipe()
         process.standardOutput = out
         process.standardError = FileHandle.nullDevice
-        guard (try? process.run()) != nil else { return -1 }
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
+        // The read blocks the main thread until `ps` ends, which a busy machine can hold for more than 10 s (ticket 131).
+        let data = Watchdog.excuse { () -> Data? in
+            guard (try? process.run()) != nil else { return nil }
+            let data = out.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            return data
+        }
+        guard let data else { return -1 }
         return String(decoding: data, as: UTF8.self).split(separator: "\n")
             .filter { $0.hasPrefix("claude ") && $0.contains(sessionID) }.count
     }

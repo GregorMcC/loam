@@ -96,7 +96,7 @@ extension Scenarios {
         try app.type("/permission")
         app.press(.returnKey)
         try await show(three, paneThree)
-        try await app.waitUntil("plot two needs you", timeout: 10) { state(paneTwo) == .needsYou }
+        try await app.waitUntil("plot two needs you") { state(paneTwo) == .needsYou }
         try expect(model.workspace.activePlotID == three, "the active plot changed")
         try await app.waitUntil("the sidebar row shows the badge") { app.text(of: "plot-\(two)")?.contains("Needs you: 1") == true }
         try await app.waitUntil("the Needs you row counts it") { app.text(of: "attention-needs-you")?.contains("Needs you: 1") == true }
@@ -104,7 +104,7 @@ extension Scenarios {
         try expect(notifier.badge == 1, "the Dock badge is \(notifier.badge)")
         try expect(notifier.banners.isEmpty, "a banner showed while Loam is frontmost")
         try expect(!needsYouButtonShows(app), "the title bar button shows while the sidebar shows")
-        try await app.waitUntil("the halo plays on arrival", timeout: 3) {
+        try await app.waitUntil("the halo plays on arrival") {
             dots(in: app.window.contentView).contains { $0.mark == .needs && $0.isHaloRunning }
         }
         Log.line("RESULT plot row: \(app.text(of: "plot-\(two)") ?? "none")")
@@ -119,7 +119,7 @@ extension Scenarios {
         // Ticket 71: the tab holds one pane, so it has no header. The tab dot and the ring carry the state.
         try await app.waitUntil("the tab dot says Needs you") { app.text(of: "tab-mark-1") == "needsYou" }
         try await app.waitUntil("the amber ring") { app.text(of: "pane-ring-\(paneTwo.uuidString)") == "needsYou" }
-        try await app.waitUntil("the halo stops while the pane has focus", timeout: 3) {
+        try await app.waitUntil("the halo stops while the pane has focus") {
             !dots(in: app.window.contentView).contains { $0.isHaloRunning }
         }
         try expect(state(paneTwo) == .needsYou, "a glance cleared needs you")
@@ -143,7 +143,7 @@ extension Scenarios {
         app.press(.returnKey)
         try await app.waitUntil("working") { state(paneTwo) == .working }
         try await show(one, paneOne)
-        try await app.waitUntil("done, unread", timeout: 10) { model.workspace.attention(of: paneTwo) == .doneUnread }
+        try await app.waitUntil("done, unread") { model.workspace.attention(of: paneTwo) == .doneUnread }
         try await app.waitUntil("the row shows done, unread") { app.text(of: "plot-\(two)")?.contains("Done, unread") == true }
         model.stateWriter?.flush()
         try expect(SavedLayout.read(from: rig.stateFile).panes.first { $0.id == paneTwo }?.doneUnread == true,
@@ -159,7 +159,7 @@ extension Scenarios {
         frontmost = false
         try app.type("/question")
         app.press(.returnKey)
-        try await app.waitUntil("plot one needs you", timeout: 10) { state(paneOne) == .needsYou }
+        try await app.waitUntil("plot one needs you") { state(paneOne) == .needsYou }
         try expect(notifier.banners.map(\.pane) == [paneOne], "the banners are \(notifier.banners)")
         try expect(notifier.banners.first?.title == "Needs you in One plot"
                    && notifier.banners.first?.body == "Claude asks you a question.", "the banner is \(notifier.banners)")
@@ -176,7 +176,7 @@ extension Scenarios {
         try app.type("/fail")
         app.press(.returnKey)
         try await show(one, paneOne)
-        try await app.waitUntil("plot three needs you", timeout: 10) { state(paneThree) == .needsYou }
+        try await app.waitUntil("plot three needs you") { state(paneThree) == .needsYou }
         try await app.waitUntil("the badge on plot three") { app.text(of: "plot-\(three)")?.contains("Needs you: 1") == true }
         await app.sleep(0.3)
         let needsDots = dots(in: app.window.contentView).filter { $0.mark == .needs && !$0.isHidden }

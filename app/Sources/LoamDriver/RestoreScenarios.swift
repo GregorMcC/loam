@@ -68,7 +68,7 @@ extension Scenarios {
             app.screenshot("quit-question")
             cancel.performClick(nil)
         }
-        try await app.waitUntil("quit answered", timeout: 15) { answer != nil }
+        try await app.waitUntil("quit answered") { answer != nil }
         return answer!
     }
 
@@ -118,7 +118,7 @@ extension Scenarios {
         try await app.waitUntil("working") { model.workspace.state(of: secondSession) == .working }
         try expect(try await !quit(host, app, cancelQuestion: true), "Cancel did not stop the quit")
         try expect(model.workspace.livePaneIDs.count == 3 && host.paneView(secondSession) != nil, "Cancel closed a pane")
-        try await app.waitUntil("idle", timeout: 10) { model.workspace.state(of: secondSession) == .idle }
+        try await app.waitUntil("idle") { model.workspace.state(of: secondSession) == .idle }
 
         // Plot 1 is active at the quit, so plot 2 waits at the next launch.
         model.activate(plot: first)

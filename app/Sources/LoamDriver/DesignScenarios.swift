@@ -26,14 +26,14 @@ extension Scenarios {
         let pane = try app.addPane("A", command: "/bin/sh -c 'sleep 60'")
 
         NSApp.appearance = NSAppearance(named: .darkAqua)
-        try await app.waitUntil("the Night background", timeout: 10) {
+        try await app.waitUntil("the Night background") {
             app.backgroundPixel(pane).map { near($0, bedrock.night) } ?? false
         }
         Log.line("RESULT night pixel #\(app.backgroundPixel(pane).map(hexString) ?? "?")")
         app.screenshot("terminal-night")
 
         NSApp.appearance = NSAppearance(named: .aqua)
-        try await app.waitUntil("the Day background", timeout: 10) {
+        try await app.waitUntil("the Day background") {
             app.backgroundPixel(pane).map { near($0, bedrock.day) } ?? false
         }
         Log.line("RESULT day pixel #\(app.backgroundPixel(pane).map(hexString) ?? "?")")
@@ -41,7 +41,7 @@ extension Scenarios {
 
         // Your own theme line wins over Loam's defaults, in both appearances.
         try app.writeConfig("theme = Dracula")
-        try await app.waitUntil("your theme (Dracula, #282a36)", timeout: 10) {
+        try await app.waitUntil("your theme (Dracula, #282a36)") {
             app.backgroundPixel(pane).map { near($0, 0x282a36) } ?? false
         }
         NSApp.appearance = NSAppearance(named: .darkAqua)
@@ -77,7 +77,7 @@ extension Scenarios {
         // The Loam theme applies.
         let bedrock = LoamTheme.colorTokens.first { $0.name == "bedrock" }!
         NSApp.appearance = NSAppearance(named: .darkAqua)
-        try await app.waitUntil("the Night background", timeout: 10) {
+        try await app.waitUntil("the Night background") {
             app.backgroundPixel(plain).map { near($0, bedrock.night) } ?? false
         }
         NSApp.appearance = nil
@@ -89,7 +89,7 @@ extension Scenarios {
         await app.sleep(1)
         try app.type("echo \"res=${GHOSTTY_RESOURCES_DIR-unset} features=${GHOSTTY_SHELL_FEATURES:+on}\"; infocmp xterm-ghostty >/dev/null && echo terminfo-ok")
         app.press(.returnKey)
-        try await app.waitUntil("the zsh output", timeout: 20) { app.lines(shell).contains("terminfo-ok") }
+        try await app.waitUntil("the zsh output") { app.lines(shell).contains("terminfo-ok") }
         let output = app.lines(shell)
         try check(output.contains("res=\(resources!) features=on"), "the zsh pane has the wrong variables: \(output.suffix(6))")
         Log.line("RESULT terminfo and shell integration work")
@@ -135,8 +135,8 @@ extension Scenarios {
         host.model.openTab()
         host.model.activate(number: 1)
         try await app.openPanel(host)
-        try await rig.claudeSetsWhere(plot, "The design system is in the app, in Night and Day.")
-        try await app.waitUntil("the new change", timeout: 10) { app.exists("panel-new-since") }
+        try await rig.claudeSetsWhere(plot, "The design system is in the app, in Night and Day.", app: app)
+        try await app.waitUntil("the new change") { app.exists("panel-new-since") }
         try check(app.exists("tab-bar"), "the tab bar is missing")
 
         NSApp.appearance = NSAppearance(named: .darkAqua)

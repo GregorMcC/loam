@@ -52,7 +52,7 @@ extension Scenarios {
         model.openTab(.session)
         model.activate(number: 1)
         model.selectTab(number: 1)
-        try await app.waitUntil("2 demo panes ran", timeout: 15) {
+        try await app.waitUntil("2 demo panes ran") {
             ((try? fm.contentsOfDirectory(atPath: "\(app.outFolder)/demo-runs"))?.count ?? 0) >= 2
         }
         let sidebar = model.sidebar
@@ -78,6 +78,8 @@ extension Scenarios {
                 && app.text(of: "attention-needs-you")?.contains("2") == true
         }
 
+        /// A single theme stays dark in Day, so the wait for the pane can never end. It keeps its deadline, and the run goes
+        /// on (ticket 131).
         func appearance(_ name: NSAppearance.Name) async {
             NSApp.appearance = NSAppearance(named: name)
             let pane = model.workspace.selectedTab(of: .plot(plot))?.focused
@@ -106,15 +108,15 @@ extension Scenarios {
 
         // The search button opens the switcher.
         try app.click("sidebar-search")
-        try await app.waitUntil("the switcher shows", timeout: 5) { app.exists("switcher-field") }
+        try await app.waitUntil("the switcher shows") { app.exists("switcher-field") }
         model.switcher.close()
-        try await app.waitUntil("the switcher closes", timeout: 5) { !app.exists("switcher-field") }
+        try await app.waitUntil("the switcher closes") { !app.exists("switcher-field") }
         model.activate(number: 1)
 
         // A third-party theme.
         try app.writeConfig(config + "\nbackground = #1e1e2e\nforeground = #cdd6f4\n")
         app.runtime.reloadConfig()
-        try await app.waitUntil("the chrome follows Catppuccin Mocha", timeout: 10) {
+        try await app.waitUntil("the chrome follows Catppuccin Mocha") {
             ChromePalette.shared.current?.bedrock == 0x1e1e2e
         }
         await app.sleep(1.2)
@@ -122,7 +124,7 @@ extension Scenarios {
         // Translucent.
         try app.writeConfig(config + "\nbackground = #1e1e2e\nforeground = #cdd6f4\nbackground-opacity = 0.8\nbackground-blur = 20\n")
         app.runtime.reloadConfig()
-        try await app.waitUntil("the window turns translucent", timeout: 10) { ChromePalette.shared.isTranslucent }
+        try await app.waitUntil("the window turns translucent") { ChromePalette.shared.isTranslucent }
         await app.sleep(1.2)
         app.screenshot("translucent")
         NSApp.appearance = nil

@@ -272,7 +272,7 @@ enum Scenarios {
         for pane in [a, b] {
             Task { @MainActor in results.append(await app.close(pane)) }
         }
-        try await app.waitUntil("both panes closed", timeout: 8) { results.count == 2 }
+        try await app.waitUntil("both panes closed") { results.count == 2 }
         let total = ProcessInfo.processInfo.systemUptime - start
         Log.line(String(format: "both panes closed in %.3f s", total))
         for result in results {

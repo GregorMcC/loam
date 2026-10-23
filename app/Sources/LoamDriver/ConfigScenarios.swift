@@ -22,12 +22,8 @@ extension Scenarios {
         // A new background in the file: the watch reloads, and the pane redraws.
         for color in ["204060", "a03050"] {
             try app.writeConfig("background = #\(color)")
-            do {
-                try await app.waitUntil("the pane redraws with #\(color)", timeout: 10) {
-                    app.backgroundPixel(pane).map { close($0, color) } ?? false
-                }
-            } catch {
-                throw DriverFailure("\(error). The pane pixel is #\(app.backgroundPixel(pane).map(hex) ?? "?")")
+            try await app.waitUntil("the pane redraws with #\(color)") {
+                app.backgroundPixel(pane).map { close($0, color) } ?? false
             }
             try check(rgb(app.runtime.windowAppearance.background) == color, "the window appearance has the old background")
             app.screenshot("background-\(color)")
@@ -117,7 +113,7 @@ extension Scenarios {
         for (letter, flags, expected, name) in presses {
             commands.removeAll()
             app.press(letter: letter, flags: flags)
-            try await app.waitUntil("\(name) runs \(expected)", timeout: 3) { !commands.isEmpty }
+            try await app.waitUntil("\(name) runs \(expected)") { !commands.isEmpty }
             await app.sleep(0.05)
             try check(commands == [expected], "\(name) ran \(commands), not \(expected)")
         }

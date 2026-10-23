@@ -121,8 +121,22 @@ struct PanelRig {
 
     /// A change by Claude, the way the core records one: the MCP server with a
     /// session ID reads the plot, then writes where-it-stands.
-    func claudeSetsWhere(_ plot: String, _ text: String, session: String = "bbbbbbbb-1111-4222-8333-444444444444") async throws {
+    func claudeSetsWhere(_ plot: String, _ text: String, session: String = "bbbbbbbb-1111-4222-8333-444444444444",
+                         app: DriverApp) async throws {
         let before = try lastChangeID(plot)
+        let output = try await mcp([("get_plot", ["plot": plot]), ("set_where_it_stands", ["plot": plot, "text": text])],
+                                   session: session, app: app)
+        guard try lastChangeID(plot) > before else {
+            throw DriverFailure("the MCP write did not record a change: \(output.joined(separator: "\n"))")
+        }
+    }
+
+    /// Runs `loam mcp` with a session ID, as Claude Code does, and makes each tool call when the reply to the call before it
+    /// comes. A wait for a time lost the write when a busy machine held the launch of `loam mcp` (ticket 125). The waits have
+    /// no time limit of their own. When `loam mcp` stalls, the limit of the scenario ends the run, and the FAIL line names
+    /// the call that waits (ticket 131). It returns the lines that `loam mcp` printed.
+    @discardableResult
+    func mcp(_ calls: [(tool: String, arguments: [String: Any])], session: String, app: DriverApp) async throws -> [String] {
         let process = Process()
         process.executableURL = binary
         process.arguments = ["mcp"]
@@ -135,35 +149,41 @@ struct PanelRig {
         process.standardOutput = stdout
         process.standardError = FileHandle.nullDevice
         try process.run()
+        defer { app.waiting = nil }
 
         func send(_ object: [String: Any]) throws {
             var data = try JSONSerialization.data(withJSONObject: object)
             data.append(0x0A)
             try stdin.fileHandleForWriting.write(contentsOf: data)
         }
-        func call(_ id: Int, _ tool: String, _ arguments: [String: Any]) -> [String: Any] {
-            ["jsonrpc": "2.0", "id": id, "method": "tools/call", "params": ["name": tool, "arguments": arguments]]
+        // The request IDs of the calls start at 2. ID 1 is the initialize request.
+        func ask(_ index: Int) throws {
+            app.waiting = "the reply of loam mcp to \(calls[index].tool)"
+            try send(["jsonrpc": "2.0", "id": index + 2, "method": "tools/call",
+                      "params": ["name": calls[index].tool, "arguments": calls[index].arguments]])
         }
         try send(["jsonrpc": "2.0", "id": 1, "method": "initialize", "params": [
             "protocolVersion": "2025-06-18", "capabilities": [String: Any](),
             "clientInfo": ["name": "loam-driver", "version": "1"]]])
         try send(["jsonrpc": "2.0", "method": "notifications/initialized"])
-        try send(call(2, "get_plot", ["plot": plot]))
-        // The write goes after the reply to the read, and stdin closes after the reply to the write. A wait for a
-        // time lost the write when a busy machine held the launch of `loam mcp` (ticket 125).
         var output: [String] = []
+        var answered = 0
+        try ask(0)
         for try await line in stdout.fileHandleForReading.bytes.lines {
             output.append(line)
             let reply = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any]
-            if reply?["id"] as? Int == 2 { try send(call(3, "set_where_it_stands", ["plot": plot, "text": text])) }
-            if reply?["id"] as? Int == 3 { break }
+            guard reply?["id"] as? Int == answered + 2 else { continue }
+            answered += 1
+            if answered == calls.count { break }
+            try ask(answered)
+        }
+        guard answered == calls.count else {
+            throw DriverFailure("loam mcp ended before the reply to \(calls[answered].tool): \(output.joined(separator: "\n"))")
         }
         try stdin.fileHandleForWriting.close()
-        for _ in 0..<100 where process.isRunning { try await Task.sleep(for: .milliseconds(50)) }
-        if process.isRunning { process.terminate() }
-        guard try lastChangeID(plot) > before else {
-            throw DriverFailure("the MCP write did not record a change: \(output.joined(separator: "\n"))")
-        }
+        app.waiting = "loam mcp to end after its input closed"
+        while process.isRunning { try await Task.sleep(for: .milliseconds(50)) }
+        return output
     }
 }
 
@@ -697,7 +717,7 @@ extension Scenarios {
         try check(!app.exists("panel-new-since"), "the new box shows before any change by Claude")
 
         // 1. Claude changes where-it-stands.
-        try await rig.claudeSetsWhere(plot, "claude wrote this")
+        try await rig.claudeSetsWhere(plot, "claude wrote this", app: app)
         let first = try rig.lastChangeID(plot)
         try await app.waitUntil("the new box and its row") { app.exists("panel-new-since") && app.exists("change-new-\(first)") }
         try await app.waitUntil("the panel button count") { app.text(of: "panel-button") == "Plot panel \u{2318}I \u{00B7} 1" }
@@ -721,7 +741,7 @@ extension Scenarios {
         try await app.waitUntil("the diff closes") { !app.exists("change-diff-log-\(first)") }
 
         // 3. Undo clash: a later change by the CLI edits the same item.
-        try await rig.claudeSetsWhere(plot, "claude again")
+        try await rig.claudeSetsWhere(plot, "claude again", app: app)
         let second = try rig.lastChangeID(plot)
         try rig.loam(["set", plot, "where-it-stands", "cli later"])
         try await app.waitUntil("the second change row") { app.exists("change-undo-\(second)") }
@@ -782,7 +802,7 @@ extension Scenarios {
         await app.sleep(0.5)
         host.model.activate(number: 2)
         try await app.waitUntil("the other plot is active") { host.model.workspace.activePlotID == other }
-        try await rig.claudeSetsWhere(plot, "while you were away")
+        try await rig.claudeSetsWhere(plot, "while you were away", app: app)
         // The sidebar row combines its children into one element, so the count
         // is part of the row text and `plot-new-changes-<plot>` has no element of its own.
         try await app.waitUntil("the sidebar count") {

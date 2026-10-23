@@ -149,6 +149,8 @@ final class TabBarView: NSView, FirstTabFraming {
         return frames.indices.contains(index) ? frames[index] : nil
     }
 
+    var isDragging: Bool { drag != nil }
+
     /// The frames as the tabs draw now: moved by the drag and the slides.
     private func shownFrames() -> [CGRect] {
         let base = tabFrames()

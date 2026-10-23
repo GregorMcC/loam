@@ -81,9 +81,13 @@ extension Scenarios {
         let out = Pipe()
         process.standardOutput = out
         process.standardError = FileHandle.nullDevice
-        try process.run()
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
+        // The read blocks the main thread until `git` ends, which a busy machine can hold for more than 10 s (ticket 131).
+        let data = try Watchdog.excuse { () throws -> Data in
+            try process.run()
+            let data = out.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            return data
+        }
         let head = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         guard process.terminationStatus == 0, head.count == 40 else { throw DriverFailure("git rev-parse HEAD failed in \(folder)") }
         return head
@@ -161,7 +165,7 @@ extension Scenarios {
                 && ["land-sheet-row-checks", "land-sheet-row-worktree", "land-sheet-footer"].allSatisfy { !label($0).isEmpty }
         }
         func sheetCloses() async throws {
-            try await app.waitUntil("the sheet closes", timeout: 30) { !model.landSheet.isOpen && !app.exists("land-sheet") }
+            try await app.waitUntil("the sheet closes") { !model.landSheet.isOpen && !app.exists("land-sheet") }
         }
 
         // 2. A worktree that GitHub does not let merge: native-panel has 2 failed checks and 2 files that are not committed.
@@ -312,7 +316,7 @@ extension Scenarios {
         try await app.waitUntil("the first box is on") { value("land-sheet-remove") == "1" }
         let beforeLand = try rig.lastChangeID(plot)
         try app.click("land-sheet-merge")
-        try await app.waitUntil("the pane closes", timeout: 30) { !model.workspace.allPaneIDs.contains(pane) }
+        try await app.waitUntil("the pane closes") { !model.workspace.allPaneIDs.contains(pane) }
         try await sheetCloses()
         try await app.waitUntil("the toast of the merge") { app.text(of: "action-bar-toast")?.contains("Merged #22. Removed the worktree link-labels.") == true }
         let both = merges(of: 22)
@@ -434,7 +438,7 @@ extension Scenarios {
         let newHead = String(repeating: "c", count: 40)
         try landGitHub(head: head, newHead: newHead).write(to: ghState)
         app.keyDown(.returnKey)
-        try await app.waitUntil("the message about the new commit", timeout: 30) {
+        try await app.waitUntil("the message about the new commit") {
             app.text(of: "land-sheet-error")?.contains("has new commits since you looked at it") == true
         }
         try await app.waitUntil("the plan of the new commit") { model.landSheet.plan?.pr.headOID == newHead && sheetIsUp(25) }
