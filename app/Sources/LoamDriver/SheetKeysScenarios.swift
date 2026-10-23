@@ -4,7 +4,7 @@ import LoamTerminal
 
 /// The check of ticket 128, for the scenarios that open a sheet: the keys and the menu items under an open sheet, a Loam sheet
 /// or a native one. Every menu item that acts on the window is off, and its key does nothing. The items of the app stay on.
-/// The sheet keeps its keys.
+/// The sheet keeps its keys. Ticket 132 adds the items that AppKit adds for a window (Hide Toolbar, Enter Full Screen, Zoom).
 @MainActor
 extension Scenarios {
     /// A menu item that acts on the window, with its key.
@@ -61,6 +61,81 @@ extension Scenarios {
         }
     }
 
+    /// An item that AppKit adds for a window (ticket 132), and whether macOS turns it off under a native sheet. The sheet is the
+    /// key window then, and a sheet has none of these. A sheet of Loam is a view in the window, so the window has to turn them
+    /// off. Minimize and the window list stay on under a native sheet.
+    private struct AppKitItem {
+        var title: String
+        var action: Selector
+        var offUnderSheet: Bool
+    }
+
+    private static let appKitItems = [
+        AppKitItem(title: "Hide Toolbar", action: #selector(NSWindow.toggleToolbarShown(_:)), offUnderSheet: true),
+        AppKitItem(title: "Customize Toolbar", action: #selector(NSWindow.runToolbarCustomizationPalette(_:)), offUnderSheet: true),
+        AppKitItem(title: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), offUnderSheet: true),
+        AppKitItem(title: "Show Tab Bar", action: #selector(NSWindow.toggleTabBar(_:)), offUnderSheet: true),
+        AppKitItem(title: "Show All Tabs", action: #selector(NSWindow.toggleTabOverview(_:)), offUnderSheet: true),
+        AppKitItem(title: "Show Next Tab", action: #selector(NSWindow.selectNextTab(_:)), offUnderSheet: true),
+        AppKitItem(title: "Show Previous Tab", action: #selector(NSWindow.selectPreviousTab(_:)), offUnderSheet: true),
+        AppKitItem(title: "Move Tab to New Window", action: #selector(NSWindow.moveTabToNewWindow(_:)), offUnderSheet: true),
+        AppKitItem(title: "Merge All Windows", action: #selector(NSWindow.mergeAllWindows(_:)), offUnderSheet: true),
+        AppKitItem(title: "Zoom", action: #selector(NSWindow.performZoom(_:)), offUnderSheet: true),
+        AppKitItem(title: "Close Window", action: #selector(NSWindow.performClose(_:)), offUnderSheet: true),
+        AppKitItem(title: "Minimize Window", action: #selector(NSWindow.performMiniaturize(_:)), offUnderSheet: false),
+        AppKitItem(title: "Window list", action: #selector(NSWindow.makeKeyAndOrderFront(_:)), offUnderSheet: false),
+    ]
+
+    /// What the window answers for each AppKit item, as the menu asks it. AppKit sends an item with no target to the window, and
+    /// a background run has no key window, so the menu bar of the driver cannot show this. The answer is the same.
+    static func appKitItemStates(_ host: AppHost) -> [String: Bool] {
+        Dictionary(uniqueKeysWithValues: appKitItems.map {
+            ($0.title, host.window.validateMenuItem(NSMenuItem(title: $0.title, action: $0.action, keyEquivalent: "")))
+        })
+    }
+
+    /// With no sheet, the window answers on for Hide Toolbar and Zoom, so the check under a sheet tests something. It returns the
+    /// answers, to compare after the sheet. It also logs the items of the menu bar that have no command of Loam, which are the
+    /// items that AppKit adds and the items of the app.
+    static func expectAppKitItemsOn(_ host: AppHost) throws -> [String: Bool] {
+        let states = appKitItemStates(host)
+        for title in ["Hide Toolbar", "Zoom", "Close Window", "Minimize Window", "Window list"] where states[title] != true {
+            throw DriverFailure("\(title) is off with no sheet")
+        }
+        for top in NSApp.mainMenu?.items ?? [] {
+            guard let submenu = top.submenu else { continue }
+            submenu.update()
+            let plain = submenu.items.filter { !$0.isSeparatorItem && $0.representedObject == nil }.map {
+                "\($0.title) (\($0.action.map(NSStringFromSelector) ?? "no action"), \($0.isEnabled ? "on" : "off")\($0.isHidden ? ", hidden" : ""))"
+            }
+            Log.line("menu \(submenu.title): items with no command of Loam: \(plain.isEmpty ? "none" : plain.joined(separator: "; "))")
+        }
+        return states
+    }
+
+    /// A sheet of Loam shows or holds the window: the window turns off each AppKit item that macOS turns off under a native
+    /// sheet, and leaves the others as they were (`baseline`, or on). Any such item in the menu bar is off too.
+    static func expectAppKitItemsOff(_ host: AppHost, baseline: [String: Bool]? = nil) throws {
+        let states = appKitItemStates(host)
+        for item in appKitItems {
+            if item.offUnderSheet {
+                if states[item.title] != false { throw DriverFailure("\(item.title) is on under the sheet") }
+            } else if states[item.title] != (baseline?[item.title] ?? true) {
+                throw DriverFailure("\(item.title) changed under the sheet")
+            }
+        }
+        for top in NSApp.mainMenu?.items ?? [] { top.submenu?.update() }
+        func check(_ menu: NSMenu) throws {
+            for item in menu.items {
+                if let action = item.action, appKitItems.contains(where: { $0.offUnderSheet && $0.action == action }), item.isEnabled {
+                    throw DriverFailure("\(item.title) is on in the menu under the sheet")
+                }
+                if let submenu = item.submenu { try check(submenu) }
+            }
+        }
+        if let main = NSApp.mainMenu { try check(main) }
+    }
+
     /// A sheet is open over the window of `plot`: the Land sheet, the New worktree sheet, or a native sheet. Every menu item
     /// that acts on the window draws off. Its key through the menu, its key through the window, its action sent by hand and
     /// the command of a Ghostty key change nothing: no tab, no panel, no sidebar, no overlay, and the sheet stays open. The
@@ -69,6 +144,8 @@ extension Scenarios {
         let model = host.model
         guard model.sheetIsOpen || host.window.attachedSheet != nil else { throw DriverFailure("no sheet is open") }
         try expectWindowItems(enabled: false)
+        // A sheet of Loam: the window answers for the AppKit items. A native sheet is the key window, so AppKit answers then.
+        if model.sheetBlocksWindow { try expectAppKitItemsOff(host) }
 
         func state() -> String {
             "tabs \(model.workspace.tabs(of: .plot(plot)).count), selected \(String(describing: model.workspace.selectedTab(of: .plot(plot))?.id)), "

@@ -146,6 +146,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         installActionBar()
         // Each overlay host goes in this list, so the window refuses the keys to it while it is hidden (ticket 130).
         window.overlays = [switcherHost, actionsHost, popoverHost, landHost, newWorktreeHost]
+        window.sheetBlocksWindow = { [weak model] in model?.sheetBlocksWindow ?? false }
         collapseObservation = sidebarItem.observe(\.isCollapsed, options: [.new]) { [weak self] _, _ in
             MainActor.assumeIsolated { self?.syncCollapse() }
         }
@@ -726,9 +727,31 @@ private let commandLog = Logger(subsystem: "dev.loam.Loam", category: "commands"
 /// The main window. It never gives the keys to a view in a hidden overlay (ticket 130). An overlay asks SwiftUI for the
 /// keys when it opens, and SwiftUI moves them at its next update. Sometimes the overlay closes before that update. The close
 /// gives the keys back first, and then the late move asks for them for a view that no longer shows. No key reaches that view.
+/// While a sheet of Loam shows or holds the window, the window also turns off the items that AppKit adds for it (ticket 132).
 final class MainWindow: NSWindow {
     /// The overlays over the split view: the quick switcher, the actions menu, the PR popover and the two sheets.
     var overlays: [NSView] = []
+
+    /// True while a sheet of Loam shows or holds the window (`AppModel.sheetBlocksWindow`). The controller sets it.
+    var sheetBlocksWindow: () -> Bool = { false }
+
+    /// The actions of the items that AppKit adds for a window, and that macOS turns off under a native sheet: the toolbar, full
+    /// screen, the tab bar, zoom and close. The sheet is the key window then, and a sheet has none of them. A sheet of Loam is
+    /// a view in this window, so the window is the key window, and these stay on until the window turns them off. Minimize and
+    /// the window list stay on, as macOS keeps them for a native sheet. Copy, Paste, dictation and the emoji palette go to the
+    /// field that has the keys, so this window never sees them.
+    static let sheetOffActions: Set<Selector> = [
+        #selector(NSWindow.toggleToolbarShown(_:)), #selector(NSWindow.runToolbarCustomizationPalette(_:)),
+        #selector(NSWindow.toggleFullScreen(_:)), #selector(NSWindow.toggleTabBar(_:)), #selector(NSWindow.toggleTabOverview(_:)),
+        #selector(NSWindow.selectNextTab(_:)), #selector(NSWindow.selectPreviousTab(_:)),
+        #selector(NSWindow.moveTabToNewWindow(_:)), #selector(NSWindow.mergeAllWindows(_:)),
+        #selector(NSWindow.performZoom(_:)), #selector(NSWindow.performClose(_:)),
+    ]
+
+    override func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if let action = item.action, Self.sheetOffActions.contains(action), sheetBlocksWindow() { return false }
+        return super.validateMenuItem(item)
+    }
 
     override func makeFirstResponder(_ responder: NSResponder?) -> Bool {
         if let view = responder as? NSView, overlays.contains(where: { $0.isHidden && view.isDescendant(of: $0) }) { return false }

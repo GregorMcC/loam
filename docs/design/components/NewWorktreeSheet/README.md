@@ -93,7 +93,7 @@ Each row has a label in `ink-muted` (84pt wide) and a control 28pt high. The row
 - Return starts the session, also inside a text field. Escape or Cancel closes the sheet, and a click on the scrim closes it. While a worktree is made, none of the three closes it.
 - While an input method composes text, Escape belongs to the input method and does not close the sheet.
 - The keys go back to the focused pane when the sheet closes.
-- While the sheet shows or keeps the window, each menu item that changes the window is off in the menu bar, and its key does nothing (ticket 128), as in the [Land sheet](../LandSheet/README.md). Settings, Open and Reload Ghostty Config, and Quit stay on. Escape, Return, Tab and the text keys of a field (⌘A, ⌘C, ⌘V, ⌘X and ⌘Z) work as before. A native sheet on the window turns the same items off.
+- While the sheet shows or keeps the window, each menu item that changes the window is off in the menu bar, and its key does nothing (ticket 128), as in the [Land sheet](../LandSheet/README.md). Settings, Open and Reload Ghostty Config, and Quit stay on. Escape, Return, Tab and the text keys of a field (⌘A, ⌘C, ⌘V, ⌘X and ⌘Z) work as before. The items that AppKit adds for a window are off too (ticket 132), except Minimize. A native sheet on the window turns the same items off.
 
 ## After it starts
 
