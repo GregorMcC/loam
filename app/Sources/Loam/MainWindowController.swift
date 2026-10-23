@@ -207,6 +207,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             if let frame = saved.rect, onScreen(frame) {
                 window.setFrame(frame, display: false)
             }
+            if let width = saved.panelWidth { restorePanelWidth(CGFloat(width)) }
             sidebarItem.isCollapsed = saved.sidebarCollapsed
             model.sidebarCollapsed = saved.sidebarCollapsed
             if saved.panelOpen {
@@ -225,6 +226,30 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         frameObservers = [NSWindow.didMoveNotification, NSWindow.didResizeNotification, NSWindow.didEndLiveResizeNotification]
             .map { center.addObserver(forName: $0, object: window, queue: .main, using: save) }
         model.windowFrame = window.frame
+        let panelView = panelController.view
+        panelView.postsFrameChangedNotifications = true
+        frameObservers.append(center.addObserver(forName: NSView.frameDidChangeNotification, object: panelView, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, !self.panelItem.isCollapsed else { return }
+                let width = panelView.frame.width
+                // The frames of the open and close animations are narrower than the column can be.
+                guard (self.panelItem.minimumThickness...self.panelItem.maximumThickness).contains(width) else { return }
+                self.model.panelWidth = width
+            }
+        })
+    }
+
+    /// Opens the panel column long enough to set its width. The column keeps that width for when it opens.
+    private func restorePanelWidth(_ width: CGFloat) {
+        let width = min(max(width, panelItem.minimumThickness), panelItem.maximumThickness)
+        let split = splitController.splitView
+        let wasCollapsed = panelItem.isCollapsed
+        panelItem.isCollapsed = false
+        split.layoutSubtreeIfNeeded()
+        split.setPosition(split.bounds.width - width - split.dividerThickness, ofDividerAt: splitController.splitViewItems.count - 2)
+        split.layoutSubtreeIfNeeded()
+        panelItem.isCollapsed = wasCollapsed
+        model.panelWidth = width
     }
 
     /// The quit question, or nil when no session is mid-turn.
