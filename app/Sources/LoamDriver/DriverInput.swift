@@ -204,11 +204,16 @@ extension DriverApp {
 
     // MARK: Waits
 
-    /// Waits until the condition is true, or fails after the timeout.
-    func waitUntil(_ what: String, timeout: TimeInterval = 10, _ condition: () -> Bool) async throws {
+    /// Waits until the condition is true. The wait has no time limit of its own, as in the LoamKit tests (ticket 125): a
+    /// busy machine makes the app slow, and a fixed limit then fails a scenario that is right. The time limit of the
+    /// scenario ends a wait that never ends, and the FAIL line names the wait. With `timeout`, the wait fails after
+    /// that time, for a scenario that goes on when the condition does not come (`try?`).
+    func waitUntil(_ what: String, timeout: TimeInterval? = nil, _ condition: () -> Bool) async throws {
         let start = Date()
+        waiting = what
+        defer { waiting = nil }
         while !condition() {
-            if Date().timeIntervalSince(start) > timeout { throw DriverFailure("timed out after \(Int(timeout)) s: \(what)") }
+            if let timeout, Date().timeIntervalSince(start) > timeout { throw DriverFailure("timed out after \(Int(timeout)) s: \(what)") }
             try await Task.sleep(nanoseconds: 50_000_000)
         }
         Log.line(String(format: "ok after %.2f s: %@", Date().timeIntervalSince(start), what))
@@ -219,7 +224,7 @@ extension DriverApp {
     }
 
     /// Waits for a shell prompt: the screen ends in "% " or "$ " and stays still.
-    func waitForPrompt(_ pane: TerminalSurfaceView, timeout: TimeInterval = 10) async throws {
+    func waitForPrompt(_ pane: TerminalSurfaceView, timeout: TimeInterval? = nil) async throws {
         var last = ""
         var still = 0
         try await waitUntil("prompt in \(pane.identifier?.rawValue ?? "?")", timeout: timeout) {

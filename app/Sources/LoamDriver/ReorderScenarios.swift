@@ -5,7 +5,8 @@ import LoamTerminal
 /// Driver scenarios for ticket 98: drag to reorder tabs in the tab bar (`tab-drag`) and plots in the
 /// sidebar (`plot-drag`). Each drags past two others and checks the new order, then checks that
 /// Escape and a release outside cancel, that a short move is a click, and the Reduce Motion
-/// insertion line. Screenshots mid-drag show the gap. They use a temp `LOAM_HOME` and a fake HOME.
+/// insertion line. Screenshots mid-drag show the gap. They use a temp `LOAM_HOME` and a fake HOME. `plot-drag` also
+/// presses a plot while `loam move` holds the last move (ticket 125).
 @MainActor
 extension Scenarios {
     private static func check(_ condition: Bool, _ message: @autoclosure () -> String) throws {
@@ -184,7 +185,20 @@ extension Scenarios {
         let p3 = try rig.newPlot("Client onboarding"), p4 = try rig.newPlot("Release notes")
         let p5 = try rig.newPlot("Reading list")
         try rig.loam(["archive", old])
-        let host = try await app.launchApp(client: rig.client, state: rig.stateFile)
+        // The app's `loam` holds a `move` while the file `hold` exists, so a step can press while a move is not stored.
+        // The hold also ends when the app ends, so a failed run leaves no wait behind.
+        let hold = rig.root.appendingPathComponent("hold-move")
+        let held = rig.root.appendingPathComponent("loam-held")
+        try """
+            #!/bin/sh
+            if [ "$1" = move ]; then
+              while [ -e '\(hold.path)' ] && kill -0 $PPID 2>/dev/null; do sleep 0.05; done
+            fi
+            exec '\(rig.binary.path)' "$@"
+
+            """.write(to: held, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: held.path)
+        let host = try await app.launchApp(client: LoamClient(binary: held, environment: rig.environment), state: rig.stateFile)
         let model = host.model
         try await app.waitUntil("the plots load") { model.plots.count == 5 }
         // Plots 1 to 4 have panes. Plot 1 is active, so its tree is open. Plot 5 is in "No panes".
@@ -203,6 +217,9 @@ extension Scenarios {
             return view
         }
         try await app.waitUntil("the plot rows show") { (try? handle(p4)) != nil }
+        // A drag reads the rows at the press and ends when a row comes or goes, so the tree of plot 1 must show first.
+        let tree = model.workspace.tabs(of: .plot(p1)).flatMap(\.tree.paneIDs)
+        try await app.waitUntil("the tree of plot 1 shows") { tree.allSatisfy { app.exists("pane-row-\($0.uuidString)") } }
         await app.sleep(0.6)
         func center(_ plot: String) throws -> CGPoint {
             let view = try handle(plot)
@@ -221,12 +238,15 @@ extension Scenarios {
                 await app.sleep(0.008)
             }
         }
-        /// True when no row of the sidebar list keeps an offset or a dimmed look.
+        /// True when no row of the sidebar list keeps an offset or a dimmed look, and no row sits above the others. A
+        /// cancel puts the offsets back at once and slides the rows, and the dragged rows sit above until the slide ends.
+        /// A press before that end starts no drag (ticket 125).
         func rowsAtRest() -> Bool {
             guard let outline = findOutline(root) else { return false }
             return (0..<outline.numberOfRows).allSatisfy { row in
                 guard let view = outline.rowView(atRow: row, makeIfNecessary: false) else { return true }
                 return CATransform3DIsIdentity(view.layer?.transform ?? CATransform3DIdentity) && view.alphaValue == 1
+                    && (view.layer?.zPosition ?? 0) == 0
             }
         }
         let start = model.plots.map(\.id)
@@ -250,12 +270,28 @@ extension Scenarios {
         await app.sleep(0.35)
         app.screenshot("plot-drag-past-two")
         try check(model.plots.map(\.id) == start, "the order changed before the release")
+        // `loam move` waits until the press below has run.
+        FileManager.default.createFile(atPath: hold.path, contents: nil)
         app.mouse(.leftMouseUp, at: pastThree, on: grabView)
         let moved = [p2, p3, p1, p4, p5]
         try await app.waitUntil("the sidebar shows the new order") { model.plots.map(\.id) == moved }
         try await app.waitUntil("the rows are at rest") { rowsAtRest() }
         app.screenshot("plot-drag-dropped")
+        // Ticket 125: before the move is stored, a plot does not drag, and the release of that press is not a click.
+        try check(model.isMovingPlot, "the app did not wait for the move that loam holds")
+        var view = try handle(p2)
+        var from = try center(p2)
+        let downOne = CGPoint(x: from.x, y: from.y - row)
+        app.mouse(.leftMouseDown, at: from, on: view)
+        await glide(view, from: from, to: downOne)
+        try check(rowsAtRest(), "a plot dragged before the last move was stored")
+        app.mouse(.leftMouseUp, at: downOne, on: view)
+        try check(model.workspace.activePlotID == p1, "the release of a drag that could not start selected a plot")
+        try check(model.plots.map(\.id) == moved, "a drag that could not start changed the order")
+        try FileManager.default.removeItem(at: hold)
         try await app.waitUntil("loam move stored the order") { (try? storeOrder()) == moved }
+        // A new drag starts only when the app has the move: `loam move` and the plot list read after it.
+        try await app.waitUntil("the app has the move") { !model.isMovingPlot }
         let numbers = model.sidebar.withPanes.map { "\($0.id)=\($0.number ?? 0)" }
         try check(model.sidebar.withPanes.map(\.id) == [p2, p3, p1, p4]
                   && model.sidebar.withPanes.map(\.number) == [1, 2, 3, 4], "the ⌃ numbers do not follow: \(numbers)")
@@ -266,16 +302,17 @@ extension Scenarios {
         try check(full.range(of: old).map { $0.lowerBound < full.range(of: p2)!.lowerBound } == true,
                   "the archived plot moved in the store order")
         Log.line("RESULT dragged plot 1 down two rows, store order and ⌃ numbers follow")
+        Log.line("RESULT a press before the move was stored did not drag or select")
 
         // 2. Escape sends the rows back.
-        var view = try handle(p2)
-        var from = try center(p2)
-        let downOne = CGPoint(x: from.x, y: from.y - row)
+        view = try handle(p2)
+        from = try center(p2)
         app.mouse(.leftMouseDown, at: from, on: view)
         await glide(view, from: from, to: downOne)
         await app.sleep(0.25)
+        try check(!rowsAtRest(), "the drag of plot 2 did not start")
         app.pressThroughApp(.escape)
-        try await app.waitUntil("Escape puts the rows back", timeout: 2) { rowsAtRest() }
+        try await app.waitUntil("Escape puts the rows back") { rowsAtRest() }
         app.mouse(.leftMouseUp, at: downOne, on: view)
         await app.sleep(0.2)
         try check(model.plots.map(\.id) == moved, "Escape changed the order")
@@ -287,10 +324,11 @@ extension Scenarios {
         from = try center(p2)
         app.mouse(.leftMouseDown, at: from, on: view)
         await glide(view, from: from, to: downOne)
+        try check(!rowsAtRest(), "the second drag of plot 2 did not start")
         let outside = CGPoint(x: app.window.frame.width - 60, y: downOne.y)
         await glide(view, from: downOne, to: outside)
         app.mouse(.leftMouseUp, at: outside, on: view)
-        try await app.waitUntil("the release outside puts the rows back", timeout: 2) { rowsAtRest() }
+        try await app.waitUntil("the release outside puts the rows back") { rowsAtRest() }
         try check(model.plots.map(\.id) == moved, "a release outside changed the order")
         Log.line("RESULT a release outside the sidebar sent the plot back")
 
@@ -318,9 +356,11 @@ extension Scenarios {
         try check(model.plots.map(\.id) == [p4, p2, p3, p1, p5], "the Reduce Motion drop did not move the plot at once: \(model.plots.map(\.id))")
         try await app.waitUntil("the rows are at rest after Reduce Motion") { rowsAtRest() }
         try await app.waitUntil("loam move stored it") { (try? storeOrder()) == [p4, p2, p3, p1, p5] }
+        try await app.waitUntil("the app has the move after Reduce Motion") { !model.isMovingPlot }
         Log.line("RESULT Reduce Motion showed the line and moved the plot at once")
 
-        // 6. Fifteen plots: drag the top plot of "No panes" to its end. Each pointer move fits well inside one frame.
+        // 6. Fifteen plots: drag the top plot of "No panes" to its end. Each pointer move fits well inside one frame. The
+        // cost is the time of the main thread on the CPU, so a busy machine that holds the thread off it adds nothing.
         LoamMotion.reduceMotionOverride = false
         var extra: [String] = []
         for index in 1...10 { extra.append(try rig.newPlot("Plot \(index + 5)")) }
@@ -338,9 +378,9 @@ extension Scenarios {
         var at = from
         while at.y > end.y {
             at.y -= 6
-            let begin = ProcessInfo.processInfo.systemUptime
+            let begin = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
             app.mouse(.leftMouseDragged, at: at, on: view)
-            costs.append((ProcessInfo.processInfo.systemUptime - begin) * 1000)
+            costs.append(Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - begin) / 1_000_000)
             await app.sleep(0.008)
         }
         await app.sleep(0.3)
@@ -349,8 +389,8 @@ extension Scenarios {
         try await app.waitUntil("Reading list lands last") { model.plots.last?.id == p5 }
         try await app.waitUntil("the rows are at rest after the long drag") { rowsAtRest() }
         let worst = costs.max() ?? 0, mean = costs.reduce(0, +) / Double(max(costs.count, 1))
-        Log.line(String(format: "RESULT fifteen plots: %d moves, mean %.2f ms, worst %.2f ms per move", costs.count, mean, worst))
-        try check(worst < 8, "a pointer move took \(worst) ms, more than one frame at 120 Hz")
+        Log.line(String(format: "RESULT fifteen plots: %d moves, mean %.2f ms, worst %.2f ms of CPU per move", costs.count, mean, worst))
+        try check(worst < 8, "a pointer move took \(worst) ms of CPU, more than one frame at 120 Hz")
     }
 
     private static func find(_ view: NSView, _ identifier: String) -> NSView? {

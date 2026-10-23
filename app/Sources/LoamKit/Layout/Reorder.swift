@@ -65,3 +65,23 @@ public struct Reorder: Equatable, Sendable {
         return nil
     }
 }
+
+/// A press that ends as a click or a drag (ticket 98). A move of `threshold` from the press makes it a drag, and it
+/// stays one. So its release is never a click, also when the drag cannot start (ticket 125).
+public struct DragPress: Equatable, Sendable {
+    /// A move this far from the press makes it a drag. A shorter one keeps it a click.
+    public static let threshold: CGFloat = 4
+
+    /// Where the press went down.
+    public let point: CGPoint
+    public private(set) var isDrag = false
+
+    public init(at point: CGPoint) { self.point = point }
+
+    /// True when a release now is a click.
+    public var isClick: Bool { !isDrag }
+
+    public mutating func move(to point: CGPoint) {
+        if hypot(point.x - self.point.x, point.y - self.point.y) >= Self.threshold { isDrag = true }
+    }
+}

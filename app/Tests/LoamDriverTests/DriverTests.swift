@@ -35,16 +35,23 @@ struct DriverTests {
         let exit = ExitBox()
         process.terminationHandler = { exit.set($0.terminationStatus) }
         try process.run()
-        // The driver has its own limits. This one catches a stuck launch.
-        var deadline = Date().addingTimeInterval(60)
-        while exit.status == nil && Date() < deadline { try await Task.sleep(for: .milliseconds(100)) }
+        // The driver ends itself: past the time limit of its scenario (exit 4), or when its main thread hangs (exit 3).
+        // So once it runs, this wait has no limit of its own, and a busy machine cannot fail a slow scenario here (ticket
+        // 125). Only a launch that never starts the driver, with no driver.log after 5 minutes, ends here. A busy machine
+        // can hold a launch for half a minute while macOS checks the binary.
+        let log = out.appendingPathComponent("driver.log")
+        let launched = Date()
+        while exit.status == nil {
+            if Date().timeIntervalSince(launched) > 300, !FileManager.default.fileExists(atPath: log.path) { break }
+            try await Task.sleep(for: .milliseconds(100))
+        }
         if exit.status == nil {
             kill(process.processIdentifier, SIGKILL)
-            deadline = Date().addingTimeInterval(5)
+            let deadline = Date().addingTimeInterval(5)
             while exit.status == nil && Date() < deadline { try await Task.sleep(for: .milliseconds(100)) }
         }
-        let log = (try? String(contentsOf: out.appendingPathComponent("driver.log"), encoding: .utf8)) ?? ""
-        return Run(exitCode: exit.status ?? -1, log: log)
+        let text = (try? String(contentsOf: log, encoding: .utf8)) ?? ""
+        return Run(exitCode: exit.status ?? -1, log: text)
     }
 
     /// The exit status from the termination handler, which runs on another thread.

@@ -90,9 +90,14 @@ enum Log {
 final class Watchdog: @unchecked Sendable {
     private let lock = NSLock()
     private var lastBeat = ProcessInfo.processInfo.systemUptime
+    /// The number of `excuse` waits that run now.
+    private var excused = 0
     private let timer = DispatchSource.makeTimerSource(queue: .global())
     private let outFolder: String
     let limit: TimeInterval = 10
+
+    /// The watchdog of the run.
+    nonisolated(unsafe) static var current: Watchdog?
 
     init(outFolder: String) {
         self.outFolder = outFolder
@@ -107,11 +112,28 @@ final class Watchdog: @unchecked Sendable {
         lock.unlock()
     }
 
+    /// Runs `body`, in which the main thread reads the output of a process that the driver started, such as `loam`.
+    /// The main thread does not beat then, but the app does not hang: a busy machine can hold the launch of a process
+    /// for more than 10 s (ticket 125).
+    static func excuse<T>(_ body: () throws -> T) rethrows -> T {
+        current?.excuse(1)
+        defer { current?.excuse(-1) }
+        return try body()
+    }
+
+    private func excuse(_ change: Int) {
+        lock.lock()
+        excused += change
+        lastBeat = ProcessInfo.processInfo.systemUptime
+        lock.unlock()
+    }
+
     private func check() {
         lock.lock()
         let silent = ProcessInfo.processInfo.systemUptime - lastBeat
+        let waits = excused > 0
         lock.unlock()
-        guard silent > limit else { return }
+        guard !waits, silent > limit else { return }
         Log.line("HANG: the main thread did not run for \(Int(limit)) s")
         let path = "\(outFolder)/sample-\(getpid()).txt"
         let sample = Process()
@@ -146,6 +168,8 @@ final class DriverApp: NSObject, NSApplicationDelegate {
     private var shotNumber = 0
     private let hostFactory: Driver.HostFactory?
     private(set) var host: AppHost?
+    /// The condition that `waitUntil` waits for now, if any.
+    var waiting: String?
 
     init(scenario: String, hostFactory: Driver.HostFactory?) {
         self.scenario = scenario
@@ -162,6 +186,7 @@ final class DriverApp: NSObject, NSApplicationDelegate {
 
         let watchdog = Watchdog(outFolder: outFolder)
         self.watchdog = watchdog
+        Watchdog.current = watchdog
         let beat = Timer(timeInterval: 0.1, repeats: true) { _ in watchdog.beat() }
         RunLoop.main.add(beat, forMode: .common)
 
@@ -189,8 +214,18 @@ final class DriverApp: NSObject, NSApplicationDelegate {
             finish(.failure(DriverFailure("unknown scenario. Known: \(Scenarios.all.map(\.name).joined(separator: ", "))")))
             return
         }
+        // The limit also ends a wait that never ends, since a wait has no limit of its own (ticket 125). Then the FAIL
+        // line names the wait, after the screenshot and the accessibility tree that a failed check gives.
         let limit = Timer(timeInterval: run.limit, repeats: false) { _ in
-            Log.line("FAIL \(self.scenario): the scenario ran past \(Int(run.limit)) s")
+            MainActor.assumeIsolated {
+                guard let waiting = self.waiting else {
+                    Log.line("FAIL \(self.scenario): the scenario ran past \(Int(run.limit)) s")
+                    return
+                }
+                if self.host != nil { self.dumpAccessibility() }
+                self.screenshot("fail")
+                Log.line("FAIL \(self.scenario): the scenario ran past \(Int(run.limit)) s while it waited for: \(waiting)")
+            }
             _exit(4)
         }
         RunLoop.main.add(limit, forMode: .common)
