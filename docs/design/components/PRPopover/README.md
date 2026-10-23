@@ -5,8 +5,9 @@ The PR popover shows the state of the PR of one worktree and the actions that go
 - The chip of the action bar, the stage mark of a sidebar row, and a row of the Worktrees section open it below or above the control that was clicked.
 - ⌘⇧L, a worktree in the switcher, and Show pull request in the ⌘J menu open it at the chip of the action bar. When the chip is the PR of another worktree, or there is no chip, it opens at the left end of the bar.
 - The card follows the control that opened it when a resize of the window, a drag of a divider, or the sidebar or the plot panel moves the control. When the control goes, such as a row of a column that hides, the popover closes.
-- The popover has a state of its own. It opens for one worktree, and it closes when the focus moves to another pane, tab or space, when the quick switcher or the actions menu opens, and when its worktree leaves the list.
-- One overlay shows at a time: the popover, the switcher and the actions menu close each other.
+- The popover has a state of its own. It opens for one worktree. It closes when the focus moves to another pane, tab or space, and when its worktree leaves the list. It also closes when the quick switcher, the actions menu, the Land sheet or the New worktree sheet opens.
+- One overlay shows at a time. When the popover opens, it closes the quick switcher and the actions menu. The [Land sheet](../LandSheet/README.md) and the [New worktree sheet](../NewWorktreeSheet/README.md) close the popover when they open.
+- The popover does not open while a sheet shows or keeps the window (a merge, or a worktree that is made). The keys and menu items that open it are off then, and the scrim takes the clicks. It would take the keys from that sheet.
 
 ## The card
 
@@ -23,7 +24,35 @@ The PR popover shows the state of the PR of one worktree and the actions that go
   - The list is as tall as its rows, and it scrolls inside the card when the card would be taller than the window allows (`PopoverLayout`). The rest of the card keeps its size.
   - The row takes no keys. Escape closes the popover with the list open or closed.
 - A merged or closed PR has one State row and no list.
-- A worktree with no PR has no header. It shows its branch in mono, "No pull request yet", the Base (mono) and the Local state, and the buttons Open on GitHub (when the branch is pushed) and Copy branch name.
+- A worktree with no PR has no header. It shows its branch in mono and "No pull request yet". A hairline stands above the rows Goal, Link, Base (mono) and Local. The buttons Open on GitHub (when the branch is pushed) and Copy branch name follow. See [The Goal and Link rows](#the-goal-and-link-rows).
+  - Link shows only when the worktree has a link.
+  - Base shows only when the worktree has a base. A worktree that started on a branch that existed has none.
+  - A worktree whose folder is gone has no Goal, Link or Local row. The line under the branch is its status line, and not "No pull request yet".
+
+## The Goal and Link rows
+
+A worktree with no PR has these two rows above Base (ticket 115). A worktree with a PR has neither. Each row is 28pt high. Its label stands in an 84pt column, in `ink-faint`, as in the rows of the plot panel, and its text is 12.5pt.
+
+### Goal
+
+- The goal shows in `ink` on one line, and the end is cut when it is long. The tooltip holds the whole goal. A worktree with no goal shows "Add a goal" in `ink-faint`.
+- The row shows for every worktree with no PR whose folder is there, also when the goal is empty.
+- Under the pointer, the goal gets a fill of `ink` at 6% and a `pencil` mark in `ink-muted` at the trailing edge. A click on the goal starts the edit.
+- The edit replaces the goal with a field: a field box (`loamFieldBox`) on `horizon-a`, 24pt high. The field has the keys, and it holds the goal as it is now. Return saves, and Escape cancels.
+- A goal over 20 words gets the warning "The goal has 24 words. The soft limit is 20 words." in `needs-you`, under the field. The goal still saves.
+- A note about a save takes the place of the warning, and it is `rust`. A change of the text takes the note away.
+- A save runs `loam worktree edit --goal` as one change with Undo, written by the app. The text loses the white space at both ends, and an empty text clears the goal. The field is off while the save runs.
+- The save expects the version of the goal that the edit opened with, so a goal that a session set meanwhile is never overwritten:
+  - When the goal changed, nothing saves. The field shows the new goal in place of your text, with the note "The goal changed meanwhile. Loam shows the new goal." The next Return saves against the new version.
+  - When Loam cannot read the new goal, your text stays. The note says "The goal changed meanwhile, but Loam could not read the new goal. Press Return to try again."
+  - Any other failure shows the message of the core, and the edit stays open.
+- The edit ends on a save that works and on Escape. It also ends when the popover closes or opens again, and when the worktree gets a PR, because the row then goes.
+
+### Link
+
+- The Link row shows the link that the worktree was made with. A mark of 12pt comes first, then the label, such as "ENG-482 Link kinds for Figma". The label is one line in `ink`.
+- An issue shows the Linear mark or the GitHub mark. A claude.ai address shows the Claude mark. Any other link shows the `link` symbol.
+- A click opens the link in the browser when the link is an https address. The popover stays open. Any other link only names itself, and a click does nothing. The tooltip is the address, else the label.
 
 ## Buttons
 
@@ -44,4 +73,6 @@ The PR popover shows the state of the PR of one worktree and the actions that go
 ## Keys
 
 - Escape or a click outside closes the popover. The keys go back to where they were: the field of the plot panel that had them, with its selection, else the focused pane.
+- While an input method composes text, Escape belongs to the input method and does not close the popover.
+- While you edit the goal, Escape ends the edit and keeps the popover. The next Escape closes it. Return in the goal field saves the goal and never runs the primary button. When the edit ends, the keys go back to the card.
 - Opening or closing the popover does not move the keys of a refresh. A refresh of the PR data never takes the keys from a field.
