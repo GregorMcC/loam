@@ -421,7 +421,14 @@ extension DriverApp {
 
     /// Presses a menu key equivalent such as command-I through the main menu.
     func pressMenuKey(_ letter: Character, flags: NSEvent.ModifierFlags = .command) throws {
-        let codes: [Character: UInt16] = ["i": 34, "p": 35, "w": 13, "t": 17, "1": 18, "2": 19, "b": 11, "l": 37, ",": 43, "j": 38]
+        guard try sendMenuKey(letter, flags: flags) else { throw DriverFailure("the main menu took no key \(letter)") }
+    }
+
+    /// Sends a menu key equivalent to the main menu, and says whether the menu took it. A menu item that is off does not.
+    func sendMenuKey(_ letter: Character, flags: NSEvent.ModifierFlags = .command) throws -> Bool {
+        let codes: [Character: UInt16] = [
+            "i": 34, "p": 35, "w": 13, "t": 17, "1": 18, "2": 19, "b": 11, "l": 37, ",": 43, "j": 38, "n": 45, "0": 29, "a": 0,
+        ]
         guard let code = codes[letter],
               let event = NSEvent.keyEvent(
                 with: .keyDown, location: .zero, modifierFlags: flags,
@@ -429,9 +436,7 @@ extension DriverApp {
                 context: nil, characters: String(letter), charactersIgnoringModifiers: String(letter),
                 isARepeat: false, keyCode: code)
         else { throw DriverFailure("no key event for \(letter)") }
-        guard NSApp.mainMenu?.performKeyEquivalent(with: event) == true else {
-            throw DriverFailure("the main menu took no key \(letter)")
-        }
+        return NSApp.mainMenu?.performKeyEquivalent(with: event) == true
     }
 
     /// Waits for the panel to load the active plot.

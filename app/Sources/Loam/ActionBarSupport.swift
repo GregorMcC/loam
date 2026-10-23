@@ -45,13 +45,11 @@ extension MainWindowController: NSMenuItemValidation {
     /// ⌘J or a click on Actions: opens the menu with the actions that can run now, or closes it.
     func toggleActionsMenu() {
         if actionBar.menu.isOpen { return closeActionsMenu() }
-        // A merge or a worktree start keeps its sheet (`sheetHoldsWindow`). The menu stays shut then, since it would show
-        // over the sheet and its commands would change the window under it.
-        if model.sheetHoldsWindow { return }
+        // The menu stays shut while a sheet shows or holds the window. It would show over the sheet, and its commands would
+        // change the window under it. The button of the bar is under the scrim, but a press by accessibility reaches it.
+        if model.sheetBlocksWindow { return }
         if model.switcher.isOpen { model.switcher.close() }
         model.closePullRequest()  // One overlay at a time: the popover would take the clicks of the menu.
-        model.closeLandSheet()
-        model.closeNewWorktree()
         let workspace = model.workspace
         let space = workspace.activeSpace
         let pane = workspace.focusedPane
@@ -143,6 +141,7 @@ extension MainWindowController: NSMenuItemValidation {
     /// The menu bar and the actions menu agree on what can run (`ActionMenu.isAvailable`).
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         guard let command = (menuItem.representedObject as? MenuCommand)?.command else { return true }
+        guard model.commandAllowed(command) else { return false }
         // ⌘W with no pane closes the window (`closePane`), so the menu bar keeps it enabled.
         if command == .closePane { return true }
         return availability(command)

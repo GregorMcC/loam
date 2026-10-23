@@ -78,6 +78,25 @@ public enum AppCommand: Hashable, Sendable {
     public enum PaneStep: Hashable, Sendable {
         case previous, next, up, down, left, right
     }
+
+    /// Whether the command changes the window: its tabs, panes, spaces, panels, overlays or dialogs. Such a command is off
+    /// while a sheet shows over the window (`AppModel.commandAllowed`), as the items of a document window are off under a
+    /// native sheet. Only the commands of the app stay on: Settings, the Ghostty config and Quit. The switch lists every
+    /// case, so a new command needs a choice here.
+    public var actsOnWindow: Bool {
+        switch self {
+        case .openSettings, .openConfig, .reloadConfig, .quit:
+            false
+        case .quickSwitcher, .quickSwitcherActions, .actionsMenu, .nextPaneThatNeedsYou, .nextReadyWorktree, .selectPlot,
+             .selectHome, .newPlot, .toggleSidebar, .togglePlotPanel, .newShellTab, .newShellSplit,
+             .newTab, .newSplit, .focusPane, .selectTab, .previousTab, .nextTab, .lastTab, .closePane, .closeTab,
+             .equalizeSplits, .resizeSplit, .undo, .redo,
+             .newHomeSession, .newHomeShell, .moveTabToPlot, .moveTabToNewPlot,
+             .newPlotSession, .editBrief, .addLink, .addRepo, .archivePlot,
+             .showWorktreePullRequest, .refreshWorktree, .sendFailuresToSession, .landWorktree:
+            true
+        }
+    }
 }
 
 /// A Loam key that no Ghostty config can change.

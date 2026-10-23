@@ -14,11 +14,20 @@ extension AppModel {
     /// then, as the dim of a native sheet does.
     public var sheetIsOpen: Bool { landSheet.isOpen || newWorktreeSheet.isOpen }
 
-    /// Whether a toolbar item takes a click. None does while a sheet shows or holds the window (`sheetHoldsWindow`): the scrim
-    /// covers the toolbar, and a click there would change the window under the sheet (a new tab, the panel, the sidebar or
-    /// the plot). Home has no plot panel (ticket 99).
+    /// True while a sheet shows or holds the window (`sheetHoldsWindow`). The window behind it must not change then.
+    public var sheetBlocksWindow: Bool { sheetIsOpen || sheetHoldsWindow }
+
+    /// Whether a toolbar item takes a click. None does while a sheet shows or holds the window: the scrim covers the toolbar,
+    /// and a click there would change the window under the sheet (a new tab, the panel, the sidebar or the plot). Home has no
+    /// plot panel (ticket 99).
     public func toolbarAllows(_ action: ToolbarAction) -> Bool {
-        guard !sheetIsOpen, !sheetHoldsWindow else { return false }
+        guard !sheetBlocksWindow else { return false }
         return action != .plotPanel || workspace.activePlotID != nil
+    }
+
+    /// Whether a command runs now. While a sheet shows or holds the window, only the commands of the app run (ticket 128). A
+    /// menu item, a fixed key and a Ghostty action all ask this, so a key does what its menu item does.
+    public func commandAllowed(_ command: AppCommand) -> Bool {
+        !command.actsOnWindow || !sheetBlocksWindow
     }
 }
