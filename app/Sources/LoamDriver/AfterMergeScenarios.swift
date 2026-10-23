@@ -126,15 +126,16 @@ extension Scenarios {
             return (pane, view)
         }
 
-        // 2. A shell in link-labels, at its prompt. A shell in dark-mode runs a process, as a dev server does. The
-        // foreground process group of its terminal is the job then, not the shell. Then the panel.
+        // 2. A shell in link-labels, at its prompt. A shell in dark-mode runs a process, as a dev server does. Its
+        // terminal has a process apart from the shell then. Then the panel.
         let (shell, idle) = try await openShell(in: labels.id)
         let server = try await openShell(in: dark.id)
         host.window.makeFirstResponder(server.view)
         try app.type("sleep 600")
         app.press(.returnKey)
         func job(_ view: TerminalSurfaceView) -> Bool {
-            ForegroundJob.runs(group: view.foregroundProcessGroup, app: getpid(), read: ForegroundJob.read)
+            TerminalJobs.busy(foreground: view.foregroundProcessGroup, app: getpid(), read: TerminalJobs.read,
+                              onTerminal: TerminalJobs.onTerminal)
         }
         try await app.waitUntil("the shell of dark-mode runs a job") { job(server.view) && server.view.runsAProcess }
         try expectMerge(!job(idle), "the shell at its prompt runs a job")
