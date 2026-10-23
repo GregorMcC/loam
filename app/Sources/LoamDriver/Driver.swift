@@ -95,6 +95,9 @@ final class Watchdog: @unchecked Sendable {
     private let timer = DispatchSource.makeTimerSource(queue: .global())
     private let outFolder: String
     let limit: TimeInterval = 10
+    /// The limit during an `excuse` wait. A process that holds the main thread this long is a hang all the same, so the
+    /// driver always ends by itself.
+    let excusedLimit: TimeInterval = 120
 
     /// The watchdog of the run.
     nonisolated(unsafe) static var current: Watchdog?
@@ -114,7 +117,7 @@ final class Watchdog: @unchecked Sendable {
 
     /// Runs `body`, in which the main thread reads the output of a process that the driver started, such as `loam`.
     /// The main thread does not beat then, but the app does not hang: a busy machine can hold the launch of a process
-    /// for more than 10 s (ticket 125).
+    /// for more than 10 s (ticket 125). So the limit is `excusedLimit` until `body` returns.
     static func excuse<T>(_ body: () throws -> T) rethrows -> T {
         current?.excuse(1)
         defer { current?.excuse(-1) }
@@ -131,9 +134,9 @@ final class Watchdog: @unchecked Sendable {
     private func check() {
         lock.lock()
         let silent = ProcessInfo.processInfo.systemUptime - lastBeat
-        let waits = excused > 0
+        let limit = excused > 0 ? excusedLimit : self.limit
         lock.unlock()
-        guard !waits, silent > limit else { return }
+        guard silent > limit else { return }
         Log.line("HANG: the main thread did not run for \(Int(limit)) s")
         let path = "\(outFolder)/sample-\(getpid()).txt"
         let sample = Process()
@@ -215,16 +218,18 @@ final class DriverApp: NSObject, NSApplicationDelegate {
             return
         }
         // The limit also ends a wait that never ends, since a wait has no limit of its own (ticket 125). Then the FAIL
-        // line names the wait, after the screenshot and the accessibility tree that a failed check gives.
+        // line names the wait, after the screenshot and the accessibility tree that a failed check gives. A capture
+        // that does not end holds the exit for 10 s at most.
         let limit = Timer(timeInterval: run.limit, repeats: false) { _ in
             MainActor.assumeIsolated {
-                guard let waiting = self.waiting else {
-                    Log.line("FAIL \(self.scenario): the scenario ran past \(Int(run.limit)) s")
-                    return
+                let fail = "FAIL \(self.scenario): the scenario ran past \(Int(run.limit)) s"
+                    + (self.waiting.map { " while it waited for: \($0)" } ?? "")
+                if self.waiting != nil {
+                    DispatchQueue.global().asyncAfter(deadline: .now() + 10) { Log.line(fail); _exit(4) }
+                    if self.host != nil { self.dumpAccessibility() }
+                    self.screenshot("fail")
                 }
-                if self.host != nil { self.dumpAccessibility() }
-                self.screenshot("fail")
-                Log.line("FAIL \(self.scenario): the scenario ran past \(Int(run.limit)) s while it waited for: \(waiting)")
+                Log.line(fail)
             }
             _exit(4)
         }

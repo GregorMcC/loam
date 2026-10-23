@@ -36,13 +36,15 @@ struct DriverTests {
         process.terminationHandler = { exit.set($0.terminationStatus) }
         try process.run()
         // The driver ends itself: past the time limit of its scenario (exit 4), or when its main thread hangs (exit 3).
-        // So once it runs, this wait has no limit of its own, and a busy machine cannot fail a slow scenario here (ticket
-        // 125). Only a launch that never starts the driver, with no driver.log after 5 minutes, ends here. A busy machine
-        // can hold a launch for half a minute while macOS checks the binary.
+        // So this wait does not end a slow scenario on a busy machine (ticket 125). It ends a launch that never starts
+        // the driver, with no driver.log after 5 minutes: a busy machine can hold a launch for half a minute while macOS
+        // checks the binary. And it ends a driver that does not end itself, after 30 minutes, far past any limit.
         let log = out.appendingPathComponent("driver.log")
         let launched = Date()
         while exit.status == nil {
-            if Date().timeIntervalSince(launched) > 300, !FileManager.default.fileExists(atPath: log.path) { break }
+            let waited = Date().timeIntervalSince(launched)
+            if waited > 300, !FileManager.default.fileExists(atPath: log.path) { break }
+            if waited > 1800 { break }
             try await Task.sleep(for: .milliseconds(100))
         }
         if exit.status == nil {

@@ -192,13 +192,14 @@ extension Scenarios {
         try """
             #!/bin/sh
             if [ "$1" = move ]; then
-              while [ -e '\(hold.path)' ] && kill -0 $PPID 2>/dev/null; do sleep 0.05; done
+              while [ -e "$LOAM_DRIVER_HOLD" ] && kill -0 $PPID 2>/dev/null; do sleep 0.05; done
             fi
-            exec '\(rig.binary.path)' "$@"
+            exec "$LOAM_DRIVER_REAL_LOAM" "$@"
 
             """.write(to: held, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: held.path)
-        let host = try await app.launchApp(client: LoamClient(binary: held, environment: rig.environment), state: rig.stateFile)
+        let environment = rig.environment.merging(["LOAM_DRIVER_HOLD": hold.path, "LOAM_DRIVER_REAL_LOAM": rig.binary.path]) { $1 }
+        let host = try await app.launchApp(client: LoamClient(binary: held, environment: environment), state: rig.stateFile)
         let model = host.model
         try await app.waitUntil("the plots load") { model.plots.count == 5 }
         // Plots 1 to 4 have panes. Plot 1 is active, so its tree is open. Plot 5 is in "No panes".
@@ -359,8 +360,9 @@ extension Scenarios {
         try await app.waitUntil("the app has the move after Reduce Motion") { !model.isMovingPlot }
         Log.line("RESULT Reduce Motion showed the line and moved the plot at once")
 
-        // 6. Fifteen plots: drag the top plot of "No panes" to its end. Each pointer move fits well inside one frame. The
-        // cost is the time of the main thread on the CPU, so a busy machine that holds the thread off it adds nothing.
+        // 6. Fifteen plots: drag the top plot of "No panes" to its end. Each pointer move fits well inside one frame: the
+        // worst move in time of the main thread on the CPU, and the median move on the clock. A busy machine can hold the
+        // thread off the CPU for a frame, which only the worst move on the clock counts (ticket 125).
         LoamMotion.reduceMotionOverride = false
         var extra: [String] = []
         for index in 1...10 { extra.append(try rig.newPlot("Plot \(index + 5)")) }
@@ -374,13 +376,14 @@ extension Scenarios {
         from = try center(p5)
         let end = try center(extra[9])
         app.mouse(.leftMouseDown, at: from, on: view)
-        var costs: [Double] = []
+        var cpu: [Double] = [], wall: [Double] = []
         var at = from
         while at.y > end.y {
             at.y -= 6
-            let begin = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
+            let begin = (cpu: clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID), wall: ProcessInfo.processInfo.systemUptime)
             app.mouse(.leftMouseDragged, at: at, on: view)
-            costs.append(Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - begin) / 1_000_000)
+            cpu.append(Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - begin.cpu) / 1_000_000)
+            wall.append((ProcessInfo.processInfo.systemUptime - begin.wall) * 1000)
             await app.sleep(0.008)
         }
         await app.sleep(0.3)
@@ -388,9 +391,12 @@ extension Scenarios {
         app.mouse(.leftMouseUp, at: at, on: view)
         try await app.waitUntil("Reading list lands last") { model.plots.last?.id == p5 }
         try await app.waitUntil("the rows are at rest after the long drag") { rowsAtRest() }
-        let worst = costs.max() ?? 0, mean = costs.reduce(0, +) / Double(max(costs.count, 1))
-        Log.line(String(format: "RESULT fifteen plots: %d moves, mean %.2f ms, worst %.2f ms of CPU per move", costs.count, mean, worst))
+        let worst = cpu.max() ?? 0, mean = cpu.reduce(0, +) / Double(max(cpu.count, 1))
+        let median = wall.sorted().dropFirst(wall.count / 2).first ?? 0
+        Log.line(String(format: "RESULT fifteen plots: %d moves, mean %.2f ms, worst %.2f ms of CPU per move, median %.2f ms on the clock",
+                        cpu.count, mean, worst, median))
         try check(worst < 8, "a pointer move took \(worst) ms of CPU, more than one frame at 120 Hz")
+        try check(median < 8, "the median pointer move took \(median) ms, more than one frame at 120 Hz")
     }
 
     private static func find(_ view: NSView, _ identifier: String) -> NSView? {
