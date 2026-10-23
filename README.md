@@ -12,7 +12,8 @@
   <a href="#use-it">Use it</a> ·
   <a href="#how-it-works">How it works</a> ·
   <a href="#the-loam-cli">The loam CLI</a> ·
-  <a href="docs/design/README.md">Design system</a>
+  <a href="docs/design/README.md">Design system</a> ·
+  <a href="CONTRIBUTING.md">Contribute</a>
 </p>
 
 <p align="center">
@@ -66,6 +67,82 @@ The diff shows the words that Claude removed and added. Read it, then keep the c
 
 <br clear="right">
 
+### See how far each branch is from merged
+
+<img src="docs/images/ship-state.png" align="right" width="260" alt="The Worktrees section of the plot panel. Five rows each have a stage mark, the branch, the PR number, and a status line. Three rows are ready to merge and have a Land button. One row shows 2 of 3 checks failed in red. One row shows 1 of 2 checks done.">
+
+A worktree that has a pull request (PR) shows the PR number and a stage mark in the sidebar. The stage is one step on the way to Merged, such as Checks running, Approval needed, or Ready to merge. A worktree with no PR and work that is not pushed shows ✎ in the sidebar.
+
+The plot panel has a Worktrees section. Each row has the stage mark, the branch, the PR number, and a status line such as "2 of 3 checks failed". The "Ready to merge" row in the sidebar counts the ready worktrees in all plots. ⇧⌘L goes to the next one.
+
+Ship state does not raise an alert. No stage turns a pane amber or shows a banner. Only Conflicts and Checks failed take a warning colour.
+
+Loam reads GitHub through the GitHub CLI (`gh`) and holds no credentials. It refreshes the state when you open a plot and after a session stops. It refreshes the active plot every minute while Loam is in front. It refreshes the other plots every 5 minutes. Without `gh`, or when you are signed out, Loam shows local state and says how to fix it.
+
+<br clear="right">
+
+### Read the checks, then send the fix
+
+<img src="docs/images/pr-popover.png" align="right" width="340" alt="The PR popover for a PR with failed checks. It shows the stage, the title, the checks, the review, the base, and conflicts. Two failed checks have a time and a Log link. Below them are the button Start session with prompt, and the buttons Re-run failed and Open on GitHub. A note says that Loam starts a session and types the failures prompt, and that you press Return.">
+
+Click a stage mark to open the PR popover. It shows the stage, the checks, the review, the base branch, and conflicts. Each failed check has a Log link, and the passed checks are in a list under them. Re-run failed and Update branch act on GitHub. Open on GitHub opens the PR in your browser.
+
+The action bar shows the PR of the active pane as a chip. The quick switcher finds a worktree by its PR number.
+
+When a PR has failed checks, requested changes, or conflicts, the popover has a button such as "Send failures to session". Loam types a short prompt into the Claude Code session of the worktree and never presses Return. You press Return to send it. The prompt names the PR and the `gh` command, and the session reads the details itself.
+
+Loam types only when the session is idle and its input is empty. Otherwise the button is "Copy prompt". A worktree with no session gets "Start session with prompt".
+
+<br clear="right">
+
+### Land from one sheet
+
+<img src="docs/images/land-sheet.png" align="right" width="420" alt="The Land sheet. It lists five items that pass, the merge method Squash, and three boxes for after the merge. A text box holds the new Where it stands text. The footer says that you cannot undo a merge, and has Cancel and Merge buttons.">
+
+A worktree at Ready to merge has a Land… button. It is in the PR popover and on the row of the worktree in the plot panel. Land… is also in the actions menu (⌘J).
+
+The Land sheet lists each item that can block the merge: checks, review, base, conflicts, and local work. Merge stays off while an item blocks. A merge cannot be undone. The sheet offers the merge methods that the repo allows.
+
+After the merge, these boxes are on by default:
+
+- Remove the worktree. When a pane runs in it, Loam closes the pane first.
+- Delete the branch on GitHub.
+- Move Where it stands on. Loam saves this as a change that you can undo.
+- Remove the issue from the plot's links. This box shows only for a worktree that started from a link of the plot.
+
+If checks still run, the button is "Merge when ready". With a merge queue, it is "Add to merge queue". In a terminal, `loam worktree land` merges the PR, deletes the branch on GitHub, and removes the worktree. It refuses to remove a worktree that has an open pane. With `--auto`, GitHub merges later and Loam keeps the worktree. The flags `--keep-worktree` and `--keep-remote-branch` turn off the two clean-up steps.
+
+<br clear="right">
+
+### After a merge on GitHub
+
+A PR can merge outside Loam: a reviewer merges it, or the merge queue does. When a refresh finds the merge, Loam acts as the repo setting "After a merge on GitHub" says. The setting is in the Repo actions menu of a repo in the plot panel.
+
+| Setting | What Loam does |
+| :- | :- |
+| Ask (the default) | Shows a callout at the top of the plot panel, with Keep and Remove worktree. |
+| Remove the worktree | Removes the worktree when that is safe. When it is not safe, Loam asks. |
+| Do nothing | Shows the worktree as Merged in the plot panel, with a Remove… button. |
+
+Loam removes a worktree with no click only when all of these are true:
+
+- The worktree has no changed files and no unpushed commits.
+- Git reports the state of the worktree with no error.
+- No session is in a turn or waits on you.
+- No shell pane runs a command.
+
+A land that waited ("Merge when ready", or a merge queue) finishes as you chose in the Land sheet.
+
+### Start work from a link
+
+<img src="docs/images/start-work.png" align="right" width="420" alt="The New worktree sheet. A card shows a Linear issue. The sheet fills in the repo, the branch, the base, the goal, and the link from the issue. The footer has Cancel and Start session buttons.">
+
+A Linear issue link or a GitHub issue link starts work in one step. Open the Link actions menu of the link in the plot panel. Choose Start work…. Or press ⌘Return on the link in the quick switcher. The New worktree sheet fills in the branch and the goal from the link. Start session makes the worktree and opens a seeded session in it.
+
+Loam does not copy the issue. The session reads it through its own connector. The seed lists the worktree, its goal, and its issue key. Loam checks the branch name as you type, and it uses a branch that exists as it is. When you land the worktree, the Land sheet can remove the link from the plot. The "+" in the Worktrees section opens the same sheet with no link.
+
+<br clear="right">
+
 ### Go anywhere from the keyboard
 
 The quick switcher (⌘P) finds plots, panes, links, and commands, and shows a preview of the selected one. The actions menu (⌘J) lists the commands for the pane and the plot, with their keys. ⌃1 to ⌃9 go straight to a plot.
@@ -80,7 +157,7 @@ Quit and reopen, and your tabs and splits come back. Each session resumes when y
 
 ## Install
 
-You need macOS 26 or later on Apple silicon, and Claude Code with `claude` on your PATH.
+You need macOS 26 or later on Apple silicon, and Claude Code with `claude` on your PATH. Ship state also needs the GitHub CLI (`gh`), signed in with `gh auth login`. Loam works without it.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/GregorMcC/loam/main/scripts/install-release.sh | sh
@@ -88,8 +165,9 @@ loam setup                       # once: registers the Loam MCP server with Clau
 open /Applications/Loam.app
 ```
 
-- The script downloads the latest release and checks its checksum and its signature. It installs `/Applications/Loam.app` and links `~/.local/bin/loam` to the `loam` CLI inside the app.
-- To update, run the same command. If Loam runs, the script quits Loam, installs, and opens it again. You can run it from inside a Loam pane: the pane closes when Loam quits, and the log is `~/Library/Logs/loam-update.log`.
+- The script downloads the latest release and checks its checksum and its signature. It installs `/Applications/Loam.app` and links `~/.local/bin/loam` to the `loam` CLI inside the app. If `~/.local/bin` is not on your PATH, the script says how to add it.
+- To update, run the same command. If Loam runs, the script quits Loam, installs, and opens it again. If a session is in a turn, Loam asks first, and the script waits up to 10 minutes for your answer. You can run it from inside a Loam pane: the pane closes when Loam quits, and the log is `~/Library/Logs/loam-update.log`.
+- When the version is installed already, the script does nothing. To install one version, run `curl -fsSL https://raw.githubusercontent.com/GregorMcC/loam/main/scripts/install-release.sh | sh -s -- --version vX.Y.Z`. Add `--force` to install the same version again.
 - `loam setup` prints allow rules for the Loam read tools. Add them to `permissions.allow` in your Claude Code settings. Loam does not edit that file.
 - A self-signed certificate signs each release. It is not an Apple Developer ID, so Gatekeeper does not know it. `curl` does not mark the download for Gatekeeper, so the app opens. If you download `Loam.zip` with a browser, macOS blocks the first launch. Then open System Settings > Privacy & Security and click Open Anyway.
 - To remove Loam, run `curl -fsSL https://raw.githubusercontent.com/GregorMcC/loam/main/scripts/uninstall.sh | sh`.
@@ -128,6 +206,7 @@ Every release must use the same certificate, because macOS keeps a person's fold
 3. In the panel, add the repos with `+`. The first repo is the main repo, where sessions start. Then add links to the documents that matter.
 4. Press ⌘T. Loam starts a Claude Code session in the main repo, seeded with the plot.
 5. Work as usual. When a pane turns amber, press ⌘L to go to it.
+6. When a worktree has a PR, click its stage mark to see the checks. At Ready to merge, choose Land….
 
 | Key | Does |
 | :- | :- |
@@ -135,6 +214,7 @@ Every release must use the same certificate, because macOS keeps a person's fold
 | ⌥⌘T | New shell tab |
 | ⌘D, ⇧⌘D | Split right, split down |
 | ⌘P | Quick switcher |
+| ⌘Return | In the quick switcher: start work from the selected issue link |
 | ⌘J | Actions menu |
 | ⌘L | Next pane that needs you |
 | ⇧⌘L | Next worktree that is ready to merge |
@@ -152,7 +232,7 @@ The tab and split keys are Ghostty's. If your Ghostty config binds them to other
 | **Brief** | Three short parts. *What* the work is, *why* it matters, and *where it stands*. What and Why rarely change. Where it stands moves with the work. |
 | **Repos** | Local git checkouts. One is the **main repo**, where sessions start. A repo can belong to many plots. |
 | **Links** | Labelled pointers to Notion pages, Linear issues, GitHub, Obsidian vault notes, URLs, and local folders. A seed holds the links, never their content. |
-| **Worktrees** | Separate checkouts of a repo, each on its own branch, that Loam makes for the plot. |
+| **Worktrees** | Separate checkouts of a repo, each on its own branch, that Loam makes for the plot. A worktree has a goal, and it can point at an issue link. |
 | **Change log** | Every edit, by you or by a session, with who and when. Undo adds a change. It never removes one. |
 
 ## What a session sees
@@ -220,6 +300,7 @@ flowchart LR
 - **The CLI is the contract** ([ADR 0004](docs/adr/0004-go-core-and-the-cli-as-the-contract.md)). The app calls `loam --json` and reads stable exit codes. See [docs/contract.md](docs/contract.md).
 - **Seeds hold links, not snapshots** ([ADR 0001](docs/adr/0001-seeds-hold-links-not-snapshots.md)).
 - **Sessions start in the main repo** ([ADR 0003](docs/adr/0003-sessions-start-in-the-main-repo.md)).
+- **Ship state is information** ([ADR 0007](docs/adr/0007-ship-state-is-information.md)). The core reads GitHub through `gh` and decides the stage. The app shows the stage and raises no alert for it.
 
 ## The loam CLI
 
@@ -242,7 +323,12 @@ loam start "Loam v1 build"                    # a seeded Claude Code session in 
 | `loam set <plot> where-it-stands "..."` | Move the brief on |
 | `loam open <plot> <link>` | Open a link: browser, Obsidian, Finder, or the default app |
 | `loam changes` / `loam undo <change-id>` | Review the change log and undo one change |
-| `loam worktree new <plot> <repo> <name> --goal "..."` | Make a worktree for one task, then `loam start <plot> --worktree <name>` |
+| `loam worktree new <plot> <repo> <name> --goal "..."` | Make a worktree for one task, then `loam start <plot> --worktree <name>`. `--link` takes a plot link ID or an issue URL. |
+| `loam worktree list <plot> --refresh` | See the PR, the checks, and the stage of each worktree. It needs `gh`. |
+| `loam worktree land <plot> <worktree>` | Merge the PR, delete the branch, and remove the worktree. It refuses to remove a worktree that has an open pane. `--dry-run` lists each check. |
+| `loam worktree rerun <plot> <worktree>` | Run the failed checks of the PR again |
+| `loam worktree update <plot> <worktree>` | Bring the PR up to date with its base branch |
+| `loam repo edit <plot> <repo> --after-merge ask\|remove\|keep` | Choose what the app does when GitHub merges a PR of the repo |
 | `loam sessions` / `loam resume <id>` | Find and resume a seeded session |
 | `loam archive <plot>` | Put a finished plot away. `loam delete` removes an archived one. |
 
@@ -251,6 +337,10 @@ Each command that prints data takes `--json` for machine-readable output. See [d
 ## Status
 
 Loam is in daily use. It is a personal project: I fix what I find, and I do not promise a schedule. Releases are on the [releases page](https://github.com/GregorMcC/loam/releases).
+
+## Contribute
+
+To send a change, read [CONTRIBUTING.md](CONTRIBUTING.md) first. It lists the steps that every change follows. Open an issue before you change anything that a person sees.
 
 ## In this repo
 
@@ -261,9 +351,10 @@ contract/    JSON fixtures and schemas that both sides test against
 docs/        the CLI contract, the ADRs, and the design system (docs/design/)
 scripts/     install, release, update, uninstall, the app icon, and the GhosttyKit build
 site/        the website, deployed to GitHub Pages
+.github/     the PR template and the workflow that deploys the website
 ```
 
-The vocabulary is in [CONTEXT.md](CONTEXT.md). The decisions are in [docs/adr/](docs/adr/).
+The vocabulary is in [CONTEXT.md](CONTEXT.md). The decisions are in [docs/adr/](docs/adr/). The steps for a change are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

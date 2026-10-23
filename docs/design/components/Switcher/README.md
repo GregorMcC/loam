@@ -1,4 +1,4 @@
-The quick switcher: one list of plots, panes, links, worktrees and actions across every plot that is not archived. Open it with ⌘K. It looks and works like Spotlight.
+The quick switcher: one list of plots, panes, links, worktrees and actions across every plot that is not archived. Open it with ⌘P. ⌘⇧P opens it with `>` typed, so it lists actions only. It looks and works like Spotlight.
 
 - It floats over the panes as a Liquid Glass panel (`glassEffect(.regular)`, radius 24, a soft shadow), up to 680px wide with a 24px margin each side of the pane area. This is the one glass surface over a pane. Nothing dims behind it. A click outside it closes it.
 - It drops in 8px and grows from 98% over `duration-slow` with `ease-settle`. Under Reduce Motion it fades only.
@@ -7,6 +7,7 @@ The quick switcher: one list of plots, panes, links, worktrees and actions acros
 - Results sit in sections by kind (Panes, Plots, Links, Worktrees, Actions), with a caption heading. The section of the best result comes first, so Return still takes the best result.
 - Each 36px row shows its icon (see Iconography: a Claude session shows the Claude mark, a GitHub link the GitHub mark), its name in 14pt, its plot in `ink-muted` when it is not a plot, a menu shortcut for an action, and an attention dot for a pane that needs you or is done, unread.
 - Return makes a plot active, focuses a pane, opens a link with `loam open`, goes to a worktree and opens its PR popover, or runs an action. Arrow keys move the `moss-wash` selection (radius 10). Escape closes the switcher. While an input method composes text in the search field, Escape cancels the composed text and the switcher stays open.
+- A link to a Linear issue or a GitHub issue has a second action, Start work… (ticket 115). ⌘Return runs it: the plot of the link becomes active, and the [New worktree sheet](../NewWorktreeSheet/README.md) opens with the link. On a result with no second action, ⌘Return does nothing.
 
 The consumer provides the items, their icons, and their recent-use order.
 
@@ -19,7 +20,7 @@ The consumer provides the items, their icons, and their recent-use order.
 - Worktree: caption "Worktree · Ready to merge" (the stage). Rows: Plot, Pull request ("#22 Link labels"), Status (the status line of the stage), Folder (mono). Only a worktree with a PR and a folder is in the list, and it shows after you type, as a link does.
 - Link: caption is the kind ("Local link", "GitHub link"). Rows: Target (mono for a file) and Plot.
 - Action: caption "Action". One row, Shortcut, as keycaps. It is left out when the action has no key.
-- The footer is 44pt high with a `rule` hairline above. It shows the icon of the selected result on the left. On the right it shows the primary action ("Open plot", "Go to pane", "Open link", "Show pull request", "Run") and a ↵ keycap. A click on it does what Return does.
+- The footer is 44pt high with a `rule` hairline above. It shows the icon of the selected result on the left. On the right it shows the primary action ("Open plot", "Go to pane", "Open link", "Show pull request", "Run") and a ↵ keycap. A click on it does what Return does. A result with a second action shows it left of the primary action, as "Start work…" and a ⌘↵ keycap. A click on it does what ⌘Return does.
 - A row is 40pt high with radius 9. The selected row has a neutral fill (the ink at 9%) and no `moss-wash`. Matched letters stay `moss`. After the title come the attention mark of a pane and the subtitle in 13pt `ink-muted` (a plot's pane count, else the plot name). The kind sits on the right in `ink-faint` ("Plot", "Pane", "Local link"). An action shows its shortcut as keycaps instead. Section headings are 12pt, medium, `ink-faint`.
 - Keycaps: 20pt squares, radius 5, a fill of the ink at 10%, 11.5pt text in `ink-muted`.
 - The content comes from `SwitcherPreview` in LoamKit, a pure function of the item and the model data. The view renders one snapshot of the results, so a stale row index cannot crash it.

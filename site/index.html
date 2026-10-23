@@ -331,6 +331,8 @@ figcaption { margin-top: var(--space-3); color: var(--ink-muted); font-size: 14p
   .feature--flip { grid-template-columns: 8fr 4fr; }
   .feature--flip .feature__text { order: 2; }
   .feature--panel { grid-template-columns: 6fr 5fr; }
+  .feature--sheet { grid-template-columns: 5fr 6fr; }
+  .feature--flip.feature--sheet { grid-template-columns: 6fr 5fr; }
   .feature--wide { grid-template-columns: 1fr; max-width: 680px; }
 }
 .feature__text h3 { font-size: 22px; line-height: 1.25; }
@@ -353,6 +355,8 @@ figcaption { margin-top: var(--space-3); color: var(--ink-muted); font-size: 14p
   border-radius: var(--radius-lg); background: var(--horizon-a); border: 1px solid var(--hairline);
 }
 .panel-stage img { width: 300px; max-width: 100%; filter: drop-shadow(0 12px 28px var(--shot-shade)); }
+.panel-stage--card img { width: 380px; border-radius: var(--radius-lg); }
+.panel-stage--wide img { width: 560px; }
 .themes { display: grid; gap: var(--space-4); margin-top: var(--space-6); }
 @media (min-width: 720px) { .themes { grid-template-columns: 1fr 1fr; } }
 .themes figure { margin: 0; }
@@ -640,6 +644,54 @@ footer a { color: var(--ink); }
         </div>
       </div>
 
+      <div class="feature feature--panel">
+        <div class="feature__text">
+          <h3>See how far each branch is from merged</h3>
+          <p>A worktree with a pull request shows its PR number and a stage mark in the sidebar. The plot panel lists each worktree with its stage and a status line, such as 2 of 3 checks failed.</p>
+          <p>Ship state does not raise an alert. No stage turns a pane amber or shows a banner. Only Conflicts and Checks failed take a warning colour.</p>
+          <ul class="keys">
+            <li><kbd>⇧</kbd><kbd>⌘</kbd><kbd>L</kbd> Next worktree that is ready to merge</li>
+          </ul>
+        </div>
+        <div class="panel-stage panel-stage--card">
+          <img src="images/ship-state.png" width="495" height="520" loading="lazy" alt="The Worktrees section of the plot panel. Five rows each have a stage mark, the branch, the PR number, and a status line. Three rows are ready to merge and have a Land button. One row shows 2 of 3 checks failed in red. One row shows 1 of 2 checks done.">
+        </div>
+      </div>
+
+      <div class="feature feature--flip feature--panel">
+        <div class="panel-stage panel-stage--card">
+          <img src="images/pr-popover.png" width="740" height="939" loading="lazy" alt="The PR popover for a PR with failed checks. It shows the stage, the title, the checks, the review, the base, and conflicts. Two failed checks have a time and a Log link. Below them are the button Start session with prompt, and the buttons Re-run failed and Open on GitHub. A note says that Loam starts a session and types the failures prompt, and that you press Return.">
+        </div>
+        <div class="feature__text">
+          <h3>Read the checks, then send the fix</h3>
+          <p>Click a stage mark to open the PR popover. It shows the checks, the review, the base branch, and conflicts. Each failed check has a Log link, and the passed checks are in a list under them.</p>
+          <p>When a PR has failed checks, requested changes, or conflicts, the popover has a button such as Send failures to session. Loam types a short prompt into the session of the worktree and never presses Return. You press Return to send it.</p>
+          <p>Loam types only when the session is idle and its input is empty. Otherwise the button copies the prompt.</p>
+        </div>
+      </div>
+
+      <div class="feature feature--sheet">
+        <div class="feature__text">
+          <h3>Land from one sheet</h3>
+          <p>At Ready to merge, the Land sheet lists each item that can block the merge: checks, review, base, conflicts, and local work. Merge stays off while an item blocks. A merge cannot be undone.</p>
+          <p>After the merge, Loam can close the panes and remove the worktree, delete the branch on GitHub, and move Where it stands on. The change to Where it stands has an Undo.</p>
+        </div>
+        <div class="panel-stage panel-stage--wide">
+          <img src="images/land-sheet.png" width="1120" height="1135" loading="lazy" alt="The Land sheet. It lists five items that pass, the merge method Squash, and three boxes for after the merge. A text box holds the new Where it stands text. The footer says that you cannot undo a merge, and has Cancel and Merge buttons.">
+        </div>
+      </div>
+
+      <div class="feature feature--flip feature--sheet">
+        <div class="panel-stage panel-stage--wide">
+          <img src="images/start-work.png" width="1120" height="930" loading="lazy" alt="The New worktree sheet. A card shows a Linear issue. The sheet fills in the repo, the branch, the base, the goal, and the link from the issue. The footer has Cancel and Start session buttons.">
+        </div>
+        <div class="feature__text">
+          <h3>Start work from a link</h3>
+          <p>A Linear issue link or a GitHub issue link starts work in one step. Choose Start work… in the Link actions menu. Or press <kbd>⌘</kbd><kbd>Return</kbd> on the link in the quick switcher.</p>
+          <p>The New worktree sheet fills in the branch and the goal from the link. Start session makes the worktree and opens a seeded session in it. Loam does not copy the issue. The session reads it through its own connector.</p>
+        </div>
+      </div>
+
       <div class="feature">
         <div class="feature__text">
           <h3>Go anywhere from the keyboard</h3>
@@ -678,7 +730,15 @@ footer a { color: var(--ink); }
         </article>
         <article class="card extra">
           <h3>The CLI works in any terminal</h3>
-          <p>Use <code>loam start</code> in Ghostty or any other terminal to start a seeded session without the app.</p>
+          <p>Use <code>loam start</code> in Ghostty or any other terminal to start a seeded session without the app. <code>loam worktree land</code> merges a PR from a terminal.</p>
+        </article>
+        <article class="card extra">
+          <h3>After a merge on GitHub</h3>
+          <p>A reviewer or the merge queue can merge a PR outside Loam. A setting of the repo says what Loam does then: ask you, remove the worktree when that is safe, or do nothing.</p>
+        </article>
+        <article class="card extra">
+          <h3>GitHub through gh</h3>
+          <p>Loam reads and changes GitHub only through the GitHub CLI, and it holds no credentials. Without <code>gh</code>, or when you are signed out, Loam shows local state and says how to fix it.</p>
         </article>
       </div>
     </div>
@@ -721,13 +781,14 @@ footer a { color: var(--ink); }
             <li>macOS 26 or later</li>
             <li>A Mac with Apple silicon</li>
             <li>Claude Code, with <code>claude</code> on your PATH</li>
+            <li>For ship state: the GitHub CLI (<code>gh</code>), signed in. Loam works without it.</li>
           </ul>
           <hr>
           <h3>Update</h3>
-          <p>Run the install command again.</p>
+          <p>Run the install command again. If Loam runs, the script quits it, installs, and opens it again. If a session is in a turn, Loam asks first, and the script waits up to 10 minutes.</p>
           <hr>
           <h3>Build from source</h3>
-          <p>The <a href="https://github.com/GregorMcC/loam#install">README</a> gives the steps.</p>
+          <p>The <a href="https://github.com/GregorMcC/loam#build-from-source">README</a> gives the steps.</p>
         </aside>
       </div>
     </div>
@@ -746,6 +807,7 @@ footer a { color: var(--ink); }
     <ul>
       <li><a href="https://github.com/GregorMcC/loam">GitHub</a></li>
       <li><a href="https://github.com/GregorMcC/loam/blob/main/docs/design/README.md">Design system</a></li>
+      <li><a href="https://github.com/GregorMcC/loam/blob/main/CONTRIBUTING.md">Contribute</a></li>
     </ul>
   </div>
 </footer>
