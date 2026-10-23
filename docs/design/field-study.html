@@ -329,7 +329,7 @@ footer a { color: var(--moss); }
   </div>
   <div class="mast-aside">
     <div class="row">
-      <button class="pill-btn primary" id="openSw" type="button">Quick switcher <span class="kbd">⌘K</span></button>
+      <button class="pill-btn primary" id="openSw" type="button">Quick switcher <span class="kbd">⌘P</span></button>
       <button class="pill-btn" id="replay" type="button">Replay</button>
     </div>
     <div class="row">
@@ -344,7 +344,7 @@ footer a { color: var(--moss); }
     <span><b>Answer the prompt:</b> press 1 or click Yes</span>
     <span><b>Undo</b> the change in the plot panel</span>
     <span><b>Switch plots</b> to clear a blue ring</span>
-    <span><b>⌘K</b> to search plots, panes, links and actions</span>
+    <span><b>⌘P</b> to search plots, panes, links and actions</span>
   </div>
 </div>
 
@@ -598,7 +598,7 @@ const root = document.createElement('div');
 root.className = 'win'; root.tabIndex = -1;
 root.innerHTML = `
   <div class="titlebar"><div class="lights"><i></i><i></i><i></i></div><div class="wtitle" id="wt"></div>
-    <div class="tools"><button class="tbtn" data-act="sw" type="button" aria-label="Quick switcher">${ICON_SEARCH}<span class="kbd">⌘K</span></button><button class="tbtn" data-act="theme" type="button" aria-label="Switch Night and Day">${ICON_SUN}</button><button class="tbtn" data-act="panel" type="button" aria-label="Show or hide the plot panel">${ICON_PANEL}</button></div></div>
+    <div class="tools"><button class="tbtn" data-act="sw" type="button" aria-label="Quick switcher">${ICON_SEARCH}<span class="kbd">⌘P</span></button><button class="tbtn" data-act="theme" type="button" aria-label="Switch Night and Day">${ICON_SUN}</button><button class="tbtn" data-act="panel" type="button" aria-label="Show or hide the plot panel">${ICON_PANEL}</button></div></div>
   <div class="body" id="wbody">
     <nav class="side" id="side" aria-label="Plots"></nav>
     <div class="panes"><div class="tabs" id="tabs" role="tablist"></div><div class="term" id="term" aria-live="polite"></div></div>
@@ -724,7 +724,7 @@ root.addEventListener('click', e => {
 root.addEventListener('mousemove', e => { const r = e.target.closest('[data-res]'); if (r && +r.dataset.res !== S.sw.i) { S.sw.i = +r.dataset.res; paintSwitcher(); } });
 $('#swq', root).addEventListener('input', e => { S.sw.q = e.target.value; S.sw.i = 0; paintSwitcher(); });
 document.addEventListener('keydown', e => {
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); S.sw.open ? closeSw() : openSw(); return; }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'p') { e.preventDefault(); S.sw.open ? closeSw() : openSw(); return; }
   if (S.sw.open) {
     if (e.key === 'Escape') { e.preventDefault(); closeSw(); }
     else if (e.key === 'ArrowDown') { e.preventDefault(); S.sw.i = Math.min(swItems.length - 1, S.sw.i + 1); paintSwitcher(); }
