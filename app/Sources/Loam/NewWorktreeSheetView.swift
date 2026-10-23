@@ -69,7 +69,10 @@ struct NewWorktreeSheetView: View {
     }
 
     /// True when a control of the sheet has the keys: a field, a popup, or the card itself after a Tab. False when the hosting
-    /// view has them, as it does when the sheet opens, and when a view outside the sheet has them.
+    /// view has them, as it does when the sheet opens, and when a view outside the sheet has them. At the open, the hosting
+    /// view has the keys and nothing has the focus. SwiftUI does not give the card the keys on its own, so the card has them
+    /// only after a Tab. The host is `NSHostingView<NewWorktreeSheetView>` (`installNewWorktreeSheet`). The `start-work`
+    /// driver scenario checks this with a Tab at the open.
     private var aControlHasTheKeys: Bool {
         var view = (window.window ?? NSApp.keyWindow)?.firstResponder as? NSView
         if view is NSHostingView<NewWorktreeSheetView> { return false }

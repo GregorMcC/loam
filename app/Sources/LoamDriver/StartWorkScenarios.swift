@@ -145,11 +145,10 @@ extension Scenarios {
         try expectStart(sheet.goal == "Link kinds for Figma", "the goal reads \(sheet.goal)")
         try expectStart(sheet.defaultBase == "origin/main", "the default base reads \(sheet.defaultBase)")
         // The popup shows the base of the answer after the next render. Under load, that render can come after this line.
-        try? await app.waitUntil("the base shows", timeout: 3) { app.text(of: "new-worktree-base") == "origin/main" }
+        try await app.waitUntil("the base popup reads origin/main", timeout: 3) { app.text(of: "new-worktree-base") == "origin/main" }
         try expectStart(app.text(of: "new-worktree-branch") == issueBranch, "the branch field reads \(reads("new-worktree-branch"))")
         try expectStart(app.text(of: "new-worktree-goal") == "Link kinds for Figma", "the goal field reads \(reads("new-worktree-goal"))")
         try expectStart(app.text(of: "new-worktree-repo") == "widgets", "the repo reads \(reads("new-worktree-repo"))")
-        try expectStart(app.text(of: "new-worktree-base") == "origin/main", "the base reads \(reads("new-worktree-base"))")
         try expectStart(app.text(of: "new-worktree-link") == issueLabel, "the link reads \(reads("new-worktree-link"))")
         let card = app.text(of: "new-worktree-link-card") ?? ""
         try expectStart(card.contains(issueLabel) && card.contains("Linear connector"), "the link card reads \(card)")
@@ -276,8 +275,12 @@ extension Scenarios {
         }
         Log.line(String(format: "RESULT Branch has the keys %.3f s after the click", Date().timeIntervalSince(clicked)))
         app.press(.tab)
-        await app.sleep(0.4)
-        try expectStart(fieldWithTheKeys() == nil, "a Tab as the sheet opened went back to \(fieldWithTheKeys() ?? "nothing")")
+        // The sheet tries for about 130 ms. For a second, the keys never go back to Branch.
+        let tabbed = Date()
+        while Date().timeIntervalSince(tabbed) < 1 {
+            try expectStart(fieldWithTheKeys() != "Branch", "a Tab as the sheet opened went back to Branch")
+            try await Task.sleep(for: .milliseconds(10))
+        }
         try await app.waitUntil("the empty sheet opens") { sheet.isOpen && sheet.phase == .ready && app.exists("new-worktree-sheet") }
         try expectStart(sheet.startLink == nil && sheet.branch.isEmpty && sheet.goal.isEmpty, "the sheet from the plus is not empty")
         try expectStart(!app.exists("new-worktree-link-card"), "the sheet from the plus shows a link card")
@@ -323,7 +326,7 @@ extension Scenarios {
         try await app.waitUntil("⌘Return opens the sheet from the link", timeout: 5) {
             sheet.isOpen && sheet.startLink?.label == issueLabel && !model.switcher.isOpen
         }
-        await app.sleep(1)
+        await app.sleep(2)
         try expectStart(rig.openCalls.count == opened, "⌘Return also opened the link: \(rig.openCalls.suffix(2))")
         app.press(.escape)
         try await app.waitUntil("Escape closes the sheet from the switcher") { !sheet.isOpen }
@@ -331,5 +334,9 @@ extension Scenarios {
         app.press(.returnKey)
         try await app.waitUntil("Return opens the link", timeout: 10) { rig.openCalls.dropFirst(opened).contains { $0.contains(issueURL) } }
         try expectStart(!sheet.isOpen && !model.switcher.isOpen, "Return on the issue link opened the sheet")
+        // One open for the two keys: a late open from ⌘Return would make two.
+        await app.sleep(1)
+        let issueOpens = rig.openCalls.dropFirst(opened).filter { $0.contains(issueURL) }.count
+        try expectStart(issueOpens == 1, "the issue link opened \(issueOpens) times for one Return and one ⌘Return")
     }
 }
