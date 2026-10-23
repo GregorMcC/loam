@@ -205,9 +205,10 @@ extension Scenarios {
         try expectStart(seed.contains(seedLine), "the seed of the plot has no line \(seedLine)")
 
         // 6. The issue key shows in line 2 of the Worktrees row. The sidebar row shows it only when it fits after the whole
-        // name. At the default width it does not fit after this name, so the row shows the name and no key.
+        // name. At the default width it does not fit after this name, so the row shows the name and no key. The label of the
+        // row has the key in both cases, and so has the tooltip (`SidebarModel.WorktreeRow.tooltip`).
         try await app.waitUntil("the sidebar row") { app.exists("worktree-\(made.id)") }
-        try expectStart(app.text(of: "worktree-\(made.id)") == issueBranch,
+        try expectStart(app.text(of: "worktree-\(made.id)") == "\(issueBranch), ENG-482",
                         "the sidebar row reads \(app.text(of: "worktree-\(made.id)") ?? "nothing")")
         try await app.waitUntil("the Worktrees row") { app.exists("panel-worktree-\(made.id)") }
         try expectStart(app.text(of: "panel-worktree-\(made.id)")?.contains("ENG-482") == true,

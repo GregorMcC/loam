@@ -76,6 +76,34 @@ import Testing
         #expect(row.goal == "Link kinds for Figma")
     }
 
+    @Test func theTooltipHasTheKeyAndTheGoal() throws {
+        let status = try local()
+        let plot = PlotSummary(id: status.worktree.plotID, name: "Widgets", what: "", createdAt: "2026-01-01T00:00:00Z")
+        func row(_ status: WorktreeStatus) throws -> SidebarModel.WorktreeRow {
+            let model = SidebarModel(plots: [plot], workspace: Workspace(), collapsed: false,
+                                     worktrees: [status.worktree.plotID: [status]])
+            return try #require(model.worktreeRows[status.worktree.plotID]?.first)
+        }
+        // The sidebar can drop the key when the name needs the room, so the tooltip has it.
+        #expect(try row(status).tooltip == "ENG-482 \u{00B7} Link kinds for Figma")
+        var noGoal = status
+        noGoal.worktree.goal = nil
+        noGoal.unpushed = 4
+        // With no goal, the words of the mark follow the key.
+        #expect(try row(noGoal).tooltip == "ENG-482 \u{00B7} " + (try #require(try row(noGoal).mark).tooltip))
+        var noKey = status
+        noKey.worktree.link = nil
+        #expect(try row(noKey).tooltip == "Link kinds for Figma")
+        var none = noGoal
+        none.worktree.link = nil
+        #expect(try row(none).tooltip == (try #require(try row(none).mark).tooltip))
+        var bare = status
+        bare.worktree.link = nil
+        bare.worktree.goal = nil
+        bare.unpushed = 0
+        #expect(try row(bare).tooltip == (try row(bare).mark?.tooltip ?? ""))
+    }
+
     @Test func aRowWithNoLinkAndNoGoalHasNeither() throws {
         var status = try local(key: "", goal: "")
         status.worktree.link = nil

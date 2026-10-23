@@ -316,6 +316,8 @@ private struct TreeRow<Trailing: View>: View {
                             .foregroundStyle(LoamColor.inkFaint)
                             .lineLimit(1)
                             .fixedSize()
+                            // The name says the key, so VoiceOver does not read it twice.
+                            .accessibilityHidden(true)
                     }
                 }
                 name
@@ -335,6 +337,8 @@ private struct TreeRow<Trailing: View>: View {
             .truncationMode(truncation)
             // The name fills the row (flex: 1 in docs/design), so the marks sit at the trailing edge.
             .frame(maxWidth: .infinity, alignment: .leading)
+            // The key is in the label whether the row shows it or not, so VoiceOver has it when the name needs the room.
+            .accessibilityLabel(key.map { "\(title), \($0)" } ?? title)
     }
 }
 
@@ -498,8 +502,8 @@ private struct CheckoutRowView: View {
                 CountChip(text: "\(row.panes.count)")
             }
         }
-        // The goal says what the work is for (ticket 115). A worktree with no goal keeps the tooltip of its mark.
-        .help(row.worktree?.goal ?? row.worktree?.mark?.tooltip ?? "")
+        // The key and the goal say what the work is for (ticket 115). A worktree with no goal has the words of its mark.
+        .help(row.worktree?.tooltip ?? "")
         .onTapGesture { show() }
         .contextMenu {
             Button("New pane") { newPane() }

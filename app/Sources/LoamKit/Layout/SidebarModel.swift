@@ -81,6 +81,12 @@ public struct SidebarModel: Equatable, Sendable {
 
         /// The worktree has a PR at the Ready to merge stage.
         public var isReadyToMerge: Bool { mark?.stage == .readyToMerge }
+
+        /// The tooltip of the row: the issue key, then the goal, else the words of the mark. The row can drop the key when
+        /// the name needs the room, so the tooltip always has it (ticket 115).
+        public var tooltip: String {
+            [linkKey, goal ?? mark?.tooltip].compactMap { $0 }.joined(separator: StatusLine.separator)
+        }
     }
 
     /// A tab of 2 or more panes in one checkout. It groups those panes in the tree. A tab of one
