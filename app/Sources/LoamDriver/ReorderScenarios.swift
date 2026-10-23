@@ -341,7 +341,12 @@ extension Scenarios {
         app.mouse(.leftMouseUp, at: CGPoint(x: from.x, y: from.y - 2), on: view)
         try await app.waitUntil("the click makes plot 4 active") { model.workspace.activePlotID == p4 }
         try check(model.plots.map(\.id) == moved, "a click moved a plot")
+        // Plot 1 is active again, so its tree opens and the tree of plot 4 closes. The next drag reads the rows after that.
+        let p4Tree = model.workspace.tabs(of: .plot(p4)).flatMap(\.tree.paneIDs)
         model.activate(plot: p1)
+        try await app.waitUntil("the tree of plot 1 shows again") {
+            tree.allSatisfy { app.exists("pane-row-\($0.uuidString)") } && !p4Tree.contains { app.exists("pane-row-\($0.uuidString)") }
+        }
         await app.sleep(0.4)
 
         // 5. Reduce Motion: drag plot 4 to the top. Nothing slides, and the release moves it at once.
