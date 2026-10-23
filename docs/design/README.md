@@ -156,7 +156,7 @@ Motion is short and physical, and it explains where a thing came from.
 
 | State | Treatment |
 | :- | :- |
-| Hover | `ink` at 5% (`inkFill`), no border |
+| Hover | `ink` at 5% (`LoamColor.inkFill`, `LoamTheme.hoverFillAlpha`), no border. Every hover fill takes this one value, except the two text buttons of the action bar (9%, see ActionBar). |
 | Selected | `ink` at 9% (`inkSelected`), radius 7, `ink` text |
 | Active plot | `moss` dot before the name |
 | Needs you | `needs-you` filled dot, a `needs-you-wash` count badge, a halo on arrival |

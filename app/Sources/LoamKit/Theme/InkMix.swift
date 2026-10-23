@@ -5,7 +5,7 @@ import AppKit
 extension LoamTheme {
     /// A hairline: the edge of the well, the line under the tab bar, a pane header line.
     public static let hairlineAlpha: CGFloat = 0.08
-    /// The fill of a hovered row or tab.
+    /// The fill of a hovered row or tab. The one hover value: `LoamColor.inkFill` reads it for the SwiftUI views.
     public static let hoverFillAlpha: CGFloat = 0.05
     /// The fill of a selected row or tab.
     public static let selectedFillAlpha: CGFloat = 0.09
