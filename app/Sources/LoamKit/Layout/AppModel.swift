@@ -199,6 +199,8 @@ public final class AppModel {
     public var restoredSpace: Space? { pendingRestore?.layout.active }
     /// The window frame. The window sets it after a move or a resize.
     @ObservationIgnored public var windowFrame: CGRect? { didSet { if windowFrame != oldValue { saveLayout() } } }
+    /// The width of the plot panel. The window sets it after you drag the divider.
+    @ObservationIgnored public var panelWidth: CGFloat? { didSet { if panelWidth != oldValue { saveLayout() } } }
 
     public init(client: LoamClient = LoamClient(), stateFile: AppStateFile = AppStateFile(),
                 settingsFile: SettingsFile? = nil, shipRefresh: ShipRefresher = ShipRefresher()) {
@@ -263,7 +265,7 @@ public final class AppModel {
     /// The layout as `state.json` holds it.
     public var savedLayout: SavedLayout {
         SavedLayout(workspace: workspace, window: SavedLayout.Window(
-            frame: windowFrame, sidebarCollapsed: sidebarCollapsed, panelOpen: panel.visible))
+            frame: windowFrame, sidebarCollapsed: sidebarCollapsed, panelOpen: panel.visible, panelWidth: panelWidth))
     }
 
     /// Marks the layout as changed. The writer builds it at its next write, at most once a second.

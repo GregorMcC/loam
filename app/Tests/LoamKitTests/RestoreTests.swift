@@ -50,7 +50,7 @@ import Testing
     @Test func encodesEachPaneAndEachPlotLayout() throws {
         let s = sample()
         let saved = SavedLayout(workspace: s.ws, window: .init(frame: CGRect(x: 10, y: 20, width: 900, height: 600),
-                                                              sidebarCollapsed: true, panelOpen: true))
+                                                              sidebarCollapsed: true, panelOpen: true, panelWidth: 440))
         #expect(saved.panes.map(\.id) == [s.a1, s.aShell, s.a2, s.bShell])
         #expect(saved.panes[0] == .init(id: s.a1, space: "A", folder: "/repo/a", kind: .session, sessionID: "s1"))
         #expect(saved.panes[1] == .init(id: s.aShell, space: "A", folder: "/repo/a", kind: .shell))
@@ -61,6 +61,7 @@ import Testing
         #expect(saved.layout.plots["A"]?.tabs.first?.focused == s.a1)
         #expect(saved.layout.plots["A"]?.tabs.first?.tree == s.ws.tabs(of: "A")[0].tree)
         #expect(saved.window?.rect == CGRect(x: 10, y: 20, width: 900, height: 600))
+        #expect(saved.window?.panelWidth == 440)
     }
 
     @Test func roundTripsStateJSONAndKeepsTheOtherKeys() throws {
@@ -70,7 +71,7 @@ import Testing
         let s = sample()
         var ws = s.ws
         ws.processExited(s.bShell)
-        let saved = SavedLayout(workspace: ws, window: .init(frame: CGRect(x: 1, y: 2, width: 3, height: 4)))
+        let saved = SavedLayout(workspace: ws, window: .init(frame: CGRect(x: 1, y: 2, width: 3, height: 4), panelWidth: 380))
         try file.setValues(saved.jsonValues())
 
         #expect(SavedLayout.read(from: file) == saved)
@@ -307,11 +308,13 @@ import Testing
         let pane = model.workspace.selectedTab(of: "A")!.focused
         model.activate(plot: "A")
         model.windowFrame = CGRect(x: 1, y: 2, width: 800, height: 600)
+        model.panelWidth = 410
         #expect(!FileManager.default.fileExists(atPath: file.url.path))
         model.prepareForQuit()
         let saved = SavedLayout.read(from: file)
         #expect(saved.panes.map(\.id) == [pane])
         #expect(saved.window?.frame == [1, 2, 800, 600])
+        #expect(saved.window?.panelWidth == 410)
         #expect((file.value(forKey: UseTimes.key) as? [String: Double])?[SwitcherItem.plotKey("A")] != nil)
     }
 
