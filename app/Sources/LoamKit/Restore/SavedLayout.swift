@@ -126,13 +126,16 @@ public struct SavedLayout: Codable, Equatable, Sendable {
         public var frame: [Double]?
         public var sidebarCollapsed: Bool
         public var panelOpen: Bool
-        /// The width of the plot panel in points. Nil before you first open it.
+        /// The widths of the sidebar and the plot panel in points. Nil until the column first changes width.
+        public var sidebarWidth: Double?
         public var panelWidth: Double?
 
-        public init(frame: CGRect? = nil, sidebarCollapsed: Bool = false, panelOpen: Bool = false, panelWidth: CGFloat? = nil) {
+        public init(frame: CGRect? = nil, sidebarCollapsed: Bool = false, panelOpen: Bool = false,
+                    sidebarWidth: CGFloat? = nil, panelWidth: CGFloat? = nil) {
             self.frame = frame.map { [$0.minX, $0.minY, $0.width, $0.height].map(Double.init) }
             self.sidebarCollapsed = sidebarCollapsed
             self.panelOpen = panelOpen
+            self.sidebarWidth = sidebarWidth.map(Double.init)
             self.panelWidth = panelWidth.map(Double.init)
         }
 
@@ -143,7 +146,8 @@ public struct SavedLayout: Codable, Equatable, Sendable {
         }
 
         enum CodingKeys: String, CodingKey {
-            case frame, sidebarCollapsed = "sidebar_collapsed", panelOpen = "panel_open", panelWidth = "panel_width"
+            case frame, sidebarCollapsed = "sidebar_collapsed", panelOpen = "panel_open",
+                 sidebarWidth = "sidebar_width", panelWidth = "panel_width"
         }
     }
 
