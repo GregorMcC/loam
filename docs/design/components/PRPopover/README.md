@@ -37,7 +37,7 @@ A worktree with no PR has these two rows above Base (ticket 115). A worktree wit
 
 - The goal shows in `ink` on one line, and the end is cut when it is long. The tooltip holds the whole goal. A worktree with no goal shows "Add a goal" in `ink-faint`.
 - The row shows for every worktree with no PR whose folder is there, also when the goal is empty.
-- Under the pointer, the goal gets a fill of `ink` at 6% and a `pencil` mark in `ink-muted` at the trailing edge. A click on the goal starts the edit.
+- Under the pointer, the goal gets a fill of `ink` at 5% (`LoamColor.inkFill`) and a `pencil` mark in `ink-muted` at the trailing edge. A click on the goal starts the edit.
 - The edit replaces the goal with a field: a field box (`loamFieldBox`) on `horizon-a`, 24pt high. The field has the keys, and it holds the goal as it is now. Return saves, and Escape cancels.
 - A goal over 20 words gets the warning "The goal has 24 words. The soft limit is 20 words." in `needs-you`, under the field. The goal still saves.
 - A note about a save takes the place of the warning, and it is `rust`. A change of the text takes the note away.
