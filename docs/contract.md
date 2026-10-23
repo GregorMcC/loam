@@ -666,6 +666,7 @@ A subagent stop (`SubagentStop`) raises nothing.
 - The app must ignore events and fields that it does not know. A later version adds events with no change of the contract version.
 - `loam hook` never fails and never blocks. It waits at most 200 ms to connect and 200 ms to write. When the socket is missing, dead, or slow, it drops the line, writes the error to `hook.log` in the Loam home folder, and exits with code 0.
 - The event table is `paneEvents` in `core/internal/session/panesocket.go`.
+- On a `SessionStart` with a session ID, with or without the socket, `loam hook` also records the session ID for the `CLAUDE_PID` of the claude process. It does this only when `CLAUDE_PID` is a positive number and the store exists. On source `clear`, `resume`, or `fork`, it adds a session record for the new ID. The plot is `LOAM_PLOT`, or the plot of the earlier session when that is empty. It adds nothing when the earlier session of the process has no record. Source `fork` comes from the `/branch` command, which keeps the process and gives the session a new ID. A fork that starts a new process, such as `--fork-session`, has no earlier session for its PID, so it adds nothing.
 
 ## Settings file
 

@@ -3,6 +3,7 @@ package session_test
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -142,6 +143,103 @@ func TestHookClearAddsRecordForSeededSession(t *testing.T) {
 	runHook(t, `{"session_id":"s-new2","source":"resume","cwd":"/work/here"}`, env)
 	if ok, _ := e.store.IsSeeded("s-new2"); !ok {
 		t.Error("no record after a second change")
+	}
+}
+
+// A fork (the /branch command) keeps the claude process and gives the session a new ID, as /clear
+// does. The new ID gets a record in the plot of the earlier session.
+func TestHookForkAddsRecordForSeededSession(t *testing.T) {
+	e := setup(t)
+	p := e.plot(t, store.PlotInput{Name: "Alpha"})
+	if err := e.store.AddSession(store.SessionRecord{SessionID: "s-old", PlotID: p.ID, StartFolder: "/x"}); err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{"CLAUDE_PID": "4242", "LOAM_PLOT": p.ID}
+	runHook(t, `{"session_id":"s-old","source":"startup","cwd":"/x"}`, env)
+	runHook(t, `{"session_id":"s-fork","hook_event_name":"SessionStart","source":"fork","cwd":"/work/here"}`, env)
+	rec, err := e.store.GetSession("s-fork")
+	if err != nil || rec.PlotID != p.ID || rec.StartFolder != "/work/here" {
+		t.Fatalf("record %+v, %v", rec, err)
+	}
+	if a, _ := e.store.SessionActor("s-fork"); !a.LoamStarted {
+		t.Error("loam_started is false after a fork")
+	}
+	if id, _, _ := e.store.SessionForPID(4242); id != "s-fork" {
+		t.Errorf("pid record %q after a fork", id)
+	}
+	// The earlier session keeps its record.
+	if ok, _ := e.store.IsSeeded("s-old"); !ok {
+		t.Error("the earlier record is gone")
+	}
+	// A fork of the fork, then a clear, each chain from the last ID.
+	runHook(t, `{"session_id":"s-fork2","source":"fork","cwd":"/work/here"}`, env)
+	runHook(t, `{"session_id":"s-clear","source":"clear","cwd":"/work/here"}`, env)
+	for _, id := range []string{"s-fork2", "s-clear"} {
+		if ok, _ := e.store.IsSeeded(id); !ok {
+			t.Errorf("no record for %s", id)
+		}
+	}
+}
+
+// The whole chain: loam start, the hooks of the settings file, the fake claude, and loam hook. The
+// /branch and /clear commands each give a new ID, and each new ID gets a record in the plot.
+func TestStartedSessionRecordsItsForks(t *testing.T) {
+	e := setup(t)
+	t.Setenv("LOAM_FAKE_CLAUDE_HOOKS", "1")
+	p := e.plot(t, store.PlotInput{Name: "Alpha"})
+	cmd := exec.Command(e.bin, "start", p.ID)
+	cmd.Stdin = strings.NewReader("/branch\n/branch\n/clear\n/exit\n")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	records, err := e.store.ListSessions(p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 4 {
+		t.Fatalf("want 4 records (start, 2 forks, clear), got %+v", records)
+	}
+	for _, r := range records {
+		if r.PlotID != p.ID {
+			t.Errorf("record %+v is in another plot", r)
+		}
+	}
+}
+
+// With no LOAM_PLOT, a fork takes the plot and the start folder of the earlier record.
+func TestHookForkWithoutPlotUsesTheEarlierRecord(t *testing.T) {
+	e := setup(t)
+	p := e.plot(t, store.PlotInput{Name: "Alpha"})
+	if err := e.store.AddSession(store.SessionRecord{SessionID: "s-old", PlotID: p.ID, StartFolder: "/orig"}); err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{"CLAUDE_PID": "4242"}
+	runHook(t, `{"session_id":"s-old","source":"startup"}`, env)
+	runHook(t, `{"session_id":"s-fork","source":"fork"}`, env)
+	rec, err := e.store.GetSession("s-fork")
+	if err != nil || rec.PlotID != p.ID || rec.StartFolder != "/orig" {
+		t.Fatalf("record %+v, %v", rec, err)
+	}
+}
+
+func TestHookForkIgnoresUnseededSession(t *testing.T) {
+	e := setup(t)
+	p := e.plot(t, store.PlotInput{Name: "Alpha"})
+	env := map[string]string{"CLAUDE_PID": "4242", "LOAM_PLOT": p.ID}
+	// The earlier ID has no record, so this is not a Loam session.
+	runHook(t, `{"session_id":"plain","source":"startup","cwd":"/x"}`, env)
+	runHook(t, `{"session_id":"plain-fork","source":"fork","cwd":"/x"}`, env)
+	if ok, _ := e.store.IsSeeded("plain-fork"); ok {
+		t.Error("record for a fork of an unseeded session")
+	}
+	// The PID record still follows the fork.
+	if id, _, _ := e.store.SessionForPID(4242); id != "plain-fork" {
+		t.Errorf("pid record %q", id)
+	}
+	// A fork with no earlier session for the process adds nothing.
+	runHook(t, `{"session_id":"lone","source":"fork","cwd":"/x"}`, map[string]string{"CLAUDE_PID": "8", "LOAM_PLOT": p.ID})
+	if ok, _ := e.store.IsSeeded("lone"); ok {
+		t.Error("record with no earlier session")
 	}
 }
 
