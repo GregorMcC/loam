@@ -17,7 +17,7 @@
       "kind": "url",
       "label": "Spec v1",
       "note": "The v1 spec",
-      "position": 2,
+      "position": 3,
       "target": "https://example.com/spec",
       "version": 7
     },
@@ -26,7 +26,7 @@
       "kind": "notion",
       "label": "Notion page",
       "note": "",
-      "position": 3,
+      "position": 4,
       "target": "https://www.notion.so/Loam-0123456789abcdef",
       "version": 19
     },
@@ -35,7 +35,7 @@
       "kind": "linear",
       "label": "Linear issue",
       "note": "",
-      "position": 4,
+      "position": 5,
       "target": "https://linear.app/acme/issue/ENG-1/fix",
       "version": 20
     },
@@ -44,7 +44,7 @@
       "kind": "github",
       "label": "GitHub repo",
       "note": "",
-      "position": 5,
+      "position": 6,
       "target": "https://github.com/GregorMcC/loam",
       "version": 21
     },
@@ -54,7 +54,7 @@
       "kind": "path",
       "label": "Core folder",
       "note": "",
-      "position": 6,
+      "position": 7,
       "target": "/tmp/loam-contract/repos/core",
       "version": 22
     },
@@ -64,7 +64,7 @@
       "kind": "vault",
       "label": "Vault note",
       "note": "",
-      "position": 7,
+      "position": 8,
       "target": "/tmp/loam-contract/vault/note.md",
       "version": 23
     },
@@ -74,7 +74,7 @@
       "kind": "vault",
       "label": "Missing note",
       "note": "",
-      "position": 8,
+      "position": 9,
       "target": "/tmp/loam-contract/vault/missing.md",
       "version": 24
     }
