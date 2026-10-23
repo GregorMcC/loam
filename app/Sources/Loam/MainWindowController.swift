@@ -15,6 +15,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private let sidebarItem: NSSplitViewItem
     let paneArea = PaneAreaView()
     private let panelItem: NSSplitViewItem
+    /// True while the panel column slides open or shut (ticket 125).
+    private var panelSlides = false
     private let columnView: PaneColumnView
     /// Calls `reloadSubtitleBranch` when the main repo's `HEAD` changes (a branch switch in a pane).
     private var headWatcher: HeadWatcher?
@@ -400,9 +402,21 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     /// Home has no plot panel (ticket 99). While Home is active the panel column collapses, and
     /// `panel.visible` keeps your choice, so the panel comes back with the next plot.
+    ///
+    /// A slide ends in the state it slid to, also when a later press asked for the other state. So a press during a
+    /// slide waits for its end, and then the column slides again to the state of the model (ticket 125).
     private func showPanelForActiveSpace() {
         let shown = model.panel.visible && model.workspace.activePlotID != nil
-        if panelItem.isCollapsed == shown { panelItem.animator().isCollapsed = !shown }
+        guard !panelSlides, panelItem.isCollapsed == shown else { return }
+        panelSlides = true
+        NSAnimationContext.runAnimationGroup { _ in
+            panelItem.animator().isCollapsed = !shown
+        } completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                self?.panelSlides = false
+                self?.showPanelForActiveSpace()
+            }
+        }
     }
 
     // MARK: Subtitle and chrome (ticket 68)
@@ -494,19 +508,20 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     /// Shows the plot panel if it is hidden, and asks it to run an action of the actions menu.
     private func panelRequest(_ request: PanelRequest) {
         guard model.workspace.activePlotID != nil else { return }
-        if panelItem.isCollapsed { togglePlotPanel(nil) }
+        if !model.panel.visible { togglePlotPanel(nil) }
         model.panel.request = request
         model.panel.requestPlot = model.workspace.activePlotID
         window?.makeFirstResponder(panelController.view)
     }
 
-    /// ⌘I. The panel loads the active plot while it shows. Home has no panel.
+    /// ⌘I. The panel loads the active plot while it shows. Home has no panel. Each press counts from the state of the
+    /// model, not from the column, which can still slide from the press before (ticket 125).
     @objc func togglePlotPanel(_ sender: Any?) {
         guard model.workspace.activePlotID != nil else { return }
-        let show = panelItem.isCollapsed
+        let show = !model.panel.visible
         if !show { model.panel.request = nil }  // A request the panel could not run does not wait for the next show.
         model.setPanelVisible(show)
-        panelItem.animator().isCollapsed = !show
+        showPanelForActiveSpace()
         if show { Task { await model.reloadPanel() } } else { giveKeysBackFromPanel() }
     }
 

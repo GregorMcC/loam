@@ -724,6 +724,29 @@ extension Scenarios {
         await app.sleep(0.5)
         try check(!app.exists("panel-new-since"), "the new box shows after the changes were seen")
 
+        // 4b. A second ⌘I while the panel still slides counts from the first (ticket 125). Two quick presses hide
+        // the panel and show it again, or show it and hide it again. The end of the first slide does not undo
+        // the second press.
+        let column = try (host.window.contentViewController as? NSSplitViewController)?.splitViewItems.last
+            ?? { throw DriverFailure("no panel column") }()
+        func pressTwice(ending shown: Bool, _ what: String) async throws {
+            try app.pressMenuKey("i")
+            try app.pressMenuKey("i")
+            try check(host.model.panel.visible == shown, "the second ⌘I did not count from the first: \(what)")
+            try await app.waitUntil("the column ends as the model: \(what)") {
+                column.isCollapsed != shown && app.exists("panel-whereItStands") == shown
+            }
+            await app.sleep(0.5)  // The first slide ends by now, and must not change the column.
+            try check(column.isCollapsed != shown && app.exists("panel-whereItStands") == shown,
+                      "the end of the first slide undid the second ⌘I: \(what)")
+        }
+        try await pressTwice(ending: true, "hide and show")
+        try app.pressMenuKey("i")
+        try await app.waitUntil("the panel hides before the next two presses") { column.isCollapsed && !app.exists("panel-whereItStands") }
+        try await pressTwice(ending: false, "show and hide")
+        try app.pressMenuKey("i")
+        try await app.waitUntil("the panel shows after the two presses") { !column.isCollapsed && app.exists("panel-whereItStands") }
+
         // 5. A plot that is not active shows its count in the sidebar.
         try app.pressMenuKey("i")
         try await app.waitUntil("the panel is closed again") { !app.exists("panel-whereItStands") }
