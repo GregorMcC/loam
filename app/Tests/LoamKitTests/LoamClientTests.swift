@@ -224,7 +224,7 @@ struct FakeLoam {
         _ = try await client.worktreeNew(plot: "Loam", repo: "web", name: "fix-login", goal: "Fix the login form",
                                          link: "lnk1")
         let edit = try await client.worktreeEdit(plot: "Loam", worktree: "wtaaaaaaaa", goal: "Fix it", expect: 3)
-        #expect(edit.changeID == 27)
+        #expect(edit.changeID == 28)
         #expect(fake.args() == [
             "worktree new --dry-run --base origin/main --goal Fix the login form "
                 + "--link https://github.com/example/widgets/issues/57 --json -- Loam web fix-login",

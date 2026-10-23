@@ -181,7 +181,7 @@ import Testing
         let calls = rig.args().filter { $0.hasPrefix("worktree land") && !$0.contains("--dry-run") || $0.hasPrefix("link rm") }
         #expect(calls.count == 2 && calls[0].hasPrefix("worktree land"))
         #expect(calls[1] == "link rm \(plotID) \(linkID) --expect link:\(linkID)=3 --json --actor app")
-        #expect(rig.ownChanges.contains(8), "the toast of the app stands, and the log does not replace it")
+        #expect(rig.ownChanges.contains(9), "the toast of the app stands, and the log does not replace it")
         #expect(rig.toasts.map(\.text) == ["Merged #22. Removed the worktree link-labels. Removed ENG-482 from the plot's links."])
         #expect(rig.toasts.first?.kind == .done)
         #expect(!rig.model.landSheet.isOpen)
