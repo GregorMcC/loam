@@ -12,8 +12,8 @@ struct NewWorktreeSheetView: View {
     @FocusState private var focus: NewWorktreeContent.Field?
     /// False until the card has dropped in. Reset each time the sheet opens.
     @State private var arrived = false
-    /// True once Tab or Shift-Tab moved the keys in this open of the sheet. `focus` can be a short time behind the window,
-    /// so the open loop reads this, and leaves the keys where the Tab put them.
+    /// True once you pressed Tab or Shift-Tab in this open of the sheet. `focus` can be a short time behind the window, so
+    /// the open loop reads this, and leaves the keys where the Tab put them.
     @State private var tabbed = false
     /// The window of the sheet. The Return handler reads its first responder, so it does not depend on `@FocusState`,
     /// which can be a short time behind the window.
@@ -51,13 +51,9 @@ struct NewWorktreeSheetView: View {
         // Tab and Shift-Tab move the keys through the fields from the top, and round. Without this, Tab from Branch goes to
         // the card and back, and Shift-Tab leaves the sheet (ticket 123). SwiftUI gives this handler the Tab of a field too.
         .overlayTabKeys(composing: { window.isComposing }) { back in
-            // Right after the open, `focus` can be nil while Branch has the keys. AppKit moves that Tab.
-            guard let current = focus else { return false }
-            if let next = TabStops.next(after: current, in: NewWorktreeContent(app.newWorktreeSheet).fields, back: back) {
-                tabbed = true
-                focus = next
-            }
-            return true
+            tabbed = true
+            let fields = NewWorktreeContent.fields(of: app.newWorktreeSheet)
+            if let next = TabStops.next(after: keysAt ?? .sheet, in: fields, back: back) { focus = next }
         }
         // Return starts the session, but not when a field has the keys: the field takes the Return as its own (`onSubmit`).
         .onKeyPress(.return, phases: .down) { _ in
@@ -69,7 +65,7 @@ struct NewWorktreeSheetView: View {
         // then no key of the sheet works, and Tab leaves the sheet. While no field shows, the card holds the keys. When the
         // fields come back after a start that failed, Branch takes them (ticket 123). A new open sets the keys in the task
         // below: the hidden sheet sees the changes of the last open only when it shows again.
-        .onChange(of: OpenFields(open: sheet.openCount, fields: NewWorktreeContent(sheet).fields)) { old, new in
+        .onChange(of: OpenFields(open: sheet.openCount, fields: NewWorktreeContent.fields(of: sheet))) { old, new in
             guard old.open == new.open, app.newWorktreeSheet.isOpen else { return }
             if new.fields.isEmpty {
                 focus = .sheet
@@ -88,7 +84,7 @@ struct NewWorktreeSheetView: View {
             // with a click or a Tab, keeps the keys.
             for attempt in 0..<5 {
                 guard app.newWorktreeSheet.isOpen else { return }
-                let first = NewWorktreeContent(app.newWorktreeSheet).fields.first ?? .sheet
+                let first = NewWorktreeContent.fields(of: app.newWorktreeSheet).first ?? .sheet
                 if attempt > 0, tabbed || (focus != first && aControlHasTheKeys) { return }
                 focus = first
                 try? await Task.sleep(for: .milliseconds(30))
@@ -99,6 +95,24 @@ struct NewWorktreeSheetView: View {
     /// The text view that has the keys in the window of the sheet: the field editor of a text field.
     private var fieldEditor: NSTextView? {
         (window.window ?? NSApp.keyWindow)?.firstResponder as? NSTextView
+    }
+
+    /// The view of the sheet that has the keys. The window says which field has them, because `focus` can be a short time
+    /// behind it, and right after the open `focus` can be nil while Branch has the keys. The window knows a field by its
+    /// accessibility label. With no field, `focus` says whether the card has them.
+    private var keysAt: NewWorktreeContent.Field? {
+        guard let label = (fieldEditor?.delegate as? NSView)?.accessibilityLabel() else { return focus }
+        return [.branch, .goal, .url].first { Self.label(of: $0) == label } ?? focus
+    }
+
+    /// The accessibility label of a view that can have the keys.
+    private static func label(of field: NewWorktreeContent.Field) -> String {
+        switch field {
+        case .sheet: NewWorktreeContent.title
+        case .branch: "Branch"
+        case .goal: "Goal"
+        case .url: "Link URL"
+        }
     }
 
     /// True when a control of the sheet has the keys: a field, a popup, or the card itself. False when the hosting view has
@@ -144,7 +158,7 @@ struct NewWorktreeSheetView: View {
         }
         .sheetCard(width: Self.width)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(NewWorktreeContent.title)
+        .accessibilityLabel(Self.label(of: .sheet))
         .accessibilityIdentifier("new-worktree-sheet")
     }
 
@@ -193,7 +207,7 @@ struct NewWorktreeSheetView: View {
                         .focused($focus, equals: .branch)
                         .fieldBox()
                         .modifier(FieldKeys(close: { app.closeNewWorktree() }, composing: { window.isComposing }, submit: start))
-                        .accessibilityLabel("Branch")
+                        .accessibilityLabel(Self.label(of: .branch))
                         .accessibilityIdentifier("new-worktree-branch")
                     note(content.branchNote, id: "new-worktree-branch-note")
                 }
@@ -212,7 +226,7 @@ struct NewWorktreeSheetView: View {
                         .focused($focus, equals: .goal)
                         .fieldBox()
                         .modifier(FieldKeys(close: { app.closeNewWorktree() }, composing: { window.isComposing }, submit: start))
-                        .accessibilityLabel("Goal")
+                        .accessibilityLabel(Self.label(of: .goal))
                         .accessibilityIdentifier("new-worktree-goal")
                     note(content.goalNote, id: "new-worktree-goal-note")
                 }
@@ -230,7 +244,7 @@ struct NewWorktreeSheetView: View {
                             .focused($focus, equals: .url)
                             .fieldBox()
                             .modifier(FieldKeys(close: { app.closeNewWorktree() }, composing: { window.isComposing }, submit: start))
-                            .accessibilityLabel("Link URL")
+                            .accessibilityLabel(Self.label(of: .url))
                             .accessibilityIdentifier("new-worktree-url")
                     }
                     note(content.linkNote, id: "new-worktree-link-note")

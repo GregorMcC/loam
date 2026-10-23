@@ -273,8 +273,8 @@ extension Scenarios {
         try await app.waitUntil("Escape closes the popover") { !model.prPopover.isOpen && !app.exists("pr-popover") }
 
         // 7. The plus of the Worktrees section opens the sheet with no link: nothing is filled, and Start session is off.
-        // The sheet gives Branch the keys as it opens, for a short time. A Tab at that time moves the keys off Branch, and
-        // they stay where the Tab put them.
+        // The sheet gives Branch the keys as it opens, for a short time. A Tab at that time moves the keys to Goal, and they
+        // stay there.
         try app.click("panel-add-worktree")
         let clicked = Date()
         while app.fieldWithTheKeys() != "Branch" {
@@ -284,11 +284,12 @@ extension Scenarios {
         Log.line(String(format: "RESULT Branch has the keys %.3f s after the click", Date().timeIntervalSince(clicked)))
         app.press(.tab)
         // SwiftUI moves the keys on its next update. The sheet tries for about 130 ms. For a second after the move, the keys
-        // never go back to Branch.
-        try await app.waitUntil("the Tab moves the keys off Branch") { app.fieldWithTheKeys() != "Branch" }
+        // stay in Goal.
+        try await app.waitUntil("the Tab at the open gives Goal the keys") { app.fieldWithTheKeys() == "Goal" }
         let tabbed = Date()
         while Date().timeIntervalSince(tabbed) < 1 {
-            try expectStart(app.fieldWithTheKeys() != "Branch", "a Tab as the sheet opened went back to Branch")
+            try expectStart(app.fieldWithTheKeys() == "Goal",
+                            "after the Tab at the open, \(app.fieldWithTheKeys() ?? app.rootViewWithTheKeys() ?? "the window") has the keys")
             try await Task.sleep(for: .milliseconds(10))
         }
         try await app.waitUntil("the empty sheet opens") { sheet.isOpen && sheet.phase == .ready && app.exists("new-worktree-sheet") }
@@ -301,8 +302,7 @@ extension Scenarios {
                         "the goal note reads \(reads("new-worktree-goal-note"))")
 
         // Tab and Shift-Tab move the keys through the fields in the order that the sheet draws them, round from the last
-        // field to the first, and never out of the sheet (ticket 123). The Tab at the open gave the keys to Goal, or to the
-        // card when it came before SwiftUI knew that Branch had them. From either, Tab goes to Branch.
+        // field to the first, and never out of the sheet (ticket 123). Goal has the keys from the Tab at the open.
         func keys(after key: DriverApp.Key, go field: String) async throws {
             app.press(key)
             try await app.waitUntil("\(key == .tab ? "Tab" : "Shift-Tab") gives \(field) the keys") { app.fieldWithTheKeys() == field }

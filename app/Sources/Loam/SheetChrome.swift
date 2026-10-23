@@ -36,13 +36,13 @@ extension View {
 extension View {
     /// Tab and Shift-Tab in a sheet or a popover over the window (ticket 123). SwiftUI gives the root view of the overlay the
     /// Tab of a text field too. `move` gets true for Shift-Tab and moves the keys to the next stop (`TabStops`). The key then
-    /// goes no further, so it never leaves the overlay. `move` returns false when it does not know where the keys are, and
-    /// AppKit moves them. With keyboard navigation on, each control is a stop, so AppKit keeps the order. A Tab during input
-    /// method composition is the input method's.
-    func overlayTabKeys(composing: @escaping () -> Bool, move: @escaping (_ back: Bool) -> Bool) -> some View {
+    /// goes no further, so it never leaves the overlay. With keyboard navigation on, each control is a stop, and AppKit moves
+    /// the keys as macOS sets it. A Tab during input method composition is the input method's.
+    func overlayTabKeys(composing: @escaping () -> Bool, move: @escaping (_ back: Bool) -> Void) -> some View {
         onKeyPress(keys: [.tab, .backTab], phases: [.down, .repeat]) { press in
             guard !NSApp.isFullKeyboardAccessEnabled, !composing() else { return .ignored }
-            return move(press.key == .backTab || press.modifiers.contains(.shift)) ? .handled : .ignored
+            move(press.key == .backTab || press.modifiers.contains(.shift))
+            return .handled
         }
     }
 }

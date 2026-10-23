@@ -46,7 +46,6 @@ struct LandSheetView: View {
         // box, and the box keeps the keys. Without this, Shift-Tab leaves the sheet (ticket 123).
         .overlayTabKeys(composing: { window.isComposing }) { _ in
             if showsBox { focus = .editor }
-            return true
         }
         // Only a first press of Return merges, and never one that the box takes. The box returns `.ignored` while an input
         // method has marked text, so a Return that commits that text must not reach the merge. The window says whether the
@@ -71,7 +70,10 @@ struct LandSheetView: View {
         // The box is off while the merge runs, and a box that is off loses the keys to the window, where no key of the sheet
         // works. After a merge that GitHub refused, the card takes the keys, as at the open: Return merges again, and Tab goes
         // to the box (ticket 123).
-        .onChange(of: sheet.isMerging) { if !app.landSheet.isMerging, app.landSheet.isOpen { focus = .sheet } }
+        .onChange(of: sheet.isMerging) {
+            guard !app.landSheet.isMerging, app.landSheet.isOpen, fieldEditor == nil else { return }
+            focus = .sheet
+        }
         // The sentence about the merge is selected when the box takes the keys, so one key replaces it.
         .onChange(of: focus) {
             guard focus == .editor, app.landSheet.whereText.hasPrefix(app.landSheet.whereSentence) else { return }

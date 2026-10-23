@@ -55,7 +55,6 @@ struct PRPopoverView: View {
         // (ticket 123).
         .overlayTabKeys(composing: { window.isComposing }) { _ in
             if model.goalDraft != nil, !model.isSavingGoal { goalFocused = true }
-            return true
         }
         .onKeyPress(.return) {
             // Return in the goal field saves the goal. It never runs the button of the card.

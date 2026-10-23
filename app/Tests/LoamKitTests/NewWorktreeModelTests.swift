@@ -507,25 +507,25 @@ import Testing
 
     @Test func theStopsOfTabAreTheFieldsInTheOrderThatTheSheetDrawsThem() {
         let model = open()
-        #expect(NewWorktreeContent(model).fields == [.branch, .goal])
+        #expect(NewWorktreeContent.fields(of: model) == [.branch, .goal])
         model.chooseLink(.pasted)
-        #expect(NewWorktreeContent(model).fields == [.branch, .goal, .url], "the URL field is under the Link popup")
+        #expect(NewWorktreeContent.fields(of: model) == [.branch, .goal, .url], "the URL field is under the Link popup")
         model.chooseLink(.plot(linear.id))
-        #expect(NewWorktreeContent(model).fields == [.branch, .goal])
+        #expect(NewWorktreeContent.fields(of: model) == [.branch, .goal])
     }
 
     @Test func noFieldIsAStopWhileTheWorktreeIsMadeOrWhenThePlotFailed() {
         let starting = open()
         starting.beginStarting()
-        #expect(NewWorktreeContent(starting).fields.isEmpty)
+        #expect(NewWorktreeContent.fields(of: starting).isEmpty)
         starting.startFailed("The worktree was not made.")
-        #expect(NewWorktreeContent(starting).fields == [.branch, .goal])
+        #expect(NewWorktreeContent.fields(of: starting) == [.branch, .goal])
 
         let failed = NewWorktreeModel()
         failed.open(plot: "plotaaaaab", link: nil)
-        #expect(NewWorktreeContent(failed).fields == [.branch, .goal], "the fields show while the plot is read")
+        #expect(NewWorktreeContent.fields(of: failed) == [.branch, .goal], "the fields show while the plot is read")
         failed.failedToLoad("The plot is gone.")
-        #expect(NewWorktreeContent(failed).fields.isEmpty)
+        #expect(NewWorktreeContent.fields(of: failed).isEmpty)
     }
 
     @Test func theSheetReportsItsOpensAndCloses() {
