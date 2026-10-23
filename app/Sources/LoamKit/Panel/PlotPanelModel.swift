@@ -30,8 +30,16 @@ public enum PendingWrite: Equatable, Sendable {
     case text(BriefField, String)
     case linkEdit(id: String, label: String, target: String, note: String)
     case linkRemove(id: String)
+    case linkMove(id: String, position: Int)
     case repoNote(id: String, note: String)
     case repoRemove(id: String)
+
+    var isLink: Bool {
+        switch self {
+        case .linkEdit, .linkRemove, .linkMove: true
+        case .text, .repoNote, .repoRemove: false
+        }
+    }
 }
 
 /// A stale write. It holds what the person tried to save and what is in the plot now.
@@ -71,7 +79,10 @@ public final class PlotPanelModel {
     public private(set) var clash: EditClash?
     public private(set) var missingLink: MissingLink?
     private var openCount = 0
-    public var errorMessage: String?
+    private var moving = false
+    public var errorMessage: String? { didSet { linkError = nil } }
+    /// `errorMessage` when a link action set it. The panel shows it by the links, which may be scrolled far from the top.
+    public private(set) var linkError: String?
     /// The warnings of the last repo add, such as a checkout that kept its branch (ticket 91).
     public var notice: String?
     /// Set by the window when the panel shows. The app model loads the plot only while it shows.
@@ -214,6 +225,7 @@ public final class PlotPanelModel {
         let target = target.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !target.isEmpty else {
             errorMessage = "A link needs a target."
+            showErrorNearLinks()
             return
         }
         do {
@@ -222,6 +234,7 @@ public final class PlotPanelModel {
             await load(plotID: plot.id)
         } catch {
             report(error)
+            showErrorNearLinks()
         }
     }
 
@@ -234,6 +247,20 @@ public final class PlotPanelModel {
     public func removeLink(id: String) async {
         guard let plot, let link = plot.links.first(where: { $0.id == id }) else { return }
         await perform(.linkRemove(id: id), plotID: plot.id, expect: ["link:\(id)": link.version])
+    }
+
+    /// Moves a link to `position`, 1-based. The list shows the new order at once, before the write.
+    public func moveLink(id: String, to position: Int) async {
+        // Each move expects the links version it read, so a second one before the reload would go stale.
+        guard !moving, var plot, let from = plot.links.firstIndex(where: { $0.id == id }) else { return }
+        moving = true
+        defer { moving = false }
+        let expect = [ChangeRules.linkOrderItem: plot.versions[ChangeRules.linkOrderItem] ?? 0]
+        let position = min(max(position, 1), plot.links.count)
+        plot.links.insert(plot.links.remove(at: from), at: position - 1)
+        for i in plot.links.indices { plot.links[i].position = i + 1 }
+        self.plot = plot
+        await perform(.linkMove(id: id, position: position), plotID: plot.id, expect: expect)
     }
 
     public func addRepo(path: String, note: String = "") async {
@@ -353,6 +380,7 @@ public final class PlotPanelModel {
         case .linkEdit(let id, let label, let target, let note):
             await editLink(id: id, label: label, target: target, note: note)
         case .linkRemove(let id): await removeLink(id: id)
+        case .linkMove(let id, let position): await moveLink(id: id, to: position)
         case .repoNote(let id, let note): await editRepoNote(id: id, note: note)
         case .repoRemove(let id): await removeRepo(id: id)
         }
@@ -380,6 +408,9 @@ public final class PlotPanelModel {
             case .linkRemove(let id):
                 _ = try await client.linkRemove(plot: plotID, link: id, expect: expect)
                 await load(plotID: plotID)
+            case .linkMove(let id, let position):
+                _ = try await client.linkMove(plot: plotID, link: id, position: position, expect: expect)
+                await load(plotID: plotID)
             case .repoNote(let id, let note):
                 _ = try await client.repoEdit(plot: plotID, repo: id, note: note, expect: expect)
                 await load(plotID: plotID)
@@ -398,7 +429,10 @@ public final class PlotPanelModel {
             await load(plotID: plotID)
         } catch {
             report(error)
+            // A move reordered the rows before the write, so put back what the store holds.
+            if case .linkMove = write { await load(plotID: plotID) }
         }
+        if write.isLink { showErrorNearLinks() }
     }
 
     private func makeClash(_ write: PendingWrite, details: StaleDetails?) -> EditClash? {
@@ -413,12 +447,20 @@ public final class PlotPanelModel {
         case .linkRemove:
             return EditClash(item: item.item, title: "Link", yours: "Remove the link",
                              current: item.link.map { "\($0.label): \($0.target)" }, pending: write)
+        case .linkMove:
+            // A drag is cheap to redo, so a stale move reports and reloads rather than asking.
+            return nil
         case .repoNote(_, let note):
             return EditClash(item: item.item, title: "Repo", yours: note, current: item.repo?.note, pending: write)
         case .repoRemove:
             return EditClash(item: item.item, title: "Repo", yours: "Remove the repo",
                              current: item.repo?.path, pending: write)
         }
+    }
+
+    /// Call after setting `errorMessage`: setting it clears `linkError`.
+    private func showErrorNearLinks() {
+        linkError = errorMessage
     }
 
     private func report(_ error: Error) {

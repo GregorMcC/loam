@@ -122,6 +122,11 @@ public struct LoamClient: Sendable {
         try await write(["link", "rm", plot, link] + expectArgs(expect))
     }
 
+    /// `position` is 1-based. Expect `links`, the version of the link order.
+    public func linkMove(plot: String, link: String, position: Int, expect: [String: Int] = [:]) async throws -> WriteResult {
+        try await write(["link", "move", plot, link, String(position)] + expectArgs(expect))
+    }
+
     public func repoAdd(plot: String, path: String, note: String? = nil, expect: [String: Int] = [:]) async throws -> WriteResult {
         try await write(["repo", "add", plot, path] + noteArg(note) + expectArgs(expect))
     }

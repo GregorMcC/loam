@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/GregorMcC/loam/core/internal/store"
@@ -19,7 +20,7 @@ func newLinkCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE:  func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
-	c.AddCommand(newLinkAddCmd(), newLinkEditCmd(), newLinkRmCmd())
+	c.AddCommand(newLinkAddCmd(), newLinkEditCmd(), newLinkMoveCmd(), newLinkRmCmd())
 	return c
 }
 
@@ -82,6 +83,31 @@ func newLinkEditCmd() *cobra.Command {
 	c.Flags().StringVar(&label, "label", "", "the new label")
 	c.Flags().StringVar(&target, "target", "", "the new target")
 	c.Flags().StringVar(&note, "note", "", "the new note")
+	addExpectFlag(c, &expect)
+	return c
+}
+
+func newLinkMoveCmd() *cobra.Command {
+	var expect []string
+	c := &cobra.Command{
+		Use:   "move <plot> <link> <position>",
+		Short: "Move a link to a position in the plot's links (1 is the first)",
+		Long:  "Move a link. <link> is a link ID or an exact label. <position> counts from 1.",
+		Args:  cobra.ExactArgs(3),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			pos, err := strconv.Atoi(args[2])
+			if err != nil {
+				return fmt.Errorf("position %q: choose a number: %w", args[2], store.ErrInvalid)
+			}
+			return writeLink(cmd, args[0], expect, func(p *store.Plot) ([]store.Edit, error) {
+				l, err := findLink(p, args[1])
+				if err != nil {
+					return nil, err
+				}
+				return []store.Edit{{Op: store.OpMoveLink, Item: store.LinkItem(l.ID), Value: strconv.Itoa(pos)}}, nil
+			})
+		},
+	}
 	addExpectFlag(c, &expect)
 	return c
 }
@@ -167,6 +193,8 @@ func writeLink(cmd *cobra.Command, plotArg string, expectVals []string, build fu
 		fmt.Fprintln(out, "No change.")
 	case edits[0].Op == store.OpRemoveLink:
 		fmt.Fprintln(out, "Removed the link.")
+	case edits[0].Op == store.OpMoveLink && link != nil:
+		fmt.Fprintf(out, "%s is now link %d\n", link.Label, link.Position)
 	case link != nil:
 		fmt.Fprintf(out, "Link %s: %s -> %s\n", link.ID, link.Label, link.Target)
 	}

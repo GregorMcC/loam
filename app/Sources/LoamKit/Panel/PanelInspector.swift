@@ -14,6 +14,13 @@ extension PlotLink {
     }
 }
 
+extension Plot {
+    /// The label of each link by ID, for the link order rows of the change log.
+    public var linkLabels: [String: String] {
+        Dictionary(links.map { ($0.id, $0.label) }, uniquingKeysWith: { first, _ in first })
+    }
+}
+
 /// The property rows at the top of the plot panel.
 public enum PanelProperties {
     /// "3 panes · 1 Done, unread". With no pane: "No panes".
