@@ -11,7 +11,7 @@ extension MainWindowController: NSMenuItemValidation {
             newSessionKeys: { [weak self] in ActionMenu.keycaps(self?.menuChord(for: .newTab)) },
             actionsKeys: { [weak self] in ActionMenu.keycaps(self?.menuChord(for: .actionsMenu)) },
             newSession: { [weak self] in self?.perform(.newTab) },
-            toggleActions: { [weak self] in self?.toggleActionsMenu() }))
+            toggleActions: { [weak self] in self?.perform(.actionsMenu) }))
         bar.sizingOptions = []
         let menu = NSHostingView(rootView: ActionsMenuView(
             menu: actionBar.menu,
@@ -42,16 +42,12 @@ extension MainWindowController: NSMenuItemValidation {
         columnBottomInset(ActionBarView.height)
     }
 
-    /// ⌘J or a click on Actions: opens the menu with the actions that can run now, or closes it.
+    /// ⌘J or a click on Actions: opens the menu with the actions that can run now, or closes it. Both come through
+    /// `perform(.actionsMenu)`, which keeps the menu shut while a sheet shows or holds the window (ticket 128).
     func toggleActionsMenu() {
         if actionBar.menu.isOpen { return closeActionsMenu() }
-        // A merge or a worktree start keeps its sheet (`sheetHoldsWindow`). The menu stays shut then, since it would show
-        // over the sheet and its commands would change the window under it.
-        if model.sheetHoldsWindow { return }
         if model.switcher.isOpen { model.switcher.close() }
         model.closePullRequest()  // One overlay at a time: the popover would take the clicks of the menu.
-        model.closeLandSheet()
-        model.closeNewWorktree()
         let workspace = model.workspace
         let space = workspace.activeSpace
         let pane = workspace.focusedPane
@@ -143,6 +139,8 @@ extension MainWindowController: NSMenuItemValidation {
     /// The menu bar and the actions menu agree on what can run (`ActionMenu.isAvailable`).
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         guard let command = (menuItem.representedObject as? MenuCommand)?.command else { return true }
+        // Under a sheet only the commands of the app are on (ticket 128), also ⌘W.
+        guard commandAllowed(command) else { return false }
         // ⌘W with no pane closes the window (`closePane`), so the menu bar keeps it enabled.
         if command == .closePane { return true }
         return availability(command)

@@ -105,6 +105,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     guard let controller else { return NSApp.reply(toApplicationShouldTerminate: true) }
                     guard !failed else {
                         self?.quitting = false
+                        // The sheet shows the message. A window that is hidden or in the Dock would hide it.
+                        controller.bringToFront()
                         return NSApp.reply(toApplicationShouldTerminate: false)
                     }
                     controller.requestQuit { quit in

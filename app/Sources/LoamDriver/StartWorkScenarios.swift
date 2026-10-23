@@ -331,6 +331,13 @@ extension Scenarios {
         try await app.waitUntil("the goal warns") {
             app.text(of: "new-worktree-goal-note") == "The goal has 24 words. The soft limit is 20 words."
         }
+        // The keys of the window do nothing under the sheet, also with a field that has the keys. The field keeps the keys and
+        // its text (ticket 128).
+        _ = AccessibilityProbe.shared.focus("new-worktree-goal")
+        try await app.waitUntil("the goal field has the keys") { (app.window.firstResponder as? NSTextView)?.isFieldEditor == true }
+        try await expectKeysOffUnderSheet(app, host, plot: plot)
+        try expectStart(app.fieldWithTheKeys() == "Goal", "a key moved the keys off the goal field: \(app.fieldWithTheKeys() ?? "nothing")")
+        try expectStart(sheet.goal == long, "a key changed the text of the goal field: \(sheet.goal)")
         // Escape in the middle of a composition (marked text, as an input method makes it) is for the input method. The sheet stays.
         _ = AccessibilityProbe.shared.focus("new-worktree-goal")
         try await app.waitUntil("the goal field edits") { (app.window.firstResponder as? NSTextView)?.isFieldEditor == true }

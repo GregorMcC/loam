@@ -10,7 +10,7 @@ The New worktree sheet makes one worktree and starts a seeded session in it (tic
 - The sheet opens for one plot. It reads the plot for its repos and links. Until they arrive, Start session is off.
 - One overlay shows at a time. Opening the sheet closes the quick switcher, the actions menu, the PR popover and the Land sheet. The sheet sits over the Land sheet and under the quick switcher.
 - The sheet does not open while a merge runs or while a worktree is made. The menu entries do nothing then, and ⌘Return in the switcher only closes the switcher.
-- While a worktree is made, the sheet keeps the window (`sheetHoldsWindow`), because it cannot close. No other overlay opens then: ⌘P and ⌘⇧P (the quick switcher), ⌘J (the actions menu), ⌘⇧L, the PR popover and the Land sheet do nothing. A merge in the Land sheet keeps the window in the same way.
+- While a worktree is made, the sheet keeps the window (`sheetHoldsWindow`), because it cannot close. A merge in the Land sheet keeps the window in the same way. While the sheet shows or keeps the window, no overlay opens: ⌘P and ⌘⇧P (the quick switcher), ⌘J (the actions menu), ⌘⇧L, the PR popover and the Land sheet do nothing. The same holds for each other command that changes the window (see Keys).
 
 ## The card
 
@@ -93,6 +93,7 @@ Each row has a label in `ink-muted` (84pt wide) and a control 28pt high. The row
 - Return starts the session, also inside a text field. Escape or Cancel closes the sheet, and a click on the scrim closes it. While a worktree is made, none of the three closes it.
 - While an input method composes text, Escape belongs to the input method and does not close the sheet.
 - The keys go back to the focused pane when the sheet closes.
+- While the sheet shows or keeps the window, each menu item that changes the window is off in the menu bar, and its key does nothing (ticket 128), as in the [Land sheet](../LandSheet/README.md). Settings, Open and Reload Ghostty Config, and Quit stay on. Escape, Return, Tab and the text keys of a field (⌘A, ⌘C, ⌘V, ⌘X and ⌘Z) work as before. A native sheet on the window turns the same items off.
 
 ## After it starts
 

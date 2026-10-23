@@ -182,9 +182,13 @@ extension Scenarios {
         await app.sleep(1)
         try expectLand(model.landSheet.isOpen && !model.landSheet.isMerging && merges(of: 16).isEmpty,
                        "a key or a press merged a blocked worktree: \(calls().map { $0.joined(separator: " ") })")
+        // The keys of the window do nothing under the sheet: ⌘T and ⌘I and every other menu item that acts on the window are
+        // off. Escape still closes the sheet, and the items are on again (ticket 128).
+        try await expectKeysOffUnderSheet(app, host, plot: plot)
         try await settledShot("land-sheet-blocked")
         app.press(.escape)
         try await sheetCloses()
+        try expectWindowItems(enabled: true)
 
         // 3. A check still runs: the button waits for GitHub with --auto, the third box is off, and nothing closes or saves.
         let beforeAuto = try rig.lastChangeID(plot)

@@ -231,6 +231,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
+    /// Shows the window in front, also when the app is hidden or the window is in the Dock. A quit that stops because a merge
+    /// failed calls it, so the sheet and its message show (ticket 128).
+    func bringToFront() {
+        NSApp.unhide(nil)
+        if window?.isMiniaturized == true { window?.deminiaturize(nil) }
+        NSApp.activate()
+        window?.makeKeyAndOrderFront(nil)
+    }
+
     /// Saves the layout one last time, stops the writes, and closes every pane with the safe order
     /// (`close(completion:)` through the factory). The workspace keeps its panes, so `state.json`
     /// lists them for the next launch. `done` runs once, on a later main run loop pass, and at the
@@ -582,11 +591,20 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     /// Runs the Ghostty config commands (open and reload). The app sets it.
     var onConfigCommand: ((AppCommand) -> Void)?
 
+    /// Whether a command runs now (ticket 128). The rule is `AppModel.commandAllowed`: only the commands of the app run while a
+    /// Loam sheet shows or holds the window, or a native sheet is on the window (the close question, the Ghostty config
+    /// errors, the plot name dialog). `perform(_:)` and the menu validation both ask it.
+    func commandAllowed(_ command: AppCommand) -> Bool {
+        model.commandAllowed(command, nativeSheetShows: window?.attachedSheet != nil)
+    }
+
     /// Runs one command on the active space: a menu item, a fixed Loam key in a pane, or a Ghostty
     /// action (spec 8.3). Returns false for a command that did nothing, so a performable Ghostty
-    /// binding (⌘Z) goes on to the terminal.
+    /// binding (⌘Z) goes on to the terminal. While a sheet shows over the window, a command that acts on the window does
+    /// nothing (`commandAllowed`). The menu validation asks the same, so an item draws off and its key does nothing.
     @discardableResult
     func perform(_ command: AppCommand) -> Bool {
+        guard commandAllowed(command) else { return false }
         switch command {
         case .newPlot: newPlot(nil)
         case .toggleSidebar: toggleSidebar(nil)
