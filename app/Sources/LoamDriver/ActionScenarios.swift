@@ -60,10 +60,17 @@ extension Scenarios {
             host.model.workspace.focusedPane.map { host.window.firstResponder === host.paneView($0) } ?? false
         }
 
-        // Escape closes it.
+        // Escape in the middle of a composition (marked text, as an input method makes it) is for the input method. The menu
+        // stays open. No input method runs in the driver, so the scenario ends the composition. The next Escape closes the
+        // menu.
         app.press(letter: "j", flags: .command)
         try await app.waitUntil("the menu opens again") { app.exists("actions-menu") }
         try await app.waitUntil("the search field has the keys") { host.window.firstResponder is NSTextView }
+        let filter = try app.compose()
+        app.press(.escape)
+        await app.sleep(0.5)
+        try expectThat(app.exists("actions-menu"), "Escape in a composition closed the menu")
+        filter.unmarkText()
         app.press(.escape)
         try await app.waitUntil("Escape closes the menu") { !app.exists("actions-menu") }
 

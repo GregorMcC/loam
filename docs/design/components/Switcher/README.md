@@ -6,7 +6,7 @@ The quick switcher: one list of plots, panes, links, worktrees and actions acros
 - With no query it lists recent items: panes that need you, then plots and panes by use. While you type, it ranks by fuzzy match, then by recent use. Matched letters are `moss` and bold.
 - Results sit in sections by kind (Panes, Plots, Links, Worktrees, Actions), with a caption heading. The section of the best result comes first, so Return still takes the best result.
 - Each 36px row shows its icon (see Iconography: a Claude session shows the Claude mark, a GitHub link the GitHub mark), its name in 14pt, its plot in `ink-muted` when it is not a plot, a menu shortcut for an action, and an attention dot for a pane that needs you or is done, unread.
-- Return makes a plot active, focuses a pane, opens a link with `loam open`, goes to a worktree and opens its PR popover, or runs an action. Arrow keys move the `moss-wash` selection (radius 10).
+- Return makes a plot active, focuses a pane, opens a link with `loam open`, goes to a worktree and opens its PR popover, or runs an action. Arrow keys move the `moss-wash` selection (radius 10). Escape closes the switcher. While an input method composes text in the search field, Escape cancels the composed text and the switcher stays open.
 
 The consumer provides the items, their icons, and their recent-use order.
 

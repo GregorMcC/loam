@@ -303,7 +303,7 @@ struct PlotPanelView: View {
                 .textFieldStyle(.roundedBorder)
                 .focused($focus, equals: .newRepo)
                 .onSubmit(addRepo)
-                .onKeyPress(.escape) { finishEditing(); return .handled }
+                .onKeyPress(.escape, action: escapeEndsEditing)
                 .accessibilityIdentifier("panel-new-repo")
             ForEach(Array(suggestions.enumerated()), id: \.element.id) { index, suggestion in
                 RepoSuggestionRow(suggestion: suggestion, returnAdds: returnPicksFirst && index == 0) {
@@ -409,7 +409,7 @@ struct PlotPanelView: View {
         .labelsHidden()
         .textFieldStyle(.roundedBorder)
         .onSubmit(addLink)
-        .onKeyPress(.escape) { finishEditing(); return .handled }
+        .onKeyPress(.escape, action: escapeEndsEditing)
         .task { focus = .newTarget }
     }
 
@@ -454,7 +454,7 @@ struct PlotPanelView: View {
         .labelsHidden()
         .textFieldStyle(.roundedBorder)
         .onSubmit { saveLink(link) }
-        .onKeyPress(.escape) { finishEditing(); return .handled }
+        .onKeyPress(.escape, action: escapeEndsEditing)
         .task { focus = .linkLabel }
     }
 
@@ -530,6 +530,14 @@ struct PlotPanelView: View {
     private func open(_ row: AddRow) {
         closeEditors()
         adding = row
+    }
+
+    /// Escape in an add row or the link editor ends the editors. Escape that cancels an input method composition is the
+    /// input method's: the editors stay, and the composed text goes.
+    private func escapeEndsEditing() -> KeyPress.Result {
+        guard !window.isComposing else { return .ignored }
+        finishEditing()
+        return .handled
     }
 
     /// Closes the editors as you end them (Return, Escape, Cancel), and gives the keyboard back to the
@@ -624,9 +632,7 @@ struct BriefText: View {
             }
             .onKeyPress(.escape) {
                 // During input method composition, Escape cancels the composed text.
-                if let editor = (window.window ?? NSApp.keyWindow)?.firstResponder as? NSTextView, editor.hasMarkedText() {
-                    return .ignored
-                }
+                guard !window.isComposing else { return .ignored }
                 focused = false
                 Task { model.onEditorClosed?() }
                 return .handled

@@ -131,6 +131,19 @@ extension Scenarios {
         app.press(.escape)
         try await closed(app)
 
+        // Escape in the middle of a composition (marked text, as an input method makes it) is for the input method. The
+        // switcher stays open. No input method runs in the driver, so the scenario ends the composition. The next Escape
+        // closes the switcher.
+        try await openSwitcher(app)
+        try await app.waitUntil("the field has the keys", timeout: 5) { (app.window.firstResponder as? NSTextView)?.isFieldEditor == true }
+        let editor = try app.compose()
+        app.press(.escape)
+        await app.sleep(0.5)
+        try expect(app.exists("switcher-field"), "Escape in a composition closed the switcher")
+        editor.unmarkText()
+        app.press(.escape)
+        try await closed(app)
+
         // The use times reached the temp state.json. The writes wait up to 1 s, so they are joined.
         var times: [String: Double]?
         try? await app.waitUntil("use times in state.json", timeout: 10) {

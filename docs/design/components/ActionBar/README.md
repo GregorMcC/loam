@@ -25,7 +25,7 @@ The action bar is the 40pt strip at the bottom of the window (ticket 89). It sit
 
 ## The actions menu
 
-- ⌘J or a click on Actions opens the menu. ⌘J, Escape, or a click outside the menu closes it.
+- ⌘J or a click on Actions opens the menu. ⌘J, Escape, or a click outside the menu closes it. While an input method composes text in the search field, Escape cancels the composed text and the menu stays open.
 - The menu is a card above the Actions button: 340pt wide, radius 12, on `horizon-b`, with a hairline edge and `shadow-raised`. It sits 10pt from the right end of the bar and 6pt above it.
 - The menu has up to four sections. The heading of each section is in `ink-faint`.
   - The focused pane, with its label as the heading: New session, Split right, Split down, Close pane.

@@ -535,10 +535,29 @@ extension Scenarios {
         try app.click("panel-add-link-open")
         try await app.waitUntil("the add link row again") { app.exists("panel-new-link-label") }
         try app.fill("panel-new-link-label", with: "Never")
+        // Escape in the middle of an input method composition is for the input method (ticket 118). The row stays. No input
+        // method runs in the driver, so the scenario ends the composition.
+        let composedLabel = try app.compose()
+        app.press(.escape)
+        await app.sleep(0.5)
+        try check(app.exists("panel-new-link-label"), "Escape in a composition closed the add link row")
+        composedLabel.unmarkText()
         app.press(.escape)
         try await app.waitUntil("Escape closes the add row") { !app.exists("panel-new-link-label") }
         let afterEscape = ((try? rig.show(plot))?["links"] as? [[String: Any]]) ?? []
         try check(!afterEscape.contains { string($0, "label") == "Never" }, "Escape added the link")
+
+        // The add repo row ends the same way: Escape in a composition leaves the row open, and the next Escape closes it.
+        try app.click("panel-add-repo-open")
+        try await app.waitUntil("the add repo row for Escape") { app.exists("panel-new-repo") }
+        try app.fill("panel-new-repo", with: "never")
+        let composedRepo = try app.compose()
+        app.press(.escape)
+        await app.sleep(0.5)
+        try check(app.exists("panel-new-repo"), "Escape in a composition closed the add repo row")
+        composedRepo.unmarkText()
+        app.press(.escape)
+        try await app.waitUntil("Escape closes the add repo row") { !app.exists("panel-new-repo") }
 
         // Add a repo with Return.
         let repo = rig.root.appendingPathComponent("repo")
@@ -606,6 +625,13 @@ extension Scenarios {
         // Edit link in the missing box opens the inline editor. Save writes the new label.
         try app.click("panel-missing-edit-link")
         try await app.waitUntil("the link editor") { app.exists("panel-edit-link-label") && !app.exists("panel-missing-link") }
+        // Escape in a composition leaves the editor open (ticket 118).
+        try app.fill("panel-edit-link-label", with: "Moved")
+        let composedEdit = try app.compose()
+        app.press(.escape)
+        await app.sleep(0.5)
+        try check(app.exists("panel-edit-link-label"), "Escape in a composition closed the link editor")
+        composedEdit.unmarkText()
         try app.fill("panel-edit-link-label", with: "Moved note")
         try await app.waitUntil("the Save button is on") { AccessibilityProbe.shared.isEnabled("panel-edit-link-save") }
         try app.click("panel-edit-link-save")
