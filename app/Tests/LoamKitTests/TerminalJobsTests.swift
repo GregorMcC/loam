@@ -6,7 +6,7 @@ import Testing
 /// Ticket 113: a shell pane is idle only when the one shell is the only process on its terminal, apart from `login`,
 /// and the shell leads the foreground group. The app is pid 1 here. libghostty starts the shell of a pane under
 /// `/usr/bin/login` (pid 100), on the terminal 7.
-@Suite struct TerminalJobsTests {
+@Suite(.timeLimit(.minutes(1))) struct TerminalJobsTests {
     typealias Process = TerminalJobs.Process
 
     static let login = Process(pid: 100, parent: 1, group: 100, terminal: 7, foreground: 200, name: "login")
@@ -125,12 +125,10 @@ import Testing
             (TerminalJobs.onTerminal(shell.terminal) ?? []).filter { $0.pid != shell.pid }
         }
 
+        /// Waits until `condition` holds. Only the time limit of the suite ends the wait early (see `waitUntil`).
         func until(_ what: String, _ condition: () -> Bool) async throws {
-            let deadline = Date().addingTimeInterval(10)
-            while !condition() {
-                try #require(Date() < deadline, "timed out: \(what)")
-                try await Task.sleep(for: .milliseconds(20))
-            }
+            while !condition(), !Task.isCancelled { try? await Task.sleep(for: .milliseconds(20)) }
+            try #require(condition(), "\(what) did not happen")
         }
 
         /// Ends the shell and each process on its terminal.
@@ -172,7 +170,12 @@ import Testing
         shell = try await terminal.shell()
         let found = try #require(shell)
         terminal.type("sleep 300\n")
-        try await terminal.until("the job takes the foreground") { TerminalJobs.read(found.pid)?.foreground != found.pid }
+        // Wait for `sleep` itself to lead the foreground group. The shell gives the terminal to the job before the job
+        // runs `sleep`, and a ⌃Z in that gap is lost: the job still ignores it, as the shell does.
+        try await terminal.until("sleep takes the foreground") {
+            let foreground = TerminalJobs.read(found.pid)?.foreground
+            return terminal.jobs(found).contains { $0.name == "sleep" && $0.pid == foreground }
+        }
         #expect(terminal.busy(found))
         terminal.type("\u{1A}")  // ⌃Z
         try await terminal.until("the shell takes the foreground again") { TerminalJobs.read(found.pid)?.foreground == found.pid }

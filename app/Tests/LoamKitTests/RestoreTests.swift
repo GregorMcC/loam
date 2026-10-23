@@ -6,7 +6,7 @@ import Testing
 
 /// Ticket 29: `state.json`, the restore plan, and the close and quit question.
 @MainActor
-@Suite struct RestoreTests {
+@Suite(.timeLimit(.minutes(1))) struct RestoreTests {
     func tempFile() -> AppStateFile {
         AppStateFile(url: FileManager.default.temporaryDirectory
             .appendingPathComponent("loam-restore-\(UUID().uuidString)/state.json"))
@@ -260,9 +260,8 @@ import Testing
         // Nothing is written yet: the writes wait, so the main thread does no disk work.
         #expect(try Data(contentsOf: file.url) == before)
 
-        // One write takes every change. Wait with a long limit; the full suite runs in parallel.
-        let deadline = ContinuousClock.now + .seconds(10)
-        while writer.writeCount == writes, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
+        // One write takes every change.
+        await waitUntil("the write") { writer.writeCount != writes }
         try await Task.sleep(for: .milliseconds(600))
         #expect(writer.writeCount == writes + 1)
         writer.flush()  // Waits for the background write to end.
@@ -288,9 +287,7 @@ import Testing
         writer.setLayoutChanged()
         writer.flush()  // The file holds invalid JSON, so the write fails.
         #expect(try Data(contentsOf: file.url) == Data("not json".utf8))
-        let deadline = ContinuousClock.now + .seconds(10)
-        while !writer.hasPending, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
-        #expect(writer.hasPending)
+        await waitUntil("the failed write waits for the next write") { writer.hasPending }
 
         // The file is good again. Quit writes every key of the failed write, with its value now.
         try Data("{}".utf8).write(to: file.url)

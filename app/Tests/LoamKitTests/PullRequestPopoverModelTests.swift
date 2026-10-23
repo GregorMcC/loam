@@ -8,16 +8,17 @@ import Testing
 /// The worktrees come from the `worktree_list_stages` fixture (made-up example/widgets data), all in the
 /// plot `plotaaaaab`.
 @MainActor
-@Suite struct PullRequestPopoverModelTests {
+@Suite(.timeLimit(.minutes(1))) struct PullRequestPopoverModelTests {
     let plotID = "plotaaaaab"
     let nativePanel = "wtreaaaaah"  // Checks failed, #16.
 
     /// A fake `loam` that logs its arguments and prints a fixture by command. A file named `fail-rerun` or
     /// `fail-update` in its folder makes that command fail as `gh_unavailable` (exit 17), or as `not_ready`
     /// when the file says 16. A file named `hold` makes every command wait until the file is gone. A file
-    /// named `hold-2` does the same for the commands that start once the second refresh has started, and
-    /// `hold-rerun` and `hold-update` for that command only. A file named `fail-list` makes the list fail.
-    /// The list leaves a file `done-N` when the N-th refresh has printed its answer.
+    /// named `hold-2` does the same for the second refresh and for the other commands that start after it and
+    /// before the third, and `hold-rerun` and `hold-update` for that command only. A file named `fail-list`
+    /// makes the list fail. Each refresh takes its number before it logs its call, so a refresh that starts
+    /// after a test saw the call of the one before it always gets the next number.
     struct Rig {
         let dir: URL
         let model: AppModel
@@ -35,7 +36,6 @@ import Testing
 
         func touch(_ name: String, _ text: String = "") throws { try Data(text.utf8).write(to: dir.appendingPathComponent(name)) }
         func remove(_ name: String) { try? FileManager.default.removeItem(at: dir.appendingPathComponent(name)) }
-        func exists(_ name: String) -> Bool { FileManager.default.fileExists(atPath: dir.appendingPathComponent(name).path) }
     }
 
     func plot(_ id: String) -> PlotSummary {
@@ -50,8 +50,11 @@ import Testing
         }
         try FakeScript.install("""
             #!/bin/sh
+            case "$*" in
+              *--refresh*) \(FakeScript.takeNumber("refresh", in: dir, from: 1));;
+              *) n=0; while [ -e "\(dir.path)/refresh-$((n + 1))" ]; do n=$((n + 1)); done;;
+            esac
             echo "$@" >> '\(dir.path)/args.log'
-            n=$(grep -c -e '--refresh' '\(dir.path)/args.log')
             while [ -f '\(dir.path)/hold' ] || [ -f "\(dir.path)/hold-$n" ]; do sleep 0.01; done
             fail() {
               [ "$(cat "$1")" = 16 ] && { cat '\(dir.path)/error_not_ready.json'; exit 16; }
@@ -64,8 +67,7 @@ import Testing
               "worktree update")
                 while [ -f '\(dir.path)/hold-update' ]; do sleep 0.01; done
                 [ -f '\(dir.path)/fail-update' ] && fail '\(dir.path)/fail-update'; cat '\(dir.path)/worktree_update.json';;
-              *) [ -f '\(dir.path)/fail-list' ] && fail '\(dir.path)/fail-list'; cat '\(dir.path)/worktree_list_stages.json'
-                 touch "\(dir.path)/done-$n";;
+              *) [ -f '\(dir.path)/fail-list' ] && fail '\(dir.path)/fail-list'; cat '\(dir.path)/worktree_list_stages.json';;
             esac
             """, at: dir.appendingPathComponent("loam"))
         let model = AppModel(client: LoamClient(binary: dir.appendingPathComponent("loam"), environment: [:]))
@@ -75,15 +77,8 @@ import Testing
         return Rig(dir: dir, model: model)
     }
 
-    /// Waits until `condition` holds. Fails the test after 5 s.
-    func waitUntil(_ what: String, _ condition: () -> Bool) async {
-        let deadline = Date().addingTimeInterval(5)
-        while !condition(), Date() < deadline { try? await Task.sleep(for: .milliseconds(5)) }
-        #expect(condition(), "\(what) did not happen")
-    }
-
-    func idle(_ model: AppModel) async {
-        await waitUntil("the refresh ended") { !model.prPopover.isRefreshing }
+    func idle(_ model: AppModel, sourceLocation: SourceLocation = #_sourceLocation) async {
+        await waitUntil("the refresh ended", sourceLocation: sourceLocation) { !model.prPopover.isRefreshing }
     }
 
     // MARK: Open and close
@@ -193,8 +188,7 @@ import Testing
         await waitUntil("the second refresh started") { rig.refreshes().count == before + 2 }
         // The first answer comes while the second refresh waits. It is not the answer of this open.
         rig.remove("hold-\(before + 1)")
-        await waitUntil("the first answer came") { rig.exists("done-\(before + 1)") }
-        try await Task.sleep(for: .milliseconds(200))
+        await waitUntil("the app took the first answer") { !model.prPopover.refreshing.contains(nativePanel) }
         #expect(model.prPopover.isRefreshing && model.prPopover.attemptedAt == nil)
         rig.remove("hold-\(before + 2)")
         await idle(model)

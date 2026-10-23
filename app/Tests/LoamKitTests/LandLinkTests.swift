@@ -51,7 +51,7 @@ import Testing
 }
 
 @MainActor
-@Suite struct LandLinkModelTests {
+@Suite(.timeLimit(.minutes(1))) struct LandLinkModelTests {
     let plotID = "plotaaaaab"
     let ready = "wtreaaaaao"
     let linkID = "lnkaaaaaaa"
@@ -135,8 +135,7 @@ import Testing
 
     func open(_ rig: Rig) async throws -> LandSheetContent {
         #expect(rig.model.openLandSheet(ready))
-        let deadline = Date().addingTimeInterval(5)
-        while rig.model.landSheet.plan == nil, Date() < deadline { try? await Task.sleep(for: .milliseconds(5)) }
+        await waitUntil("the plan came back") { rig.model.landSheet.plan != nil }
         return try #require(rig.model.landContent)
     }
 

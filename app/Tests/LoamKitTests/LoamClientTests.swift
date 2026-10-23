@@ -20,6 +20,14 @@ enum FakeScript {
         try script.write(to: path.appendingPathExtension("sh"), atomically: true, encoding: .utf8)
         try FileManager.default.createSymbolicLink(at: path, withDestinationURL: launcher)
     }
+
+    /// Shell lines that set `n` to the number of this call among the calls that take a number for `name` in `dir`:
+    /// `first` for the first call, and one more for each later call. A call takes its number when it makes the file
+    /// `<name>-<n>`, and `set -C` lets only one call make each file. So two calls that run at the same time never get
+    /// the same number, however slow the machine is.
+    static func takeNumber(_ name: String, in dir: URL, from first: Int = 0) -> String {
+        "set -C; n=\(first); until echo 2>/dev/null > '\(dir.path)/\(name)-'$n; do n=$((n + 1)); done; set +C"
+    }
 }
 
 struct FakeLoam {
@@ -31,7 +39,7 @@ struct FakeLoam {
     var stdinLog: URL { dir.appendingPathComponent("stdin.log") }
 
     /// `outputs` holds one entry per call: the fixture name (or "" for none) and the exit code.
-    /// The script keeps a call counter, so a test can script a sequence. The last entry repeats.
+    /// Each call takes a number, so a test can script a sequence. The last entry repeats.
     init(_ outputs: [(fixture: String, exit: Int32)]) throws {
         dir = FileManager.default.temporaryDirectory.appendingPathComponent("fake-loam-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -43,8 +51,7 @@ struct FakeLoam {
         let last = outputs.count - 1
         let script = """
         #!/bin/sh
-        n=$(cat '\(dir.path)/count' 2>/dev/null || echo 0)
-        echo $((n+1)) > '\(dir.path)/count'
+        \(FakeScript.takeNumber("call", in: dir))
         echo "$@" >> '\(argsLog.path)'
         if [ ! -t 0 ]; then cat >> '\(stdinLog.path)'; fi
         [ "$n" -gt \(last) ] && n=\(last)

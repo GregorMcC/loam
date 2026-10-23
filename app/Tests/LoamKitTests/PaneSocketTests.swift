@@ -11,9 +11,10 @@ final class EventBox: @unchecked Sendable {
     func add(_ event: PaneEvent) { lock.withLock { events.append(event) } }
     var all: [PaneEvent] { lock.withLock { events } }
 
-    func wait(for count: Int, timeout: TimeInterval = 5) async throws -> [PaneEvent] {
-        let deadline = Date().addingTimeInterval(timeout)
-        while all.count < count, Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
+    /// Returns the events once `count` came. Only the time limit of the suite ends the wait early, with a
+    /// `CancellationError` (see `waitUntil`).
+    func wait(for count: Int) async throws -> [PaneEvent] {
+        while all.count < count { try await Task.sleep(for: .milliseconds(10)) }
         return all
     }
 }
@@ -40,7 +41,7 @@ func sendToSocket(_ path: String, _ text: String, close: Bool = true) throws -> 
     return fd
 }
 
-@Suite struct PaneSocketTests {
+@Suite(.timeLimit(.minutes(1))) struct PaneSocketTests {
     func folder() -> PaneSocketFolder {
         // The temp folder of a test run can be long. /tmp keeps the path under 104 bytes.
         PaneSocketFolder(base: URL(fileURLWithPath: "/tmp/loam-test-\(UUID().uuidString.prefix(8))"))

@@ -28,18 +28,9 @@ private func plot(_ id: String) -> PlotSummary {
 
 private func refreshCalls(_ fake: FakeLoam) -> [String] { fake.args().filter { $0.contains("--refresh") } }
 
-/// Waits until `count` refresh calls ran. Fails the test after 5 s.
-@MainActor private func waitForRefreshes(_ fake: FakeLoam, _ count: Int) async {
-    let deadline = Date().addingTimeInterval(5)
-    while refreshCalls(fake).count < count, Date() < deadline { try? await Task.sleep(for: .milliseconds(5)) }
-    #expect(refreshCalls(fake).count >= count, "\(refreshCalls(fake).count) refreshes ran, not \(count)")
-}
-
-/// Waits until `condition` holds. Fails the test after 5 s.
-@MainActor private func waitUntil(_ what: String, _ condition: () -> Bool) async {
-    let deadline = Date().addingTimeInterval(5)
-    while !condition(), Date() < deadline { try? await Task.sleep(for: .milliseconds(5)) }
-    #expect(condition(), "\(what) did not happen")
+/// Waits until `count` refresh calls ran.
+@MainActor private func waitForRefreshes(_ fake: FakeLoam, _ count: Int, sourceLocation: SourceLocation = #_sourceLocation) async {
+    await waitUntil("\(count) refreshes", sourceLocation: sourceLocation) { refreshCalls(fake).count >= count }
 }
 
 /// A value that a closure can change.
@@ -66,7 +57,7 @@ private func settle() async { try? await Task.sleep(for: .milliseconds(200)) }
 /// Ticket 108: the app model asks for the ship state of the worktrees, applies the answer, and holds
 /// the notices, the sign-in pane, and the text that waits for a pane.
 @MainActor
-@Suite struct ShipModelTests {
+@Suite(.timeLimit(.minutes(1))) struct ShipModelTests {
     let plotB = "plotaaaaab"
     let plotC = "plotaaaaac"
     let plotD = "plotaaaaad"
@@ -150,19 +141,19 @@ private func settle() async { try? await Task.sleep(for: .milliseconds(200)) }
 
     /// A fake `loam` for the race between a refresh and a read of the cache. The refresh answers with
     /// the stage rows. The plain reads answer with the older rows of `worktree_list`, as the cache is
-    /// when a worktree is new. The first plain read, or the refresh, waits for a `go` file.
+    /// when a worktree is new. The first plain read, or the refresh, waits for a `go` file. A plain read takes its
+    /// number before it logs its call, so a read that starts after a test saw the call of the first is never first.
     private func fakeWithHeldCall(holding: String, laterReadsAnswerWith later: String) throws -> (fake: FakeLoam, go: URL) {
         let fake = try FakeLoam([("", 0)])
         let go = fake.dir.appendingPathComponent("go")
         func path(_ name: String) -> String { Fixtures.dir.appendingPathComponent("\(name).json").path }
-        let count = fake.dir.appendingPathComponent("plain-count").path
         let wait = "while [ ! -f '\(go.path)' ]; do sleep 0.01; done"
         try """
+        case "$*" in *--refresh*) ;; *) \(FakeScript.takeNumber("plain", in: fake.dir));; esac
         echo "$@" >> '\(fake.argsLog.path)'
         case "$*" in
         *--refresh*) \(holding == "refresh" ? wait : ":"); cat '\(path("worktree_list_stages"))';;
-        *) n=$(cat '\(count)' 2>/dev/null || echo 0); echo $((n+1)) > '\(count)'
-           if [ "$n" = 0 ]; then \(holding == "plain" ? wait : ":"); cat '\(path("worktree_list"))'
+        *) if [ "$n" = 0 ]; then \(holding == "plain" ? wait : ":"); cat '\(path("worktree_list"))'
            else cat '\(path(later))'; fi;;
         esac
         """.write(to: fake.script, atomically: true, encoding: .utf8)

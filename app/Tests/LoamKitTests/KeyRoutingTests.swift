@@ -289,17 +289,16 @@ import Testing
 }
 
 @MainActor
-@Suite struct ConfigWatchTests {
+@Suite(.timeLimit(.minutes(1))) struct ConfigWatchTests {
     @Test func aBurstOfEventsIsOneReload() async throws {
         let (stream, continuation) = AsyncStream<Void>.makeStream()
         let watch = ConfigWatch(debounce: .milliseconds(50)) { _ in stream }
         var reloads = 0
         watch.onChange = { reloads += 1 }
         watch.watch(["/a/config"])
-        // Wait for the reload with a long limit: the full suite runs in parallel and can delay it.
-        // Then wait several debounces more, so a second reload from the same burst would show.
+        // Wait for the reload, then several debounces more, so a second reload from the same burst would show.
         func settle(at count: Int) async throws {
-            for _ in 0..<500 where reloads < count { try await Task.sleep(for: .milliseconds(10)) }
+            await waitUntil("reload \(count)") { reloads >= count }
             try await Task.sleep(for: .milliseconds(300))
         }
         for _ in 0..<5 { continuation.yield() }
@@ -343,9 +342,7 @@ import Testing
         watch.watch([file])
         try await Task.sleep(for: .milliseconds(300))
         try "background = #ffffff\n".write(toFile: file, atomically: true, encoding: .utf8)
-        let deadline = ContinuousClock.now + .seconds(5)
-        while reloads == 0, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(50)) }
-        #expect(reloads >= 1)
+        await waitUntil("the reload") { reloads >= 1 }
         watch.stop()
     }
 
@@ -368,17 +365,13 @@ import Testing
         // A dotfiles tool replaces the file with a link.
         try fm.removeItem(atPath: file)
         try fm.createSymbolicLink(atPath: file, withDestinationPath: target)
-        let deadline = ContinuousClock.now + .seconds(10)
-        while reloads == 0, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(50)) }
-        #expect(reloads >= 1)
+        await waitUntil("the reload") { reloads >= 1 }
 
         // The watch follows the link: an edit of the target is seen.
         try await Task.sleep(for: .milliseconds(500))
         let seen = reloads
         try "background = #222222\n".write(toFile: target, atomically: true, encoding: .utf8)
-        let again = ContinuousClock.now + .seconds(10)
-        while reloads == seen, ContinuousClock.now < again { try await Task.sleep(for: .milliseconds(50)) }
-        #expect(reloads > seen)
+        await waitUntil("the reload after the edit") { reloads > seen }
         watch.stop()
     }
 
@@ -404,17 +397,13 @@ import Testing
         // The config folder and file appear (⌘, does this): the config loads.
         try FileManager.default.createDirectory(atPath: (file as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
         try "background = #ffffff\n".write(toFile: file, atomically: true, encoding: .utf8)
-        let deadline = ContinuousClock.now + .seconds(10)
-        while reloads == 0, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(50)) }
-        #expect(reloads >= 1)
+        await waitUntil("the reload") { reloads >= 1 }
 
         // The watch moved to the new folder, so a later edit is seen too.
         try await Task.sleep(for: .milliseconds(500))
         let seen = reloads
         try "background = #000000\n".write(toFile: file, atomically: true, encoding: .utf8)
-        let again = ContinuousClock.now + .seconds(10)
-        while reloads == seen, ContinuousClock.now < again { try await Task.sleep(for: .milliseconds(50)) }
-        #expect(reloads > seen)
+        await waitUntil("the reload after the edit") { reloads > seen }
         watch.stop()
     }
 }

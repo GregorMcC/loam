@@ -4,7 +4,7 @@ import Testing
 @testable import LoamKit
 
 @MainActor
-@Suite struct AppModelTests {
+@Suite(.timeLimit(.minutes(1))) struct AppModelTests {
     func plot(_ id: String, _ name: String) -> PlotSummary {
         PlotSummary(id: id, name: name, what: "", createdAt: "2026-01-01T00:00:00Z")
     }
@@ -259,10 +259,7 @@ import Testing
         let feed = ChangeFeed(fetch: { _ in [] }, triggers: triggers, debounce: .milliseconds(1), after: 0)
         model.startFeed(feed: feed)
         cont.yield()  // A move or delete writes no new change.
-        for _ in 0..<1000 {  // Up to 10 s: the suite runs in parallel and a launch can be slow.
-            if !model.plots.isEmpty { break }
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        await waitUntil("the plot list loaded") { !model.plots.isEmpty }
         model.stopFeed()
         cont.finish()
         #expect(model.plots.map(\.id) == ["plotaaaaab", "plotaaaaac"])

@@ -7,7 +7,7 @@ import Testing
 /// through `loam`. The fake `loam` logs its arguments. The check prints `check.json`, `worktree new` prints the
 /// fixture, and the list is the `worktree_list` fixture (made-up example/widgets data).
 @MainActor
-@Suite struct NewWorktreeFlowTests {
+@Suite(.timeLimit(.minutes(1))) struct NewWorktreeFlowTests {
     let plotID = "plotaaaaab"
     let linear = "lnkaaaaaaa"
 
@@ -45,13 +45,9 @@ import Testing
             await sheet.queuedStart?.value
         }
 
-        /// Waits until `worktree new` runs for the sheet, or fails after 10 s.
-        func waitForStarting() async throws {
-            for _ in 0..<5000 {
-                if sheet.isStarting { return }
-                try await Task.sleep(for: .milliseconds(2))
-            }
-            Issue.record("the start never began")
+        /// Waits until `worktree new` runs for the sheet.
+        func waitForStarting(sourceLocation: SourceLocation = #_sourceLocation) async {
+            await waitUntil("the start began", sourceLocation: sourceLocation) { sheet.isStarting }
         }
     }
 
@@ -360,7 +356,7 @@ import Testing
         await rig.model.startNewWorktree()
         #expect(rig.sheet.startQueued)
         // The check comes back, and `worktree new` runs and waits.
-        try await rig.waitForStarting()
+        await rig.waitForStarting()
         // Start work… on a link, the plus and the menu cannot open the sheet again: that would cancel the check task, and
         // the cancel would end `worktree new` with SIGTERM in the middle of its work.
         #expect(!rig.model.openNewWorktree(plot: plotID, from: linearLink))
@@ -379,7 +375,7 @@ import Testing
         rig.model.openNewWorktree(plot: plotID, from: linearLink)
         try rig.touch("hold-new")
         await rig.model.startNewWorktree()
-        try await rig.waitForStarting()
+        await rig.waitForStarting()
         // A change of a field asks for a new check, and a new check cancels the one before. The start goes on.
         rig.sheet.checking?.cancel()
         try FileManager.default.removeItem(at: rig.dir.appendingPathComponent("hold-new"))
@@ -394,7 +390,7 @@ import Testing
         await rig.settle()
         try rig.touch("hold-new")
         let starting = Task { await rig.model.startNewWorktree() }
-        try await rig.waitForStarting()
+        await rig.waitForStarting()
         #expect(!rig.model.openNewWorktree(plot: plotID))
         #expect(!rig.model.openNewWorktree(plot: plotID, from: linearLink))
         #expect(rig.sheet.isOpen && rig.sheet.isStarting, "a new open does not take back isStarting")
@@ -415,7 +411,7 @@ import Testing
         rig.model.activate(plot: "plotaaaaac")
         try rig.touch("hold-new")
         let starting = Task { await rig.model.startNewWorktree() }
-        try await rig.waitForStarting()
+        await rig.waitForStarting()
         let link = SwitcherLink(plotID: plotID, linkID: linear, label: "ENG-482 Link kinds for Figma",
                                 target: "https://linear.app/example/issue/ENG-482/link-kinds-for-figma", kind: .linear)
         let item = try #require(SwitcherModel.items(plots: rig.model.plots, workspace: rig.model.workspace, terminalTitles: [:],

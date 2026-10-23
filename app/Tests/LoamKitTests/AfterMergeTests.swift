@@ -19,7 +19,7 @@ import Testing
 /// Merged stage with PR #11. The fake `loam` logs its arguments. Removing a worktree can lose work, so the tests that
 /// matter most say what must not run. A refresh ends before its merges act, so `refresh` waits for both.
 @MainActor
-@Suite struct AfterMergeTests {
+@Suite(.timeLimit(.minutes(1))) struct AfterMergeTests {
     let plotID = "plotaaaaab"
     /// add-search, #11, Merged. Its repo is /tmp/loam-contract/repos/web.
     let merged = "wtreaaaaac"
@@ -128,10 +128,10 @@ import Testing
         func hold(_ name: String) throws { try touch("hold-\(name)") }
         func release(_ name: String) { remove("hold-\(name)") }
 
-        /// Waits until the fake `loam` logged a call that starts with `command`.
+        /// Waits until the fake `loam` logged a call that starts with `command`. Only the time limit of the suite ends
+        /// the wait early (see `waitUntil`).
         func waitForCall(_ command: String) async throws {
-            let deadline = Date().addingTimeInterval(5)
-            while calls(command).isEmpty, Date() < deadline { try await Task.sleep(for: .milliseconds(5)) }
+            while calls(command).isEmpty, !Task.isCancelled { try? await Task.sleep(for: .milliseconds(5)) }
             try #require(!calls(command).isEmpty, "no call \(command)")
         }
 
@@ -882,8 +882,7 @@ import Testing
         landed.branchDeleted = false
         try landed.write(rig, as: "land-\(ready).json")
         #expect(model.openLandSheet(ready))
-        let deadline = Date().addingTimeInterval(5)
-        while model.landSheet.plan == nil, Date() < deadline { try await Task.sleep(for: .milliseconds(5)) }
+        await waitUntil("the plan came back") { model.landSheet.plan != nil }
         model.landSheet.removesWorktree = false
         await model.land()
         #expect(rig.lands().count == 1 && rig.lands()[0].contains("--keep-worktree"))

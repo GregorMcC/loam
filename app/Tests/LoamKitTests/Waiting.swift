@@ -1,0 +1,54 @@
+import Foundation
+import Testing
+
+// The waits of the tests. A wait ends when its condition holds, never at a time on the wall clock: a busy machine
+// (a full parallel run beside other builds) makes the async work slow, and a fixed limit then fails a test that is
+// right. A suite that waits has a time limit (`.timeLimit(.minutes(1))`), which ends a wait for a condition that
+// never comes. The wait then fails the test where it waits.
+
+/// Returns when `condition` holds, or when the test is cancelled at its time limit. It looks again every few
+/// milliseconds, so it suits a condition that another process changes, such as a fake `loam` that logs its calls.
+@MainActor
+func waitUntil(_ what: String, sourceLocation: SourceLocation = #_sourceLocation, _ condition: () -> Bool) async {
+    while !condition(), !Task.isCancelled { try? await Task.sleep(for: .milliseconds(5)) }
+    #expect(condition(), "\(what) did not happen", sourceLocation: sourceLocation)
+}
+
+/// The waits for the state of an in-process fake. The fake calls `changed()` after each change, and each wait whose
+/// condition now holds ends at once. Nothing polls and nothing reads a clock.
+@MainActor
+final class Changes {
+    private var waits: [(id: Int, ready: @MainActor () -> Bool, wake: CheckedContinuation<Void, Never>)] = []
+    private var next = 0
+
+    /// Returns when `ready` holds, or when the test is cancelled at its time limit.
+    func wait(until ready: @escaping @MainActor () -> Bool) async {
+        guard !ready() else { return }
+        let id = next
+        next += 1
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { (wake: CheckedContinuation<Void, Never>) in
+                if Task.isCancelled { wake.resume(); return }
+                waits.append((id, ready, wake))
+            }
+        } onCancel: {
+            Task { @MainActor in self.end(id) }
+        }
+    }
+
+    /// Ends each wait whose condition holds now.
+    func changed() {
+        var waiting: [(id: Int, ready: @MainActor () -> Bool, wake: CheckedContinuation<Void, Never>)] = []
+        var done: [CheckedContinuation<Void, Never>] = []
+        for wait in waits {
+            if wait.ready() { done.append(wait.wake) } else { waiting.append(wait) }
+        }
+        waits = waiting
+        for wake in done { wake.resume() }
+    }
+
+    private func end(_ id: Int) {
+        guard let index = waits.firstIndex(where: { $0.id == id }) else { return }
+        waits.remove(at: index).wake.resume()
+    }
+}
