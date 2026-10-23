@@ -10,15 +10,16 @@ The New worktree sheet makes one worktree and starts a seeded session in it (tic
 - The sheet opens for one plot. It reads the plot for its repos and links. Until they arrive, Start session is off.
 - One overlay shows at a time. Opening the sheet closes the quick switcher, the actions menu, the PR popover and the Land sheet. The sheet sits over the Land sheet and under the quick switcher.
 - The sheet does not open while a merge runs or while a worktree is made. The menu entries do nothing then, and ⌘Return in the switcher only closes the switcher.
+- While a worktree is made, the sheet keeps the window (`sheetHoldsWindow`), because it cannot close. No other overlay opens then: ⌘P and ⌘⇧P (the quick switcher), ⌘J (the actions menu), ⌘⇧L, the PR popover and the Land sheet do nothing. A merge in the Land sheet keeps the window in the same way.
 
 ## The card
 
-- 560pt wide, `horizon-a`, radius `radius-lg`, a hairline edge, `shadow-switcher`, over a dim scrim. It shares its chrome with the [Land sheet](../LandSheet/README.md) (`SheetChrome.swift`). A click on the scrim closes the sheet.
+- 560pt wide, `horizon-a`, radius `radius-lg`, a hairline edge, and each layer of `shadow-switcher` (`loamFloating`), over a dim scrim: near black at 40% in Night, and the brown of the Day shadow at 28% in Day. It is the card of the [Land sheet](../LandSheet/README.md) (`sheetCard`). A click on the scrim closes the sheet.
 - It drops in 24pt from the top with `duration-slow` and `ease-settle`. Under Reduce Motion it fades only.
 - From top to bottom: the title, the link card (only from a link), the fields, and "What the seed adds". Then come a callout, when something went wrong, and the footer.
 - Title: "New worktree" in 15pt semibold.
 - Link card: `horizon-b`, radius `radius-md`, a hairline edge. It shows the mark of the link kind and the label of the link (13pt medium, up to 2 lines). Under them is a note in 11.5pt `ink-muted`: "Loam does not copy the issue. The session reads it through its Linear connector." A GitHub issue says GitHub.
-- Footer: a hairline, then the text "Loam makes the worktree and starts a seeded session in it." in 12pt `ink-muted`. Cancel and the primary button "Start session" follow.
+- Footer: a hairline, then the text "Loam makes the worktree and starts a seeded session in it." in 12pt `ink-muted`. Cancel and the primary button "Start session" follow. Both are native buttons at the large size, so they are capsules of one height. Cancel is the secondary style (`loamSecondaryButton`, a native bordered button), and Start session is the primary style (`loamPrimaryButton`).
 
 ## The fields
 
@@ -33,7 +34,7 @@ Each row has a label in `ink-muted` (84pt wide) and a control 28pt high. The row
 | Link | Popup: None, each link of the plot with the mark of its kind, a divider, and "Paste a URL…". | Starts on None, or on the link of Start work…. |
 
 - Choosing "Paste a URL…" shows a URL field under the popup: mono 12pt, placeholder "URL of a Linear issue or a GitHub issue".
-- A popup has radius 6, a faint fill, a hairline edge, and an up and down mark at the right. A text field has radius 6 and an `edge` border on `horizon-b`.
+- A popup has radius 6, a faint fill, a hairline edge, and an up and down mark at the right. A text field is a field box (`loamFieldBox`): `horizon-b`, radius `radius-sm` and an ink hairline edge, with no `edge` border. It looks like the Where it stands card of the plot panel.
 - A note under a field is 11pt. A hint is `ink-muted`, a warning is `needs-you`, and a problem is `rust`.
 
 ### What the link fills in
@@ -52,7 +53,8 @@ Each row has a label in `ink-muted` (84pt wide) and a control 28pt high. The row
 
 - A disclosure under the fields, closed when the sheet opens. The label is 12pt medium `ink-faint`. The chevron turns 90 degrees when it opens, over `duration-base` with `ease-settle`.
 - Open, it shows "Loam adds this line to the seed of the plot." Under it is the line, in mono 11.5pt, in a box on `horizon-b` with radius 8 and a hairline edge. You can select the line.
-- The line is the `seed_line` of the check. Until the branch name is good, the box says "The line shows when the branch name is good."
+- The line is the `seed_line` of the check. The box says "The line shows when the branch name is good." while the name is empty or not good. It says the same from a change of the name, the repo or the base until the check for the new values is back, because the older line names another branch, repo or base.
+- A change of the goal or the link keeps the line until the next answer.
 
 ## The branch check
 
@@ -86,6 +88,7 @@ Each row has a label in `ink-muted` (84pt wide) and a control 28pt high. The row
 ## Keys
 
 - The sheet takes the keys when it opens, and the Branch field has them. From a link, Return starts a session. From the + button or the plot menu, the first key names the branch.
+- The window gives the keys to the sheet a short time after it appears, so the sheet sets the focus on Branch up to 5 times, 30ms apart. The first try always sets Branch. A control that you chose in the meantime, with a click or a Tab, keeps the keys, and the later tries leave it.
 - Return starts the session, also inside a text field. Escape or Cancel closes the sheet, and a click on the scrim closes it. While a worktree is made, none of the three closes it.
 - While an input method composes text, Escape belongs to the input method and does not close the sheet.
 - The keys go back to the focused pane when the sheet closes.

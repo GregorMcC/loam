@@ -83,7 +83,7 @@ Loam reads GitHub through the GitHub CLI (`gh`) and holds no credentials. It ref
 
 ### Read the checks, then send the fix
 
-<img src="docs/images/pr-popover.png" align="right" width="340" alt="The PR popover for a PR with failed checks. It shows the stage, the title, the checks, the review, the base, and conflicts. Two failed checks have a time and a Log link. Below them are the button Send failures to session, and the buttons Re-run failed and Open on GitHub. The action bar chip below the popover shows the PR number and the stage.">
+<img src="docs/images/pr-popover.png" align="right" width="340" alt="The PR popover for a PR with failed checks. It shows the stage, the title, the checks, the review, the base, and conflicts. Two failed checks have a time and a Log link. Below them are the button Start session with prompt, and the buttons Re-run failed and Open on GitHub. A note says that Loam starts a session and types the failures prompt, and that you press Return.">
 
 Click a stage mark to open the PR popover. It shows the stage, the checks, the review, the base branch, and conflicts. Each failed check has a Log link, and the passed checks are in a list under them. Re-run failed and Update branch act on GitHub. Open on GitHub opens the PR in your browser.
 
