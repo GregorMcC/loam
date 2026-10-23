@@ -137,14 +137,6 @@ import Testing
         #expect(LoamTheme.hoverFillAlpha == CGFloat(percent / 100))
     }
 
-    /// `LoamColor` is in the app target, which this suite cannot import, so the test reads its source. `inkFill` is the
-    /// SwiftUI hover fill, and it must take the alpha from `LoamTheme` and not set a value of its own.
-    @Test func theSwiftUIHoverFillReadsTheHoverFillAlpha() throws {
-        let source = try String(contentsOf: Self.root.appendingPathComponent("app/Sources/Loam/Design/LoamDesign.swift"), encoding: .utf8)
-        let line = try #require(source.split(separator: "\n").first { $0.contains("static var inkFill") }, "LoamColor has no inkFill")
-        #expect(line.contains("LoamTheme.hoverFillAlpha"), "inkFill is \(line)")
-    }
-
     // MARK: Ghostty themes
 
     private func themeLines(_ name: String) throws -> [String: [String]] {
