@@ -8,6 +8,8 @@ import SwiftUI
 struct SwitcherView: View {
     let model: SwitcherModel
     @FocusState private var fieldFocused: Bool
+    /// The window of the switcher, to ask whether an input method composes text in the field.
+    @State private var window = WindowRef()
     /// False until the panel has dropped in. Reset each time the switcher opens.
     @State private var arrived = false
 
@@ -43,6 +45,7 @@ struct SwitcherView: View {
                     .offset(y: arrived || LoamMotion.reduceMotion ? 0 : -8)
             }
         }
+        .background(WindowReader(ref: window))
         .task(id: model.openCount) {
             arrived = false
             withAnimation(LoamAnimation.arrive) { arrived = true }
@@ -81,7 +84,12 @@ struct SwitcherView: View {
                     }
                     .onKeyPress(.downArrow) { model.moveSelection(1); return .handled }
                     .onKeyPress(.upArrow) { model.moveSelection(-1); return .handled }
-                    .onKeyPress(.escape) { model.close(); return .handled }
+                    .onKeyPress(.escape) {
+                        // Escape that cancels an input method composition is the input method's.
+                        guard !window.isComposing else { return .ignored }
+                        model.close()
+                        return .handled
+                    }
             }
             .padding(.horizontal, 18)
             .frame(height: 56)

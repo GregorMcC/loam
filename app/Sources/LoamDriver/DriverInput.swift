@@ -80,6 +80,19 @@ extension DriverApp {
         }
     }
 
+    /// Puts marked text in the text field that has the keys, as an input method does while it composes (the default is the
+    /// Japanese "nihon"), and returns the field editor. An Escape now belongs to the input method. A scenario ends the
+    /// composition with `unmarkText()` when the Escape leaves it, since no input method runs in the driver.
+    func compose(_ text: String = "\u{306B}\u{307B}\u{3093}") throws -> NSTextView {
+        guard let editor = window.firstResponder as? NSTextView, editor.isFieldEditor else {
+            throw DriverFailure("no text field has the keys")
+        }
+        editor.setMarkedText(text, selectedRange: NSRange(location: (text as NSString).length, length: 0),
+                             replacementRange: NSRange(location: NSNotFound, length: 0))
+        guard editor.hasMarkedText() else { throw DriverFailure("the text field took no marked text") }
+        return editor
+    }
+
     /// One key down of a key that you hold: the first press, or with `isARepeat` a repeat that macOS sends while
     /// the key stays down. `keyUp` ends the hold.
     func keyDown(_ key: Key, isARepeat: Bool = false) {

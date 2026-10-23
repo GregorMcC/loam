@@ -174,12 +174,15 @@ private struct BarButton: View {
 
 /// The actions menu (⌘J): a card above the Actions button with the focused pane's and the plot's
 /// actions, each with its real keycaps, and a search field at the bottom. Arrow keys move, Return
-/// runs, Escape closes. A click outside the card closes it.
+/// runs, Escape closes. A click outside the card closes it. While an input method composes text in the filter, Escape
+/// cancels the composed text and the menu stays open.
 struct ActionsMenuView: View {
     let menu: ActionMenuModel
     let run: (AppCommand) -> Void
     let close: () -> Void
     @FocusState private var fieldFocused: Bool
+    /// The window of the menu, to ask whether an input method composes text in the filter.
+    @State private var window = WindowRef()
     @Environment(\.colorScheme) private var scheme
 
     static let width: CGFloat = 340
@@ -196,6 +199,7 @@ struct ActionsMenuView: View {
                 .padding(.trailing, Self.trailing + menu.trailingInset)
                 .padding(.bottom, Self.bottom)
         }
+        .background(WindowReader(ref: window))
         .task(id: menu.openCount) {
             // The hosting view becomes first responder after this view appears.
             for _ in 0..<5 {
@@ -245,7 +249,12 @@ struct ActionsMenuView: View {
                     .onSubmit { if let command = menu.runSelected() { run(command) } }
                     .onKeyPress(.downArrow) { menu.move(1); return .handled }
                     .onKeyPress(.upArrow) { menu.move(-1); return .handled }
-                    .onKeyPress(.escape) { close(); return .handled }
+                    .onKeyPress(.escape) {
+                        // Escape that cancels an input method composition is the input method's.
+                        guard !window.isComposing else { return .ignored }
+                        close()
+                        return .handled
+                    }
             }
             .padding(.horizontal, 16)
             .frame(height: 42)
