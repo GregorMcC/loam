@@ -443,6 +443,36 @@ import Testing
         #expect(NewWorktreeContent(model).seedText == NewWorktreeContent.seedWaiting)
     }
 
+    /// The line names the branch, the repo and the base of its answer. A change of one of them makes the line old, so the
+    /// sheet waits for the next answer and never shows the line of another branch, repo or base.
+    @Test func theSeedLineOfAnOldNameRepoOrBaseDoesNotShow() {
+        let model = open()
+        let line = "- widgets-fix-login: Fix it (from origin/main)"
+        func good() {
+            answer(model, check(model.branch, seed: line))
+            #expect(NewWorktreeContent(model).seedText == line)
+        }
+        model.setBranch("fix-login")
+        good()
+        model.chooseRepo("repoaaaaab")
+        #expect(NewWorktreeContent(model).seedText == NewWorktreeContent.seedWaiting, "the line of the other repo shows")
+        good()
+        model.chooseBase("origin/develop")
+        #expect(NewWorktreeContent(model).seedText == NewWorktreeContent.seedWaiting, "the line of the other base shows")
+        good()
+        model.setBranch("fix-login-2")
+        #expect(NewWorktreeContent(model).seedText == NewWorktreeContent.seedWaiting, "the line of the other name shows")
+        good()
+        // A name that starts with a hyphen never goes to the core, so no answer replaces the line.
+        model.setBranch("-fix-login")
+        #expect(NewWorktreeContent(model).seedText == NewWorktreeContent.seedWaiting, "the line of a good name shows for a bad one")
+        model.setBranch("fix-login")
+        good()
+        // A goal is not a question about the branch: the line stands until the next answer (115 decision 21).
+        model.setGoal("Fix the login form")
+        #expect(NewWorktreeContent(model).seedText == line)
+    }
+
     // MARK: Start
 
     @Test func startLocksTheSheetAndAFailureShowsTheMessage() {

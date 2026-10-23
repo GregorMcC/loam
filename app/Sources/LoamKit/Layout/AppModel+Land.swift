@@ -15,10 +15,10 @@ extension AppModel {
     /// Opens the Land sheet for a worktree with a PR, and reads the plan (`loam worktree land --dry-run`) and Where it
     /// stands. The checklist shows a spinner until they are back. The PR popover closes, since one overlay shows at a
     /// time. Returns false for an unknown worktree, for one with no PR, and while a merge runs: an open would drop the
-    /// state of that merge.
+    /// state of that merge. Also while a worktree is made: the sheet would open under the New worktree sheet and take its keys.
     @discardableResult
     public func openLandSheet(_ id: String) -> Bool {
-        guard !landSheet.isMerging, let status = worktreeStatus(id), status.pr != nil else { return false }
+        guard !sheetHoldsWindow, let status = worktreeStatus(id), status.pr != nil else { return false }
         closePullRequest()
         landSheet.open(id)
         let open = landSheet.openCount

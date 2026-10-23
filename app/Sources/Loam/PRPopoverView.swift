@@ -59,6 +59,9 @@ struct PRPopoverView: View {
         }
         // The keys go back to the card when the goal edit ends, so Escape closes the popover and not nothing.
         .onChange(of: model.goalDraft == nil) { if model.goalDraft == nil { focused = true } }
+        // The goal field is off while a save runs, and a field that is off loses the keys. A save that failed or found a newer
+        // goal leaves the edit open, so the field takes the keys again, and Return tries again.
+        .onChange(of: model.isSavingGoal) { if !model.isSavingGoal, model.goalDraft != nil { goalFocused = true } }
         .task(id: model.openCount) {
             // The hosting view becomes first responder after this view appears. A popover that closed meanwhile
             // takes no keys: they went back to where they were.

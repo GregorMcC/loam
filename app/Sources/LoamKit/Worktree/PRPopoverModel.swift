@@ -137,9 +137,10 @@ public final class PRPopoverModel {
         goalProblem = nil
     }
 
-    /// What you typed in the goal field.
+    /// What you typed in the goal field. The field can write its text back with no change, such as when it takes the keys
+    /// again after a save. That is not a key, so the message of the save stays.
     public func setGoalDraft(_ text: String) {
-        guard goalDraft != nil, !isSavingGoal else { return }
+        guard goalDraft != nil, !isSavingGoal, text != goalDraft else { return }
         goalDraft = text
         goalProblem = nil
     }
