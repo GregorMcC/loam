@@ -1,6 +1,6 @@
 ## What changes
 
-<!-- Say what changes and why, in a few short sentences. Link the issue. -->
+<!-- Say what changes and why, in a few short sentences. Link the issue, if there is one. -->
 
 ## Screenshots
 

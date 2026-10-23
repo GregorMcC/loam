@@ -103,13 +103,14 @@ A worktree at Ready to merge has a Land… button. It is in the PR popover and o
 
 The Land sheet lists each item that can block the merge: checks, review, base, conflicts, and local work. Merge stays off while an item blocks. A merge cannot be undone. The sheet offers the merge methods that the repo allows.
 
-After the merge, three boxes are on by default:
+After the merge, these boxes are on by default:
 
-- Close its panes and remove the worktree.
+- Remove the worktree. When a pane runs in it, Loam closes the pane first.
 - Delete the branch on GitHub.
 - Move Where it stands on. Loam saves this as a change that you can undo.
+- Remove the issue from the plot's links. This box shows only for a worktree that started from a link of the plot.
 
-If checks still run, the button is "Merge when ready". With a merge queue, it is "Add to merge queue". In a terminal, `loam worktree land` merges the PR and tidies up in the same way.
+If checks still run, the button is "Merge when ready". With a merge queue, it is "Add to merge queue". In a terminal, `loam worktree land` merges the PR, removes the worktree, and deletes the branch on GitHub. The flags `--keep-worktree` and `--keep-remote-branch` turn off those two steps.
 
 <br clear="right">
 
