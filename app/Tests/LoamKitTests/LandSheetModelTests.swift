@@ -653,6 +653,25 @@ import Testing
         #expect(ends == [false, false, true, true, false], "a merge that follows a failure is done, not failed")
     }
 
+    /// Quit asks the app model, which waits for the merge and for a start. This is the merge side.
+    @Test func quitWaitsForAMergeThroughTheAppModel() async throws {
+        let rig = try await rig()
+        let model = rig.model
+        var ends: [Bool] = []
+        model.whenSheetWorkEnds { ends.append($0) }
+        #expect(ends == [false], "with no merge, the answer is at once")
+        try await open(rig)
+        try rig.failLand(code: 1, message: "could not merge PR #22: nope")
+        try rig.touch("hold-land")
+        let merge = Task { await model.land() }
+        await waitUntil("the land started") { !rig.lands().isEmpty }
+        model.whenSheetWorkEnds { ends.append($0) }
+        #expect(ends == [false])
+        rig.remove("hold-land")
+        await merge.value
+        #expect(ends == [false, true], "the merge failed, so Quit stops")
+    }
+
     @Test func aLandQuestionThatYouCancelEndsTheMergeWithNoFailure() async throws {
         let rig = try await rig()
         let model = rig.model

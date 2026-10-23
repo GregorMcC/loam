@@ -11,6 +11,16 @@ extension AppModel {
     /// popover and the other sheet would take its keys.
     public var sheetHoldsWindow: Bool { landSheet.isMerging || newWorktreeSheet.isStarting }
 
+    /// Runs `body` once the sheet that keeps the window lets it go, however the work ends: the merge of the Land sheet or the
+    /// start of the New worktree sheet. Its argument says whether the work failed: the sheet stays open with the message.
+    /// At once, with false, when no sheet keeps the window. Quit uses it, since an app that quits in the middle of a merge
+    /// leaves it half done, and in the middle of a start leaves a worktree with no session.
+    public func whenSheetWorkEnds(_ body: @escaping (_ failed: Bool) -> Void) {
+        landSheet.whenMergeEnds { [self] mergeFailed in
+            if mergeFailed { body(true) } else { newWorktreeSheet.whenStartEnds(body) }
+        }
+    }
+
     /// False while a sheet keeps the window (`sheetHoldsWindow`). An open while a worktree is made would also take back the
     /// state of that start.
     public var canOpenNewWorktree: Bool { !sheetHoldsWindow }
