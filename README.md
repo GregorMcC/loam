@@ -71,7 +71,7 @@ The diff shows the words that Claude removed and added. Read it, then keep the c
 
 <img src="docs/images/ship-state.png" align="right" width="260" alt="The Worktrees section of the plot panel. Five rows each have a stage mark, the branch, the PR number, and a status line. Three rows are ready to merge and have a Land button. One row shows 2 of 3 checks failed in red. One row shows 1 of 2 checks done.">
 
-A worktree that has a pull request (PR) shows the PR number and a stage mark in the sidebar. The stage is one step on the way to Merged, such as Checks running, Approval needed, or Ready to merge. A worktree with local work and no PR shows ✎.
+A worktree that has a pull request (PR) shows the PR number and a stage mark in the sidebar. The stage is one step on the way to Merged, such as Checks running, Approval needed, or Ready to merge. A worktree with no PR and work that is not pushed shows ✎ in the sidebar.
 
 The plot panel has a Worktrees section. Each row has the stage mark, the branch, the PR number, and a status line such as "2 of 3 checks failed". The "Ready to merge" row in the sidebar counts the ready worktrees in all plots. ⇧⌘L goes to the next one.
 
@@ -110,7 +110,7 @@ After the merge, these boxes are on by default:
 - Move Where it stands on. Loam saves this as a change that you can undo.
 - Remove the issue from the plot's links. This box shows only for a worktree that started from a link of the plot.
 
-If checks still run, the button is "Merge when ready". With a merge queue, it is "Add to merge queue". In a terminal, `loam worktree land` merges the PR, removes the worktree, and deletes the branch on GitHub. The flags `--keep-worktree` and `--keep-remote-branch` turn off those two steps.
+If checks still run, the button is "Merge when ready". With a merge queue, it is "Add to merge queue". In a terminal, `loam worktree land` merges the PR, deletes the branch on GitHub, and removes the worktree. It refuses to remove a worktree that has an open pane. With `--auto`, GitHub merges later and Loam keeps the worktree. The flags `--keep-worktree` and `--keep-remote-branch` turn off the two clean-up steps.
 
 <br clear="right">
 
@@ -325,7 +325,7 @@ loam start "Loam v1 build"                    # a seeded Claude Code session in 
 | `loam changes` / `loam undo <change-id>` | Review the change log and undo one change |
 | `loam worktree new <plot> <repo> <name> --goal "..."` | Make a worktree for one task, then `loam start <plot> --worktree <name>`. `--link` takes a plot link ID or an issue URL. |
 | `loam worktree list <plot> --refresh` | See the PR, the checks, and the stage of each worktree. It needs `gh`. |
-| `loam worktree land <plot> <worktree>` | Merge the PR, delete the branch, and remove the worktree. `--dry-run` lists each check. |
+| `loam worktree land <plot> <worktree>` | Merge the PR, delete the branch, and remove the worktree. It refuses to remove a worktree that has an open pane. `--dry-run` lists each check. |
 | `loam worktree rerun <plot> <worktree>` | Run the failed checks of the PR again |
 | `loam worktree update <plot> <worktree>` | Bring the PR up to date with its base branch |
 | `loam repo edit <plot> <repo> --after-merge ask\|remove\|keep` | Choose what the app does when GitHub merges a PR of the repo |

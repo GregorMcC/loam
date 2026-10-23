@@ -62,12 +62,14 @@ The PR body has these parts:
 
 ## Private details
 
-Loam is a public repo. Do not put these in code, fixtures, commit messages, PR text, or screenshots:
+Loam is a public repo. Do not put details from your own machine, or about real people, in code, fixtures, commit messages, PR text, or screenshots:
 
-- a person's name
+- a person's name, other than the Git author of a commit
 - a home folder path
-- an email address
-- a host name
+- an email address, other than the Git author of a commit
+- the host name of a private machine or a company server
+
+Public names such as `github.com` and the name of this repo are fine.
 
 Use made-up data. The driver scenarios in `app/Sources/LoamDriver` show how. Look at each screenshot before you add it.
 
