@@ -269,8 +269,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     /// The safe close gives up on a pane after 5 s (`SafeClose`). Quit waits a little longer.
     static let quitTimeout: TimeInterval = 8
 
-    /// The window close button quits through the same path as ⌘Q, so the question and the safe close run.
+    /// The window close button quits through the same path as ⌘Q, so the question and the safe close run. A window under a
+    /// sheet does not close, as under a native sheet (ticket 133). ⌘Q still quits.
     func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard !model.sheetBlocksWindow, sender.attachedSheet == nil else { return false }
         NSApp.terminate(nil)
         return false
     }
