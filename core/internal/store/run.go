@@ -85,6 +85,10 @@ type Check struct {
 	Command string `json:"command"`
 }
 
+// SourceRecurring is the kind of the source of a run that a recurring run
+// started. Its key is the ID of the recurring run.
+const SourceRecurring = "recurring"
+
 // RunSource is the issue that a run started from.
 type RunSource struct {
 	// Kind is linear, github, map, or recurring.
@@ -113,6 +117,9 @@ type RunShape struct {
 	Base  string `json:"base"`
 	Link  string `json:"link"`
 	Model string `json:"model"`
+	// Brief is what Claude drafts from when the run has no issue, such as
+	// the prompt of a recurring run.
+	Brief string `json:"brief,omitempty"`
 }
 
 // Assumption is one choice of a draft that the issue does not settle.

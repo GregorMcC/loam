@@ -56,6 +56,10 @@ public struct RunSource: Codable, Equatable, Sendable {
     public var kind: String
     public var key: String
     public var url: String
+
+    /// The source for a person: the key of an issue, or "Recurring" for a run that a recurring run started, whose
+    /// key is an ID.
+    public var label: String { kind == "recurring" ? "Recurring" : key }
 }
 
 /// The pull request that Loam opened for a run (ticket 206).
@@ -88,12 +92,14 @@ public struct RunShape: Codable, Equatable, Sendable {
     public var base: String
     public var link: String
     public var model: String
+    /// What Claude drafts from when the run has no issue, such as the prompt of a recurring run.
+    public var brief: String? = nil
 
     /// Claude has drafted the run, so you can approve it.
     public var isDrafted: Bool { draftedAt != nil }
 
     enum CodingKeys: String, CodingKey {
-        case assumptions, plan, size, repo, base, link, model
+        case assumptions, plan, size, repo, base, link, model, brief
         case draftedAt = "drafted_at"
     }
 }

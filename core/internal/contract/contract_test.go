@@ -216,6 +216,16 @@ func (h *harness) harvest() {
 	for _, r := range runs {
 		h.token("runr", r.ID)
 	}
+	out, _, _ = h.raw("recurring", "list", "--json")
+	var recurring struct {
+		Recurring []struct{ ID string } `json:"recurring"`
+	}
+	if err := json.Unmarshal([]byte(out), &recurring); err != nil {
+		h.t.Fatal(err)
+	}
+	for _, r := range recurring.Recurring {
+		h.token("recu", r.ID)
+	}
 }
 
 // normalize replaces IDs, times, and temp paths with fixed values.
@@ -705,19 +715,44 @@ func scenario(t *testing.T) *harness {
   "plan": ["Read the plan from the run.", "Show it on the run page."],
   "size": "About 60 lines in the app."}}`)
 	h.env = append(h.env, "LOAM_FAKE_CLAUDE_PRINT="+os.Getenv("LOAM_FAKE_CLAUDE_PRINT"))
-	out, errOut, code = h.raw("run", "shape", "Runs", "--title", "Show the plan on the run page",
-		"--ticket", filepath.Join(tickets, "12-run-page-plan.md"), "--json")
-	if code != 0 {
-		t.Fatalf("run shape: exit %d: %s", code, errOut)
-	}
 	var shaped struct {
 		Run struct{ ID string } `json:"run"`
 	}
-	parse([]byte(out), &shaped)
-	h.run("run_shape", "run-shape", 0, "run", "redraft", shaped.Run.ID, "--change", "Add a check for a run with no plan")
+	parse(h.run("run_shape", "run-shape", 0, "run", "shape", "Runs", "--title", "Show the plan on the run page",
+		"--ticket", filepath.Join(tickets, "12-run-page-plan.md")), &shaped)
+	h.run("run_redraft", "run-shape", 0, "run", "redraft", shaped.Run.ID, "--change", "Add a check for a run with no plan")
 	h.run("error_run_approve_no_assumption", "error", 2, "run", "approve", shaped.Run.ID, "--answer", "5=No")
 	h.run("run_approve", "run-start", 0, "run", "approve", shaped.Run.ID,
 		"--goal", "The run page shows the plan of the run, or says that it has none.", "--answer", "1=The plan shows as steps with checkboxes.")
+
+	// Recurring runs and loam tick (ticket 208). Both are due daily at the
+	// same time, so they list in the order that they were added. The chore's
+	// precheck finds no work, and the Shape run has a draft that waits for you,
+	// so the tick starts nothing. A fake launchctl stands in for launchd.
+	h.run("recurring_add", "recurring", 0, "recurring", "add", "Runs", "--title", "Bump Go dependencies",
+		"--prompt", "Bump the Go modules that have updates.", "--kind", "chore", "--days", "daily", "--at", "02:00",
+		"--precheck", "false", "--check", "Go tests=go test ./...")
+	var recurring struct {
+		Recurring struct{ ID string } `json:"recurring"`
+	}
+	out, errOut, code = h.raw("recurring", "add", "Runs", "--title", "Shape new issues", "--prompt", "Shape a run for each new bug.",
+		"--kind", "shape", "--days", "daily", "--at", "02:00", "--if-asleep", "skip", "--json")
+	if code != 0 {
+		t.Fatalf("recurring add: exit %d: %s", code, errOut)
+	}
+	parse([]byte(out), &recurring)
+	h.run("recurring_run", "recurring-run", 0, "recurring", "run", recurring.Recurring.ID)
+	h.run("recurring_list", "recurring-list", 0, "recurring", "list", "Runs")
+	h.run("tick", "tick", 0, "tick", "--now", "2099-01-01T12:00:00Z")
+	launchctl := filepath.Join(h.root, "launchctl")
+	if err := os.WriteFile(launchctl, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	h.env = append(h.env, "LOAM_LAUNCHCTL="+launchctl)
+	h.run("tick_install", "tick-status", 0, "tick", "install")
+	h.run("tick_status", "tick-status", 0, "tick", "status")
+	h.run("tick_uninstall", "tick-status", 0, "tick", "uninstall")
+	h.run("recurring_rm", "recurring", 0, "recurring", "rm", recurring.Recurring.ID)
 	return h
 }
 

@@ -60,7 +60,10 @@ type StartOptions struct {
 	Link string
 	// Ticket is the file of a ticket of a wayfinder map that the work starts
 	// from. A run has a link or a ticket, not both.
-	Ticket   string
+	Ticket string
+	// Source is the source of a run that no link or ticket gives, such as a
+	// recurring run.
+	Source   *store.RunSource
 	MaxTries int
 	Model    string
 	// ApproveSetup approves the setup command of the repo when it is new or
@@ -105,7 +108,7 @@ func Start(ctx context.Context, s *store.Store, o StartOptions) (*StartResult, e
 	}
 	r, err := s.AddRun(store.Run{
 		PlotID: plot.ID, WorktreeID: wt.ID, Folder: wt.Path, Title: title, Goal: strings.TrimSpace(o.Goal),
-		DoneWhen: o.DoneWhen, MaxTries: o.MaxTries, Source: cmp.Or(ticket, sourceOf(wt.Link)),
+		DoneWhen: o.DoneWhen, MaxTries: o.MaxTries, Source: cmp.Or(ticket, o.Source, sourceOf(wt.Link)),
 	})
 	if err != nil {
 		return nil, err

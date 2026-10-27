@@ -86,6 +86,7 @@ func (s *Store) DeletePlot(id string) ([]SessionRecord, error) {
 	for _, q := range []string{
 		`DELETE FROM run_events WHERE run_id IN (SELECT id FROM runs WHERE plot_id = ?)`,
 		`DELETE FROM runs WHERE plot_id = ?`,
+		`DELETE FROM recurring WHERE plot_id = ?`,
 		`DELETE FROM session_pids WHERE session_id IN (SELECT session_id FROM sessions WHERE plot_id = ?)`,
 		`DELETE FROM sessions WHERE plot_id = ?`,
 		`DELETE FROM change_entries WHERE plot_id = ?`,

@@ -428,7 +428,45 @@
         "repo": { "description": "The repo of the run, as loam run start --repo takes it.", "type": "string" },
         "base": { "description": "The branch that the worktree's branch starts from, or empty for the default branch of origin.", "type": "string" },
         "link": { "description": "The link that the work starts from, as loam run start --link takes it, or empty.", "type": "string" },
-        "model": { "description": "The Claude model of the draft and of the session, or empty for the Claude Code setting.", "type": "string" }
+        "model": { "description": "The Claude model of the draft and of the session, or empty for the Claude Code setting.", "type": "string" },
+        "brief": { "description": "What Claude drafts from when the run has no issue, such as the prompt of a recurring run. It is left out when it is empty.", "type": "string" }
+      }
+    },
+    "recurring": {
+      "description": "A run that starts on a timetable (loam recurring add).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "plot_id", "title", "prompt", "kind", "days", "at", "precheck", "if_asleep", "repo", "done_when", "max_tries", "model", "next_at", "last_note", "last_run_id", "created_at"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "plot_id": { "$ref": "#/$defs/id" },
+        "title": { "type": "string", "minLength": 1 },
+        "prompt": { "description": "What Claude does: the goal of a chore, or the brief of a Shape run.", "type": "string", "minLength": 1 },
+        "kind": { "description": "shape: Claude drafts a run for you to approve. chore: a run starts and works to its gate.", "enum": ["shape", "chore"] },
+        "days": { "description": "The days of the week, in the order of the week.", "type": "array", "minItems": 1, "items": { "enum": ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] } },
+        "at": { "description": "The time of day, HH:MM, on the clock of the Mac.", "type": "string", "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$" },
+        "precheck": { "description": "A shell command in the repo. The run starts only when it exits 0. Empty starts the run each time.", "type": "string" },
+        "if_asleep": { "description": "once: a time that the Mac slept through runs once when it wakes. skip: it is skipped.", "enum": ["once", "skip"] },
+        "repo": { "description": "The repo of the runs, by ID or path, or empty for the main repo.", "type": "string" },
+        "done_when": { "type": "array", "items": { "$ref": "#/$defs/runCheck" } },
+        "max_tries": { "type": "integer", "minimum": 1, "maximum": 8 },
+        "model": { "type": "string" },
+        "next_at": { "$ref": "#/$defs/time" },
+        "last_at": { "description": "When a tick last took it. It is left out before the first time.", "$ref": "#/$defs/time" },
+        "last_note": { "description": "What the last tick did, for a person to read.", "type": "string" },
+        "last_run_id": { "description": "The last run that it started or skipped, or empty.", "anyOf": [{ "$ref": "#/$defs/id" }, { "const": "" }] },
+        "created_at": { "$ref": "#/$defs/time" }
+      }
+    },
+    "recurringResult": {
+      "description": "What a tick did with one recurring run.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["recurring", "note"],
+      "properties": {
+        "recurring": { "$ref": "#/$defs/recurring" },
+        "run": { "description": "The run that the tick started or skipped. It is left out when the tick made none, such as when the last run has not ended.", "$ref": "#/$defs/run" },
+        "note": { "type": "string" }
       }
     },
     "runEvent": {

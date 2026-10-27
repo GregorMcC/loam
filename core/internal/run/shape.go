@@ -58,6 +58,10 @@ type ShapeOptions struct {
 	Ticket   string
 	MaxTries int
 	Model    string
+	// Brief is what Claude drafts the run from when it has no issue, such as
+	// the prompt of a recurring run. Source is then the source of the run.
+	Brief  string
+	Source *store.RunSource
 }
 
 // Shape records a run in Shaping, in the folder of its repo, and has Claude
@@ -86,6 +90,9 @@ func Shape(ctx context.Context, s *store.Store, o ShapeOptions) (store.Run, erro
 		return store.Run{}, err
 	}
 	if source == nil {
+		source = o.Source
+	}
+	if source == nil {
 		l, err := worktree.ResolveLink(plot, repo.Path, o.Link)
 		if err != nil {
 			return store.Run{}, err
@@ -95,7 +102,7 @@ func Shape(ctx context.Context, s *store.Store, o ShapeOptions) (store.Run, erro
 	r, err := s.AddRun(store.Run{
 		PlotID: plot.ID, Folder: repo.Path, Title: title, State: store.RunShaping, MaxTries: o.MaxTries,
 		Source: source, Note: draftingNote,
-		Shape: &store.RunShape{Repo: repo.ID, Base: o.Base, Link: o.Link, Model: o.Model},
+		Shape: &store.RunShape{Repo: repo.ID, Base: o.Base, Link: o.Link, Model: o.Model, Brief: strings.TrimSpace(o.Brief)},
 	})
 	if err != nil {
 		return store.Run{}, err
@@ -282,7 +289,10 @@ func shapePrompt(ctx context.Context, r store.Run, change string) string {
 		"The session commits its work on its branch, and Loam then pushes the branch and opens the PR, so the plan needs no step for those. " +
 		"Read the repo in this folder to learn how it is built and tested. Do not change any file.\n")
 	fmt.Fprintf(&b, "\nTitle: %s\n", r.Title)
-	if r.Source != nil {
+	if r.Shape != nil && r.Shape.Brief != "" {
+		fmt.Fprintf(&b, "\nThe brief:\n%s\n", r.Shape.Brief)
+	}
+	if r.Source != nil && r.Source.Kind != store.SourceRecurring {
 		fmt.Fprintf(&b, "Issue: %s (%s)\n", r.Source.Key, r.Source.URL)
 		if text, err := issueText(ctx, *r.Source); err != nil {
 			fmt.Fprintf(&b, "Loam could not read the text of the issue: %v\n", err)

@@ -71,7 +71,14 @@ struct IntakeView: View {
 
     private func header(_ list: IntakeList?) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Intake").loamText(LoamTheme.plotNameStyle)
+            HStack(alignment: .firstTextBaseline) {
+                Text("Intake").loamText(LoamTheme.plotNameStyle)
+                Spacer()
+                Button("Recurring runs") { Task { await model.showRecurring(plot: plotID) } }
+                    .loamSecondaryButton()
+                    .help("The runs of this plot that start on a timetable")
+                    .accessibilityIdentifier("intake-recurring")
+            }
             Text(model.plots.first { $0.id == plotID }?.name ?? "").loamText(LoamTheme.bodyStyle, LoamColor.inkMuted)
             if let list {
                 if list.sources.isEmpty {

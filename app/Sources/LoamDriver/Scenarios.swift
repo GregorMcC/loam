@@ -77,6 +77,7 @@ enum Scenarios {
         Scenario(name: "ship-shot", limit: 120, body: shipShot),
         Scenario(name: "desk-shot", limit: 120, body: deskShot),
         Scenario(name: "shape-shot", limit: 120, body: shapeShot),
+        Scenario(name: "recurring-shot", limit: 120, body: recurringShot),
         Scenario(name: "readme-shots", limit: 1200, body: readmeShots),
     ]
 

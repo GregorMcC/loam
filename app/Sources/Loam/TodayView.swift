@@ -11,6 +11,7 @@ struct PageView: View {
             switch model.page {
             case .run(let id): RunPageView(model: model, id: id)
             case .intake(let plot): IntakeView(model: model, plotID: plot)
+            case .recurring(let plot): RecurringView(model: model, plotID: plot)
             case .desk: DeskView(model: model)
             case .today, nil: TodayView(model: model)
             }
@@ -349,7 +350,7 @@ private struct RunHeader: View {
 
     private var headline: String {
         var parts = [plotName, run.state.words]
-        if let source = run.source { parts.append(source.key) }
+        if let source = run.source { parts.append(source.label) }
         if let pr = run.pr { parts.append("#\(pr.number)") }
         parts.append("\(run.tries) of \(run.maxTries) tries used")
         return parts.filter { !$0.isEmpty }.joined(separator: " \u{00B7} ")

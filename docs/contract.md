@@ -598,6 +598,46 @@ A tick also watches the PR of each run that is `ready` and has a `pr`. A merge o
 - `run redraft` drafts a `shaping` run again. `--change` is what you want changed: Claude gets its last draft and the change.
 - `run approve` takes a `shaping` run that has a draft. Loam makes the worktree, as `run start` does with the `repo`, `base`, and `link` of the shape, and starts the session. `--goal` and `--check` replace the draft's, and `--answer` sets the `answer` of an assumption, by number from 1. The session prompt holds the assumptions, with your answer in place of an assumption that you changed, and the plan. A run in another state, a run with no draft, or an answer to no assumption exits 2.
 - `run stop` on a `shaping` run cancels it, with no `claude stop`.
+- The `shape` of a run that a recurring run shaped has a `brief`: the prompt of the recurring run and what its precheck printed. Claude drafts from it, as from the text of an issue.
+
+#### Recurring
+
+A recurring run starts on a timetable, such as weekdays at 06:30, when its precheck finds work (ticket 208). `loam tick` starts it when it is due. Recurring runs are not in the change log, as runs are not.
+
+```json
+{
+  "id": "recuaaaaab", "plot_id": "k3v9q2mxa7", "title": "Bump Go dependencies", "prompt": "Bump the Go modules that have updates.",
+  "kind": "chore", "days": ["mon", "tue", "wed", "thu", "fri"], "at": "02:00",
+  "precheck": "go list -m -u all | grep -q '\\['", "if_asleep": "once", "repo": "",
+  "done_when": [{ "name": "Go tests", "command": "go test ./..." }], "max_tries": 3, "model": "",
+  "next_at": "2026-10-29T02:00:00Z", "last_at": "2026-10-28T02:00:00Z",
+  "last_note": "Skipped, because the precheck found no work (exit 1)", "last_run_id": "runraaaaab",
+  "created_at": "2026-10-01T09:00:00Z"
+}
+```
+
+| Command | Output |
+| :- | :- |
+| `loam recurring add <plot> --title <text> --prompt <text> --kind shape\|chore --days <days> --at <HH:MM> [--precheck <command>] [--if-asleep once\|skip] [--repo <repo>] [--check <name>=<command>]... [--max-tries <n>] [--model <model>] [--approve-setup]` | `{ "recurring": {...} }` |
+| `loam recurring list [<plot>]` | `{ "recurring": [...] }`, the next due first |
+| `loam recurring rm <recurring>` | `{ "recurring": {...} }`, the one that it removed. Its runs stay. |
+| `loam recurring run <recurring>` | `{ "recurring": {...}, "run": {...}, "note": "..." }`: it starts the run now, as a tick does. `next_at` stays. |
+| `loam tick` | `{ "recurring": [{ "recurring": {...}, "run": {...}, "note": "..." }], "runs": [...], "warnings": [] }` |
+| `loam tick install` | `{ "installed": true, "plist": "...", "interval": 300, "last_tick": { "at": "...", "error": "" } }` |
+| `loam tick status` | The same |
+| `loam tick uninstall` | The same, with `installed` false |
+
+- `--days` is `daily`, `weekdays`, `weekends`, or days such as `mon,wed,fri`. `days` holds them in the order of the week. `at` is the time on the clock of the Mac.
+- `kind` `shape` has Claude draft a run in `shaping` from the prompt, as `run shape` does, for you to approve. `kind` `chore` starts a run with the prompt as its goal, as `run start` does, in a new worktree. A chore cannot ask to approve the setup command of the repo: `--approve-setup` on `recurring add` approves it then.
+- When a recurring run is due, `loam tick` first moves `next_at` to the next time after the tick. Two ticks at once never start it twice. Then:
+  1. A plot that is archived, or a run of the recurring run that has not ended (`source` `kind` `recurring`, `key` its ID), starts nothing: runs never stack. `note` says why, and no run is made.
+  2. A time more than 15 minutes late counts as one time that the Mac slept through, however many it missed. With `if_asleep` `skip`, the run is skipped.
+  3. The precheck runs with `sh -c` in the repo, for at most 2 minutes. An exit code that is not 0 skips the run. What it prints goes to Claude after the prompt.
+  4. A skip makes a run that is `skipped` and starts no session, with the reason in `note`. A skip after a skip changes that run, so a quiet week makes one run.
+  5. Else the run starts or Claude shapes it. A failure to start is the `note`, and the tick goes on.
+- `last_at`, `last_note`, and `last_run_id` say what the last tick did. `last_at` is left out before the first time.
+- After the recurring runs, `loam tick` does what `run tick` does, and `runs` and `warnings` are its result.
+- `tick install` writes the launchd agent `~/Library/LaunchAgents/dev.loam.tick.plist`, which runs this loam binary with `tick` every 300 seconds, with the `PATH` and `LOAM_HOME` of the command, and loads it with `launchctl bootstrap`. `tick uninstall` unloads it and removes the file. `installed` is true while the file exists. `last_tick` is the last `loam tick`, with its error, if any. It is left out before the first tick.
 
 ### Intake
 

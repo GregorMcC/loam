@@ -300,6 +300,49 @@ public struct LoamClient: Sendable {
         return try await read(args, positionals: [id])
     }
 
+    /// `loam recurring list [<plot>]`: the recurring runs of a plot, or of every plot (ticket 208).
+    public func recurringList(plot: String? = nil) async throws -> [Recurring] {
+        let list: RecurringList = try await read(["recurring", "list"], positionals: plot.map { [$0] } ?? [])
+        return list.recurring
+    }
+
+    /// `loam recurring add <plot>`: a run that starts on a timetable.
+    public func recurringAdd(plot: String, draft: RecurringDraft) async throws -> Recurring {
+        var args = ["recurring", "add", "--title", draft.title, "--prompt", draft.prompt, "--kind", draft.kind.rawValue,
+                    "--days", draft.days.joined(separator: ","), "--at", draft.at, "--if-asleep", draft.ifAsleep.rawValue]
+        let precheck = draft.precheck.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !precheck.isEmpty { args += ["--precheck", precheck] }
+        if draft.approveSetup { args.append("--approve-setup") }
+        let one: RecurringOne = try await read(args, positionals: [plot])
+        return one.recurring
+    }
+
+    /// `loam recurring rm <recurring>`. Its runs stay.
+    public func recurringRemove(_ id: String) async throws -> Recurring {
+        let one: RecurringOne = try await read(["recurring", "rm"], positionals: [id])
+        return one.recurring
+    }
+
+    /// `loam recurring run <recurring>`: starts it now, with its precheck, as a tick does.
+    public func recurringRun(_ id: String) async throws -> RecurringResult {
+        try await read(["recurring", "run"], positionals: [id])
+    }
+
+    /// `loam tick`: starts the recurring runs that are due, then ships runs as `loam run tick` does.
+    public func tick() async throws -> TickResult {
+        try await read(["tick"])
+    }
+
+    /// `loam tick status`, or with `installed`, `loam tick install` or `uninstall`: the launchd agent that runs
+    /// `loam tick` while the app is closed.
+    public func tickStatus(set installed: Bool? = nil) async throws -> TickStatus {
+        switch installed {
+        case nil: try await read(["tick", "status"])
+        case true?: try await read(["tick", "install"])
+        case false?: try await read(["tick", "uninstall"])
+        }
+    }
+
     /// `loam intake list <plot>`: the open issues and map tickets of the plot.
     public func intake(plot: String) async throws -> IntakeList {
         try await read(["intake", "list"], positionals: [plot])

@@ -8,6 +8,8 @@ public enum AppPage: Equatable, Sendable {
     case run(String)
     /// The intake of a plot: its open issues and map tickets (ticket 204).
     case intake(String)
+    /// The recurring runs of a plot (ticket 208).
+    case recurring(String)
     /// The desk: the runs that wait for you, one at a time (ticket 207). `AppModel.desk` says which.
     case desk
 }
@@ -33,13 +35,20 @@ extension AppModel {
         await reloadRuns()
     }
 
-    /// Runs a tick every `runTickInterval` while a run waits on GitHub. Nothing runs before this starts,
+    /// Runs a tick every `runTickInterval` while a run waits on GitHub, or while a recurring run waits for its time
+    /// and launchd does not tick. Nothing runs before this starts,
     /// so a model in a unit test never runs `loam`.
     func startRunTicks() {
         guard runTicks == nil else { return }
         runTicks = Task { [weak self] in
             while let self, (try? await Task.sleep(for: self.runTickInterval)) != nil {
-                if runs.contains(where: \.waitsOnGitHub) { await tickRuns() }
+                if tickStatus == nil { await readTickStatus(lookForRecurring: true) }
+                // loam tick ships the runs too, so one tick does both.
+                if appTicksRecurring {
+                    await tickRecurring()
+                } else if runs.contains(where: \.waitsOnGitHub) {
+                    await tickRuns()
+                }
             }
         }
     }

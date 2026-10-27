@@ -166,6 +166,14 @@ public final class AppModel {
     public internal(set) var runStartError: String?
     /// True while `loam run start` runs.
     public internal(set) var isStartingRun = false
+    /// The recurring runs of the plot that the Recurring page shows (ticket 208).
+    public internal(set) var recurring: [Recurring] = []
+    /// Why the last change of a recurring run failed, for the Recurring page.
+    public internal(set) var recurringError: String?
+    /// Whether launchd runs `loam tick` while the app is closed, as the core last said. Nil before the first read.
+    public internal(set) var tickStatus: TickStatus?
+    /// True when a plot has a recurring run, as the last list said.
+    var hasRecurring = false
     /// Set when the launch check fails. The window shows it and loads nothing else.
     public private(set) var launchBlock: String?
     /// The setup steps that are not done. A non-empty list shows the setup banner.

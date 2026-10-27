@@ -1,0 +1,9 @@
+{
+  "installed": false,
+  "interval": 300,
+  "last_tick": {
+    "at": "2026-01-01T00:00:00Z",
+    "error": ""
+  },
+  "plist": "/tmp/loam-contract/userhome/Library/LaunchAgents/dev.loam.tick.plist"
+}

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam recurring add --json",
+  "description": "The recurring run that the command added. loam recurring rm --json prints the one that it removed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "recurring"
+  ],
+  "properties": {
+    "recurring": {
+      "$ref": "defs.json#/$defs/recurring"
+    }
+  }
+}

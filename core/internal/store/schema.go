@@ -171,6 +171,31 @@ CREATE TABLE run_events (
 CREATE INDEX run_events_run ON run_events(run_id, id);
 `,
 	`ALTER TABLE runs ADD COLUMN shape TEXT NOT NULL DEFAULT '';`,
+	// 12: recurring runs (ticket 208). Not in the change log, as runs are
+	// not.
+	`
+CREATE TABLE recurring (
+  id TEXT PRIMARY KEY,
+  plot_id TEXT NOT NULL REFERENCES plots(id),
+  title TEXT NOT NULL,
+  prompt TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  days TEXT NOT NULL,
+  at TEXT NOT NULL,
+  precheck TEXT NOT NULL DEFAULT '',
+  if_asleep TEXT NOT NULL,
+  repo TEXT NOT NULL DEFAULT '',
+  done_when TEXT NOT NULL DEFAULT '[]',
+  max_tries INTEGER NOT NULL,
+  model TEXT NOT NULL DEFAULT '',
+  next_at INTEGER NOT NULL,
+  last_at INTEGER NOT NULL DEFAULT 0,
+  last_note TEXT NOT NULL DEFAULT '',
+  last_run_id TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX recurring_next ON recurring(next_at);
+`,
 }
 
 // SchemaVersion is the schema version of this binary.

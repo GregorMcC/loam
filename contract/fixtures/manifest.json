@@ -1105,6 +1105,21 @@
     "name": "run_shape",
     "args": [
       "run",
+      "shape",
+      "Runs",
+      "--title",
+      "Show the plan on the run page",
+      "--ticket",
+      "/tmp/loam-contract/build/issues/12-run-page-plan.md",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "run-shape"
+  },
+  {
+    "name": "run_redraft",
+    "args": [
+      "run",
       "redraft",
       "runraaaaad",
       "--change",
@@ -1141,5 +1156,104 @@
     ],
     "exit_code": 0,
     "schema": "run-start"
+  },
+  {
+    "name": "recurring_add",
+    "args": [
+      "recurring",
+      "add",
+      "Runs",
+      "--title",
+      "Bump Go dependencies",
+      "--prompt",
+      "Bump the Go modules that have updates.",
+      "--kind",
+      "chore",
+      "--days",
+      "daily",
+      "--at",
+      "02:00",
+      "--precheck",
+      "false",
+      "--check",
+      "Go tests=go test ./...",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "recurring"
+  },
+  {
+    "name": "recurring_run",
+    "args": [
+      "recurring",
+      "run",
+      "recuaaaaac",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "recurring-run"
+  },
+  {
+    "name": "recurring_list",
+    "args": [
+      "recurring",
+      "list",
+      "Runs",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "recurring-list"
+  },
+  {
+    "name": "tick",
+    "args": [
+      "tick",
+      "--now",
+      "2026-01-01T00:00:00Z",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "tick"
+  },
+  {
+    "name": "tick_install",
+    "args": [
+      "tick",
+      "install",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "tick-status"
+  },
+  {
+    "name": "tick_status",
+    "args": [
+      "tick",
+      "status",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "tick-status"
+  },
+  {
+    "name": "tick_uninstall",
+    "args": [
+      "tick",
+      "uninstall",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "tick-status"
+  },
+  {
+    "name": "recurring_rm",
+    "args": [
+      "recurring",
+      "rm",
+      "recuaaaaac",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "recurring"
   }
 ]

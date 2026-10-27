@@ -1,0 +1,99 @@
+{
+  "recurring": [
+    {
+      "note": "Skipped, because the precheck found no work (exit 1)",
+      "recurring": {
+        "at": "02:00",
+        "created_at": "2026-01-01T00:00:00Z",
+        "days": [
+          "sun",
+          "mon",
+          "tue",
+          "wed",
+          "thu",
+          "fri",
+          "sat"
+        ],
+        "done_when": [
+          {
+            "command": "go test ./...",
+            "name": "Go tests"
+          }
+        ],
+        "id": "recuaaaaab",
+        "if_asleep": "once",
+        "kind": "chore",
+        "last_at": "2026-01-01T00:00:00Z",
+        "last_note": "Skipped, because the precheck found no work (exit 1)",
+        "last_run_id": "runraaaaaf",
+        "max_tries": 3,
+        "model": "",
+        "next_at": "2026-01-01T00:00:00Z",
+        "plot_id": "plotaaaaae",
+        "precheck": "false",
+        "prompt": "Bump the Go modules that have updates.",
+        "repo": "",
+        "title": "Bump Go dependencies"
+      },
+      "run": {
+        "created_at": "2026-01-01T00:00:00Z",
+        "done_when": [
+          {
+            "command": "go test ./...",
+            "name": "Go tests"
+          }
+        ],
+        "folder": "/tmp/loam-contract/repos/web",
+        "goal": "Bump the Go modules that have updates.",
+        "id": "runraaaaaf",
+        "max_tries": 3,
+        "note": "Skipped, because the precheck found no work (exit 1)",
+        "plot_id": "plotaaaaae",
+        "session_id": "",
+        "source": {
+          "key": "recuaaaaab",
+          "kind": "recurring",
+          "url": ""
+        },
+        "state": "skipped",
+        "title": "Bump Go dependencies",
+        "tries": 0,
+        "updated_at": "2026-01-01T00:00:00Z",
+        "worktree_id": ""
+      }
+    },
+    {
+      "note": "Not started, because the last run, runraaaaae, is shaping",
+      "recurring": {
+        "at": "02:00",
+        "created_at": "2026-01-01T00:00:00Z",
+        "days": [
+          "sun",
+          "mon",
+          "tue",
+          "wed",
+          "thu",
+          "fri",
+          "sat"
+        ],
+        "done_when": [],
+        "id": "recuaaaaac",
+        "if_asleep": "skip",
+        "kind": "shape",
+        "last_at": "2026-01-01T00:00:00Z",
+        "last_note": "Not started, because the last run, runraaaaae, is shaping",
+        "last_run_id": "runraaaaae",
+        "max_tries": 3,
+        "model": "",
+        "next_at": "2026-01-01T00:00:00Z",
+        "plot_id": "plotaaaaae",
+        "precheck": "",
+        "prompt": "Shape a run for each new bug.",
+        "repo": "",
+        "title": "Shape new issues"
+      }
+    }
+  ],
+  "runs": [],
+  "warnings": []
+}

@@ -344,6 +344,12 @@ struct DriverTests {
         try await expectPass("shape-shot", environment: ["LOAM_DRIVER_LOAM": Self.loamBinary])
     }
 
+    /// Ticket 208: a skipped chore shows on the Recurring page, a new Shape run is typed and added, Run now drafts
+    /// a run, and the switch installs the launchd agent.
+    @Test func addsARecurringRunAndRunsItNow() async throws {
+        try await expectPass("recurring-shot", environment: ["LOAM_DRIVER_LOAM": Self.loamBinary])
+    }
+
     /// Ticket 107: two plots with a worktree each that is ready to merge. The Ready to merge row counts 2,
     /// ⌘⇧L selects the first, then the second, then the first again, and the row goes while gh is missing.
     @Test func reachesTheWorktreesThatAreReadyToMergeWithCommandShiftL() async throws {

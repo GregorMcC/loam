@@ -61,6 +61,11 @@ func decodeFixture(schema: String, data: Data) throws {
     case "run-land": _ = try d.decode(RunLandResult.self, from: data)
     case "run-diff": _ = try d.decode(RunDiff.self, from: data)
     case "run-tick": _ = try d.decode(RunTickResult.self, from: data)
+    case "recurring": _ = try d.decode(RecurringOne.self, from: data)
+    case "recurring-list": _ = try d.decode(RecurringList.self, from: data)
+    case "recurring-run": _ = try d.decode(RecurringResult.self, from: data)
+    case "tick": _ = try d.decode(TickResult.self, from: data)
+    case "tick-status": _ = try d.decode(TickStatus.self, from: data)
     case "intake-list": _ = try d.decode(IntakeList.self, from: data)
     case "linear-status", "linear-key": _ = try d.decode(LinearStatus.self, from: data)
     default: Issue.record("No Swift type for schema \(schema)")
@@ -87,6 +92,21 @@ func decodeFixture(schema: String, data: Data) throws {
         #expect(shape.plan.count == 2 && shape.size == "About 60 lines in the app." && shape.isDrafted)
         let approved = try JSONDecoder().decode(RunStartResult.self, from: Fixtures.data("run_approve")).run
         #expect(approved.shape?.assumptions.first?.answer == "The plan shows as steps with checkboxes.")
+    }
+
+    @Test func aRecurringRunAndATickDecode() throws {
+        let added = try JSONDecoder().decode(RecurringOne.self, from: Fixtures.data("recurring_add")).recurring
+        #expect(added.kind == .chore && added.days.count == 7 && added.at == "02:00" && added.precheck == "false")
+        #expect(added.ifAsleep == .once && added.doneWhen.count == 1 && added.lastAt == nil && !added.nextAt.isEmpty)
+        let list = try JSONDecoder().decode(RecurringList.self, from: Fixtures.data("recurring_list")).recurring
+        #expect(list.map(\.title) == ["Bump Go dependencies", "Shape new issues"])
+        #expect(list[1].ifAsleep == .skip && list[1].lastRunID.isEmpty == false)
+        let tick = try JSONDecoder().decode(TickResult.self, from: Fixtures.data("tick"))
+        #expect(tick.recurring.map(\.run?.state) == [.skipped, nil])
+        #expect(tick.recurring[0].note.contains("found no work") && tick.runs.isEmpty)
+        let status = try JSONDecoder().decode(TickStatus.self, from: Fixtures.data("tick_install"))
+        #expect(status.installed && status.interval == 300 && status.lastTick?.error == "")
+        #expect(try JSONDecoder().decode(TickStatus.self, from: Fixtures.data("tick_uninstall")).installed == false)
     }
 
     @Test func everyFixtureDecodes() throws {

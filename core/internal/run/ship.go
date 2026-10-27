@@ -88,7 +88,13 @@ func Tick(ctx context.Context, s *store.Store) (TickResult, error) {
 // lockTick takes the tick lock in home. It returns false when another tick
 // holds it.
 func lockTick(home string) (unlock func(), ok bool, err error) {
-	f, err := os.OpenFile(filepath.Join(home, "run-tick.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	return lockFile(filepath.Join(home, "run-tick.lock"))
+}
+
+// lockFile takes an exclusive lock on the file, and reports false when
+// another process holds it.
+func lockFile(path string) (unlock func(), ok bool, err error) {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, false, err
 	}

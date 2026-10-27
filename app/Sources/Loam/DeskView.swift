@@ -157,7 +157,7 @@ struct DeskItemHeader: View {
         default: "Stopped"
         }
         var parts = [station, model.plots.first { $0.id == run.plotID }?.name ?? ""]
-        if let source = run.source { parts.append(source.key) }
+        if let source = run.source { parts.append(source.label) }
         if let pr = run.pr { parts.append("#\(pr.number)") }
         if let size = run.shape?.size, run.state == .shaping { parts.append(size) }
         if run.state != .shaping { parts.append("\(run.tries) of \(run.maxTries) tries used") }

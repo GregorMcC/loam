@@ -196,6 +196,15 @@ extension Scenarios {
         NSApp.appearance = nil
     }
 
+    /// Makes the claude of the shot rig print the file for claude -p, as claude -p --output-format json prints a
+    /// draft. Other calls do what they did.
+    static func printDraft(_ rig: PanelRig, _ draft: URL) throws {
+        let claude = rig.root.appendingPathComponent("bin/claude")
+        let stub = try String(contentsOf: claude, encoding: .utf8).replacingOccurrences(of: "#!/bin/sh\n", with: "")
+        try "#!/bin/sh\nfor a in \"$@\"; do [ \"$a\" = -p ] && exec cat '\(draft.path)'; done\n\(stub)"
+            .write(to: claude, atomically: true, encoding: .utf8)
+    }
+
     static func shapeShot(_ app: DriverApp) async throws {
         do { try await shapeShotSteps(app) } catch { app.dumpAccessibility(); throw error }
     }
@@ -221,10 +230,7 @@ extension Scenarios {
                    "Add tests for a label match and for the order of the results."],
           "size": "About 80 lines in one package."}}
         """#.write(to: draft, atomically: true, encoding: .utf8)
-        let claude = rig.root.appendingPathComponent("bin/claude")
-        let stub = try String(contentsOf: claude, encoding: .utf8).replacingOccurrences(of: "#!/bin/sh\n", with: "")
-        try "#!/bin/sh\nfor a in \"$@\"; do [ \"$a\" = -p ] && exec cat '\(draft.path)'; done\n\(stub)"
-            .write(to: claude, atomically: true, encoding: .utf8)
+        try printDraft(rig, draft)
         let ticket = rig.root.appendingPathComponent("issues/12-plot-search-labels.md")
         try FileManager.default.createDirectory(at: ticket.deletingLastPathComponent(), withIntermediateDirectories: true)
         try "# Plot search matches link labels\n\nA search for the label of a link finds its plot.\n"
