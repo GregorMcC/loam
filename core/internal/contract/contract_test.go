@@ -226,6 +226,16 @@ func (h *harness) harvest() {
 	for _, r := range recurring.Recurring {
 		h.token("recu", r.ID)
 	}
+	out, _, _ = h.raw("rule", "list", "--json")
+	var rules struct {
+		Rules []struct{ ID string } `json:"rules"`
+	}
+	if err := json.Unmarshal([]byte(out), &rules); err != nil {
+		h.t.Fatal(err)
+	}
+	for _, r := range rules.Rules {
+		h.token("rule", r.ID)
+	}
 }
 
 // normalize replaces IDs, times, and temp paths with fixed values.
@@ -753,6 +763,27 @@ func scenario(t *testing.T) *harness {
 	h.run("tick_status", "tick-status", 0, "tick", "status")
 	h.run("tick_uninstall", "tick-status", 0, "tick", "uninstall")
 	h.run("recurring_rm", "recurring", 0, "recurring", "rm", recurring.Recurring.ID)
+
+	// Rules (ticket 209). A run fails its one try and stops. Its send-back
+	// has a note like the note on the README run, so Loam offers a rule.
+	out, errOut, code = h.raw("run", "start", "Runs", "--title", "Write the guide", "--check", "Guide=test -f GUIDE.md",
+		"--max-tries", "1", "--json")
+	if code != 0 {
+		t.Fatalf("run start: exit %d: %s", code, errOut)
+	}
+	parse([]byte(out), &tidy)
+	hook("SessionStart")
+	hook("Stop")
+	h.run("run_send_back_rule_offer", "run-send-back", 0, "run", "send-back", tidy.Run.ID, "--note", "Keep the README short, please.")
+	var rule struct {
+		Rule struct{ ID string } `json:"rule"`
+	}
+	parse(h.run("rule_add", "rule", 0, "rule", "add", "Runs", "--name", "Short README",
+		"--command", "test $(wc -l < README.md) -lt 40", "--note", "Keep the README short, please."), &rule)
+	h.token("rule", rule.Rule.ID)
+	h.run("rule_list", "rule-list", 0, "rule", "list", "Runs")
+	h.run("rule_rm", "rule", 0, "rule", "rm", rule.Rule.ID)
+	h.run("error_rule_add_no_command", "error", 2, "rule", "add", "Runs", "--name", "Short README")
 	return h
 }
 

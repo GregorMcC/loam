@@ -1,0 +1,7 @@
+{
+  "error": {
+    "exit_code": 2,
+    "kind": "invalid",
+    "message": "a rule needs a name and a command: invalid input"
+  }
+}

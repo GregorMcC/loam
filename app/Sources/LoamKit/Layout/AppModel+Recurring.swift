@@ -5,13 +5,17 @@ extension AppModel {
     /// closed (ticket 208).
     public var appTicksRecurring: Bool { hasRecurring && tickStatus?.installed == false }
 
-    /// Shows the Recurring page of the plot, and reads its recurring runs and the launchd agent.
+    /// Shows the Recurring page of the plot, and reads its recurring runs, the launchd agent, and its rules.
     public func showRecurring(plot: String) async {
-        if page != .recurring(plot) { recurring = [] }
+        if page != .recurring(plot) {
+            recurring = []
+            rules = []
+        }
         recurringError = nil
         page = .recurring(plot)
         await reloadRecurring()
         await readTickStatus()
+        await reloadRules()
     }
 
     /// Reads the recurring runs of the plot that the Recurring page shows. A failed read keeps the last list.

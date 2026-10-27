@@ -401,7 +401,8 @@ func newRunSendBackCmd() *cobra.Command {
 		Short: "Send your notes on the work of a run back to its session",
 		Long: "Resume the session of a run that is Ready to land or Stopped, with your notes as its next prompt. A note is \"<file>:<line>: <text>\" for a line of a file, or text alone for the whole run.\n" +
 			"The run goes back to Running. When the session ends its turn, the Done when checks run again, and a run on GitHub ships the changes to its PR.\n" +
-			"A note is not a failure, so it uses no try. A run that has used all its tries gets one more.",
+			"A note is not a failure, so it uses no try. A run that has used all its tries gets one more.\n" +
+			"When a note is like a note that you sent back on another run of the plot, Loam offers to make it a rule: a check that every run of the plot must pass.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var notes []run.Note
@@ -417,16 +418,21 @@ func newRunSendBackCmd() *cobra.Command {
 				return err
 			}
 			defer s.Close()
-			r, err := run.SendBack(cmd.Context(), s, args[0], notes)
+			r, offer, err := run.SendBack(cmd.Context(), s, args[0], notes)
 			if err != nil {
 				return err
 			}
 			if JSON(cmd) {
 				return printJSON(cmd, struct {
-					Run store.Run `json:"run"`
-				}{r})
+					Run       store.Run      `json:"run"`
+					RuleOffer *run.RuleOffer `json:"rule_offer,omitempty"`
+				}{r, offer})
 			}
 			printRun(cmd.OutOrStdout(), r)
+			if offer != nil {
+				fmt.Fprintf(cmd.OutOrStdout(), "You sent a note like this on %s: %q. Make it a rule with loam rule add %s --name <name> --command <check> --note %q\n",
+					offer.EarlierRunID, offer.Earlier, r.PlotID, offer.Note)
+			}
 			return nil
 		},
 	}

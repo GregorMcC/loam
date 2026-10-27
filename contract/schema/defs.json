@@ -458,6 +458,32 @@
         "created_at": { "$ref": "#/$defs/time" }
       }
     },
+    "rule": {
+      "description": "A check that every run of a plot must pass (loam rule add). The gate runs it as the check Rule: <name>.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "plot_id", "name", "command", "note", "created_at"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "plot_id": { "$ref": "#/$defs/id" },
+        "name": { "type": "string", "minLength": 1 },
+        "command": { "description": "A shell command in the folder of the run. The rule holds when it exits 0.", "type": "string", "minLength": 1 },
+        "note": { "description": "The note that the rule came from, or empty.", "type": "string" },
+        "created_at": { "$ref": "#/$defs/time" }
+      }
+    },
+    "ruleOffer": {
+      "description": "A note that you sent back is like a note that you sent back on another run of the plot, so it can become a rule.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["note", "earlier", "earlier_run_id", "earlier_title"],
+      "properties": {
+        "note": { "description": "The text of the note, without its file and line.", "type": "string", "minLength": 1 },
+        "earlier": { "description": "The text of the note like it.", "type": "string", "minLength": 1 },
+        "earlier_run_id": { "$ref": "#/$defs/id" },
+        "earlier_title": { "type": "string" }
+      }
+    },
     "recurringResult": {
       "description": "What a tick did with one recurring run.",
       "type": "object",
@@ -477,7 +503,7 @@
         "id": { "type": "integer", "minimum": 1 },
         "run_id": { "$ref": "#/$defs/id" },
         "at": { "$ref": "#/$defs/time" },
-        "kind": { "description": "state: the new state. try: a failed gate or CI, with its note. check: the result of one check. linear: what Loam did to the Linear issue of the run. ship: a push or a PR. ci: the result of CI on the PR. review: your notes went back to the session. land: a merge of the PR, or where it waits. shape: a draft by Claude, or why it failed.", "enum": ["state", "try", "check", "linear", "ship", "ci", "review", "land", "shape"] },
+        "kind": { "description": "state: the new state. try: a failed gate or CI, with its note. check: the result of one check. linear: what Loam did to the Linear issue of the run. ship: a push or a PR. ci: the result of CI on the PR. review: your notes went back to the session. note: one of those notes, as <file> line <n>: <text> or as text alone. land: a merge of the PR, or where it waits. shape: a draft by Claude, or why it failed.", "enum": ["state", "try", "check", "linear", "ship", "ci", "review", "note", "land", "shape"] },
         "detail": { "type": "string" }
       }
     },

@@ -1,0 +1,12 @@
+{
+  "rules": [
+    {
+      "command": "test $(wc -l \u003c README.md) -lt 40",
+      "created_at": "2026-01-01T00:00:00Z",
+      "id": "ruleaaaaab",
+      "name": "Short README",
+      "note": "Keep the README short, please.",
+      "plot_id": "plotaaaaae"
+    }
+  ]
+}

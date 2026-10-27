@@ -2,7 +2,8 @@ import LoamKit
 import SwiftUI
 
 /// The Recurring page of a plot (ticket 208): the runs that start on a timetable when their precheck finds work, a
-/// form that adds one, and the launchd agent that starts them while the app is closed.
+/// form that adds one, and the launchd agent that starts them while the app is closed. Between the list and the form,
+/// the rules of the plot (ticket 209).
 struct RecurringView: View {
     let model: AppModel
     let plotID: String
@@ -21,6 +22,9 @@ struct RecurringView: View {
                         ForEach(model.recurring) { RecurringCard(model: model, item: $0) }
                     }
                 }
+                Divider()
+                RulesSection(model: model)
+                    .id(plotID)
                 Divider()
                 RecurringForm(model: model)
                     .id(plotID)
@@ -245,5 +249,100 @@ private struct RecurringForm: View {
             if await model.addRecurring(draft) { draft = RecurringDraft() }
             busy = false
         }
+    }
+}
+
+/// The rules of the plot (ticket 209): checks that every run must pass, with a form that adds one.
+private struct RulesSection: View {
+    let model: AppModel
+    @State private var name = ""
+    @State private var command = ""
+    @State private var busy = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: LoamTheme.space3) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Rules").loamText(LoamTheme.rowStyle)
+                Text("A rule is a check that every run of the plot must pass. The gate runs it after the checks of each "
+                     + "run, and a run cannot change it. When you send back the same kind of note on two runs, the desk "
+                     + "offers to make it a rule.")
+                    .loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if model.rules.isEmpty {
+                Text("This plot has no rule yet.")
+                    .loamText(LoamTheme.bodyStyle, LoamColor.inkMuted)
+                    .accessibilityIdentifier("rules-empty")
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(model.rules) { rule in
+                        if rule.id != model.rules.first?.id { Divider() }
+                        RuleRow(model: model, rule: rule)
+                    }
+                }
+                .loamCard()
+            }
+            HStack(spacing: LoamTheme.space2) {
+                TextField("Name", text: $name, prompt: Text("Such as: Use colour tokens"))
+                    .labelsHidden().textFieldStyle(.plain).loamText(LoamTheme.bodyStyle)
+                    .padding(.horizontal, 9).frame(width: 220, height: 28).loamFieldBox()
+                    .accessibilityLabel("Rule name")
+                    .accessibilityIdentifier("rule-name")
+                TextField("Command", text: $command, prompt: Text("A command that exits 0 when the rule holds"))
+                    .labelsHidden().textFieldStyle(.plain).loamText(LoamTheme.codeStyle)
+                    .padding(.horizontal, 9).frame(height: 28).loamFieldBox()
+                    .onSubmit(add)
+                    .accessibilityLabel("Rule command")
+                    .accessibilityIdentifier("rule-command")
+                Button("Add rule", action: add)
+                    .loamPrimaryButton()
+                    .disabled(busy || name.trimmingCharacters(in: .whitespaces).isEmpty
+                              || command.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .accessibilityIdentifier("rule-add")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("rules")
+    }
+
+    private func add() {
+        guard !busy else { return }
+        busy = true
+        Task {
+            if await model.addRule(name: name, command: command) {
+                name = ""
+                command = ""
+            }
+            busy = false
+        }
+    }
+}
+
+/// One rule: its name, its command, and the note that it came from.
+private struct RuleRow: View {
+    let model: AppModel
+    let rule: Rule
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: LoamTheme.space3) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(rule.name).loamText(LoamTheme.bodyStyle).lineLimit(1)
+                Text(rule.command).loamText(LoamTheme.codeStyle, LoamColor.inkMuted).lineLimit(1).truncationMode(.middle)
+                    .textSelection(.enabled)
+                if !rule.note.isEmpty {
+                    Text("From the note \u{201C}\(rule.note)\u{201D}").loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Button("Remove") { Task { await model.removeRule(rule.id) } }
+                .loamSecondaryButton()
+                .help("Remove the rule. The gate stops running it.")
+                .accessibilityIdentifier("rule-remove-\(rule.id)")
+        }
+        .padding(.horizontal, LoamTheme.space3)
+        .padding(.vertical, 10)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("rule-\(rule.id)")
     }
 }

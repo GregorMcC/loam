@@ -1,0 +1,29 @@
+{
+  "rule_offer": {
+    "earlier": "Keep the README short.",
+    "earlier_run_id": "runraaaaac",
+    "earlier_title": "Tidy the README",
+    "note": "Keep the README short, please."
+  },
+  "run": {
+    "created_at": "2026-01-01T00:00:00Z",
+    "done_when": [
+      {
+        "command": "test -f GUIDE.md",
+        "name": "Guide"
+      }
+    ],
+    "folder": "/tmp/loam-contract/loamhome/worktrees/plotaaaaae/web-write-the-guide",
+    "goal": "",
+    "id": "runraaaaag",
+    "max_tries": 2,
+    "note": "Sent back with 1 note",
+    "plot_id": "plotaaaaae",
+    "session_id": "c57ef956-3136-4e86-bfde-da8facfe0523",
+    "state": "running",
+    "title": "Write the guide",
+    "tries": 1,
+    "updated_at": "2026-01-01T00:00:00Z",
+    "worktree_id": "wtreaaaaav"
+  }
+}

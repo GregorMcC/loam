@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -157,7 +158,11 @@ func prepare(s *store.Store, plot store.Plot, o StartOptions, title string, tick
 // moves its Linear issue to In Progress. When claude --bg fails, the run is
 // Stopped, with its output as the note.
 func launch(ctx context.Context, s *store.Store, r store.Run, o StartOptions, res *StartResult) (*StartResult, error) {
-	plan, err := session.PrepareRun(s, r, Prompt(r), o.Loam, o.Model)
+	rules, err := s.ListRules(r.PlotID)
+	if err != nil {
+		return nil, stopAfter(s, r.ID, err)
+	}
+	plan, err := session.PrepareRun(s, r, Prompt(r, rules), o.Loam, o.Model)
 	if err != nil {
 		return nil, stopAfter(s, r.ID, err)
 	}
@@ -394,8 +399,8 @@ func failureNote(what string, err error, out string) string {
 }
 
 // Prompt is the first prompt of a run's session: the title, the goal, the
-// Done when checks, and how the gate works.
-func Prompt(r store.Run) string {
+// Done when checks, the rules of the plot, and how the gate works.
+func Prompt(r store.Run, rules []store.Rule) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Loam run %s: %s\n", r.ID, r.Title)
 	if r.Goal != "" {
@@ -418,10 +423,17 @@ func Prompt(r store.Run) string {
 			}
 		}
 	}
-	if len(r.DoneWhen) > 0 {
+	checks := slices.Clone(r.DoneWhen)
+	for _, rule := range rules {
+		checks = append(checks, rule.Check())
+	}
+	if len(checks) > 0 {
 		b.WriteString("\nDone when these checks pass in this folder:\n")
-		for _, c := range r.DoneWhen {
+		for _, c := range checks {
 			fmt.Fprintf(&b, "- %s: `%s`\n", c.Name, c.Command)
+		}
+		if len(rules) > 0 {
+			b.WriteString("The checks named Rule are rules of the plot: every run must pass them.\n")
 		}
 		fmt.Fprintf(&b, "\nEach time you end a turn, Loam runs the checks. When a check fails, Loam sends you its output, and you continue. You have %d tries.\n", r.MaxTries)
 	} else {

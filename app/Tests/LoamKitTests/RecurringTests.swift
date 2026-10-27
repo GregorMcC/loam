@@ -15,16 +15,18 @@ import Testing
     }
 
     @Test func thePageReadsTheRecurringRunsAndTheAgent() async throws {
-        let (model, fake) = try model([("recurring_list", 0), ("tick_status", 0)])
+        let (model, fake) = try model([("recurring_list", 0), ("tick_status", 0), ("rule_list", 0)])
         await model.showRecurring(plot: "plotaaaaae")
         #expect(model.page == .recurring("plotaaaaae"))
         #expect(model.recurring.map(\.title) == ["Bump Go dependencies", "Shape new issues"])
         #expect(model.tickStatus?.installed == true)
-        #expect(fake.args() == ["recurring list --json -- plotaaaaae", "tick status --json"])
+        #expect(model.rules.map(\.name) == ["Short README"])
+        #expect(fake.args() == ["recurring list --json -- plotaaaaae", "tick status --json", "rule list --json -- plotaaaaae"])
     }
 
     @Test func aNewRecurringRunGoesToTheCoreWithItsTimetable() async throws {
-        let (model, fake) = try model([("recurring_list", 0), ("tick_status", 0), ("recurring_add", 0), ("recurring_list", 0)])
+        let (model, fake) = try model([("recurring_list", 0), ("tick_status", 0), ("rule_list", 0), ("recurring_add", 0),
+                                       ("recurring_list", 0)])
         await model.showRecurring(plot: "plotaaaaae")
         var draft = RecurringDraft()
         draft.title = "Shape new issues"
@@ -33,7 +35,7 @@ import Testing
         draft.at = "07:00"
         draft.precheck = "  gh issue list --json number --jq length | grep -qv '^0$' "
         #expect(await model.addRecurring(draft))
-        #expect(fake.args().dropFirst(2).first == "recurring add --title Shape new issues --prompt Shape a run for each new bug. "
+        #expect(fake.args().dropFirst(3).first == "recurring add --title Shape new issues --prompt Shape a run for each new bug. "
             + "--kind shape --days fri,mon --at 07:00 --if-asleep once "
             + "--precheck gh issue list --json number --jq length | grep -qv '^0$' --json -- plotaaaaae")
         #expect(fake.args().last == "recurring list --json -- plotaaaaae")
@@ -41,46 +43,83 @@ import Testing
     }
 
     @Test func aRecurringRunThatTheCoreRefusesSaysWhy() async throws {
-        let (model, _) = try model([("recurring_list", 0), ("tick_status", 0), ("error_invalid", 2)])
+        let (model, _) = try model([("recurring_list", 0), ("tick_status", 0), ("rule_list", 0), ("error_invalid", 2)])
         await model.showRecurring(plot: "plotaaaaae")
         #expect(await model.addRecurring(RecurringDraft()) == false)
         #expect(model.recurringError?.isEmpty == false)
     }
 
     @Test func runNowSaysWhatItDidAndReadsTheRunsAgain() async throws {
-        let (model, fake) = try model([("recurring_list", 0), ("tick_status", 0), ("recurring_run", 0), ("run_list", 0),
-                                       ("recurring_list", 0)])
+        let (model, fake) = try model([("recurring_list", 0), ("tick_status", 0), ("rule_list", 0), ("recurring_run", 0),
+                                       ("run_list", 0), ("recurring_list", 0)])
         var toasts: [String] = []
         model.onToast = { text, _ in toasts.append(text) }
         await model.showRecurring(plot: "plotaaaaae")
         let id = try #require(model.recurring.last?.id)
         await model.runRecurringNow(id)
-        #expect(fake.args()[2] == "recurring run --json -- \(id)")
-        #expect(fake.args()[3] == "run list --json")
+        #expect(fake.args()[3] == "recurring run --json -- \(id)")
+        #expect(fake.args()[4] == "run list --json")
         #expect(toasts == ["Shape new issues: Claude drafted a run for your approval"])
     }
 
     @Test func removeAndTheAgentGoToTheCore() async throws {
-        let (model, fake) = try model([("recurring_list", 0), ("tick_status", 0), ("recurring_rm", 0), ("recurring_list", 0),
-                                       ("tick_uninstall", 0)])
+        let (model, fake) = try model([("recurring_list", 0), ("tick_status", 0), ("rule_list", 0), ("recurring_rm", 0),
+                                       ("recurring_list", 0), ("tick_uninstall", 0)])
         await model.showRecurring(plot: "plotaaaaae")
         let id = try #require(model.recurring.last?.id)
         await model.removeRecurring(id)
         await model.setTickAgent(installed: false)
-        #expect(Array(fake.args().dropFirst(2)) == ["recurring rm --json -- \(id)", "recurring list --json -- plotaaaaae",
+        #expect(Array(fake.args().dropFirst(3)) == ["recurring rm --json -- \(id)", "recurring list --json -- plotaaaaae",
                                                     "tick uninstall --json"])
         #expect(model.tickStatus?.installed == false)
     }
 
     /// With no launchd agent, the app ticks the recurring runs itself while it is open.
     @Test func theAppTicksTheRecurringRunsWhenNoAgentDoes() async throws {
-        let (model, fake) = try model([("recurring_list", 0), ("tick_uninstall", 0), ("tick", 0), ("run_list", 0),
-                                       ("recurring_list", 0)])
+        let (model, fake) = try model([("recurring_list", 0), ("tick_uninstall", 0), ("rule_list", 0), ("tick", 0),
+                                       ("run_list", 0), ("recurring_list", 0)])
         await model.showRecurring(plot: "plotaaaaae")
         #expect(model.appTicksRecurring)
         // The tick skipped a run, so the runs and the page read again.
         await model.tickRecurring()
         #expect(Array(fake.args().suffix(3)) == ["tick --json", "run list --json", "recurring list --json -- plotaaaaae"])
+    }
+}
+
+/// Ticket 209: the Recurring page also lists the rules of the plot, and adds and removes them.
+@MainActor
+@Suite(.waitLimit) struct RuleTests {
+    func model(_ fixtures: [(String, Int32)]) throws -> (AppModel, FakeLoam) {
+        let fake = try FakeLoam([("recurring_list", 0), ("tick_status", 0), ("rule_list", 0)] + fixtures)
+        let model = AppModel(client: fake.client())
+        model.apply([PlotSummary(id: "plotaaaaae", name: "Runs", what: "", createdAt: "2026-01-01T00:00:00Z")])
+        return (model, fake)
+    }
+
+    @Test func aRuleGoesToTheCoreAndThePageReadsTheRulesAgain() async throws {
+        let (model, fake) = try model([("rule_add", 0), ("rule_list", 0)])
+        await model.showRecurring(plot: "plotaaaaae")
+        #expect(await model.addRule(name: " Short README ", command: " test $(wc -l < README.md) -lt 40 "))
+        #expect(Array(fake.args().dropFirst(3)) == [
+            "rule add --name Short README --command test $(wc -l < README.md) -lt 40 --json -- plotaaaaae",
+            "rule list --json -- plotaaaaae",
+        ])
+        #expect(model.recurringError == nil)
+    }
+
+    @Test func aRuleThatTheCoreRefusesSaysWhy() async throws {
+        let (model, _) = try model([("error_rule_add_no_command", 2)])
+        await model.showRecurring(plot: "plotaaaaae")
+        #expect(await model.addRule(name: "Short README", command: "x") == false)
+        #expect(model.recurringError?.contains("a name and a command") == true)
+    }
+
+    @Test func removeGoesToTheCore() async throws {
+        let (model, fake) = try model([("rule_rm", 0), ("rule_list", 0)])
+        await model.showRecurring(plot: "plotaaaaae")
+        let id = try #require(model.rules.first?.id)
+        await model.removeRule(id)
+        #expect(Array(fake.args().dropFirst(3)) == ["rule rm --json -- \(id)", "rule list --json -- plotaaaaae"])
     }
 }
 

@@ -83,6 +83,79 @@ extension Scenarios {
         NSApp.appearance = nil
     }
 
+    static func ruleShot(_ app: DriverApp) async throws {
+        do { try await ruleShotSteps(app) } catch { app.dumpAccessibility(); throw error }
+    }
+
+    /// Ticket 209: rules. An earlier run had the note "Keep the README short" sent back. A second run stops at the
+    /// desk, and you send back a note like it. The desk offers a rule, and Add rule adds it with its command,
+    /// typed. The Recurring page lists the rule of the plot.
+    private static func ruleShotSteps(_ app: DriverApp) async throws {
+        let (rig, environment, _) = try shotRig(app)
+        let (repo, _) = try widgetsRepo(rig, onGitHub: false)
+        let plot = try rig.newPlot("Loam v1 build")
+        try rig.loam(["repo", "add", plot, repo.path], extra: environment)
+        /// A run whose one check fails, so its first stop stops it.
+        func stoppedRun(_ title: String) throws -> String {
+            let text = try rig.loam(["run", "start", plot, "--title", title, "--check", "Guide=test -f GUIDE.md",
+                                     "--max-tries", "1", "--json"], extra: environment)
+            guard let id = ((try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])?["run"]
+                as? [String: Any])?["id"] as? String else {
+                throw DriverFailure("run start printed no run: \(text)")
+            }
+            for event in ["SessionStart", "Stop"] {
+                try rig.loam(["run", "hook", id], extra: environment,
+                             input: #"{"hook_event_name": "\#(event)", "session_id": "\#(GitHubRun.session)"}"#)
+            }
+            return id
+        }
+        let earlier = try stoppedRun("Tidy the README")
+        try rig.loam(["run", "send-back", earlier, "--note", "README.md:3: Keep the README short."], extra: environment)
+        try rig.loam(["run", "stop", earlier], extra: environment)
+        let id = try stoppedRun("Write the guide")
+
+        let host = try await app.launchApp(
+            client: LoamClient(binary: rig.binary, environment: environment), state: rig.stateFile, terminals: true)
+        app.runtime.applyWindowAppearance(to: host.window)
+        let model = host.model
+        func appearance(_ name: NSAppearance.Name) async {
+            NSApp.appearance = NSAppearance(named: name)
+            await app.sleep(1)
+        }
+        await appearance(.darkAqua)
+        try await app.waitUntil("the run is stopped") { model.runs.contains { $0.id == id && $0.state == .stopped } }
+        await model.openDesk(id)
+        try await app.waitUntil("the desk shows the run") { model.desk.runID == id && app.exists("desk-run-note-field") }
+
+        // A note on the whole run goes back. It is like the earlier note, so the desk offers a rule.
+        model.addDeskNote(file: nil, line: nil, text: "Keep the README short, please. One screen at most.")
+        try await app.waitUntil("Send back is on") { AccessibilityProbe.shared.isEnabled("desk-send-back") }
+        try app.click("desk-send-back")
+        try await app.waitUntil("the desk offers a rule") { model.desk.ruleOffer != nil && app.exists("desk-rule-offer") }
+        try confirm(model.desk.ruleOffer?.offer.earlier == "Keep the README short.",
+                    "the offer is \(String(describing: model.desk.ruleOffer))")
+        try app.fill("desk-rule-command", with: "test $(wc -l < README.md) -lt 40")
+        try await app.waitUntil("Add rule is on") { AccessibilityProbe.shared.isEnabled("desk-rule-add") }
+        await app.sleep(0.5)
+        app.screenshot("rule-offer-night")
+        await appearance(.aqua)
+        app.screenshot("rule-offer-day")
+        await appearance(.darkAqua)
+        try app.click("desk-rule-add")
+        try await app.waitUntil("the rule is added") { model.desk.ruleOffer == nil && !app.exists("desk-rule-offer") }
+
+        // The Recurring page lists the rule.
+        await model.showRecurring(plot: plot)
+        try await app.waitUntil("the page lists the rule") { model.rules.count == 1 && app.exists("rule-\(model.rules[0].id)") }
+        try confirm(model.rules[0].name == "Keep the README short" && model.rules[0].note.hasPrefix("Keep the README short, please."),
+                    "the rule is \(model.rules[0])")
+        await app.sleep(0.5)
+        app.screenshot("rules-night")
+        await appearance(.aqua)
+        app.screenshot("rules-day")
+        NSApp.appearance = nil
+    }
+
     private static func confirm(_ condition: Bool, _ message: @autoclosure () -> String) throws {
         if !condition { throw DriverFailure(message()) }
     }

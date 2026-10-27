@@ -39,12 +39,20 @@ type gateResult struct {
 	failed  []checkResult
 }
 
-// gate runs each Done when check of the run in its folder, then the
-// committed check, and records each result as a run event.
+// gate runs each Done when check of the run in its folder, then each rule
+// of its plot, then the committed check, and records each result as a run
+// event. A rule that Loam cannot read is left out, with a log line.
 func gate(ctx context.Context, s *store.Store, r store.Run, logf func(string, ...any)) gateResult {
 	var g gateResult
 	for _, c := range r.DoneWhen {
 		g.add(runCheck(ctx, r.Folder, c))
+	}
+	rules, err := s.ListRules(r.PlotID)
+	if err != nil {
+		logf("run %s: read the rules: %v", r.ID, err)
+	}
+	for _, rule := range rules {
+		g.add(runCheck(ctx, r.Folder, rule.Check()))
 	}
 	g.add(committed(ctx, r.Folder))
 	for _, res := range g.results {

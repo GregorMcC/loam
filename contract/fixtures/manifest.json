@@ -1255,5 +1255,70 @@
     ],
     "exit_code": 0,
     "schema": "recurring"
+  },
+  {
+    "name": "run_send_back_rule_offer",
+    "args": [
+      "run",
+      "send-back",
+      "runraaaaag",
+      "--note",
+      "Keep the README short, please.",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "run-send-back"
+  },
+  {
+    "name": "rule_add",
+    "args": [
+      "rule",
+      "add",
+      "Runs",
+      "--name",
+      "Short README",
+      "--command",
+      "test $(wc -l \u003c README.md) -lt 40",
+      "--note",
+      "Keep the README short, please.",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "rule"
+  },
+  {
+    "name": "rule_list",
+    "args": [
+      "rule",
+      "list",
+      "Runs",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "rule-list"
+  },
+  {
+    "name": "rule_rm",
+    "args": [
+      "rule",
+      "rm",
+      "ruleaaaaab",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "rule"
+  },
+  {
+    "name": "error_rule_add_no_command",
+    "args": [
+      "rule",
+      "add",
+      "Runs",
+      "--name",
+      "Short README",
+      "--json"
+    ],
+    "exit_code": 2,
+    "schema": "error"
   }
 ]

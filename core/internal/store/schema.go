@@ -196,6 +196,18 @@ CREATE TABLE recurring (
 );
 CREATE INDEX recurring_next ON recurring(next_at);
 `,
+	// 13: rules (ticket 209): checks that every run of a plot must pass.
+	`
+CREATE TABLE rules (
+  id TEXT PRIMARY KEY,
+  plot_id TEXT NOT NULL REFERENCES plots(id),
+  name TEXT NOT NULL,
+  command TEXT NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX rules_plot ON rules(plot_id, created_at);
+`,
 }
 
 // SchemaVersion is the schema version of this binary.

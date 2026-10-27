@@ -64,6 +64,8 @@ func decodeFixture(schema: String, data: Data) throws {
     case "recurring": _ = try d.decode(RecurringOne.self, from: data)
     case "recurring-list": _ = try d.decode(RecurringList.self, from: data)
     case "recurring-run": _ = try d.decode(RecurringResult.self, from: data)
+    case "rule": _ = try d.decode(RuleOne.self, from: data)
+    case "rule-list": _ = try d.decode(RuleList.self, from: data)
     case "tick": _ = try d.decode(TickResult.self, from: data)
     case "tick-status": _ = try d.decode(TickStatus.self, from: data)
     case "intake-list": _ = try d.decode(IntakeList.self, from: data)
@@ -92,6 +94,16 @@ func decodeFixture(schema: String, data: Data) throws {
         #expect(shape.plan.count == 2 && shape.size == "About 60 lines in the app." && shape.isDrafted)
         let approved = try JSONDecoder().decode(RunStartResult.self, from: Fixtures.data("run_approve")).run
         #expect(approved.shape?.assumptions.first?.answer == "The plan shows as steps with checkboxes.")
+    }
+
+    /// Ticket 209: a send-back whose note is like an earlier note offers a rule.
+    @Test func aSendBackDecodesItsRuleOffer() throws {
+        #expect(try JSONDecoder().decode(RunResult.self, from: Fixtures.data("run_send_back")).ruleOffer == nil)
+        let offer = try #require(try JSONDecoder().decode(RunResult.self, from: Fixtures.data("run_send_back_rule_offer")).ruleOffer)
+        #expect(offer.note == "Keep the README short, please." && offer.earlier == "Keep the README short.")
+        #expect(offer.earlierTitle == "Tidy the README" && !offer.earlierRunID.isEmpty)
+        let rule = try JSONDecoder().decode(RuleOne.self, from: Fixtures.data("rule_add")).rule
+        #expect(rule.name == "Short README" && rule.note == "Keep the README short, please.")
     }
 
     @Test func aRecurringRunAndATickDecode() throws {

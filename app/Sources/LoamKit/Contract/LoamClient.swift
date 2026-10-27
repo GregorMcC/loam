@@ -328,6 +328,26 @@ public struct LoamClient: Sendable {
         try await read(["recurring", "run"], positionals: [id])
     }
 
+    /// `loam rule list [<plot>]`: the rules of the plot, or of every plot, oldest first.
+    public func ruleList(plot: String? = nil) async throws -> [Rule] {
+        let list: RuleList = try await read(["rule", "list"], positionals: plot.map { [$0] } ?? [])
+        return list.rules
+    }
+
+    /// `loam rule add <plot>`: a check that every run of the plot must pass. `note` is the note that it came from.
+    public func ruleAdd(plot: String, name: String, command: String, note: String = "") async throws -> Rule {
+        var args = ["rule", "add", "--name", name, "--command", command]
+        if !note.isEmpty { args += ["--note", note] }
+        let one: RuleOne = try await read(args, positionals: [plot])
+        return one.rule
+    }
+
+    /// `loam rule rm <rule>`. The gate stops running it.
+    public func ruleRemove(_ id: String) async throws -> Rule {
+        let one: RuleOne = try await read(["rule", "rm"], positionals: [id])
+        return one.rule
+    }
+
     /// `loam tick`: starts the recurring runs that are due, then ships runs as `loam run tick` does.
     public func tick() async throws -> TickResult {
         try await read(["tick"])

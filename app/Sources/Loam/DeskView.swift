@@ -15,6 +15,11 @@ struct DeskView: View {
         VStack(spacing: 0) {
             DeskBar(model: model, queue: queue, typing: field != nil)
             Divider()
+            if let offer = model.desk.ruleOffer {
+                DeskRuleOfferCard(model: model, offer: offer, field: $field)
+                    .id(offer.offer.note)
+                Divider()
+            }
             if let run, run.state == .shaping {
                 DeskShape(model: model, run: run, field: $field)
             } else if let run {
@@ -36,12 +41,99 @@ enum DeskField: Hashable {
     case check
     case answer
     case change
+    case ruleName
+    case ruleCommand
 }
 
 extension View {
     /// The key of the desk, or none while you type in a note.
     func deskKey(_ key: KeyEquivalent, typing: Bool) -> some View {
         keyboardShortcut(typing ? nil : KeyboardShortcut(key, modifiers: []))
+    }
+}
+
+/// The rule that Loam offers after a send-back (ticket 209): the note is like a note that you sent back on another
+/// run of the plot, so a check can catch it on every run. You name the rule and give its command. The offer stays
+/// while you move through the queue.
+private struct DeskRuleOfferCard: View {
+    let model: AppModel
+    let offer: DeskRuleOffer
+    let field: FocusState<DeskField?>.Binding
+    @State private var name: String
+    @State private var command = ""
+    @State private var busy = false
+
+    init(model: AppModel, offer: DeskRuleOffer, field: FocusState<DeskField?>.Binding) {
+        self.model = model
+        self.offer = offer
+        self.field = field
+        _name = State(initialValue: Self.name(from: offer.offer.note))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: LoamTheme.space2) {
+            HStack(alignment: .firstTextBaseline, spacing: LoamTheme.space2) {
+                Image(systemName: "checkmark.seal").foregroundStyle(LoamColor.moss)
+                Text("Make this note a rule?").loamText(LoamTheme.rowStyle)
+                Text("You sent back a note like it on \u{201C}\(offer.offer.earlierTitle)\u{201D}: \u{201C}\(offer.offer.earlier)\u{201D}")
+                    .loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+                    .lineLimit(1).truncationMode(.tail)
+            }
+            Text("A rule is a check that every run of the plot must pass. The gate runs it after the checks of each run.")
+                .loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+            HStack(spacing: LoamTheme.space2) {
+                TextField("Name", text: $name)
+                    .textFieldStyle(.plain).loamText(LoamTheme.bodyStyle)
+                    .padding(.horizontal, 9).frame(width: 200, height: 28).loamFieldBox()
+                    .focused(field, equals: .ruleName)
+                    .accessibilityLabel("Rule name")
+                    .accessibilityIdentifier("desk-rule-name")
+                TextField("Command", text: $command, prompt: Text("A command that exits 0 when the rule holds"))
+                    .textFieldStyle(.plain).loamText(LoamTheme.codeStyle)
+                    .padding(.horizontal, 9).frame(height: 28).loamFieldBox()
+                    .focused(field, equals: .ruleCommand)
+                    .onSubmit(add)
+                    .accessibilityLabel("Rule command")
+                    .accessibilityIdentifier("desk-rule-command")
+                Button("Not now") { model.dismissDeskRuleOffer() }
+                    .loamSecondaryButton()
+                    .help("Loam offers it again the next time that you send back a note like it")
+                    .accessibilityIdentifier("desk-rule-not-now")
+                Button("Add rule", action: add)
+                    .loamPrimaryButton()
+                    .disabled(busy || name.trimmingCharacters(in: .whitespaces).isEmpty
+                              || command.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .accessibilityIdentifier("desk-rule-add")
+            }
+            if let error = offer.error {
+                Text(error).loamText(LoamTheme.captionStyle, LoamColor.rust).textSelection(.enabled)
+                    .accessibilityIdentifier("desk-rule-error")
+            }
+        }
+        .padding(.horizontal, LoamTheme.space6)
+        .padding(.vertical, LoamTheme.space3)
+        .background(LoamColor.mossWash)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("desk-rule-offer")
+    }
+
+    private func add() {
+        guard !busy else { return }
+        busy = true
+        Task {
+            if await model.addDeskRule(name: name, command: command) { field.wrappedValue = nil }
+            busy = false
+        }
+    }
+
+    /// The note as a name: its first sentence, with no "please" and no full stop.
+    static func name(from note: String) -> String {
+        var name = note.split(whereSeparator: { ".!?\n".contains($0) }).first.map(String.init) ?? note
+        for please in [", please", "Please, ", "Please "] {
+            name = name.replacingOccurrences(of: please, with: "", options: [.caseInsensitive])
+        }
+        name = name.trimmingCharacters(in: .whitespaces)
+        return name.prefix(1).uppercased() + name.dropFirst()
     }
 }
 

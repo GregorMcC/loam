@@ -55,13 +55,15 @@ extension AppModel {
         if desk.notes[id]?.isEmpty == true { desk.notes[id] = nil }
     }
 
-    /// Sends your notes on the run back to its session (`loam run send-back`), and shows the next run.
+    /// Sends your notes on the run back to its session (`loam run send-back`), and shows the next run. A note like
+    /// one that you sent back on another run of the plot offers a rule.
     public func sendBackDeskNotes() async {
         guard let id = desk.runID, !desk.busy, !desk.currentNotes.isEmpty else { return }
         let notes = desk.currentNotes.map(\.argument)
         await deskAction(id) {
-            _ = try await self.client.runSendBack(id, notes: notes)
+            let result = try await self.client.runSendBack(id, notes: notes)
             self.desk.notes[id] = nil
+            if let offer = result.ruleOffer { self.desk.ruleOffer = DeskRuleOffer(plotID: result.run.plotID, offer: offer) }
         }
     }
 
@@ -186,11 +188,13 @@ extension AppModel {
         desk.diff = nil
         desk.file = nil
         desk.error = nil
+        desk.rules = []
         runStatus = nil
         guard let id else { return }
-        // A draft has no work to read yet.
-        if runs.first(where: { $0.id == id })?.state == .shaping {
+        // A draft has no work to read yet. The rules of its plot join its checks.
+        if let run = runs.first(where: { $0.id == id }), run.state == .shaping {
             await readRunStatus(id)
+            await readDeskRules(plot: run.plotID)
             return
         }
         do {

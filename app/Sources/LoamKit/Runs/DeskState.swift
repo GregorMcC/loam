@@ -20,6 +20,12 @@ public struct DeskState: Equatable, Sendable {
     public var shapeEdits: [String: ShapeEdit] = [:]
     /// The runs that Claude drafts again now.
     public var drafting: Set<String> = []
+    /// The rules of the plot of the run in Shaping that the desk shows (ticket 209). The gate runs them after the
+    /// checks of the draft.
+    public var rules: [Rule] = []
+    /// The rule that Loam offers after a send-back, until you add it or say not now. It stays while you move
+    /// through the queue.
+    public var ruleOffer: DeskRuleOffer?
 
     public init() {}
 
@@ -32,6 +38,19 @@ public struct DeskState: Equatable, Sendable {
     /// True when the last approval stopped at a new or changed setup command. The core names the command in
     /// `error`, and the next approval approves it.
     public var needsSetupApproval: Bool { error?.contains("--approve-setup") == true }
+}
+
+/// A rule that Loam offers after a send-back (ticket 209): a note that you sent back on two runs of the plot.
+public struct DeskRuleOffer: Equatable, Sendable {
+    public var plotID: String
+    public var offer: RuleOffer
+    /// Why the last Add rule failed.
+    public var error: String?
+
+    public init(plotID: String, offer: RuleOffer) {
+        self.plotID = plotID
+        self.offer = offer
+    }
 }
 
 /// Your edits of the draft of a run in Shaping. Nil, or no answer, keeps what Claude drafted.

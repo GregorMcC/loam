@@ -174,6 +174,8 @@ public final class AppModel {
     public internal(set) var tickStatus: TickStatus?
     /// True when a plot has a recurring run, as the last list said.
     var hasRecurring = false
+    /// The rules of the plot that the Recurring page shows (ticket 209).
+    public internal(set) var rules: [Rule] = []
     /// Set when the launch check fails. The window shows it and loads nothing else.
     public private(set) var launchBlock: String?
     /// The setup steps that are not done. A non-empty list shows the setup banner.

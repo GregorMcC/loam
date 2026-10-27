@@ -24,3 +24,24 @@ func TestParseNote(t *testing.T) {
 		t.Error("an empty note parsed")
 	}
 }
+
+func TestSimilarNotes(t *testing.T) {
+	for _, tc := range []struct {
+		a, b string
+		want bool
+	}{
+		{"Keep the README short.", "Please keep the README short!", true},
+		{"Use the colour tokens in views.", "Views must use the colour tokens.", true},
+		{"Keep the README short.", "Keep the test names short.", false},
+		// One word in common is not enough.
+		{"Add a test.", "Add a comment.", false},
+		{"", "Keep it short.", false},
+	} {
+		if got := similarNotes(tc.a, tc.b); got != tc.want {
+			t.Errorf("similarNotes(%q, %q) = %v", tc.a, tc.b, got)
+		}
+	}
+	if got := noteText("docs/a.md line 4: Keep it short."); got != "Keep it short." {
+		t.Errorf("noteText = %q", got)
+	}
+}

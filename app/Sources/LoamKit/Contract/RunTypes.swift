@@ -168,9 +168,16 @@ public struct RunStatus: Codable, Equatable, Sendable {
     public var events: [RunEvent]
 }
 
-/// Output of `loam run stop` and `loam run send-back`: the run after the change.
+/// Output of `loam run stop` and `loam run send-back`: the run after the change. A send-back has a rule offer when
+/// a note is like a note that you sent back on another run of the plot (ticket 209).
 public struct RunResult: Codable, Equatable, Sendable {
     public var run: Run
+    public var ruleOffer: RuleOffer?
+
+    enum CodingKeys: String, CodingKey {
+        case run
+        case ruleOffer = "rule_offer"
+    }
 }
 
 /// Output of `loam run land` (ticket 207): the run after the land, and what the land of its worktree did.

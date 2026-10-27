@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "loam run send-back --json",
-  "description": "The run after the send-back: Running, with the notes sent to its session.",
+  "description": "The run after the send-back: Running, with the notes sent to its session. rule_offer is there when a note is like a note that you sent back on another run of the plot.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -10,6 +10,9 @@
   "properties": {
     "run": {
       "$ref": "defs.json#/$defs/run"
+    },
+    "rule_offer": {
+      "$ref": "defs.json#/$defs/ruleOffer"
     }
   }
 }

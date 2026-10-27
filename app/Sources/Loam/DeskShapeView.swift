@@ -240,6 +240,13 @@ private struct DeskChecks: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
+                if !model.desk.rules.isEmpty {
+                    let count = model.desk.rules.count
+                    Text("+ \(count) rule \(count == 1 ? "check" : "checks")")
+                        .loamText(LoamTheme.bodyStyle, LoamColor.inkMuted)
+                        .help(model.desk.rules.map { "Rule: \($0.name)" }.joined(separator: "\n"))
+                        .accessibilityIdentifier("desk-rule-checks")
+                }
                 HStack(alignment: .firstTextBaseline, spacing: LoamTheme.space3) {
                     Text("And the work is committed").loamText(LoamTheme.bodyStyle, LoamColor.inkMuted)
                     Spacer()

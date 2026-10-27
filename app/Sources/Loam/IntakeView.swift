@@ -74,9 +74,9 @@ struct IntakeView: View {
             HStack(alignment: .firstTextBaseline) {
                 Text("Intake").loamText(LoamTheme.plotNameStyle)
                 Spacer()
-                Button("Recurring runs") { Task { await model.showRecurring(plot: plotID) } }
+                Button("Recurring and rules") { Task { await model.showRecurring(plot: plotID) } }
                     .loamSecondaryButton()
-                    .help("The runs of this plot that start on a timetable")
+                    .help("The runs of this plot that start on a timetable, and the rules that every run must pass")
                     .accessibilityIdentifier("intake-recurring")
             }
             Text(model.plots.first { $0.id == plotID }?.name ?? "").loamText(LoamTheme.bodyStyle, LoamColor.inkMuted)

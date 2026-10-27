@@ -548,7 +548,7 @@ The gate is the Stop hook of the session. Each time the session ends a turn, Loa
 | :- | :- |
 | `loam run start <plot> --title <text> [--goal <text>] [--check <name>=<command>]... [--worktree <name>] [--repo <repo>] [--base <branch>] [--link <link-id or URL> \| --ticket <file>] [--max-tries <n>] [--model <model>] [--approve-setup]` | `{ "run": {...}, "worktree": {...} }` |
 | `loam run list [<plot>]` | An array of runs, newest first. It is `[]` when none exists. |
-| `loam run status <run>` | `{ "run": {...}, "events": [{ "id": 1, "run_id": "...", "at": "...", "kind": "state", "detail": "running" }] }`. `kind` is `state`, `try`, `check`, `linear`, `ship`, `ci`, `review`, `land`, or `shape`. |
+| `loam run status <run>` | `{ "run": {...}, "events": [{ "id": 1, "run_id": "...", "at": "...", "kind": "state", "detail": "running" }] }`. `kind` is `state`, `try`, `check`, `linear`, `ship`, `ci`, `review`, `note`, `land`, or `shape`. |
 | `loam run stop <run>` | `{ "run": {...} }`. The run is `cancelled`. A run that has ended stays as it is. |
 | `loam run tick` | `{ "runs": [...], "warnings": ["..."] }`. `runs` are the runs that the tick moved. Both are `[]` when none. |
 
@@ -577,11 +577,12 @@ A tick also watches the PR of each run that is `ready` and has a `pr`. A merge o
 | Command | Output |
 | :- | :- |
 | `loam run diff <run>` | `{ "base": "<commit>", "head": "<commit>", "files": [{ "path": "README.md", "status": "modified", "added": 3, "deleted": 1, "hunks": [{ "header": "@@ -1 +1,3 @@", "old_start": 1, "new_start": 1, "lines": [{ "kind": "del", "old": 1, "text": "hello" }, { "kind": "add", "new": 1, "text": "# Loam" }] }] }] }` |
-| `loam run send-back <run> --note <text>...` | `{ "run": { ... } }` |
+| `loam run send-back <run> --note <text>...` | `{ "run": { ... }, "rule_offer": { "note": "...", "earlier": "...", "earlier_run_id": "...", "earlier_title": "..." } }` |
 | `loam run land <run> [--head <commit>] [--keep-worktree] [--open-pane <folder>]... [--dry-run]` | `{ "run": { ... }, "land": { ... }, "warnings": [] }` |
 
 - `run diff` is the work that the run committed: from `base`, the commit where its branch left the base of its worktree, to `head`. `status` is `added`, `modified`, `deleted`, or `renamed`, with `old_path` for a rename. A binary file has `binary` and no hunks. A file keeps at most 3000 lines and then has `truncated`; `added` and `deleted` count every line. A line has `old`, `new`, or both: the numbers of the line before and after the change.
-- `run send-back` takes a run that is `ready` or `stopped`, and at least one note. A note is `<file>:<line>: <text>` for a line, or text alone. Loam stops the session and resumes it with the notes as its prompt, as for a CI failure, and the run is `running` ("Sent back with 2 notes", event `review`). A note uses no try. A run with no tries left gets one more (`max_tries` goes up by 1). The next gate that passes ships the change to the same PR.
+- `run send-back` takes a run that is `ready` or `stopped`, and at least one note. A note is `<file>:<line>: <text>` for a line, or text alone. Loam stops the session and resumes it with the notes as its prompt, as for a CI failure, and the run is `running` ("Sent back with 2 notes", event `review`). A note uses no try. A run with no tries left gets one more (`max_tries` goes up by 1). The next gate that passes ships the change to the same PR. Each note is an event `note`: `<file> line <n>: <text>`, or the text alone.
+- `rule_offer` is there when a note is like a note on another run of the plot: they share at least 2 words, and at least half of all their words, when Loam leaves out short and common words. A note like the `note` of a rule of the plot gets no offer. `note` and `earlier` are the texts of the two notes, and `earlier_run_id` is the other run. The app offers to make the note a rule with `loam rule add`.
 - `run land` takes a run that is `ready` and has a `pr`. Loam stops the session, because the land removes the worktree, then lands the worktree as `loam worktree land` does, with the default merge method: `land` is the `worktree land` result. A merge makes the run `landed` ("Merged #25 with squash", event `land`), and its Linear issue moves to the first completed state (event `linear`). With a merge queue, the run stays `ready` ("#25 is in the merge queue of main"), and a tick lands it when GitHub merges. `--dry-run` changes nothing, and `land` is the plan.
 - A run in another state, or with no PR, exits 2. A check that blocks the merge exits 16, and gh missing or signed out exits 17, as for `worktree land`.
 
@@ -599,6 +600,24 @@ A tick also watches the PR of each run that is `ready` and has a `pr`. A merge o
 - `run approve` takes a `shaping` run that has a draft. Loam makes the worktree, as `run start` does with the `repo`, `base`, and `link` of the shape, and starts the session. `--goal` and `--check` replace the draft's, and `--answer` sets the `answer` of an assumption, by number from 1. The session prompt holds the assumptions, with your answer in place of an assumption that you changed, and the plan. A run in another state, a run with no draft, or an answer to no assumption exits 2.
 - `run stop` on a `shaping` run cancels it, with no `claude stop`.
 - The `shape` of a run that a recurring run shaped has a `brief`: the prompt of the recurring run and what its precheck printed. Claude drafts from it, as from the text of an issue.
+
+#### Rules
+
+A rule is a check that every run of a plot must pass, such as "Views use the colour tokens" (ticket 209). Loam keeps the rules in the store, outside the worktree, so a run cannot change them. Rules are not in the change log, as runs are not.
+
+```json
+{ "id": "ruleaaaaab", "plot_id": "k3v9q2mxa7", "name": "Short README", "command": "test $(wc -l < README.md) -lt 40", "note": "Keep the README short.", "created_at": "2026-10-01T09:00:00Z" }
+```
+
+| Command | Output |
+| :- | :- |
+| `loam rule add <plot> --name <name> --command <command> [--note <text>]` | `{ "rule": {...} }` |
+| `loam rule list [<plot>]` | `{ "rules": [...] }`, oldest first |
+| `loam rule rm <rule>` | `{ "rule": {...} }`, the one that it removed |
+
+- The gate runs the rules of the plot after the checks of the run, each as the check `Rule: <name>`, with `sh -c` in the folder of the run. A rule that fails blocks the stop as a check does. The session prompt lists the rules with the checks.
+- `note` is the note that the rule came from. A note like it gets no `rule_offer`.
+- A name or a command that is empty exits 2.
 
 #### Recurring
 
