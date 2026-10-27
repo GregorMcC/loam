@@ -132,28 +132,7 @@ extension Scenarios {
             throw DriverFailure("LOAM_DRIVER_FAKE_GH does not name the fake gh")
         }
         let (rig, shotEnvironment, _) = try shotRig(app)
-
-        let origin = rig.root.appendingPathComponent("origin.git")
-        let repo = rig.root.appendingPathComponent("widgets")
-        try fm.createDirectory(at: origin, withIntermediateDirectories: true)
-        try fm.createDirectory(at: repo, withIntermediateDirectories: true)
-        try git(origin, ["init", "--bare", "-q", "-b", "main"])
-        try git(repo, ["init", "-q", "-b", "main"])
-        try "hello\n".write(to: repo.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
-        try git(repo, ["add", "."])
-        try git(repo, ["commit", "-q", "-m", "first"])
-        try git(repo, ["remote", "add", "origin", origin.path])
-        try git(repo, ["push", "-q", "origin", "main"])
-        try git(repo, ["remote", "set-head", "origin", "main"])
-        try git(repo, ["remote", "set-url", "origin", "git@github.com:example/widgets.git"])
-        // git runs: <ssh> <host> "<git program> '<repo>'". The fake serves the bare repo for any GitHub repo.
-        let ssh = rig.root.appendingPathComponent("fake-ssh")
-        try "#!/bin/sh\nprog=${2%% *}\nexec git \"${prog#git-}\" '\(origin.path)'\n".write(to: ssh, atomically: true, encoding: .utf8)
-        try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: ssh.path)
-        let trusted = [rig.loamHome.appendingPathComponent("plots").path, repo.path]
-            .map { "\"\($0)\": {\"hasTrustDialogAccepted\": true}" }.joined(separator: ", ")
-        try "{\"projects\": {\(trusted)}}".write(to: rig.fakeHome.appendingPathComponent(".claude.json"),
-                                                  atomically: true, encoding: .utf8)
+        let (repo, ssh) = try widgetsRepo(rig, onGitHub: true)
         let ghState = rig.root.appendingPathComponent("gh-state.json")
         try #"{"issues": [{"number": 52, "title": "Paste a long prompt without a hang", "url": "https://github.com/example/widgets/issues/52", "labels": [], "updatedAt": "2026-10-22T09:00:00Z"}, {"number": 48, "title": "Install fails when the bin folder is missing", "url": "https://github.com/example/widgets/issues/48", "labels": [{"name": "bug"}], "updatedAt": "2026-10-20T10:00:00Z"}]}"#
             .write(to: ghState, atomically: true, encoding: .utf8)
@@ -176,7 +155,7 @@ extension Scenarios {
         let environment = shotEnvironment.merging([
             "LOAM_GH": fakeGH, "LOAM_FAKE_GH_STATE": ghState.path,
             "LOAM_FAKE_GH_LOG": rig.root.appendingPathComponent("gh-calls.jsonl").path,
-            "GIT_SSH_COMMAND": ssh.path,
+            "GIT_SSH_COMMAND": ssh,
         ]) { $1 }
         let host = try await app.launchApp(
             client: LoamClient(binary: rig.binary, environment: environment), state: rig.stateFile, terminals: true)
@@ -236,7 +215,6 @@ extension Scenarios {
     /// link lists its issues. A run from an issue moves the issue to In Progress. The Linear API is the core's fake
     /// (`LOAM_DRIVER_FAKE_LINEAR`), on a local port, and a temp secrets file stands in for the Keychain.
     private static func linearShotSteps(_ app: DriverApp) async throws {
-        let fm = FileManager.default
         guard let fakeLinear = ProcessInfo.processInfo.environment["LOAM_DRIVER_FAKE_LINEAR"] else {
             throw DriverFailure("LOAM_DRIVER_FAKE_LINEAR does not name the fake Linear")
         }
@@ -255,23 +233,7 @@ extension Scenarios {
         try confirm(apiURL.hasPrefix("http://127.0.0.1:"), "the fake Linear printed \(apiURL)")
 
         let (rig, shotEnvironment, _) = try shotRig(app)
-        // A run branches from origin's default branch, so the repo has a local bare origin.
-        let origin = rig.root.appendingPathComponent("origin.git")
-        let repo = rig.root.appendingPathComponent("widgets")
-        try fm.createDirectory(at: origin, withIntermediateDirectories: true)
-        try fm.createDirectory(at: repo, withIntermediateDirectories: true)
-        try git(origin, ["init", "--bare", "-q", "-b", "main"])
-        try git(repo, ["init", "-q", "-b", "main"])
-        try "hello\n".write(to: repo.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
-        try git(repo, ["add", "."])
-        try git(repo, ["commit", "-q", "-m", "first"])
-        try git(repo, ["remote", "add", "origin", origin.path])
-        try git(repo, ["push", "-q", "origin", "main"])
-        try git(repo, ["remote", "set-head", "origin", "main"])
-        let trusted = [rig.loamHome.appendingPathComponent("plots").path, repo.path]
-            .map { "\"\($0)\": {\"hasTrustDialogAccepted\": true}" }.joined(separator: ", ")
-        try "{\"projects\": {\(trusted)}}".write(to: rig.fakeHome.appendingPathComponent(".claude.json"),
-                                                  atomically: true, encoding: .utf8)
+        let (repo, _) = try widgetsRepo(rig, onGitHub: false)
         let plot = try rig.newPlot("Loam v1 build")
         try rig.loam(["repo", "add", plot, repo.path])
         try rig.loam(["link", "add", plot, "ENG team", "https://linear.app/acme/team/ENG/active"])
@@ -330,6 +292,159 @@ extension Scenarios {
         try confirm(event?.detail == "Moved ENG-523 to In Progress", "the Linear event is \(String(describing: event))")
         await app.sleep(0.5)
         app.screenshot("linear-run-page")
+        NSApp.appearance = nil
+    }
+
+    /// A repo, widgets, on branch main with one commit and a local bare origin, and Claude Code trusts it. A run
+    /// branches from origin's default branch. With `onGitHub`, origin is example/widgets on GitHub over SSH, and
+    /// `ssh` is a fake ssh for `GIT_SSH_COMMAND` that serves the bare repo, so no git command reaches the network.
+    private static func widgetsRepo(_ rig: PanelRig, onGitHub: Bool) throws -> (repo: URL, ssh: String) {
+        let fm = FileManager.default
+        let origin = rig.root.appendingPathComponent("origin.git")
+        let repo = rig.root.appendingPathComponent("widgets")
+        try fm.createDirectory(at: origin, withIntermediateDirectories: true)
+        try fm.createDirectory(at: repo, withIntermediateDirectories: true)
+        try git(origin, ["init", "--bare", "-q", "-b", "main"])
+        try git(repo, ["init", "-q", "-b", "main"])
+        try "hello\n".write(to: repo.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+        try git(repo, ["add", "."])
+        try git(repo, ["commit", "-q", "-m", "first"])
+        try git(repo, ["remote", "add", "origin", origin.path])
+        try git(repo, ["push", "-q", "origin", "main"])
+        try git(repo, ["remote", "set-head", "origin", "main"])
+        let ssh = rig.root.appendingPathComponent("fake-ssh")
+        if onGitHub {
+            try git(repo, ["remote", "set-url", "origin", "git@github.com:example/widgets.git"])
+            // git runs: <ssh> <host> "<git program> '<repo>'". The fake serves the bare repo for any GitHub repo.
+            try "#!/bin/sh\nprog=${2%% *}\nexec git \"${prog#git-}\" '\(origin.path)'\n"
+                .write(to: ssh, atomically: true, encoding: .utf8)
+            try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: ssh.path)
+        }
+        let trusted = [rig.loamHome.appendingPathComponent("plots").path, repo.path]
+            .map { "\"\($0)\": {\"hasTrustDialogAccepted\": true}" }.joined(separator: ", ")
+        try "{\"projects\": {\(trusted)}}".write(to: rig.fakeHome.appendingPathComponent(".claude.json"),
+                                                  atomically: true, encoding: .utf8)
+        return (repo, ssh.path)
+    }
+
+    static func shipShot(_ app: DriverApp) async throws {
+        do { try await shipShotSteps(app) } catch { app.dumpAccessibility(); throw error }
+    }
+
+    /// Ticket 206: Ship in the real window. A run whose checks pass goes to Ship, and a tick pushes its branch and
+    /// opens PR #1. CI fails, so the tick sends the failure back to the session as a try. The fix passes the checks,
+    /// the tick pushes it to #1, CI passes, and the run waits on the Land tile of Today. The fake gh
+    /// (`LOAM_DRIVER_FAKE_GH`) stands in for GitHub, and the scenario writes its CI state.
+    private static func shipShotSteps(_ app: DriverApp) async throws {
+        guard let fakeGH = ProcessInfo.processInfo.environment["LOAM_DRIVER_FAKE_GH"] else {
+            throw DriverFailure("LOAM_DRIVER_FAKE_GH does not name the fake gh")
+        }
+        let (rig, shotEnvironment, _) = try shotRig(app)
+        let (repo, ssh) = try widgetsRepo(rig, onGitHub: true)
+        let ghState = rig.root.appendingPathComponent("gh-state.json")
+        try "{}".write(to: ghState, atomically: true, encoding: .utf8)
+        let plot = try rig.newPlot("Loam v1 build")
+        try rig.loam(["repo", "add", plot, repo.path])
+
+        let environment = shotEnvironment.merging([
+            "LOAM_GH": fakeGH, "LOAM_FAKE_GH_STATE": ghState.path,
+            "LOAM_FAKE_GH_LOG": rig.root.appendingPathComponent("gh-calls.jsonl").path,
+            "GIT_SSH_COMMAND": ssh,
+        ]) { $1 }
+        let text = try rig.loam(["run", "start", plot, "--title", "Plot search matches link labels",
+                                 "--goal", "A search for a link label finds its plot.", "--check", "Tests=true", "--json"],
+                                extra: environment)
+        let object = (try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])?["run"] as? [String: Any]
+        guard let run = object?["id"] as? String, let folder = (object?["folder"] as? String).map(URL.init(fileURLWithPath:)) else {
+            throw DriverFailure("run start printed no run: \(text)")
+        }
+        let session = "c57ef956-3136-4e86-bfde-da8facfe0523"
+        /// Commits a file in the worktree, as the session does, and ends the turn. The gate passes.
+        func commitAndStop(_ name: String) throws {
+            try "\(name)\n".write(to: folder.appendingPathComponent(name), atomically: true, encoding: .utf8)
+            try git(folder, ["add", name])
+            try git(folder, ["commit", "-q", "-m", "Add \(name)"])
+            try rig.loam(["run", "hook", run], extra: environment,
+                         input: #"{"hook_event_name": "Stop", "session_id": "\#(session)"}"#)
+        }
+        try rig.loam(["run", "hook", run], extra: environment,
+                     input: #"{"hook_event_name": "SessionStart", "session_id": "\#(session)", "source": "startup"}"#)
+        try commitAndStop("search.txt")
+        /// GitHub with PR #1 at the head of the worktree, and one check, ci / test, with the conclusion.
+        func setCI(_ conclusion: String) throws {
+            let head = try git(folder, ["rev-parse", "HEAD"])
+            let branch = try git(folder, ["branch", "--show-current"])
+            try """
+            {"refs": ["\(branch)"],
+             "pulls": [{"number": 1, "title": "Plot search matches link labels", "url": "https://github.com/example/widgets/pull/1",
+               "state": "OPEN", "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN", "baseRefName": "main",
+               "headRefName": "\(branch)", "headRefOid": "\(head)", "commits": {"totalCount": 2}}],
+             "details": {"1": {"commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "\(conclusion)",
+               "contexts": {"totalCount": 1, "nodes": [{"__typename": "CheckRun", "name": "test", "status": "COMPLETED",
+               "conclusion": "\(conclusion)", "isRequired": true,
+               "checkSuite": {"workflowRun": {"databaseId": 9001, "workflow": {"name": "ci"}}}}]}}}}]}}},
+             "logs": {"9001": "test\\tgo test\\t--- FAIL: TestSearchLabels (0.00s)\\ntest\\tgo test\\tFAIL\\n"}}
+            """.write(to: ghState, atomically: true, encoding: .utf8)
+        }
+
+        let host = try await app.launchApp(
+            client: LoamClient(binary: rig.binary, environment: environment), state: rig.stateFile, terminals: true)
+        app.runtime.applyWindowAppearance(to: host.window)
+        let model = host.model
+        try await app.waitUntil("the run ships") { model.runs.first?.state == .shipping }
+        func appearance(_ name: NSAppearance.Name) async {
+            NSApp.appearance = NSAppearance(named: name)
+            await app.sleep(1)
+        }
+
+        // Today shows the run at Ship.
+        await appearance(.darkAqua)
+        try app.click("sidebar-today")
+        try await app.waitUntil("Today shows") { model.page == .today && app.exists("run-row-\(run)") }
+        app.screenshot("ship-today-shipping")
+
+        // A tick pushes the branch and opens #1.
+        await model.tickRuns()
+        try await app.waitUntil("the run has its PR") { model.runs.first?.pr?.number == 1 }
+        try app.click("run-row-\(run)")
+        try await app.waitUntil("the run page shows #1") {
+            model.runStatus?.run.id == run && app.exists("run-page-pr")
+                && model.runStatus?.events.contains { $0.detail == "Opened #1" } == true
+        }
+        app.screenshot("ship-run-page-pr")
+
+        // CI fails: the failure goes back to the session as a try.
+        try setCI("FAILURE")
+        await model.tickRuns()
+        try await app.waitUntil("the run runs again") {
+            model.runStatus?.run.state == .running && model.runStatus?.run.note == "CI failed on #1: ci / test"
+        }
+        try confirm(model.runStatus?.run.tries == 1, "the tries are \(String(describing: model.runStatus?.run.tries))")
+        app.screenshot("ship-ci-failed")
+
+        // The fix passes the checks, and a tick pushes it to #1.
+        try commitAndStop("labels.txt")
+        await model.tickRuns()
+        await model.reloadRuns()
+        try await app.waitUntil("the fix is on #1") {
+            model.runStatus?.events.contains { $0.detail == "Pushed the fix to #1" } == true
+        }
+
+        // CI passes: the run is ready to land.
+        try setCI("SUCCESS")
+        await model.tickRuns()
+        try await app.waitUntil("the run is ready") {
+            model.runStatus?.run.state == .ready && model.runStatus?.run.note == "CI passed on #1: 1 of 1 checks"
+        }
+        app.screenshot("ship-run-page-ready-night")
+        await appearance(.aqua)
+        app.screenshot("ship-run-page-ready-day")
+        try app.click("run-page-back")
+        try await app.waitUntil("Today shows") { model.page == .today && app.exists("today") }
+        await appearance(.darkAqua)
+        app.screenshot("ship-today-land-night")
+        await appearance(.aqua)
+        app.screenshot("ship-today-land-day")
         NSApp.appearance = nil
     }
 }

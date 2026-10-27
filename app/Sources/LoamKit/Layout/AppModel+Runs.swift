@@ -22,6 +22,24 @@ extension AppModel {
         if case .run(let id) = page { await readRunStatus(id) }
     }
 
+    /// `loam run tick`: ships the runs whose checks passed. When the tick moved a run, the runs are
+    /// read again. A failed tick changes nothing: the next one tries again.
+    public func tickRuns() async {
+        guard let result = try? await client.runTick(), !result.runs.isEmpty else { return }
+        await reloadRuns()
+    }
+
+    /// Runs a tick every `runTickInterval` while a run ships. Nothing runs before this starts, so a
+    /// model in a unit test never runs `loam`.
+    func startRunTicks() {
+        guard runTicks == nil else { return }
+        runTicks = Task { [weak self] in
+            while let self, (try? await Task.sleep(for: self.runTickInterval)) != nil {
+                if runs.contains(where: { $0.state == .shipping }) { await tickRuns() }
+            }
+        }
+    }
+
     /// Shows Today in the well.
     public func showToday() {
         page = .today

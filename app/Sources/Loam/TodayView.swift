@@ -86,7 +86,7 @@ private struct DeskTiles: View {
                 VStack(alignment: .leading, spacing: LoamTheme.space2) {
                     HStack(spacing: 6) {
                         if tile.count > 0 { StationMark(station: tile.station) }
-                        Text(tile.station == .ship ? RunState.ready.words : tile.station.words)
+                        Text(tile.station.words)
                             .loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
                     }
                     Text("\(tile.count)")
@@ -110,8 +110,8 @@ private struct StationMark: View {
     var body: some View {
         switch station {
         case .shape, .stopped: AttentionDot(mark: .needs).frame(width: 8, height: 8)
-        case .ship: AttentionDot(mark: .unread).frame(width: 8, height: 8)
-        case .run, .landed: EmptyView()
+        case .land: AttentionDot(mark: .unread).frame(width: 8, height: 8)
+        case .run, .ship, .landed: EmptyView()
         }
     }
 }
@@ -213,7 +213,7 @@ private struct RunRow: View {
     }
 }
 
-/// The mark of a run state: Needs you, Done, unread for Ready, a spinner glyph while it runs, and
+/// The mark of a run state: Needs you, Done, unread for Ready, a spinner glyph while it runs or ships, and
 /// nothing once it left the line.
 private struct RunMark: View {
     let state: RunState
@@ -222,7 +222,7 @@ private struct RunMark: View {
             AttentionDot(mark: .needs).frame(width: 8, height: 8)
         } else if state == .ready {
             AttentionDot(mark: .unread).frame(width: 8, height: 8)
-        } else if state.station == .run {
+        } else if state.station == .run || state.station == .ship {
             Image(systemName: "circle.dotted").font(.system(size: 11)).foregroundStyle(LoamColor.inkMuted)
         } else {
             Image(systemName: "circle").font(.system(size: 9)).foregroundStyle(LoamColor.inkFaint)
@@ -319,6 +319,12 @@ private struct RunHeader: View {
                 .accessibilityIdentifier("run-page-state")
             }
             Spacer(minLength: LoamTheme.space4)
+            if let pr = run.pr, let url = URL(string: pr.url) {
+                Button("Open #\(pr.number)") { NSWorkspace.shared.open(url) }
+                    .loamSecondaryButton()
+                    .help(pr.url)
+                    .accessibilityIdentifier("run-page-pr")
+            }
             if !run.state.ended {
                 Button("Stop run") { Task { await model.stopRun(run.id) } }
                     .loamSecondaryButton()
@@ -335,6 +341,7 @@ private struct RunHeader: View {
     private var headline: String {
         var parts = [plotName, run.state.words]
         if let source = run.source { parts.append(source.key) }
+        if let pr = run.pr { parts.append("#\(pr.number)") }
         parts.append("\(run.tries) of \(run.maxTries) tries used")
         return parts.filter { !$0.isEmpty }.joined(separator: " \u{00B7} ")
     }

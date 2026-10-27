@@ -300,6 +300,11 @@ public struct LoamClient: Sendable {
         try await read(["run", "stop"], positionals: [id])
     }
 
+    /// `loam run tick`: ships the runs whose checks passed. It pushes, opens the PR, and reads CI.
+    public func runTick() async throws -> RunTickResult {
+        try await read(["run", "tick"])
+    }
+
     private func read<T: Decodable>(_ args: [String], positionals: [String] = []) async throws -> T {
         try decode(await run(args + ["--json"] + Self.afterFlags(positionals), stdin: nil))
     }

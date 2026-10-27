@@ -2,7 +2,7 @@ import Foundation
 
 /// Where a run is. `shaping`, `stopped`, and `limited` need you.
 public enum RunState: String, Codable, Equatable, Sendable, CaseIterable {
-    case shaping, starting, running, ready, stopped, limited
+    case shaping, starting, running, shipping, ready, stopped, limited
     case startUnknown = "start_unknown"
     case landed, cancelled, skipped
     /// A state that this app does not know.
@@ -27,7 +27,8 @@ public enum RunState: String, Codable, Equatable, Sendable, CaseIterable {
         case .shaping: "Shape"
         case .starting: "Starting"
         case .running: "Running"
-        case .ready: "Ready to ship"
+        case .shipping: "Shipping"
+        case .ready: "Ready to land"
         case .stopped: "Stopped"
         case .limited: "Stopped by a limit"
         case .startUnknown: "Start unknown"
@@ -57,6 +58,12 @@ public struct RunSource: Codable, Equatable, Sendable {
     public var url: String
 }
 
+/// The pull request that Loam opened for a run (ticket 206).
+public struct RunPR: Codable, Equatable, Sendable {
+    public var number: Int
+    public var url: String
+}
+
 /// One goal that a background Claude Code session works on in a worktree, until its checks pass.
 public struct Run: Codable, Equatable, Sendable, Identifiable {
     public var id: String
@@ -68,10 +75,12 @@ public struct Run: Codable, Equatable, Sendable, Identifiable {
     public var goal: String
     public var doneWhen: [RunCheck]
     public var state: RunState
-    /// How many times the gate failed.
+    /// How many times the gate or CI failed.
     public var tries: Int
     public var maxTries: Int
     public var source: RunSource?
+    /// The PR of the run. Nil before the run ships.
+    public var pr: RunPR? = nil
     /// The Claude Code session. Empty until the session starts.
     public var sessionID: String
     /// Why the run is in its state, such as the failed checks.
@@ -79,7 +88,7 @@ public struct Run: Codable, Equatable, Sendable, Identifiable {
     public var createdAt: String
     public var updatedAt: String
     enum CodingKeys: String, CodingKey {
-        case id, folder, title, goal, state, tries, source, note
+        case id, folder, title, goal, state, tries, source, pr, note
         case plotID = "plot_id", worktreeID = "worktree_id", doneWhen = "done_when", maxTries = "max_tries"
         case sessionID = "session_id", createdAt = "created_at", updatedAt = "updated_at"
     }
@@ -96,7 +105,7 @@ public struct RunEvent: Codable, Equatable, Sendable, Identifiable {
     public var id: Int
     public var runID: String
     public var at: String
-    /// state, try, or check.
+    /// state, try, check, linear, ship, or ci.
     public var kind: String
     public var detail: String
     enum CodingKeys: String, CodingKey { case id, at, kind, detail, runID = "run_id" }
@@ -117,4 +126,10 @@ public struct RunStatus: Codable, Equatable, Sendable {
 /// Output of `loam run stop`.
 public struct RunStopResult: Codable, Equatable, Sendable {
     public var run: Run
+}
+
+/// Output of `loam run tick` (ticket 206): the runs that the tick moved.
+public struct RunTickResult: Codable, Equatable, Sendable {
+    public var runs: [Run]
+    public var warnings: [String]
 }

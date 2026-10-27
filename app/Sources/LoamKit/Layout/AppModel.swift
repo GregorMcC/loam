@@ -149,6 +149,10 @@ public final class AppModel {
     public var lastError: String?
     /// The runs of every plot, newest first, as the core last listed them (ticket 203).
     public internal(set) var runs: [Run] = [] { didSet { if runs != oldValue { onWorkspaceChange?() } } }
+    /// The time between the ticks that ship runs (ticket 206).
+    public var runTickInterval: Duration = .seconds(30)
+    /// The loop of `startRunTicks`, or nil before it starts.
+    var runTicks: Task<Void, Never>?
     /// The page that the well shows in place of the tabs and panes: Today or a run. Nil shows the panes.
     /// A move to a space or a pane closes it.
     public internal(set) var page: AppPage? { didSet { if page != oldValue { onWorkspaceChange?() } } }
@@ -330,6 +334,7 @@ public final class AppModel {
             if shouldStartFeed {
                 startFeed()
                 shipRefresh.start()
+                startRunTicks()
             }
         }
     }

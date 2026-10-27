@@ -1,15 +1,17 @@
 import Foundation
 
-/// A place on the line that work moves along. Stopped is where a run waits for you after the gate
+/// A place on the line that work moves along. Ship is where a run waits for its PR and CI, and Land
+/// is where a ready run waits for you. Stopped is where a run waits for you after the gate or CI
 /// gave up, or after a limit.
 public enum RunStation: String, Equatable, Hashable, Sendable, CaseIterable {
-    case shape, run, ship, stopped, landed
+    case shape, run, ship, land, stopped, landed
 
     public var words: String {
         switch self {
         case .shape: "Shape"
         case .run: "Run"
         case .ship: "Ship"
+        case .land: "Land"
         case .stopped: "Stopped"
         case .landed: "Landed this week"
         }
@@ -22,7 +24,8 @@ extension RunState {
         switch self {
         case .shaping: .shape
         case .starting, .running, .startUnknown: .run
-        case .ready: .ship
+        case .shipping: .ship
+        case .ready: .land
         case .stopped, .limited: .stopped
         case .landed: .landed
         case .cancelled, .skipped, .unknown: nil
@@ -56,7 +59,7 @@ public struct TodayContent: Equatable, Sendable {
     }
 
     /// The stations of the line, in order.
-    public static let lineStations: [RunStation] = [.shape, .run, .ship, .stopped, .landed]
+    public static let lineStations: [RunStation] = [.shape, .run, .ship, .land, .stopped, .landed]
     /// How many runs the recent list shows.
     public static let recentLimit = 12
 
@@ -82,7 +85,7 @@ public struct TodayContent: Equatable, Sendable {
             return station != .landed || (ChangeRules.date(run.updatedAt).map { $0 >= weekAgo } ?? false)
         }
 
-        tiles = [RunStation.shape, .ship, .stopped].map { station in
+        tiles = [RunStation.shape, .land, .stopped].map { station in
             Tile(station: station, count: onLine.filter { $0.state.station == station }.count)
         }
         line = plots.compactMap { plot in

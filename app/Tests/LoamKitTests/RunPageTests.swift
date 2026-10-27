@@ -36,6 +36,17 @@ import Testing
         #expect(fake.args() == ["run list --json", "run status --json -- runraaaaab"])
     }
 
+    /// Ticket 206: a tick that moved a run reads the runs again. A tick that moved none reads nothing.
+    @Test func aTickThatShipsARunReadsTheRunsAgain() async throws {
+        let (model, fake) = try model([("run_tick", 0), ("run_list", 0)])
+        await model.tickRuns()
+        #expect(fake.args() == ["run tick --json", "run list --json"])
+        let tick = try JSONDecoder().decode(RunTickResult.self, from: Fixtures.data("run_tick"))
+        #expect(tick.runs.first?.state == .shipping)
+        #expect(tick.runs.first?.pr == RunPR(number: 25, url: "https://github.com/example/widgets/pull/25"))
+        #expect(tick.runs.first?.state.station == .ship)
+    }
+
     @Test func watchOpensAShellTabThatAttachesToTheSession() async throws {
         let (model, _) = try model([("run_list", 0)])
         await model.reloadRuns()
