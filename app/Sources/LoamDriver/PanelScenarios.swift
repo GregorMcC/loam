@@ -149,7 +149,10 @@ struct PanelRig {
         process.standardOutput = stdout
         process.standardError = FileHandle.nullDevice
         try process.run()
-        defer { app.waiting = nil }
+        defer {
+            app.waiting = nil
+            if process.isRunning { process.terminate() }
+        }
 
         func send(_ object: [String: Any]) throws {
             var data = try JSONSerialization.data(withJSONObject: object)

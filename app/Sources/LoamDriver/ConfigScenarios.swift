@@ -22,8 +22,13 @@ extension Scenarios {
         // A new background in the file: the watch reloads, and the pane redraws.
         for color in ["204060", "a03050"] {
             try app.writeConfig("background = #\(color)")
+            // The log keeps each pixel the pane shows, since a wait with no limit of its own gives no pixel in the FAIL line.
+            var seen: String?
             try await app.waitUntil("the pane redraws with #\(color)") {
-                app.backgroundPixel(pane).map { close($0, color) } ?? false
+                let pixel = app.backgroundPixel(pane)
+                let shown = pixel.map { "#" + hex($0) } ?? "none"
+                if shown != seen { seen = shown; Log.line("pane pixel \(shown)") }
+                return pixel.map { close($0, color) } ?? false
             }
             try check(rgb(app.runtime.windowAppearance.background) == color, "the window appearance has the old background")
             app.screenshot("background-\(color)")

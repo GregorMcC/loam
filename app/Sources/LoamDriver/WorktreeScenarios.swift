@@ -31,11 +31,8 @@ extension Scenarios {
                                "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null"]
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
-        // A busy machine can hold the launch of `git` for more than 10 s (ticket 131).
-        try Watchdog.excuse {
-            try process.run()
-            process.waitUntilExit()
-        }
+        try process.run()
+        process.waitUntilExit()
         if process.terminationStatus != 0 { throw DriverFailure("git \(args.joined(separator: " ")) failed in \(folder.path)") }
     }
 

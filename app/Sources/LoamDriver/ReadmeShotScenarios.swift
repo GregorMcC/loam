@@ -238,12 +238,12 @@ extension Scenarios {
             model.goToPane(pane)
             try await app.waitUntil("the pane has the keys") { app.window.firstResponder === (try? surface(pane)) }
         }
-        // The waits for the real Claude Code session and for `go test` keep their deadlines, and so do the waits that can
-        // never end (marked where they are). This scenario is not in the suite: a person runs it with the app in front, and a
-        // stuck session would hold the keyboard until the limit of 1200 s.
+        // The waits for the real Claude Code session, for a shell command and for a pane that settles keep their deadlines,
+        // and so do the waits that can never end. This scenario is not in the suite: a person runs it with the app in
+        // front, and a stuck session would hold the keyboard until the limit of 1200 s.
 
         /// Waits until the screen of the pane stays the same for `seconds`.
-        func settle(_ pane: PaneID, _ seconds: Double = 1.2, timeout: TimeInterval? = nil) async throws {
+        func settle(_ pane: PaneID, _ seconds: Double = 1.2, timeout: TimeInterval = 30) async throws {
             var last = text(pane)
             var since = Date()
             try await app.waitUntil("the pane settles", timeout: timeout) {
@@ -256,7 +256,7 @@ extension Scenarios {
             (try? surface(pane)).map { app.lines($0).last { !$0.isEmpty }?.hasSuffix("❯") == true } ?? false
         }
         /// Types a command into a shell and waits for the next prompt.
-        func run(_ pane: PaneID, _ command: String, timeout: TimeInterval? = nil) async throws {
+        func run(_ pane: PaneID, _ command: String, timeout: TimeInterval = 60) async throws {
             try await focus(pane)
             try await app.waitUntil("a shell prompt") { atPrompt(pane) }
             let before = text(pane)
@@ -395,7 +395,7 @@ extension Scenarios {
                 guard let view = try? surface(shellPane), let pixel = app.backgroundPixel(view) else { return false }
                 return (pixel.0 + pixel.1 + pixel.2 < 3 * 128) == (name == .darkAqua)
             }
-            try? await settle(claudePane, 1.5, timeout: 30)
+            try? await settle(claudePane, 1.5)
         }
         /// A shot of the window as the active window, so it has its colored window buttons. Then
         /// the app you used before is active again.
