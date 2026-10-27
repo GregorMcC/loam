@@ -161,6 +161,9 @@ func (s *Store) AddRun(r Run) (Run, error) {
 	if r.MaxTries == 0 {
 		r.MaxTries = DefaultMaxTries
 	}
+	if r.DoneWhen == nil {
+		r.DoneWhen = []Check{}
+	}
 	if err := r.check(); err != nil {
 		return Run{}, err
 	}
@@ -260,7 +263,7 @@ func (s *Store) UpdateRun(id string, fn func(*Run) error) (Run, error) {
 		return Run{}, err
 	}
 	r := old
-	r.DoneWhen = append([]Check(nil), old.DoneWhen...)
+	r.DoneWhen = append([]Check{}, old.DoneWhen...)
 	if old.Source != nil {
 		src := *old.Source
 		r.Source = &src

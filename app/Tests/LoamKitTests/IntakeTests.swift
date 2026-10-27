@@ -15,7 +15,7 @@ import Testing
     }
 
     static func item(_ source: String, url: String) -> IntakeItem {
-        IntakeItem(source: source, key: "k", title: "Fix the login form", status: "Open", labels: [], url: url,
+        IntakeItem(source: source, key: "k", title: "Fix the login form", status: "Open", priority: "", labels: [], url: url,
                    updatedAt: "", runID: "")
     }
 
@@ -32,8 +32,9 @@ import Testing
         let (model, fake) = try model([("intake_list", 0)])
         await model.showIntake(plot: "plotaaaaae")
         #expect(model.page == .intake("plotaaaaae"))
-        #expect(model.intake?.items.map(\.key) == ["#61", "#57", "map 12", "map 13"])
-        #expect(model.intake?.items[1].runID == "runraaaaab")
+        #expect(model.intake?.items.map(\.key) == ["ENG-523", "ENG-525", "#61", "#57", "map 12", "map 13"])
+        #expect(model.intake?.items[0].priority == "High")
+        #expect(model.intake?.items[3].runID == "runraaaaab")
         #expect(fake.args() == ["intake list --json -- plotaaaaae"])
         // A move to a plot closes the page.
         model.activate(plot: "plotaaaaae")
@@ -43,7 +44,7 @@ import Testing
     @Test func aStartedRunOpensItsPage() async throws {
         let (model, fake) = try model([("intake_list", 0), ("run_start", 0), ("run_list", 0), ("run_status", 0)])
         await model.showIntake(plot: "plotaaaaae")
-        var draft = RunDraft(item: try #require(model.intake?.items[2]))
+        var draft = RunDraft(item: try #require(model.intake?.items[4]))
         draft.goal = "Show the plan."
         draft.checks = [RunCheck(name: "Tests", command: "go test ./...")]
         draft.approveSetup = true

@@ -73,6 +73,7 @@ enum Scenarios {
         Scenario(name: "plot-drag", limit: 120, body: plotDrag),
         Scenario(name: "today-shot", limit: 120, body: todayShot),
         Scenario(name: "intake-shot", limit: 120, body: intakeShot),
+        Scenario(name: "linear-shot", limit: 120, body: linearShot),
         Scenario(name: "readme-shots", limit: 1200, body: readmeShots),
     ]
 

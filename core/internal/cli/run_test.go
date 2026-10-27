@@ -129,6 +129,25 @@ func TestRunStartLaunchesABackgroundSessionInANewWorktree(t *testing.T) {
 	}
 }
 
+// The contract has done_when as an array, so a run with no checks prints [],
+// not null.
+func TestRunStartWithNoChecksPrintsAnEmptyList(t *testing.T) {
+	runCLI(t)
+	out, _, err := lrRun(t, "", "run", "start", "alpha", "--title", "Tidy the README", "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Run map[string]json.RawMessage `json:"run"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	if string(got.Run["done_when"]) != "[]" {
+		t.Fatalf("done_when is %s", got.Run["done_when"])
+	}
+}
+
 func TestRunStartRefusesAFolderThatClaudeCodeDoesNotTrust(t *testing.T) {
 	s, p := runCLI(t)
 	trustFolder(t, "")

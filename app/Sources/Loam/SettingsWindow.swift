@@ -11,12 +11,13 @@ final class SettingsWindowController: NSWindowController {
 
     private let settings: SettingsModel
 
-    init(settings: SettingsModel, terminal: TerminalConfigModel) {
+    init(settings: SettingsModel, terminal: TerminalConfigModel, connections: ConnectionsModel) {
         self.settings = settings
         let tabs = RememberingTabViewController(key: Self.tabKey)
         tabs.tabStyle = .toolbar
         tabs.addTabViewItem(Self.tab("General", symbol: "gearshape", GeneralSettingsView(model: settings)))
         tabs.addTabViewItem(Self.tab("Terminal", symbol: "terminal", TerminalSettingsView(model: terminal)))
+        tabs.addTabViewItem(Self.tab("Connections", symbol: "link", ConnectionsSettingsView(model: connections)))
         let window = NSWindow(contentViewController: tabs)
         window.styleMask = [.titled, .closable]
         window.toolbarStyle = .preference
@@ -69,6 +70,65 @@ private final class RememberingTabViewController: NSTabViewController {
     override func tabView(_ tabView: NSTabView, didSelect item: NSTabViewItem?) {
         super.tabView(tabView, didSelect: item)
         UserDefaults.standard.set(selectedTabViewItemIndex, forKey: key)
+    }
+}
+
+// MARK: Connections
+
+/// The Linear API key (ticket 205). The field is empty after a save: the app never reads the key back.
+struct ConnectionsSettingsView: View {
+    let model: ConnectionsModel
+    @State private var key = ""
+
+    var body: some View {
+        Form {
+            Section {
+                LabeledContent("Status") {
+                    Text(model.linearWords)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("settings-linear-status")
+                }
+                LabeledContent("API key") {
+                    HStack {
+                        SecureField("lin_api_...", text: $key)
+                            .labelsHidden()
+                            .textFieldStyle(.roundedBorder)
+                            .frame(minWidth: 220)
+                            .onSubmit { save() }
+                            .accessibilityIdentifier("settings-linear-key")
+                        Button("Save") { save() }
+                            .disabled(model.isWorking || key.trimmingCharacters(in: .whitespaces).isEmpty)
+                            .accessibilityIdentifier("settings-linear-save")
+                    }
+                }
+                if model.linear?.connected == true {
+                    Button("Remove the key") { Task { await model.removeLinearKey() } }
+                        .disabled(model.isWorking)
+                        .accessibilityIdentifier("settings-linear-remove")
+                }
+                if let error = model.error {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                        .accessibilityIdentifier("settings-linear-error")
+                }
+            } header: {
+                Text("Linear")
+            } footer: {
+                Text("Make a personal API key in Linear, under Settings > Account > Security & access. Loam keeps it in your Keychain. With a key, Intake lists the issues of a plot's Linear team and project links, and a run from an issue moves the issue to In Progress.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .frame(width: 540)
+        .fixedSize(horizontal: false, vertical: true)
+        .task { await model.load() }
+    }
+
+    private func save() {
+        let text = key
+        Task {
+            if await model.setLinearKey(text) { key = "" }
+        }
     }
 }
 

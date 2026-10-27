@@ -227,4 +227,109 @@ extension Scenarios {
         }
         NSApp.appearance = nil
     }
+
+    static func linearShot(_ app: DriverApp) async throws {
+        do { try await linearShotSteps(app) } catch { app.dumpAccessibility(); throw error }
+    }
+
+    /// Ticket 205: Settings > Connections takes a Linear API key, and the Intake page of a plot with a Linear team
+    /// link lists its issues. A run from an issue moves the issue to In Progress. The Linear API is the core's fake
+    /// (`LOAM_DRIVER_FAKE_LINEAR`), on a local port, and a temp secrets file stands in for the Keychain.
+    private static func linearShotSteps(_ app: DriverApp) async throws {
+        let fm = FileManager.default
+        guard let fakeLinear = ProcessInfo.processInfo.environment["LOAM_DRIVER_FAKE_LINEAR"] else {
+            throw DriverFailure("LOAM_DRIVER_FAKE_LINEAR does not name the fake Linear")
+        }
+        let server = Process()
+        server.executableURL = URL(fileURLWithPath: fakeLinear)
+        let out = Pipe()
+        server.standardOutput = out
+        try server.run()
+        defer { server.terminate() }
+        // The first line is the URL of the API.
+        var line = Data()
+        while let byte = try out.fileHandleForReading.read(upToCount: 1), !byte.isEmpty, byte != Data("\n".utf8) {
+            line.append(byte)
+        }
+        let apiURL = String(decoding: line, as: UTF8.self)
+        try confirm(apiURL.hasPrefix("http://127.0.0.1:"), "the fake Linear printed \(apiURL)")
+
+        let (rig, shotEnvironment, _) = try shotRig(app)
+        // A run branches from origin's default branch, so the repo has a local bare origin.
+        let origin = rig.root.appendingPathComponent("origin.git")
+        let repo = rig.root.appendingPathComponent("widgets")
+        try fm.createDirectory(at: origin, withIntermediateDirectories: true)
+        try fm.createDirectory(at: repo, withIntermediateDirectories: true)
+        try git(origin, ["init", "--bare", "-q", "-b", "main"])
+        try git(repo, ["init", "-q", "-b", "main"])
+        try "hello\n".write(to: repo.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+        try git(repo, ["add", "."])
+        try git(repo, ["commit", "-q", "-m", "first"])
+        try git(repo, ["remote", "add", "origin", origin.path])
+        try git(repo, ["push", "-q", "origin", "main"])
+        try git(repo, ["remote", "set-head", "origin", "main"])
+        let trusted = [rig.loamHome.appendingPathComponent("plots").path, repo.path]
+            .map { "\"\($0)\": {\"hasTrustDialogAccepted\": true}" }.joined(separator: ", ")
+        try "{\"projects\": {\(trusted)}}".write(to: rig.fakeHome.appendingPathComponent(".claude.json"),
+                                                  atomically: true, encoding: .utf8)
+        let plot = try rig.newPlot("Loam v1 build")
+        try rig.loam(["repo", "add", plot, repo.path])
+        try rig.loam(["link", "add", plot, "ENG team", "https://linear.app/acme/team/ENG/active"])
+
+        let environment = shotEnvironment.merging([
+            "LOAM_LINEAR_URL": apiURL, "LOAM_SECRETS_FILE": rig.root.appendingPathComponent("secrets.json").path,
+        ]) { $1 }
+        let host = try await app.launchApp(
+            client: LoamClient(binary: rig.binary, environment: environment), state: rig.stateFile, terminals: true)
+        app.runtime.applyWindowAppearance(to: host.window)
+        let model = host.model
+        try await app.waitUntil("the plot loads") { model.plots.count == 1 && model.workspace.activePlotID == plot }
+        NSApp.appearance = NSAppearance(named: .darkAqua)
+
+        // Settings > Connections: no key, then a key that Linear takes.
+        try app.pressMenuKey(",")
+        func settingsWindow() -> NSWindow? {
+            NSApp.windows.first { $0.identifier?.rawValue == "dev.loam.settings" && $0.isVisible }
+        }
+        try await app.waitUntil("the settings window") { settingsWindow() != nil }
+        guard let tabs = settingsWindow()?.contentViewController as? NSTabViewController,
+              let index = tabs.tabViewItems.firstIndex(where: { ($0.identifier as? String) == "Connections" }) else {
+            throw DriverFailure("the settings window has no Connections tab")
+        }
+        tabs.selectedTabViewItemIndex = index
+        try await app.waitUntil("no key yet") { model.connections.linearWords == "No Linear API key." }
+        try app.fill("settings-linear-key", with: "lin_api_good")
+        try await app.waitUntil("Save is on") { AccessibilityProbe.shared.isEnabled("settings-linear-save") }
+        try app.click("settings-linear-save")
+        try await app.waitUntil("the key is taken") { model.connections.linearWords == "Connected to Acme as Ada Example." }
+        await app.sleep(0.5)
+        app.screenshot("connections", of: settingsWindow())
+        settingsWindow()?.close()
+
+        // Intake lists the issues of the team.
+        try app.click("sidebar-intake")
+        try await app.waitUntil("the Linear issues") { app.exists("intake-row-ENG-523") && app.exists("intake-row-ENG-525") }
+        try confirm(app.exists("intake-filter-linear"), "no Linear filter")
+        try app.click("intake-row-ENG-523")
+        try await app.waitUntil("the start form") { app.exists("intake-start") }
+        try app.fill("intake-goal", with: "A link row moves with a drag, and the order stays after a restart.")
+        await app.sleep(0.5)
+        app.screenshot("intake-linear-night")
+        NSApp.appearance = NSAppearance(named: .aqua)
+        await app.sleep(1)
+        app.screenshot("intake-linear-day")
+        NSApp.appearance = NSAppearance(named: .darkAqua)
+
+        // The run moves the issue to In Progress, and its history says so.
+        try app.click("intake-start")
+        try await app.waitUntil("the run page") {
+            if case .run = model.page { return model.runStatus?.events.contains { $0.kind == "linear" } == true }
+            return false
+        }
+        let event = model.runStatus?.events.first { $0.kind == "linear" }
+        try confirm(event?.detail == "Moved ENG-523 to In Progress", "the Linear event is \(String(describing: event))")
+        await app.sleep(0.5)
+        app.screenshot("linear-run-page")
+        NSApp.appearance = nil
+    }
 }

@@ -23,8 +23,11 @@ type LinearCall struct {
 
 // FakeLinearServer stands in for the Linear API. Team ENG has two open
 // issues: ENG-523 (Todo, High, label Feature) and ENG-525 (Backlog, no
-// priority). An update moves ENG-523 to In Progress.
+// priority). An update moves ENG-523 to In Progress. It is an
+// [http.Handler], so the fakelinear command can serve it for the app's
+// driver too.
 type FakeLinearServer struct {
+	// URL is the address of the server that [FakeLinear] started.
 	URL string
 	mu  sync.Mutex
 	// calls are the requests so far, oldest first.
@@ -45,7 +48,7 @@ func (f *FakeLinearServer) Calls() []LinearCall {
 func FakeLinear(t *testing.T) *FakeLinearServer {
 	t.Helper()
 	f := &FakeLinearServer{}
-	srv := httptest.NewServer(http.HandlerFunc(f.serve))
+	srv := httptest.NewServer(f)
 	t.Cleanup(srv.Close)
 	f.URL = srv.URL
 	t.Setenv("LOAM_LINEAR_URL", srv.URL)
@@ -57,7 +60,8 @@ func FakeLinear(t *testing.T) *FakeLinearServer {
 	return f
 }
 
-func (f *FakeLinearServer) serve(w http.ResponseWriter, r *http.Request) {
+// ServeHTTP answers one request as Linear does.
+func (f *FakeLinearServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Authorization") != LinearKey {
 		w.WriteHeader(http.StatusUnauthorized)
 		io.WriteString(w, `{"errors":[{"message":"Authentication required, not authenticated"}]}`)

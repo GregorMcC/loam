@@ -12,6 +12,8 @@ public final class AppModel {
     public let settings: SettingsModel
     /// What the settings window shows about the Ghostty config. The terminal runtime fills it.
     public let terminalConfig = TerminalConfigModel()
+    /// Settings > Connections: the Linear API key (ticket 205).
+    public let connections: ConnectionsModel
     public private(set) var plots: [PlotSummary] = [] { didSet { if plots != oldValue { onWorkspaceChange?() } } }
     /// Archived plots. They leave the sidebar but keep their panes (spec section 10).
     public private(set) var archivedPlots: [PlotSummary] = []
@@ -220,6 +222,7 @@ public final class AppModel {
         // The file is in the client's LOAM_HOME, so a test store has its own settings.
         self.settings = SettingsModel(file: settingsFile ?? SettingsFile(environment: client.environment),
                                       launchBinary: client.binary.path)
+        self.connections = ConnectionsModel(client: client)
         self.panel = PlotPanelModel(client: client)
         panel.suggestionRoots = settings.repoFolderPaths
         self.review = ReviewModel(client: client, state: stateFile)

@@ -279,6 +279,22 @@ public struct LoamClient: Sendable {
         try await read(["intake", "list"], positionals: [plot])
     }
 
+    /// `loam linear status`: whether a Linear API key is stored, and its person.
+    public func linearStatus() async throws -> LinearStatus {
+        try await read(["linear", "status"])
+    }
+
+    /// `loam linear key set`: checks the key with Linear, then stores it in the Keychain. The key goes on stdin, so
+    /// it is never in the arguments of a process.
+    public func linearSetKey(_ key: String) async throws -> LinearStatus {
+        try decode(await run(["linear", "key", "set", "--json"], stdin: key + "\n"))
+    }
+
+    /// `loam linear key rm`: removes the key from the Keychain.
+    public func linearRemoveKey() async throws -> LinearStatus {
+        try await read(["linear", "key", "rm"])
+    }
+
     /// `loam run stop <run>`: stops the background session of a run.
     public func runStop(_ id: String) async throws -> RunStopResult {
         try await read(["run", "stop"], positionals: [id])

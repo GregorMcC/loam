@@ -441,8 +441,11 @@ extension DriverApp {
 
     /// Replaces the text of a field.
     func fill(_ id: String, with text: String) throws {
-        // Focus the field and type into its editor, so SwiftUI sees an edit.
-        if AccessibilityProbe.shared.focus(id), let editor = window.firstResponder as? NSTextView {
+        // Focus the field and type into its editor, so SwiftUI sees an edit. The field can be in another window, such as
+        // Settings, and a secure field takes no text through accessibility.
+        let windows: [NSWindow] = [window] + NSApp.windows.filter { $0 !== window && $0.isVisible }
+        if AccessibilityProbe.shared.focus(id),
+           let editor = windows.lazy.compactMap({ $0.firstResponder as? NSTextView }).first(where: \.isFieldEditor) {
             editor.selectAll(nil)
             editor.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
             Log.line("fill \(id)")

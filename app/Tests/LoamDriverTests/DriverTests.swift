@@ -141,36 +141,30 @@ struct DriverTests {
     }
 
     /// The core's fake `claude` in hook mode, built from ../core: LOAM_DRIVER_FAKE_CLAUDE, else a build in a temp folder.
-    static let fakeClaude: String = {
-        if let path = ProcessInfo.processInfo.environment["LOAM_DRIVER_FAKE_CLAUDE"] { return path }
-        let core = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("core")
-        let out = FileManager.default.temporaryDirectory.appendingPathComponent("loam-driver-fakeclaude-\(UUID().uuidString)")
-        let build = Process()
-        build.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        build.arguments = ["go", "build", "-o", out.path, "./internal/testutil/fakeclaude"]
-        build.currentDirectoryURL = core
-        do { try build.run() } catch { fatalError("go build did not start: \(error)") }
-        build.waitUntilExit()
-        if build.terminationStatus != 0 { fatalError("go build of the fake claude failed with \(build.terminationStatus)") }
-        return out.path
-    }()
+    static let fakeClaude = coreTool("fakeclaude", environment: "LOAM_DRIVER_FAKE_CLAUDE")
 
     /// The core's fake `gh`, built from ../core: LOAM_DRIVER_FAKE_GH, else a build in a temp folder.
-    static let fakeGH: String = {
-        if let path = ProcessInfo.processInfo.environment["LOAM_DRIVER_FAKE_GH"] { return path }
+    static let fakeGH = coreTool("fakegh", environment: "LOAM_DRIVER_FAKE_GH")
+
+    /// The core's fake Linear API, built from ../core: LOAM_DRIVER_FAKE_LINEAR, else a build in a temp folder.
+    static let fakeLinear = coreTool("fakelinear", environment: "LOAM_DRIVER_FAKE_LINEAR")
+
+    /// A test tool of the core, from core/internal/testutil: the path in the environment variable, else a build in a
+    /// temp folder.
+    static func coreTool(_ name: String, environment: String) -> String {
+        if let path = ProcessInfo.processInfo.environment[environment] { return path }
         let core = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("core")
-        let out = FileManager.default.temporaryDirectory.appendingPathComponent("loam-driver-fakegh-\(UUID().uuidString)")
+        let out = FileManager.default.temporaryDirectory.appendingPathComponent("loam-driver-\(name)-\(UUID().uuidString)")
         let build = Process()
         build.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        build.arguments = ["go", "build", "-o", out.path, "./internal/testutil/fakegh"]
+        build.arguments = ["go", "build", "-o", out.path, "./internal/testutil/\(name)"]
         build.currentDirectoryURL = core
         do { try build.run() } catch { fatalError("go build did not start: \(error)") }
         build.waitUntilExit()
-        if build.terminationStatus != 0 { fatalError("go build of the fake gh failed with \(build.terminationStatus)") }
+        if build.terminationStatus != 0 { fatalError("go build of \(name) failed with \(build.terminationStatus)") }
         return out.path
-    }()
+    }
 
     /// Ticket 28: a seeded pane and a shell pane, the pane socket, /clear, and "Session ended" with resume, new, and close.
     @Test func runsSeededAndShellPanesAndShowsSessionEnded() async throws {
@@ -317,6 +311,14 @@ struct DriverTests {
     @Test func listsTheIntakeAndStartsARunFromATicket() async throws {
         try await expectPass("intake-shot", environment: [
             "LOAM_DRIVER_LOAM": Self.loamBinary, "LOAM_DRIVER_FAKE_GH": Self.fakeGH,
+        ])
+    }
+
+    /// Ticket 205: Settings > Connections takes a Linear API key, Intake lists the issues of a Linear team link, and a
+    /// run from an issue moves the issue to In Progress.
+    @Test func connectsLinearAndStartsARunFromAnIssue() async throws {
+        try await expectPass("linear-shot", environment: [
+            "LOAM_DRIVER_LOAM": Self.loamBinary, "LOAM_DRIVER_FAKE_LINEAR": Self.fakeLinear,
         ])
     }
 

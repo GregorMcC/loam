@@ -13,10 +13,11 @@ struct IntakeView: View {
 
     /// Which source the list shows.
     enum Filter: String, CaseIterable {
-        case all, github, map
+        case all, linear, github, map
         var words: String {
             switch self {
             case .all: "All"
+            case .linear: "Linear"
             case .github: "GitHub"
             case .map: "The map"
             }
@@ -59,18 +60,27 @@ struct IntakeView: View {
         .accessibilityIdentifier("intake")
     }
 
+    /// The name of a source kind for a person.
+    static func sourceWords(_ kind: String) -> String {
+        switch kind {
+        case "linear": "Linear"
+        case "github": "GitHub"
+        default: "Map"
+        }
+    }
+
     private func header(_ list: IntakeList?) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Intake").loamText(LoamTheme.plotNameStyle)
             Text(model.plots.first { $0.id == plotID }?.name ?? "").loamText(LoamTheme.bodyStyle, LoamColor.inkMuted)
             if let list {
                 if list.sources.isEmpty {
-                    Text("This plot has no GitHub repo and no map link, so it has no intake.")
+                    Text("This plot has no Linear link, no GitHub repo, and no map link, so it has no intake.")
                         .loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
                 }
                 ForEach(Array(list.sources.enumerated()), id: \.offset) { _, source in
                     HStack(spacing: 6) {
-                        Text(source.kind == "map" ? "Map" : "GitHub").loamText(LoamTheme.captionStyle, LoamColor.inkFaint)
+                        Text(IntakeView.sourceWords(source.kind)).loamText(LoamTheme.captionStyle, LoamColor.inkFaint)
                         Text(source.label).loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
                         if !source.error.isEmpty {
                             Text(source.error).loamText(LoamTheme.captionStyle, LoamColor.rust).lineLimit(2)
@@ -85,7 +95,8 @@ struct IntakeView: View {
 
     private func filters(_ list: IntakeList) -> some View {
         HStack(spacing: LoamTheme.space2) {
-            ForEach(Filter.allCases, id: \.self) { f in
+            // A source with no item and no link has no filter.
+            ForEach(Filter.allCases.filter { f in f == .all || list.sources.contains { $0.kind == f.rawValue } }, id: \.self) { f in
                 let count = f == .all ? list.items.count : list.items.filter { $0.source == f.rawValue }.count
                 Button { filter = f } label: {
                     Text("\(f.words) \(count)")
@@ -137,7 +148,7 @@ private struct IntakeRow: View {
                 Text(item.title).loamText(LoamTheme.rowStyle).lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .layoutPriority(1)
-                Text(([item.status] + item.labels).joined(separator: " \u{00B7} "))
+                Text(([item.status, item.priority] + item.labels).filter { !$0.isEmpty }.joined(separator: " \u{00B7} "))
                     .loamText(LoamTheme.captionStyle, LoamColor.inkMuted).lineLimit(1)
                     .fixedSize()
                 Group {
@@ -191,14 +202,17 @@ private struct IntakeDetail: View {
         ScrollView {
             VStack(alignment: .leading, spacing: LoamTheme.space4) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(item.isTicket ? item.key : "GitHub \u{00B7} \(item.key)").loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+                    Text(item.isTicket ? item.key : "\(IntakeView.sourceWords(item.source)) \u{00B7} \(item.key)").loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
                     Text(item.title).loamText(LoamTheme.rowStyle).textSelection(.enabled)
-                    Text(([item.status] + item.labels).joined(separator: " \u{00B7} ")).loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+                    Text(([item.status, item.priority] + item.labels).filter { !$0.isEmpty }.joined(separator: " \u{00B7} "))
+                        .loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
                 }
                 Button(item.isTicket ? "Open the ticket" : "Open the issue") { open() }
                     .loamSecondaryButton()
                     .accessibilityIdentifier("intake-open")
-                Text("The run gets the \(item.isTicket ? "path of the ticket" : "link to the issue"), not a copy of its text.")
+                Text(item.source == "linear"
+                     ? "The run gets the link to the issue, not a copy of its text. The issue moves to In Progress when the run starts."
+                     : "The run gets the \(item.isTicket ? "path of the ticket" : "link to the issue"), not a copy of its text.")
                     .loamText(LoamTheme.captionStyle, LoamColor.inkFaint)
                 if let run = model.runs.first(where: { $0.id == item.runID }) {
                     runCard(run)

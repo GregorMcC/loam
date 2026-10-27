@@ -59,6 +59,7 @@ func decodeFixture(schema: String, data: Data) throws {
     case "run-status": _ = try d.decode(RunStatus.self, from: data)
     case "run-stop": _ = try d.decode(RunStopResult.self, from: data)
     case "intake-list": _ = try d.decode(IntakeList.self, from: data)
+    case "linear-status", "linear-key": _ = try d.decode(LinearStatus.self, from: data)
     default: Issue.record("No Swift type for schema \(schema)")
     }
 }

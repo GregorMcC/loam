@@ -705,7 +705,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     /// ⌘, (ticket 81). One settings window: a second ⌘, brings it to the front.
     func showSettings() {
-        let controller = settingsWindow ?? SettingsWindowController(settings: model.settings, terminal: model.terminalConfig)
+        let controller = settingsWindow ?? SettingsWindowController(settings: model.settings, terminal: model.terminalConfig,
+                                                                               connections: model.connections)
         settingsWindow = controller
         controller.show()
         // You may have installed `gh` or signed in on the way here (ticket 108).
