@@ -25,6 +25,7 @@ import (
 
 	"github.com/GregorMcC/loam/core/internal/claudebin"
 	"github.com/GregorMcC/loam/core/internal/intake"
+	"github.com/GregorMcC/loam/core/internal/linear"
 	"github.com/GregorMcC/loam/core/internal/session"
 	"github.com/GregorMcC/loam/core/internal/store"
 	"github.com/GregorMcC/loam/core/internal/wayfinder"
@@ -133,6 +134,7 @@ func Start(ctx context.Context, s *store.Store, o StartOptions) (*StartResult, e
 	if err != nil {
 		return nil, stopAfter(s, r.ID, err)
 	}
+	parent := ctx
 	ctx, cancel := context.WithTimeout(ctx, startTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, plan.Claude, plan.Args...)
@@ -155,8 +157,39 @@ func Start(ctx context.Context, s *store.Store, o StartOptions) (*StartResult, e
 	if err != nil {
 		return nil, err
 	}
+	if r.State != store.RunStopped && r.Source != nil && r.Source.Kind == intake.Linear {
+		if warning := startLinearIssue(parent, s, r); warning != "" {
+			res.Warnings = append(res.Warnings, warning)
+		}
+	}
 	res.Run = r
 	return res, nil
+}
+
+// startLinearIssue moves the Linear issue of the run to In Progress, and
+// records what happened as a "linear" event of the run. A failure does not
+// stop the run: it returns a warning for a person to read.
+func startLinearIssue(ctx context.Context, s *store.Store, r store.Run) string {
+	key := r.Source.Key
+	detail, warning := "", ""
+	c, err := linear.FromKeychain()
+	var moved string
+	if err == nil {
+		moved, err = c.Start(ctx, key)
+	}
+	switch {
+	case err != nil:
+		detail = fmt.Sprintf("Could not move %s to In Progress: %v", key, err)
+		warning = detail
+	case moved != "":
+		detail = fmt.Sprintf("Moved %s to %s", key, moved)
+	default:
+		detail = fmt.Sprintf("%s has started or ended, so Loam did not move it", key)
+	}
+	if err := s.AddRunEvent(r.ID, "linear", detail); err != nil {
+		return err.Error()
+	}
+	return warning
 }
 
 // stopAfter marks a recorded run Stopped by err, and returns err.

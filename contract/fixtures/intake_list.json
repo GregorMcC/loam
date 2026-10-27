@@ -1,10 +1,35 @@
 {
   "items": [
     {
+      "key": "ENG-523",
+      "labels": [
+        "Feature"
+      ],
+      "priority": "High",
+      "run_id": "",
+      "source": "linear",
+      "status": "Todo",
+      "title": "Plot panel: drag a link to reorder it",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "url": "https://linear.app/acme/issue/ENG-523/plot-panel-drag"
+    },
+    {
+      "key": "ENG-525",
+      "labels": [],
+      "priority": "",
+      "run_id": "",
+      "source": "linear",
+      "status": "Backlog",
+      "title": "Settings: choose the worktree folder",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "url": "https://linear.app/acme/issue/ENG-525/settings"
+    },
+    {
       "key": "#61",
       "labels": [
         "feature"
       ],
+      "priority": "",
       "run_id": "",
       "source": "github",
       "status": "Open",
@@ -17,6 +42,7 @@
       "labels": [
         "bug"
       ],
+      "priority": "",
       "run_id": "runraaaaab",
       "source": "github",
       "status": "Open",
@@ -27,6 +53,7 @@
     {
       "key": "map 12",
       "labels": [],
+      "priority": "",
       "run_id": "",
       "source": "map",
       "status": "Open",
@@ -37,6 +64,7 @@
     {
       "key": "map 13",
       "labels": [],
+      "priority": "",
       "run_id": "",
       "source": "map",
       "status": "Blocked by 12",
@@ -47,6 +75,11 @@
   ],
   "plot_id": "plotaaaaae",
   "sources": [
+    {
+      "error": "",
+      "kind": "linear",
+      "label": "ENG team"
+    },
     {
       "error": "",
       "kind": "github",

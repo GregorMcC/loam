@@ -545,24 +545,38 @@ The gate is the Stop hook of the session. Each time the session ends a turn, Loa
 | :- | :- |
 | `loam run start <plot> --title <text> [--goal <text>] [--check <name>=<command>]... [--worktree <name>] [--repo <repo>] [--base <branch>] [--link <link-id or URL> \| --ticket <file>] [--max-tries <n>] [--model <model>] [--approve-setup]` | `{ "run": {...}, "worktree": {...} }` |
 | `loam run list [<plot>]` | An array of runs, newest first. It is `[]` when none exists. |
-| `loam run status <run>` | `{ "run": {...}, "events": [{ "id": 1, "run_id": "...", "at": "...", "kind": "state", "detail": "running" }] }` |
+| `loam run status <run>` | `{ "run": {...}, "events": [{ "id": 1, "run_id": "...", "at": "...", "kind": "state", "detail": "running" }] }`. `kind` is `state`, `try`, `check`, or `linear`. |
 | `loam run stop <run>` | `{ "run": {...} }`. The run is `cancelled`. A run that has ended stays as it is. |
 
 `run start` uses the worktree that `--worktree` names, or makes it. With no `--worktree`, it makes a worktree with a name from the key of the link or the ticket, and the title. A run has `--link` or `--ticket`, not both (exit code 2). It refuses, with exit code 1, a folder that Claude Code does not trust: a background session cannot show the trust prompt. In git, Claude Code trusts a worktree when it trusts the main checkout of the repo. A setup command that you have not approved gives exit code 2 (`invalid`); `--approve-setup` approves it. When `claude --bg` fails, the run is `stopped` with the output in `note`, and the command exits 0.
 
 ### Intake
 
-The intake of a plot is the work that it can start runs from: the open issues of its GitHub repos, through `gh`, and the open tickets of the wayfinder maps in its links. A map is a local link to a file called `map.md`. Its tickets are the `.md` files in the `issues` folder next to it. A ticket file starts with lines such as `Status: open` and `Blocked by: 135`, then a `# Title` line. A ticket whose status is resolved, done, closed, dropped, or wontfix is not open.
+The intake of a plot is the work that it can start runs from: the open issues of its Linear team and project links, the open issues of its GitHub repos, through `gh`, and the open tickets of the wayfinder maps in its links. A Linear team link is a page such as `https://linear.app/acme/team/ENG/active`. A project link is a page such as `https://linear.app/acme/project/loam-redesign-8f3a2b1c9d0e/overview`. A map is a local link to a file called `map.md`. Its tickets are the `.md` files in the `issues` folder next to it. A ticket file starts with lines such as `Status: open` and `Blocked by: 135`, then a `# Title` line. A ticket whose status is resolved, done, closed, dropped, or wontfix is not open.
 
 | Command | Output |
 | :- | :- |
-| `loam intake list <plot>` | `{ "plot_id": "...", "sources": [{ "kind": "github", "label": "example/widgets", "error": "" }], "items": [{ "source": "github", "key": "#57", "title": "...", "status": "Open", "labels": ["bug"], "url": "https://github.com/example/widgets/issues/57", "updated_at": "...", "run_id": "runraaaaab" }] }` |
+| `loam intake list <plot>` | `{ "plot_id": "...", "sources": [{ "kind": "github", "label": "example/widgets", "error": "" }], "items": [{ "source": "github", "key": "#57", "title": "...", "status": "Open", "priority": "", "labels": ["bug"], "url": "https://github.com/example/widgets/issues/57", "updated_at": "...", "run_id": "runraaaaab" }] }` |
 
-- The items are the GitHub issues first, the newest change first (at most 100 for each repo), then the map tickets in number order.
-- `status` is for a person to read: `Open`, or `Blocked by 135` for a ticket.
+- The items are the Linear issues first, then the GitHub issues, each the newest change first (at most 100 for each link or repo), then the map tickets in number order. A Linear issue is open while its state is not completed or canceled.
+- `status` is for a person to read: the Linear state, such as `Todo`, `Open`, or `Blocked by 135` for a ticket.
+- `priority` is the Linear priority (`Urgent`, `High`, `Medium`, or `Low`), or empty.
 - `url` is what `loam run start` takes: `--link` for an issue, `--ticket` for a ticket.
 - `run_id` is the newest run with the item as its `source`, or empty.
-- A source that Loam cannot read, such as a repo when `gh` is missing or rate-limited, has its `error`, and the other sources still show. The command exits 0.
+- A source that Loam cannot read, such as a repo when `gh` is missing or rate-limited, or a Linear link with no API key, has its `error`, and the other sources still show. The command exits 0.
+
+### Linear
+
+Loam keeps a personal Linear API key in the login Keychain of macOS (service `Loam`, account `linear-api-key`). Only the core reads it.
+
+| Command | Output |
+| :- | :- |
+| `loam linear status` | `{ "connected": true, "viewer": { "name": "...", "email": "...", "organization": "..." }, "error": "" }` |
+| `loam linear key set` | The same, after the key on stdin passed a check with Linear. A key that Linear refuses is not stored (exit code 1). |
+| `loam linear key rm` | `{ "connected": false, "viewer": null, "error": "" }` |
+
+- `connected` is true when a key is stored. `viewer` is null when there is no key, or when Linear did not answer, and then `error` says why.
+- When a run starts from a Linear issue, Loam moves the issue to the first started state of its team, such as In Progress, unless the issue has started or ended. A `linear` event of the run says what happened. A failure is a warning: the run still starts.
 
 ### Sessions
 

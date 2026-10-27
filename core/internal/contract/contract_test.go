@@ -54,6 +54,7 @@ type harness struct {
 	counts  map[string]int
 	entries []Entry
 	outputs map[string][]byte // normalized output by fixture name
+	stdin   string            // the input of the next command
 }
 
 var timeRE = regexp.MustCompile(`\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?(Z|[+-]\d\d:\d\d)`)
@@ -146,6 +147,7 @@ func (h *harness) raw(args ...string) (string, string, int) {
 	h.t.Helper()
 	cmd := exec.Command(h.bin, args...)
 	cmd.Env = h.env
+	cmd.Stdin = strings.NewReader(h.stdin)
 	var o, e bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &o, &e
 	err := cmd.Run()
@@ -240,6 +242,14 @@ func (h *harness) run(name, schema string, wantExit int, args ...string) []byte 
 	h.t.Helper()
 	full := append(append([]string{}, args...), "--json")
 	return h.record(name, schema, wantExit, full)
+}
+
+// runInput is run with input on stdin.
+func (h *harness) runInput(name, schema, input string, wantExit int, args ...string) []byte {
+	h.t.Helper()
+	h.stdin = input
+	defer func() { h.stdin = "" }()
+	return h.run(name, schema, wantExit, args...)
 }
 
 // record is run without the added --json flag.
@@ -621,7 +631,20 @@ func scenario(t *testing.T) *harness {
 	if _, errOut, code := h.raw("link", "add", "Runs", "Build map", filepath.Join(h.root, "build", "map.md")); code != 0 {
 		t.Fatalf("link add: exit %d: %s", code, errOut)
 	}
+	// Linear: a fake API, and a secrets file in place of the Keychain. The
+	// key goes in with linear key set, and a team link gives the plot Linear
+	// issues.
+	lin := testutil.FakeLinear(t)
+	secrets := filepath.Join(h.root, "secrets.json")
+	h.env = append(h.env, "LOAM_LINEAR_URL="+lin.URL, "LOAM_SECRETS_FILE="+secrets)
+	h.run("linear_status_none", "linear-status", 0, "linear", "status")
+	h.runInput("linear_key_set", "linear-key", testutil.LinearKey+"\n", 0, "linear", "key", "set")
+	h.run("linear_status", "linear-status", 0, "linear", "status")
+	if _, errOut, code := h.raw("link", "add", "Runs", "ENG team", "https://linear.app/acme/team/ENG/active"); code != 0 {
+		t.Fatalf("link add: exit %d: %s", code, errOut)
+	}
 	h.run("intake_list", "intake-list", 0, "intake", "list", "Runs")
+	h.run("linear_key_rm", "linear-key", 0, "linear", "key", "rm")
 	h.run("run_status", "run-status", 0, "run", "status", started.Run.ID)
 	h.run("run_stop", "run-stop", 0, "run", "stop", started.Run.ID)
 	return h

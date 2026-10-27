@@ -957,6 +957,37 @@
     "schema": "run-list"
   },
   {
+    "name": "linear_status_none",
+    "args": [
+      "linear",
+      "status",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "linear-status"
+  },
+  {
+    "name": "linear_key_set",
+    "args": [
+      "linear",
+      "key",
+      "set",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "linear-key"
+  },
+  {
+    "name": "linear_status",
+    "args": [
+      "linear",
+      "status",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "linear-status"
+  },
+  {
     "name": "intake_list",
     "args": [
       "intake",
@@ -966,6 +997,17 @@
     ],
     "exit_code": 0,
     "schema": "intake-list"
+  },
+  {
+    "name": "linear_key_rm",
+    "args": [
+      "linear",
+      "key",
+      "rm",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "linear-key"
   },
   {
     "name": "run_status",

@@ -401,8 +401,29 @@
         "id": { "type": "integer", "minimum": 1 },
         "run_id": { "$ref": "#/$defs/id" },
         "at": { "$ref": "#/$defs/time" },
-        "kind": { "description": "state: the new state. try: a failed gate, with its note. check: the result of one check.", "enum": ["state", "try", "check"] },
+        "kind": { "description": "state: the new state. try: a failed gate, with its note. check: the result of one check. linear: what Loam did to the Linear issue of the run.", "enum": ["state", "try", "check", "linear"] },
         "detail": { "type": "string" }
+      }
+    },
+    "linearStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["connected", "viewer", "error"],
+      "properties": {
+        "connected": { "description": "True when a key is stored.", "type": "boolean" },
+        "viewer": {
+          "description": "The person of the key. It is null with no key, or when Linear did not answer.",
+          "anyOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "email", "organization"],
+              "properties": { "name": { "type": "string" }, "email": { "type": "string" }, "organization": { "type": "string" } }
+            }
+          ]
+        },
+        "error": { "description": "Why Linear did not answer a stored key, or empty.", "type": "string" }
       }
     }
   }
