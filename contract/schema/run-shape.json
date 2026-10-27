@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam run shape --json",
+  "description": "The Shaping run with Claude's draft, or with the reason that there is none as its note. loam run redraft --json prints the same.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run"
+  ],
+  "properties": {
+    "run": {
+      "$ref": "defs.json#/$defs/run"
+    }
+  }
+}

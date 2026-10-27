@@ -31,6 +31,10 @@
 // folder to a terminal title. A session in a folder named there sets that
 // title at its start, as Claude Code sets the topic of a session.
 //
+// With LOAM_FAKE_CLAUDE_PRINT set to a file, a call with -p (print mode)
+// prints the text of that file to stdout, as claude -p --output-format json
+// prints its result.
+//
 // With LOAM_FAKE_CLAUDE_HUP_WAIT set to a duration, a SIGHUP and the EOF of
 // stdin do not end the process at once. It waits that long, then exits 0, as
 // Claude Code takes time to end a session. A hang-up gives both: the pane's
@@ -47,6 +51,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -93,6 +98,15 @@ func main() {
 	if err := appendCall(out+".log", os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "fakeclaude:", err)
 		os.Exit(2)
+	}
+	if print := os.Getenv("LOAM_FAKE_CLAUDE_PRINT"); print != "" && slices.Contains(os.Args[1:], "-p") {
+		b, err := os.ReadFile(print)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "fakeclaude:", err)
+			os.Exit(2)
+		}
+		os.Stdout.Write(b)
+		return
 	}
 	if os.Getenv("LOAM_FAKE_CLAUDE_HOOKS") == "1" {
 		if eof := session(os.Args[1:], cwd); eof {

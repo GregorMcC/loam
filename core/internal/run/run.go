@@ -94,35 +94,15 @@ func Start(ctx context.Context, s *store.Store, o StartOptions) (*StartResult, e
 	if title == "" {
 		return nil, fmt.Errorf("a run needs a title: %w", store.ErrInvalid)
 	}
-	res := &StartResult{}
-	var ticket *store.RunSource
-	if o.Ticket != "" {
-		if o.Link != "" {
-			return nil, fmt.Errorf("a run starts from a link or a ticket, not both: %w", store.ErrInvalid)
-		}
-		t, err := wayfinder.ReadTicket(o.Ticket)
-		if err != nil {
-			return nil, fmt.Errorf("%s is not a ticket of a map: %v: %w", o.Ticket, err, store.ErrInvalid)
-		}
-		ticket = &store.RunSource{Kind: intake.Map, Key: t.Key, URL: t.Path}
-	}
-
-	wt, warnings, err := findOrMakeWorktree(s, plot, o, title, ticket)
+	ticket, err := ticketSource(o.Ticket, o.Link)
 	if err != nil {
 		return nil, err
 	}
-	res.Worktree = wt
-	res.Warnings = append(res.Warnings, warnings...)
-
-	if !claudebin.Trusted(wt.Path) {
-		// Claude Code trusts a worktree when it trusts the main checkout.
-		return nil, fmt.Errorf("%w %s, and a run cannot answer the trust prompt. Run claude in %s once and choose Yes, then start the run again",
-			ErrUntrusted, wt.Path, wt.Repo)
-	}
-	if err := setUp(s, wt, o.ApproveSetup); err != nil {
+	res := &StartResult{}
+	wt, err := prepare(s, plot, o, title, ticket, res)
+	if err != nil {
 		return nil, err
 	}
-
 	r, err := s.AddRun(store.Run{
 		PlotID: plot.ID, WorktreeID: wt.ID, Folder: wt.Path, Title: title, Goal: strings.TrimSpace(o.Goal),
 		DoneWhen: o.DoneWhen, MaxTries: o.MaxTries, Source: cmp.Or(ticket, sourceOf(wt.Link)),
@@ -130,6 +110,50 @@ func Start(ctx context.Context, s *store.Store, o StartOptions) (*StartResult, e
 	if err != nil {
 		return nil, err
 	}
+	return launch(ctx, s, r, o, res)
+}
+
+// ticketSource returns the source of a run from the file of a ticket of a
+// wayfinder map, or nil with no ticket. A run has a link or a ticket, not
+// both.
+func ticketSource(ticket, link string) (*store.RunSource, error) {
+	if ticket == "" {
+		return nil, nil
+	}
+	if link != "" {
+		return nil, fmt.Errorf("a run starts from a link or a ticket, not both: %w", store.ErrInvalid)
+	}
+	t, err := wayfinder.ReadTicket(ticket)
+	if err != nil {
+		return nil, fmt.Errorf("%s is not a ticket of a map: %v: %w", ticket, err, store.ErrInvalid)
+	}
+	return &store.RunSource{Kind: intake.Map, Key: t.Key, URL: t.Path}, nil
+}
+
+// prepare makes or finds the worktree of a run, checks that Claude Code
+// trusts it, and runs the setup command. It records the worktree in res.
+func prepare(s *store.Store, plot store.Plot, o StartOptions, title string, ticket *store.RunSource, res *StartResult) (store.Worktree, error) {
+	wt, warnings, err := findOrMakeWorktree(s, plot, o, title, ticket)
+	if err != nil {
+		return store.Worktree{}, err
+	}
+	res.Worktree = wt
+	res.Warnings = append(res.Warnings, warnings...)
+	if !claudebin.Trusted(wt.Path) {
+		// Claude Code trusts a worktree when it trusts the main checkout.
+		return store.Worktree{}, fmt.Errorf("%w %s, and a run cannot answer the trust prompt. Run claude in %s once and choose Yes, then start the run again",
+			ErrUntrusted, wt.Path, wt.Repo)
+	}
+	if err := setUp(s, wt, o.ApproveSetup); err != nil {
+		return store.Worktree{}, err
+	}
+	return wt, nil
+}
+
+// launch starts the background session of a recorded run in its folder, and
+// moves its Linear issue to In Progress. When claude --bg fails, the run is
+// Stopped, with its output as the note.
+func launch(ctx context.Context, s *store.Store, r store.Run, o StartOptions, res *StartResult) (*StartResult, error) {
 	plan, err := session.PrepareRun(s, r, Prompt(r), o.Loam, o.Model)
 	if err != nil {
 		return nil, stopAfter(s, r.ID, err)
@@ -221,17 +245,9 @@ func findOrMakeWorktree(s *store.Store, plot store.Plot, o StartOptions, title s
 			return store.Worktree{}, nil, err
 		}
 	}
-	var repo store.Repo
-	if o.Repo != "" {
-		r, err := worktree.FindRepo(plot, o.Repo)
-		if err != nil {
-			return store.Worktree{}, nil, err
-		}
-		repo = r
-	} else if m := plot.MainRepo(); m != nil {
-		repo = *m
-	} else {
-		return store.Worktree{}, nil, fmt.Errorf("the plot has no repo, so a run has no worktree. Add a repo with loam repo add: %w", store.ErrInvalid)
+	repo, err := runRepo(plot, o.Repo)
+	if err != nil {
+		return store.Worktree{}, nil, err
 	}
 	if name == "" {
 		var err error
@@ -255,6 +271,18 @@ func findOrMakeWorktree(s *store.Store, plot store.Plot, o StartOptions, title s
 		return store.Worktree{}, nil, err
 	}
 	return res.Worktree, res.Warnings, nil
+}
+
+// runRepo returns the repo of a run: the repo that arg names, or the main
+// repo of the plot.
+func runRepo(plot store.Plot, arg string) (store.Repo, error) {
+	if arg != "" {
+		return worktree.FindRepo(plot, arg)
+	}
+	if m := plot.MainRepo(); m != nil {
+		return *m, nil
+	}
+	return store.Repo{}, fmt.Errorf("the plot has no repo, so a run has no worktree. Add a repo with loam repo add: %w", store.ErrInvalid)
 }
 
 // freeName returns a worktree name from the key and the title, such as
@@ -373,6 +401,20 @@ func Prompt(r store.Run) string {
 	if r.Source != nil {
 		fmt.Fprintf(&b, "\nIssue: %s (%s)\n", r.Source.Key, r.Source.URL)
 	}
+	if sh := r.Shape; sh != nil {
+		if len(sh.Assumptions) > 0 {
+			b.WriteString("\nDecisions about the issue:\n")
+			for _, a := range sh.Assumptions {
+				fmt.Fprintf(&b, "- %s\n", cmp.Or(a.Answer, a.Text))
+			}
+		}
+		if len(sh.Plan) > 0 {
+			b.WriteString("\nA plan from the draft. Change it when the code needs you to:\n")
+			for i, step := range sh.Plan {
+				fmt.Fprintf(&b, "%d. %s\n", i+1, step)
+			}
+		}
+	}
 	if len(r.DoneWhen) > 0 {
 		b.WriteString("\nDone when these checks pass in this folder:\n")
 		for _, c := range r.DoneWhen {
@@ -388,7 +430,8 @@ func Prompt(r store.Run) string {
 }
 
 // Stop stops the background session of a run and marks the run Cancelled.
-// A run that has ended stays as it is. When claude stop fails, for example
+// A Shaping run has no session, so Stop only cancels it. A run that has ended
+// stays as it is. When claude stop fails, for example
 // because the session is gone, the run is Cancelled anyway and the result
 // has a warning.
 func Stop(ctx context.Context, s *store.Store, id string) (store.Run, []string, error) {
@@ -397,8 +440,10 @@ func Stop(ctx context.Context, s *store.Store, id string) (store.Run, []string, 
 		return r, nil, err
 	}
 	var warnings []string
-	if warning := stopSession(ctx, r); warning != "" {
-		warnings = append(warnings, warning)
+	if r.State != store.RunShaping {
+		if warning := stopSession(ctx, r); warning != "" {
+			warnings = append(warnings, warning)
+		}
 	}
 	r, err = s.UpdateRun(id, func(r *store.Run) error {
 		r.State, r.Note = store.RunCancelled, "Stopped by you"

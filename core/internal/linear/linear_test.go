@@ -110,3 +110,18 @@ func TestAttachLinksAURLToAnIssue(t *testing.T) {
 		t.Fatalf("vars %+v", v)
 	}
 }
+
+// Ticket 207: Shape gives Claude the text of the issue.
+func TestIssueTextIsTheTitleAndTheDescription(t *testing.T) {
+	f := testutil.FakeLinear(t)
+	got, err := linear.NewClient(f.URL, testutil.LinearKey).IssueText(context.Background(), "ENG-523")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "Plot panel: drag a link to reorder it\n\nA link in the plot panel moves to a new place when you drag it." {
+		t.Fatalf("%q", got)
+	}
+	if v := f.Calls()[0].Variables; v["id"] != "ENG-523" {
+		t.Fatalf("vars %+v", v)
+	}
+}

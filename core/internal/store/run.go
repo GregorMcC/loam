@@ -93,6 +93,36 @@ type RunSource struct {
 	URL  string `json:"url"`
 }
 
+// RunShape is the draft of a Shaping run (ticket 207): what Claude made of
+// its issue besides the goal and the checks, and how the run starts when you
+// approve it.
+type RunShape struct {
+	// Assumptions are the choices that Claude made and the issue does not
+	// settle. You keep each one or change it.
+	Assumptions []Assumption `json:"assumptions"`
+	// Plan is the steps that Claude means to take.
+	Plan []string `json:"plan"`
+	// Size is Claude's estimate of the change, in one sentence.
+	Size string `json:"size"`
+	// DraftedAt is when Claude finished the last draft, or nil while the run
+	// has none.
+	DraftedAt *time.Time `json:"drafted_at,omitempty"`
+	// Repo, Base, and Link say how the run's worktree is made when you
+	// approve it, as for loam run start. Model is the model of the session.
+	Repo  string `json:"repo"`
+	Base  string `json:"base"`
+	Link  string `json:"link"`
+	Model string `json:"model"`
+}
+
+// Assumption is one choice of a draft that the issue does not settle.
+type Assumption struct {
+	Text string `json:"text"`
+	// Answer is what you want instead, or empty when you keep the
+	// assumption.
+	Answer string `json:"answer"`
+}
+
 // RunPR is the pull request that Loam opened for a run.
 type RunPR struct {
 	Number int    `json:"number"`
@@ -118,6 +148,8 @@ type Run struct {
 	Source   *RunSource `json:"source,omitempty"`
 	// PR is the pull request of the run, or nil before Loam ships it.
 	PR *RunPR `json:"pr,omitempty"`
+	// Shape is the draft of a run that started in Shaping, or nil.
+	Shape *RunShape `json:"shape,omitempty"`
 	// SessionID is the Claude Code session ID, from its SessionStart hook.
 	// It is empty until the session starts.
 	SessionID string `json:"session_id"`
@@ -199,10 +231,10 @@ func (s *Store) AddRun(r Run) (Run, error) {
 	now := time.Now().UnixMilli()
 	r.Tries = 0
 	r.CreatedAt, r.UpdatedAt = tm(now), tm(now)
-	checks, src, pr := encodeRun(r)
-	if err := tx.exec(`INSERT INTO runs(`+runCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	checks, src, pr, shape := encodeRun(r)
+	if err := tx.exec(`INSERT INTO runs(`+runCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.ID, r.PlotID, r.WorktreeID, r.Folder, r.Title, r.Goal, checks, r.State, r.MaxTries, r.SessionID, r.Note,
-		src.Kind, src.Key, src.URL, pr.Number, pr.URL, now, now); err != nil {
+		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, now, now); err != nil {
 		return Run{}, err
 	}
 	if err := addRunEvent(tx, r.ID, now, "state", string(r.State)); err != nil {
@@ -285,6 +317,7 @@ func (s *Store) UpdateRun(id string, fn func(*Run) error) (Run, error) {
 		pr := *old.PR
 		r.PR = &pr
 	}
+	r.Shape = old.Shape.clone()
 	if err := fn(&r); err != nil {
 		return Run{}, err
 	}
@@ -296,12 +329,12 @@ func (s *Store) UpdateRun(id string, fn func(*Run) error) (Run, error) {
 	}
 	now := time.Now().UnixMilli()
 	r.UpdatedAt = tm(now)
-	checks, src, pr := encodeRun(r)
+	checks, src, pr, shape := encodeRun(r)
 	if err := tx.exec(`UPDATE runs SET worktree_id = ?, folder = ?, title = ?, goal = ?, done_when = ?, state = ?, tries = ?,
   max_tries = ?, session_id = ?, note = ?, source_kind = ?, source_key = ?, source_url = ?, pr_number = ?, pr_url = ?,
-  updated_at = ? WHERE id = ?`,
+  shape = ?, updated_at = ? WHERE id = ?`,
 		r.WorktreeID, r.Folder, r.Title, r.Goal, checks, r.State, r.Tries, r.MaxTries, r.SessionID, r.Note,
-		src.Kind, src.Key, src.URL, pr.Number, pr.URL, now, r.ID); err != nil {
+		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, now, r.ID); err != nil {
 		return Run{}, err
 	}
 	if r.Tries != old.Tries {
@@ -358,9 +391,9 @@ func (s *Store) RunEvents(runID string) ([]RunEvent, error) {
 
 // runCols are the columns of a run record.
 const runCols = `id, plot_id, worktree_id, folder, title, goal, done_when, state, tries, max_tries, session_id, note,
-  source_kind, source_key, source_url, pr_number, pr_url, created_at, updated_at`
+  source_kind, source_key, source_url, pr_number, pr_url, shape, created_at, updated_at`
 
-func encodeRun(r Run) (checks string, src RunSource, pr RunPR) {
+func encodeRun(r Run) (checks string, src RunSource, pr RunPR, shape string) {
 	b, err := json.Marshal(append([]Check{}, r.DoneWhen...))
 	if err != nil { // a slice of string pairs always encodes
 		panic(err)
@@ -371,7 +404,30 @@ func encodeRun(r Run) (checks string, src RunSource, pr RunPR) {
 	if r.PR != nil {
 		pr = *r.PR
 	}
-	return string(b), src, pr
+	if sh := r.Shape.clone(); sh != nil {
+		sb, err := json.Marshal(sh)
+		if err != nil { // strings, string slices, and a time always encode
+			panic(err)
+		}
+		shape = string(sb)
+	}
+	return string(b), src, pr, shape
+}
+
+// clone copies the shape, with empty lists where it has none, so the JSON
+// has arrays.
+func (sh *RunShape) clone() *RunShape {
+	if sh == nil {
+		return nil
+	}
+	c := *sh
+	c.Assumptions = append([]Assumption{}, sh.Assumptions...)
+	c.Plan = append([]string{}, sh.Plan...)
+	if sh.DraftedAt != nil {
+		at := *sh.DraftedAt
+		c.DraftedAt = &at
+	}
+	return &c
 }
 
 func scanRun(sc interface{ Scan(...any) error }) (Run, error) {
@@ -379,9 +435,10 @@ func scanRun(sc interface{ Scan(...any) error }) (Run, error) {
 	var checks string
 	var src RunSource
 	var pr RunPR
+	var shape string
 	var created, updated int64
 	err := sc.Scan(&r.ID, &r.PlotID, &r.WorktreeID, &r.Folder, &r.Title, &r.Goal, &checks, &r.State, &r.Tries,
-		&r.MaxTries, &r.SessionID, &r.Note, &src.Kind, &src.Key, &src.URL, &pr.Number, &pr.URL, &created, &updated)
+		&r.MaxTries, &r.SessionID, &r.Note, &src.Kind, &src.Key, &src.URL, &pr.Number, &pr.URL, &shape, &created, &updated)
 	if err != nil {
 		return Run{}, err
 	}
@@ -393,6 +450,13 @@ func scanRun(sc interface{ Scan(...any) error }) (Run, error) {
 	}
 	if pr.Number != 0 {
 		r.PR = &pr
+	}
+	if shape != "" {
+		var sh RunShape
+		if err := json.Unmarshal([]byte(shape), &sh); err != nil {
+			return Run{}, fmt.Errorf("run %s: bad shape: %w", r.ID, err)
+		}
+		r.Shape = sh.clone()
 	}
 	r.CreatedAt, r.UpdatedAt = tm(created), tm(updated)
 	return r, nil

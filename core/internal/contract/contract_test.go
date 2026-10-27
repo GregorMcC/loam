@@ -695,6 +695,29 @@ func scenario(t *testing.T) *harness {
 	h.run("run_land_dry_run", "run-land", 0, "run", "land", tidy.Run.ID, "--dry-run")
 	h.run("run_land", "run-land", 0, "run", "land", tidy.Run.ID)
 	h.run("error_run_land_not_ready", "error", 2, "run", "land", started.Run.ID)
+
+	// Shape (ticket 207). The fake claude prints a draft for claude -p. A
+	// redraft takes a change, and the approve starts the run with your edits.
+	testutil.FakeClaudePrint(t, `{"type": "result", "subtype": "success", "is_error": false, "result": "",
+ "structured_output": {"goal": "The run page shows the plan of the run.",
+  "checks": [{"name": "Go tests", "command": "go test ./..."}],
+  "assumptions": ["The plan shows as a numbered list."],
+  "plan": ["Read the plan from the run.", "Show it on the run page."],
+  "size": "About 60 lines in the app."}}`)
+	h.env = append(h.env, "LOAM_FAKE_CLAUDE_PRINT="+os.Getenv("LOAM_FAKE_CLAUDE_PRINT"))
+	out, errOut, code = h.raw("run", "shape", "Runs", "--title", "Show the plan on the run page",
+		"--ticket", filepath.Join(tickets, "12-run-page-plan.md"), "--json")
+	if code != 0 {
+		t.Fatalf("run shape: exit %d: %s", code, errOut)
+	}
+	var shaped struct {
+		Run struct{ ID string } `json:"run"`
+	}
+	parse([]byte(out), &shaped)
+	h.run("run_shape", "run-shape", 0, "run", "redraft", shaped.Run.ID, "--change", "Add a check for a run with no plan")
+	h.run("error_run_approve_no_assumption", "error", 2, "run", "approve", shaped.Run.ID, "--answer", "5=No")
+	h.run("run_approve", "run-start", 0, "run", "approve", shaped.Run.ID,
+		"--goal", "The run page shows the plan of the run, or says that it has none.", "--answer", "1=The plan shows as steps with checkboxes.")
 	return h
 }
 

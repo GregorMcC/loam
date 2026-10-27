@@ -170,6 +170,7 @@ CREATE TABLE run_events (
 );
 CREATE INDEX run_events_run ON run_events(run_id, id);
 `,
+	`ALTER TABLE runs ADD COLUMN shape TEXT NOT NULL DEFAULT '';`,
 }
 
 // SchemaVersion is the schema version of this binary.

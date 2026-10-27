@@ -1,0 +1,60 @@
+{
+  "run": {
+    "created_at": "2026-01-01T00:00:00Z",
+    "done_when": [
+      {
+        "command": "go test ./...",
+        "name": "Go tests"
+      }
+    ],
+    "folder": "/tmp/loam-contract/loamhome/worktrees/plotaaaaae/web-map-12-show-the-plan-on-the-run-page",
+    "goal": "The run page shows the plan of the run, or says that it has none.",
+    "id": "runraaaaad",
+    "max_tries": 3,
+    "note": "",
+    "plot_id": "plotaaaaae",
+    "session_id": "",
+    "shape": {
+      "assumptions": [
+        {
+          "answer": "The plan shows as steps with checkboxes.",
+          "text": "The plan shows as a numbered list."
+        }
+      ],
+      "base": "",
+      "drafted_at": "2026-01-01T00:00:00Z",
+      "link": "",
+      "model": "",
+      "plan": [
+        "Read the plan from the run.",
+        "Show it on the run page."
+      ],
+      "repo": "repoaaaaag",
+      "size": "About 60 lines in the app."
+    },
+    "source": {
+      "key": "map 12",
+      "kind": "map",
+      "url": "/tmp/loam-contract/build/issues/12-run-page-plan.md"
+    },
+    "state": "running",
+    "title": "Show the plan on the run page",
+    "tries": 0,
+    "updated_at": "2026-01-01T00:00:00Z",
+    "worktree_id": "wtreaaaaau"
+  },
+  "worktree": {
+    "base": "origin/main",
+    "branch": "map-12-show-the-plan-on-the-run-page",
+    "created_at": "2026-01-01T00:00:00Z",
+    "goal": "Show the plan on the run page",
+    "id": "wtreaaaaau",
+    "link": null,
+    "name": "map-12-show-the-plan-on-the-run-page",
+    "path": "/tmp/loam-contract/loamhome/worktrees/plotaaaaae/web-map-12-show-the-plan-on-the-run-page",
+    "plot_id": "plotaaaaae",
+    "repo": "/tmp/loam-contract/repos/web",
+    "setup_done": false,
+    "version": 0
+  }
+}

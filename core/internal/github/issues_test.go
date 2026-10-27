@@ -12,7 +12,7 @@ import (
 
 const issuesState = `{"issues": [
   {"number": 48, "title": "Install fails when ~/.local/bin is missing", "url": "https://github.com/example/widgets/issues/48",
-   "labels": [{"name": "bug"}], "updatedAt": "2026-10-20T10:00:00Z"},
+   "labels": [{"name": "bug"}], "updatedAt": "2026-10-20T10:00:00Z", "body": "The script stops when the folder is missing."},
   {"number": 52, "title": "Paste a long prompt without a hang", "url": "https://github.com/example/widgets/issues/52",
    "labels": [], "updatedAt": "2026-10-22T09:00:00Z"}
 ]}`
@@ -41,5 +41,21 @@ func TestIssuesGivesTheErrorsOfARead(t *testing.T) {
 	t.Setenv("LOAM_FAKE_GH_FAIL", "rate_limited")
 	if _, err := client(t).Issues(context.Background(), widgets); !errors.Is(err, github.ErrRateLimited) {
 		t.Fatalf("err %v", err)
+	}
+}
+
+// Ticket 207: Shape gives Claude the text of the issue.
+func TestIssueTextIsTheTitleAndTheBody(t *testing.T) {
+	testutil.Home(t)
+	testutil.FakeGH(t, issuesState)
+	got, err := client(t).IssueText(context.Background(), "https://github.com/example/widgets/issues/48")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "Install fails when ~/.local/bin is missing\n\nThe script stops when the folder is missing." {
+		t.Fatalf("%q", got)
+	}
+	if _, err := client(t).IssueText(context.Background(), "https://github.com/example/widgets/issues/7"); err == nil {
+		t.Fatal("a missing issue has text")
 	}
 }

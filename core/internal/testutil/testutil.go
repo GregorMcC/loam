@@ -79,6 +79,17 @@ func FakeClaude(t *testing.T) string {
 	return dir
 }
 
+// FakeClaudePrint makes a -p call of the fake claude print text, as
+// claude -p --output-format json prints its result.
+func FakeClaudePrint(t *testing.T, text string) {
+	t.Helper()
+	file := filepath.Join(t.TempDir(), "print.json")
+	if err := os.WriteFile(file, []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LOAM_FAKE_CLAUDE_PRINT", file)
+}
+
 // FakeClaudeInvocation returns what the fake claude recorded. It fails the
 // test if the fake did not run.
 func FakeClaudeInvocation(t *testing.T) Invocation {

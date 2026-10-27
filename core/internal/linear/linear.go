@@ -242,6 +242,22 @@ func (c *Client) move(ctx context.Context, id, to string, from func(string) bool
 	return first.Name, nil
 }
 
+// IssueText returns the title and the description of the issue, such as
+// ENG-523, with an empty line between them.
+func (c *Client) IssueText(ctx context.Context, id string) (string, error) {
+	var out struct {
+		Issue struct {
+			Title       string `json:"title"`
+			Description string `json:"description"`
+		} `json:"issue"`
+	}
+	q := `query($id: String!) { issue(id: $id) { title description } }`
+	if err := c.query(ctx, q, map[string]any{"id": id}, &out); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out.Issue.Title + "\n\n" + out.Issue.Description), nil
+}
+
 // Attach links url to the issue, such as ENG-523, with title as the name of
 // the link. Linear shows the link on the issue.
 func (c *Client) Attach(ctx context.Context, id, url, title string) error {

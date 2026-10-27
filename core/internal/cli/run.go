@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -29,7 +30,7 @@ func newRunCmd() *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
-	c.AddCommand(newRunStartCmd(), newRunListCmd(), newRunStatusCmd(), newRunStopCmd(), newRunDiffCmd(), newRunSendBackCmd(), newRunLandCmd(), newRunTickCmd(), newRunHookCmd())
+	c.AddCommand(newRunStartCmd(), newRunShapeCmd(), newRunRedraftCmd(), newRunApproveCmd(), newRunListCmd(), newRunStatusCmd(), newRunStopCmd(), newRunDiffCmd(), newRunSendBackCmd(), newRunLandCmd(), newRunTickCmd(), newRunHookCmd())
 	return c
 }
 
@@ -94,6 +95,155 @@ func newRunStartCmd() *cobra.Command {
 	f.BoolVar(&o.ApproveSetup, "approve-setup", false, "approve the setup command of the repo when it is new or changed")
 	c.MarkFlagRequired("title")
 	return c
+}
+
+func newRunShapeCmd() *cobra.Command {
+	var o run.ShapeOptions
+	c := &cobra.Command{
+		Use:   "shape <plot> --title <text> [--repo <repo>] [--base <branch>] [--link <link-id or URL> | --ticket <file>] [--max-tries <n>] [--model <model>]",
+		Short: "Have Claude draft a run, for you to approve",
+		Long: "Record a run in Shaping and have Claude draft it: the goal, the Done when checks, the assumptions that the issue does not settle, a plan, and a size. " +
+			"Claude reads the repo and the issue in print mode (claude -p) with read-only tools, and changes nothing.\n" +
+			"Nothing starts until you approve the run with loam run approve. A draft that fails keeps the run, with the reason as its note: draft it again with loam run redraft.\n" +
+			"The flags are as for loam run start, and they apply when you approve the run.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := openStore()
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+			p, err := resolvePlot(s, args[0])
+			if err != nil {
+				return err
+			}
+			o.PlotID = p.ID
+			r, err := run.Shape(cmd.Context(), s, o)
+			if err != nil {
+				return err
+			}
+			return printRunResult(cmd, r)
+		},
+	}
+	f := c.Flags()
+	f.StringVar(&o.Title, "title", "", "the title of the run (required)")
+	f.StringVar(&o.Repo, "repo", "", "the repo of the run (default: the main repo)")
+	f.StringVar(&o.Base, "base", "", "start the worktree's branch from this branch, not from the default branch of origin")
+	f.StringVar(&o.Link, "link", "", "the link that the work starts from: a link ID of the plot, or the URL of an issue")
+	f.StringVar(&o.Ticket, "ticket", "", "the ticket of a wayfinder map that the work starts from: the path of its file, as loam intake list gives it")
+	f.IntVar(&o.MaxTries, "max-tries", store.DefaultMaxTries, "how many times the checks can fail before the run stops")
+	f.StringVar(&o.Model, "model", "", "the Claude model of the draft and of the session (default: your Claude Code setting)")
+	c.MarkFlagRequired("title")
+	return c
+}
+
+func newRunRedraftCmd() *cobra.Command {
+	var change string
+	c := &cobra.Command{
+		Use:   "redraft <run> [--change <text>]",
+		Short: "Have Claude draft a Shaping run again",
+		Long:  "Have Claude draft a Shaping run again. --change says what you want changed, such as \"Add a check for two screens\": Claude sees its last draft and the change.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := openStore()
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+			r, err := run.Redraft(cmd.Context(), s, args[0], change)
+			if err != nil {
+				return err
+			}
+			return printRunResult(cmd, r)
+		},
+	}
+	c.Flags().StringVar(&change, "change", "", "what you want changed in the draft")
+	return c
+}
+
+func newRunApproveCmd() *cobra.Command {
+	var o run.ApproveOptions
+	var goal string
+	var checks, answers []string
+	c := &cobra.Command{
+		Use:   "approve <run> [--goal <text>] [--check <name>=<command>]... [--answer <n>=<text>]... [--approve-setup]",
+		Short: "Start a Shaping run with your edits to its draft",
+		Long: "Start a Shaping run: Loam makes its worktree and starts its session, as loam run start does.\n" +
+			"--goal replaces the drafted goal. --check replaces the drafted checks: give it once for each check. " +
+			"--answer changes assumption <n> (from 1) to your text. An assumption with no answer stays as Claude made it.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if cmd.Flags().Changed("goal") {
+				o.Goal = &goal
+			}
+			var err error
+			if len(checks) > 0 {
+				if o.DoneWhen, err = parseChecks(checks); err != nil {
+					return err
+				}
+			}
+			if o.Answers, err = parseAnswers(answers); err != nil {
+				return err
+			}
+			if o.Loam, err = loamBinary(); err != nil {
+				return err
+			}
+			s, err := openStore()
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+			res, err := run.Approve(cmd.Context(), s, args[0], o)
+			if err != nil {
+				return err
+			}
+			printWarnings(cmd, res.Warnings)
+			if JSON(cmd) {
+				return printJSON(cmd, struct {
+					Run      store.Run      `json:"run"`
+					Worktree store.Worktree `json:"worktree"`
+				}{res.Run, res.Worktree})
+			}
+			out := cmd.OutOrStdout()
+			printRun(out, res.Run)
+			if res.Run.State == store.RunRunning {
+				fmt.Fprintf(out, "Watch it: %s\n", strings.Join(run.AttachCommand(res.Run), " "))
+			}
+			return nil
+		},
+	}
+	f := c.Flags()
+	f.StringVar(&goal, "goal", "", "the goal, in place of the drafted goal")
+	f.StringArrayVar(&checks, "check", nil, "a Done when check, as <name>=<command>, in place of the drafted checks (repeatable)")
+	f.StringArrayVar(&answers, "answer", nil, "your answer to an assumption, as <n>=<text> (repeatable)")
+	f.BoolVar(&o.ApproveSetup, "approve-setup", false, "approve the setup command of the repo when it is new or changed")
+	return c
+}
+
+// parseAnswers reads --answer values: the number of an assumption, "=", and
+// your text.
+func parseAnswers(vals []string) (map[int]string, error) {
+	out := map[int]string{}
+	for _, v := range vals {
+		n, text, ok := strings.Cut(v, "=")
+		num, err := strconv.Atoi(strings.TrimSpace(n))
+		if !ok || err != nil || strings.TrimSpace(text) == "" {
+			return nil, fmt.Errorf("--answer %q: give the number of an assumption, \"=\", and your text, such as \"1=Open it in a normal window\": %w", v, store.ErrInvalid)
+		}
+		out[num] = text
+	}
+	return out, nil
+}
+
+// printRunResult prints a run: as {"run": ...} with --json.
+func printRunResult(cmd *cobra.Command, r store.Run) error {
+	if JSON(cmd) {
+		return printJSON(cmd, struct {
+			Run store.Run `json:"run"`
+		}{r})
+	}
+	printRun(cmd.OutOrStdout(), r)
+	return nil
 }
 
 // parseChecks reads --check values: a name, "=", and a command.

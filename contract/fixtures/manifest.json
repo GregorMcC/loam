@@ -1100,5 +1100,46 @@
     ],
     "exit_code": 2,
     "schema": "error"
+  },
+  {
+    "name": "run_shape",
+    "args": [
+      "run",
+      "redraft",
+      "runraaaaad",
+      "--change",
+      "Add a check for a run with no plan",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "run-shape"
+  },
+  {
+    "name": "error_run_approve_no_assumption",
+    "args": [
+      "run",
+      "approve",
+      "runraaaaad",
+      "--answer",
+      "5=No",
+      "--json"
+    ],
+    "exit_code": 2,
+    "schema": "error"
+  },
+  {
+    "name": "run_approve",
+    "args": [
+      "run",
+      "approve",
+      "runraaaaad",
+      "--goal",
+      "The run page shows the plan of the run, or says that it has none.",
+      "--answer",
+      "1=The plan shows as steps with checkboxes.",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "run-start"
   }
 ]

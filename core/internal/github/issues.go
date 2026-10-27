@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 )
 
 // issueLimit is how many open issues Loam reads from a repo, the newest first.
@@ -48,4 +49,21 @@ func (c *Client) Issues(ctx context.Context, repo Repo) ([]Issue, error) {
 		issues[i] = Issue{Number: n.Number, Title: n.Title, URL: n.URL, Labels: labels, UpdatedAt: n.UpdatedAt}
 	}
 	return issues, nil
+}
+
+// IssueText returns the title and the body of an issue, by its URL (gh issue
+// view), with an empty line between them.
+func (c *Client) IssueText(ctx context.Context, url string) (string, error) {
+	out, err := c.run(ctx, ghTimeout, nil, "issue", "view", url, "--json", "title,body")
+	if err != nil {
+		return "", readError(err)
+	}
+	var issue struct {
+		Title string `json:"title"`
+		Body  string `json:"body"`
+	}
+	if err := json.Unmarshal(out, &issue); err != nil {
+		return "", fmt.Errorf("%w: gh gave an answer that Loam cannot read: %v", ErrOffline, err)
+	}
+	return strings.TrimSpace(issue.Title + "\n\n" + issue.Body), nil
 }

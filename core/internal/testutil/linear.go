@@ -25,7 +25,8 @@ type LinearCall struct {
 // FakeLinearServer stands in for the Linear API. Team ENG has two open
 // issues: ENG-523 (Todo, High, label Feature) and ENG-525 (Backlog, no
 // priority). An update moves ENG-523 to the state that it names, such as In
-// Progress or Done, and an attachment link succeeds. It is an
+// Progress or Done, an attachment link succeeds, and ENG-523 has a
+// description. It is an
 // [http.Handler], so the fakelinear command can serve it for the app's
 // driver too.
 type FakeLinearServer struct {
@@ -107,6 +108,9 @@ func (f *FakeLinearServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case strings.Contains(req.Query, "issueUpdate"):
 		f.stateID, _ = req.Variables["state"].(string)
 		io.WriteString(w, `{"data":{"issueUpdate":{"success":true}}}`)
+	case strings.Contains(req.Query, "description"):
+		io.WriteString(w, `{"data":{"issue":{"title":"Plot panel: drag a link to reorder it",
+			"description":"A link in the plot panel moves to a new place when you drag it."}}}`)
 	case strings.Contains(req.Query, "issue(id"):
 		to, _ := req.Variables["type"].(string)
 		io.WriteString(w, `{"data":{"issue":{"state":{"type":"`+stateType+`"},

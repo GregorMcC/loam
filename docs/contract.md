@@ -548,7 +548,7 @@ The gate is the Stop hook of the session. Each time the session ends a turn, Loa
 | :- | :- |
 | `loam run start <plot> --title <text> [--goal <text>] [--check <name>=<command>]... [--worktree <name>] [--repo <repo>] [--base <branch>] [--link <link-id or URL> \| --ticket <file>] [--max-tries <n>] [--model <model>] [--approve-setup]` | `{ "run": {...}, "worktree": {...} }` |
 | `loam run list [<plot>]` | An array of runs, newest first. It is `[]` when none exists. |
-| `loam run status <run>` | `{ "run": {...}, "events": [{ "id": 1, "run_id": "...", "at": "...", "kind": "state", "detail": "running" }] }`. `kind` is `state`, `try`, `check`, `linear`, `ship`, `ci`, `review`, or `land`. |
+| `loam run status <run>` | `{ "run": {...}, "events": [{ "id": 1, "run_id": "...", "at": "...", "kind": "state", "detail": "running" }] }`. `kind` is `state`, `try`, `check`, `linear`, `ship`, `ci`, `review`, `land`, or `shape`. |
 | `loam run stop <run>` | `{ "run": {...} }`. The run is `cancelled`. A run that has ended stays as it is. |
 | `loam run tick` | `{ "runs": [...], "warnings": ["..."] }`. `runs` are the runs that the tick moved. Both are `[]` when none. |
 
@@ -584,6 +584,20 @@ A tick also watches the PR of each run that is `ready` and has a `pr`. A merge o
 - `run send-back` takes a run that is `ready` or `stopped`, and at least one note. A note is `<file>:<line>: <text>` for a line, or text alone. Loam stops the session and resumes it with the notes as its prompt, as for a CI failure, and the run is `running` ("Sent back with 2 notes", event `review`). A note uses no try. A run with no tries left gets one more (`max_tries` goes up by 1). The next gate that passes ships the change to the same PR.
 - `run land` takes a run that is `ready` and has a `pr`. Loam stops the session, because the land removes the worktree, then lands the worktree as `loam worktree land` does, with the default merge method: `land` is the `worktree land` result. A merge makes the run `landed` ("Merged #25 with squash", event `land`), and its Linear issue moves to the first completed state (event `linear`). With a merge queue, the run stays `ready` ("#25 is in the merge queue of main"), and a tick lands it when GitHub merges. `--dry-run` changes nothing, and `land` is the plan.
 - A run in another state, or with no PR, exits 2. A check that blocks the merge exits 16, and gh missing or signed out exits 17, as for `worktree land`.
+
+#### Shape
+
+| Command | Output |
+| :- | :- |
+| `loam run shape <plot> --title <text> [--repo <repo>] [--base <branch>] [--link <link> \| --ticket <file>] [--max-tries <n>] [--model <model>]` | `{ "run": { ..., "state": "shaping", "shape": { "assumptions": [{ "text": "...", "answer": "" }], "plan": ["..."], "size": "...", "drafted_at": "...", "repo": "repoaaaaag", "base": "", "link": "", "model": "" } } }` |
+| `loam run redraft <run> [--change <text>]` | `{ "run": { ... } }` |
+| `loam run approve <run> [--goal <text>] [--check <name>=<command>]... [--answer <n>=<text>]... [--approve-setup]` | `{ "run": { ... }, "worktree": { ... } }`, as for `run start` |
+
+- `run shape` records a run that is `shaping`, with the repo as its `folder` and no worktree, then has Claude draft it: `claude -p` in the repo, with the tools Read, Grep, and Glob only, `--output-format json`, a `--json-schema`, and `--no-session-persistence`. The prompt holds the title and the text of the issue: the ticket file, `gh issue view`, or the Linear issue. The draft sets `goal` and `done_when`, and `shape` holds the rest (event `shape`). The command can take minutes.
+- While Claude drafts, the `note` is "Claude is drafting the run". A run that Claude has not drafted yet has no `drafted_at`. A first draft that fails keeps the run `shaping` with no `drafted_at`, and the `note` says why ("Claude could not draft the run: ..."). The command exits 0.
+- `run redraft` drafts a `shaping` run again. `--change` is what you want changed: Claude gets its last draft and the change.
+- `run approve` takes a `shaping` run that has a draft. Loam makes the worktree, as `run start` does with the `repo`, `base`, and `link` of the shape, and starts the session. `--goal` and `--check` replace the draft's, and `--answer` sets the `answer` of an assumption, by number from 1. The session prompt holds the assumptions, with your answer in place of an assumption that you changed, and the plan. A run in another state, a run with no draft, or an answer to no assumption exits 2.
+- `run stop` on a `shaping` run cancels it, with no `claude stop`.
 
 ### Intake
 

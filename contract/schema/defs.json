@@ -397,10 +397,38 @@
         "max_tries": { "type": "integer", "minimum": 1, "maximum": 8 },
         "source": { "description": "It is left out when the run has no issue.", "$ref": "#/$defs/runSource" },
         "pr": { "description": "The PR that Loam opened for the run. It is left out before the run ships.", "$ref": "#/$defs/runPR" },
+        "shape": { "description": "The draft of a run that started in Shaping (loam run shape). It is left out for a run that loam run start started.", "$ref": "#/$defs/runShape" },
         "session_id": { "description": "The Claude Code session of the run. It is empty until the session starts.", "type": "string" },
         "note": { "description": "Why the run is in its state, such as the failed checks.", "type": "string" },
         "created_at": { "$ref": "#/$defs/time" },
         "updated_at": { "$ref": "#/$defs/time" }
+      }
+    },
+    "runShape": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assumptions", "plan", "size", "repo", "base", "link", "model"],
+      "properties": {
+        "assumptions": {
+          "description": "The choices that Claude made and the issue does not settle.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["text", "answer"],
+            "properties": {
+              "text": { "type": "string" },
+              "answer": { "description": "What you want instead, or empty when you keep the assumption.", "type": "string" }
+            }
+          }
+        },
+        "plan": { "description": "The steps that Claude means to take.", "type": "array", "items": { "type": "string" } },
+        "size": { "description": "Claude's estimate of the change, in one sentence.", "type": "string" },
+        "drafted_at": { "description": "When Claude finished the last draft. It is left out while the run has no draft: Claude drafts it, or the draft failed and the note says why.", "$ref": "#/$defs/time" },
+        "repo": { "description": "The repo of the run, as loam run start --repo takes it.", "type": "string" },
+        "base": { "description": "The branch that the worktree's branch starts from, or empty for the default branch of origin.", "type": "string" },
+        "link": { "description": "The link that the work starts from, as loam run start --link takes it, or empty.", "type": "string" },
+        "model": { "description": "The Claude model of the draft and of the session, or empty for the Claude Code setting.", "type": "string" }
       }
     },
     "runEvent": {
@@ -411,7 +439,7 @@
         "id": { "type": "integer", "minimum": 1 },
         "run_id": { "$ref": "#/$defs/id" },
         "at": { "$ref": "#/$defs/time" },
-        "kind": { "description": "state: the new state. try: a failed gate or CI, with its note. check: the result of one check. linear: what Loam did to the Linear issue of the run. ship: a push or a PR. ci: the result of CI on the PR. review: your notes went back to the session. land: a merge of the PR, or where it waits.", "enum": ["state", "try", "check", "linear", "ship", "ci", "review", "land"] },
+        "kind": { "description": "state: the new state. try: a failed gate or CI, with its note. check: the result of one check. linear: what Loam did to the Linear issue of the run. ship: a push or a PR. ci: the result of CI on the PR. review: your notes went back to the session. land: a merge of the PR, or where it waits. shape: a draft by Claude, or why it failed.", "enum": ["state", "try", "check", "linear", "ship", "ci", "review", "land", "shape"] },
         "detail": { "type": "string" }
       }
     },

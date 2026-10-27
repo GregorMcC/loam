@@ -45,6 +45,8 @@
 //     merges it. --match-head-commit must be the PR head.
 //   - gh pr update-branch <number>: a PR that is behind its base is clean.
 //   - gh issue list: prints "issues".
+//   - gh issue view <url>: prints the title and the body of the issue of
+//     "issues" with that URL, or fails as gh does for a missing issue.
 //   - gh run rerun <id> --failed: does nothing, or fails as "rerun_refusals"
 //     says.
 //   - gh pr create --head <branch>: adds an open PR to "pulls", with the next
@@ -63,6 +65,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -127,6 +130,8 @@ func main() {
 		updateBranch(st, args[2])
 	case len(args) > 1 && args[0] == "issue" && args[1] == "list":
 		issues(st)
+	case len(args) > 2 && args[0] == "issue" && args[1] == "view":
+		issue(st, args[2])
 	case len(args) > 2 && args[0] == "run" && args[1] == "rerun":
 		rerun(st, args[2])
 	case len(args) > 1 && args[0] == "pr" && args[1] == "create":
@@ -354,6 +359,22 @@ func issues(st *state) {
 		fail(2, "fakegh: "+err.Error())
 	}
 	fmt.Println(string(b))
+}
+
+// issue prints the title and the body of one issue, as gh issue view --json
+// title,body does.
+func issue(st *state, url string) {
+	for _, i := range st.Issues {
+		if i["url"] == url {
+			b, err := json.Marshal(map[string]any{"title": i["title"], "body": i["body"]})
+			if err != nil {
+				fail(2, "fakegh: "+err.Error())
+			}
+			fmt.Println(string(b))
+			return
+		}
+	}
+	fail(1, "GraphQL: Could not resolve to an issue or pull request with the number of "+path.Base(url)+". (repository.issue)")
 }
 
 // updateBranch brings a PR up to date with its base, as gh pr update-branch does.
