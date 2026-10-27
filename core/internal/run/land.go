@@ -32,7 +32,8 @@ type LandResult struct {
 
 // Land merges the PR of a run that is Ready to land, as loam worktree land
 // does, and the run is Landed. Its Linear issue moves to Done. The session
-// of the run stops first, because the land removes its worktree. When
+// of the run stops first, because the land removes its worktree, but only
+// when a dry run finds that the land can go on. When
 // GitHub merges later, with a merge queue, the run stays Ready, and a tick
 // lands it when GitHub has merged the PR.
 func Land(ctx context.Context, s *store.Store, id string, o LandOptions) (*LandResult, error) {
@@ -47,22 +48,29 @@ func Land(ctx context.Context, s *store.Store, id string, o LandOptions) (*LandR
 		return nil, fmt.Errorf("the run has no PR, so Loam cannot merge it. Merge its branch yourself: %w", store.ErrInvalid)
 	}
 	res := &LandResult{Run: r, Warnings: []string{}}
-	if !o.DryRun {
+	wo := worktree.LandOptions{Head: o.Head, KeepWorktree: o.KeepWorktree, OpenPanes: o.OpenPanes, DryRun: true}
+	plan, err := worktree.Land(ctx, s, r.PlotID, r.WorktreeID, wo)
+	if err != nil {
+		return nil, err
+	}
+	if o.DryRun {
+		res.Land = plan
+		return res, nil
+	}
+	// A land that refuses, for a check or a new head, keeps the session.
+	if plan.Ready && (o.Head == "" || plan.PR.State != "OPEN" || plan.PR.HeadOID == o.Head) {
 		if warning := stopSession(ctx, r); warning != "" {
 			res.Warnings = append(res.Warnings, warning)
 		}
 	}
-	land, err := worktree.Land(ctx, s, r.PlotID, r.WorktreeID, worktree.LandOptions{
-		Head: o.Head, KeepWorktree: o.KeepWorktree, OpenPanes: o.OpenPanes, DryRun: o.DryRun,
-	})
+	wo.DryRun = false
+	land, err := worktree.Land(ctx, s, r.PlotID, r.WorktreeID, wo)
 	if err != nil {
 		return nil, err
 	}
 	res.Land = land
 	pr := land.PR.Number
 	switch {
-	case o.DryRun:
-		return res, nil
 	case land.Merged:
 		note := fmt.Sprintf("Merged #%d with %s", pr, land.Method)
 		if land.PR.State == "MERGED" {

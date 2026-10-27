@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -102,6 +103,21 @@ func TestRunShapeKeepsTheRunWhenClaudeCannotDraft(t *testing.T) {
 	}
 }
 
+// As for run start: claude -p loads the settings and hooks of the repo with
+// no trust prompt, so Loam does not run it in a folder that Claude Code does
+// not trust.
+func TestRunShapeDoesNotDraftInAFolderThatClaudeCodeDoesNotTrust(t *testing.T) {
+	shapeCLI(t)
+	trustFolder(t, "")
+	r := shapeRun(t, "shape", "alpha", "--title", "Remember the window size per plot")
+	if r.State != store.RunShaping || r.Shape.DraftedAt != nil || !strings.Contains(r.Note, "does not trust") {
+		t.Fatalf("run %+v", r)
+	}
+	if calls := testutil.FakeClaudeCalls(t); len(calls) != 0 {
+		t.Fatalf("claude calls %q", calls)
+	}
+}
+
 func TestRunShapeGivesClaudeTheTextOfTheTicket(t *testing.T) {
 	_, _, _, issues := intakeCLI(t)
 	testutil.FakeClaudePrint(t, shapeDraft)
@@ -178,6 +194,18 @@ func TestRunApproveReplacesTheChecksWithYours(t *testing.T) {
 	r = shapeRun(t, "approve", r.ID, "--check", "All tests=go test ./...")
 	if !slices.Equal(r.DoneWhen, []store.Check{{Name: "All tests", Command: "go test ./..."}}) {
 		t.Fatalf("checks %+v", r.DoneWhen)
+	}
+}
+
+func TestRunApproveWithNoChecksRemovesTheDraftedChecks(t *testing.T) {
+	shapeCLI(t)
+	r := shapeRun(t, "shape", "alpha", "--title", "Remember the window size per plot")
+	if _, _, err := lrRun(t, "", "run", "approve", r.ID, "--no-checks", "--check", "All tests=go test ./..."); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("--no-checks with --check: %v", err)
+	}
+	r = shapeRun(t, "approve", r.ID, "--no-checks")
+	if r.State != store.RunRunning || len(r.DoneWhen) != 0 {
+		t.Fatalf("run %+v", r)
 	}
 }
 

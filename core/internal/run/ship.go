@@ -300,8 +300,8 @@ func (sh *shipper) failCI(ctx context.Context, repo github.Repo, pr *github.PR) 
 	}
 	prompt := ciPrompt(ctx, sh.gh, repo, r, pr)
 	moved, err := sh.moveTry(store.RunRunning, failed+": "+strings.Join(names, ", "))
-	if err != nil {
-		return moved, err
+	if err != nil || !moved {
+		return moved, err // a run that you changed during the tick gets no prompt
 	}
 	if err := send(ctx, sh.r, prompt); err != nil {
 		note := "Could not send the CI failure to the session: " + err.Error()
@@ -365,7 +365,9 @@ func send(ctx context.Context, r store.Run, prompt string) error {
 	exec.CommandContext(ctx, claude, "stop", sessionRef(r)).Run()
 	cmd := exec.CommandContext(ctx, claude, "--bg", "--resume", r.SessionID, prompt)
 	cmd.Dir = r.Folder
-	if out, err := cmd.CombinedOutput(); err != nil {
+	cmd.WaitDelay = time.Second
+	// With ErrWaitDelay, claude exited well, and a child of it kept the output open.
+	if out, err := cmd.CombinedOutput(); err != nil && !errors.Is(err, exec.ErrWaitDelay) {
 		return errors.New(failureNote("claude --bg --resume failed", err, string(out)))
 	}
 	return nil

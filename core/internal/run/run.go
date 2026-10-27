@@ -171,9 +171,13 @@ func launch(ctx context.Context, s *store.Store, r store.Run, o StartOptions, re
 	defer cancel()
 	cmd := exec.CommandContext(ctx, plan.Claude, plan.Args...)
 	cmd.Dir, cmd.Env = plan.Dir, plan.Env
+	cmd.WaitDelay = time.Second
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
 	runErr := cmd.Run()
+	if errors.Is(runErr, exec.ErrWaitDelay) {
+		runErr = nil // claude exited well, and a child of it kept the output open
+	}
 	r, err = s.UpdateRun(r.ID, func(r *store.Run) error {
 		switch {
 		case ctx.Err() != nil:

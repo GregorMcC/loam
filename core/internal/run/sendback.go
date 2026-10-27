@@ -59,7 +59,7 @@ type RuleOffer struct {
 // SendBack resumes the session of a run that waits for you, Ready to land or
 // Stopped, with your notes. The run goes back to Running, and then round the
 // gate and Ship again. A note is not a failure, so it uses no try. A run that
-// has used all its tries gets one more. Each note is a note event of the run.
+// has used all its tries gets one more, up to the limit of tries. Each note is a note event of the run.
 // When a note is like one that you sent back on another run of the plot, and
 // no rule came from such a note, the offer says so.
 func SendBack(ctx context.Context, s *store.Store, id string, notes []Note) (store.Run, *RuleOffer, error) {
@@ -91,7 +91,7 @@ func sendBack(ctx context.Context, s *store.Store, id string, notes []Note) (sto
 			return nil
 		}
 		r.State, r.Note, sent = store.RunRunning, note, true
-		r.MaxTries = max(r.MaxTries, r.Tries+1)
+		r.MaxTries = min(max(r.MaxTries, r.Tries+1), store.MaxTriesLimit)
 		return nil
 	})
 	if err != nil || !sent {

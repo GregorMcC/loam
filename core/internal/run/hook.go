@@ -71,7 +71,9 @@ func stopped(s *store.Store, runID string, errOut io.Writer, logf func(string, .
 	if r.State != store.RunRunning && r.State != store.RunStarting && r.State != store.RunStartUnknown {
 		return 0
 	}
-	g := gate(context.Background(), s, r, logf)
+	ctx, cancel := context.WithTimeout(context.Background(), gateBudget)
+	g := gate(ctx, s, r, logf)
+	cancel()
 	ships := len(g.failed) == 0 && onGitHub(s, r)
 	block := false
 	r, err = s.UpdateRun(runID, func(r *store.Run) error {
@@ -122,12 +124,14 @@ func onGitHub(s *store.Store, r store.Run) bool {
 // limitErrors are the StopFailure errors of a usage limit.
 var limitErrors = []string{"rate_limit", "billing_error"}
 
-// stopFailed records a turn that ended on an API error. A usage limit makes
-// the run Stopped by a limit. Any other error stops it. Neither counts a try.
+// stopFailed records a turn of a running run that ended on an API error. A
+// usage limit makes the run Stopped by a limit. Any other error stops it.
+// Neither counts a try. As at the Stop gate, a run that is not running keeps
+// its state: you may have typed in it after it was Ready.
 func stopFailed(s *store.Store, runID string, h hookInput, logf func(string, ...any)) {
 	note := strings.TrimSpace("Claude Code stopped: " + h.Error + " " + h.ErrorDetails)
 	_, err := s.UpdateRun(runID, func(r *store.Run) error {
-		if r.State.Ended() {
+		if r.State != store.RunRunning && r.State != store.RunStarting && r.State != store.RunStartUnknown {
 			return nil
 		}
 		r.State, r.Note = store.RunStopped, note

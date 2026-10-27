@@ -82,6 +82,25 @@ func TestRunLandMergesThePRAndLandsTheRun(t *testing.T) {
 	}
 }
 
+// A land that GitHub would refuse, here for a PR head that you did not look
+// at, leaves the session of the run, which stays Ready.
+func TestRunLandThatRefusesKeepsTheSession(t *testing.T) {
+	s, r, _ := readyRun(t)
+	stops := func() int {
+		return len(slices.DeleteFunc(testutil.FakeClaudeCalls(t), func(c []string) bool { return len(c) == 0 || c[0] != "stop" }))
+	}
+	before := stops()
+	if _, code, out := runLand(t, r.ID, "--head", strings.Repeat("0", 40)); code == 0 {
+		t.Fatalf("landed with another head: %s", out)
+	}
+	if got := stops(); got != before {
+		t.Fatalf("%d claude stop calls, want %d", got, before)
+	}
+	if got, _ := s.GetRun(r.ID); got.State != store.RunReady {
+		t.Fatalf("run %+v", got)
+	}
+}
+
 func TestRunLandRefusesARunThatIsNotReady(t *testing.T) {
 	_, r, _ := shipRun(t, "3")
 	_, code, out := runLand(t, r.ID)

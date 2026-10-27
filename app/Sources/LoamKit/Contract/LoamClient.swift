@@ -291,11 +291,12 @@ public struct LoamClient: Sendable {
     }
 
     /// `loam run approve <run>`: starts a run in Shaping with its draft and your edits. A nil goal or nil checks
-    /// keep the draft. `answers` maps the index of an assumption, from 0, to what you want instead.
+    /// keep the draft, and empty checks remove the draft's. `answers` maps the index of an assumption, from 0, to what you want instead.
     public func runApprove(_ id: String, goal: String? = nil, checks: [RunCheck]? = nil, answers: [Int: String] = [:],
                            approveSetup: Bool = false) async throws -> RunStartResult {
         var args = ["run", "approve"]
         if let goal { args += ["--goal", goal] }
+        if checks?.isEmpty == true { args.append("--no-checks") }
         for check in checks ?? [] { args += ["--check", "\(check.name)=\(check.command)"] }
         for (index, answer) in answers.sorted(by: { $0.key < $1.key }) { args += ["--answer", "\(index + 1)=\(answer)"] }
         if approveSetup { args.append("--approve-setup") }

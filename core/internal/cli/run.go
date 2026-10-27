@@ -165,11 +165,12 @@ func newRunApproveCmd() *cobra.Command {
 	var o run.ApproveOptions
 	var goal string
 	var checks, answers []string
+	var noChecks bool
 	c := &cobra.Command{
-		Use:   "approve <run> [--goal <text>] [--check <name>=<command>]... [--answer <n>=<text>]... [--approve-setup]",
+		Use:   "approve <run> [--goal <text>] [--check <name>=<command>]... [--no-checks] [--answer <n>=<text>]... [--approve-setup]",
 		Short: "Start a Shaping run with your edits to its draft",
 		Long: "Start a Shaping run: Loam makes its worktree and starts its session, as loam run start does.\n" +
-			"--goal replaces the drafted goal. --check replaces the drafted checks: give it once for each check. " +
+			"--goal replaces the drafted goal. --check replaces the drafted checks: give it once for each check. --no-checks removes the drafted checks. " +
 			"--answer changes assumption <n> (from 1) to your text. An assumption with no answer stays as Claude made it.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -177,7 +178,12 @@ func newRunApproveCmd() *cobra.Command {
 				o.Goal = &goal
 			}
 			var err error
-			if len(checks) > 0 {
+			switch {
+			case noChecks && len(checks) > 0:
+				return fmt.Errorf("give --check or --no-checks, not both: %w", store.ErrInvalid)
+			case noChecks:
+				o.DoneWhen = []store.Check{}
+			case len(checks) > 0:
 				if o.DoneWhen, err = parseChecks(checks); err != nil {
 					return err
 				}
@@ -215,6 +221,7 @@ func newRunApproveCmd() *cobra.Command {
 	f := c.Flags()
 	f.StringVar(&goal, "goal", "", "the goal, in place of the drafted goal")
 	f.StringArrayVar(&checks, "check", nil, "a Done when check, as <name>=<command>, in place of the drafted checks (repeatable)")
+	f.BoolVar(&noChecks, "no-checks", false, "remove the drafted checks: the run is done when its work is committed")
 	f.StringArrayVar(&answers, "answer", nil, "your answer to an assumption, as <n>=<text> (repeatable)")
 	f.BoolVar(&o.ApproveSetup, "approve-setup", false, "approve the setup command of the repo when it is new or changed")
 	return c

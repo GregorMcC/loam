@@ -169,6 +169,16 @@ import Testing
         #expect(fake2.args().dropFirst(2).first == "run approve --json -- s1")
     }
 
+    /// When you remove every check of the draft, the run starts with no checks, not with the draft's.
+    @Test func anApprovalWithNoChecksRemovesTheDraftedChecks() async throws {
+        let (model, fake) = try model([("run_status", 0), ("rule_list", 0), ("run_approve", 0), ("run_list", 0)])
+        model.runs.append(Self.shaping())
+        await model.openDesk()
+        model.editDeskChecks([])
+        await model.approveDeskRun()
+        #expect(fake.args().dropFirst(2).first == "run approve --no-checks --json -- s1")
+    }
+
     /// When the core refuses a new setup command, the next approval approves it, as at Intake.
     @Test func anApprovalThatTheSetupStopsOffersToApproveIt() async throws {
         let (model, fake) = try model([("run_status", 0), ("rule_list", 0), ("run_approve", 0), ("run_list", 0)])

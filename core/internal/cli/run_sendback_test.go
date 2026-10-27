@@ -80,6 +80,20 @@ func TestRunSendBackGivesAStoppedRunOneMoreTry(t *testing.T) {
 	}
 }
 
+func TestRunSendBackKeepsTheTriesUnderTheLimit(t *testing.T) {
+	s, r, _ := readyRun(t)
+	if _, err := s.UpdateRun(r.ID, func(r *store.Run) error {
+		r.State, r.Tries, r.MaxTries = store.RunStopped, store.MaxTriesLimit, store.MaxTriesLimit
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, code, out := sendBack(t, r.ID, "--note", "The test needs a fixed clock.")
+	if code != 0 || got.State != store.RunRunning || got.MaxTries != store.MaxTriesLimit {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+}
+
 func TestRunSendBackRefusesARunThatIsNotWaitingForYou(t *testing.T) {
 	_, r, _ := shipRun(t, "3")
 	if _, code, out := sendBack(t, r.ID, "--note", "Hi."); code != ExitInvalid || !strings.Contains(out, "Ready to land or Stopped") {

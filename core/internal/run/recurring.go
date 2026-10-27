@@ -143,6 +143,7 @@ func precheck(ctx context.Context, command, dir string) (output, skip string) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
 	cmd.Dir = dir
+	cmd.WaitDelay = time.Second // a child that keeps the output open does not hold the tick
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err := cmd.Run()
@@ -150,6 +151,10 @@ func precheck(ctx context.Context, command, dir string) (output, skip string) {
 	switch {
 	case ctx.Err() != nil:
 		return "", fmt.Sprintf("Skipped, because the precheck took more than %s", precheckTimeout)
+	case errors.As(err, &exit) && (exit.ExitCode() == 126 || exit.ExitCode() == 127):
+		// The shell could not find or run the command, so the precheck is broken.
+		return "", fmt.Sprintf("Skipped, because the precheck could not run its command (exit %d): %s",
+			exit.ExitCode(), tail(strings.TrimSpace(stderr.String()), 3))
 	case errors.As(err, &exit):
 		return "", fmt.Sprintf("Skipped, because the precheck found no work (exit %d)", exit.ExitCode())
 	case err != nil:

@@ -9,12 +9,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/GregorMcC/loam/core/internal/session"
 	"github.com/GregorMcC/loam/core/internal/store"
 )
 
-// checkTimeout limits one Done when check. The Stop hook of a run has
-// [session.RunHookTimeout] for every check together.
+// checkTimeout limits one Done when check.
 const checkTimeout = 10 * time.Minute
+
+// gateBudget limits every check of one gate together. It ends 2 minutes
+// before [session.RunHookTimeout], so the hook has time to record the result
+// before Claude Code kills it.
+const gateBudget = session.RunHookTimeout*time.Second - 2*time.Minute
 
 // reasonTail is how many lines of a failed check's output go back to the
 // session.
@@ -74,8 +79,13 @@ func (g *gateResult) add(res checkResult) {
 	}
 }
 
-// runCheck runs one check with sh -c in dir.
+// runCheck runs one check with sh -c in dir. When ctx has ended, as at the
+// end of the gate budget, the check fails and does not run.
 func runCheck(ctx context.Context, dir string, c store.Check) checkResult {
+	if ctx.Err() != nil {
+		return checkResult{check: c, exit: -1, output: "Loam did not run the check: the checks ran out of time."}
+	}
+	parent := ctx
 	ctx, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "sh", "-c", c.Command)
@@ -88,6 +98,9 @@ func runCheck(ctx context.Context, dir string, c store.Check) checkResult {
 	res := checkResult{check: c, passed: err == nil, output: out.String(), duration: time.Since(start)}
 	var exit *exec.ExitError
 	switch {
+	case parent.Err() != nil:
+		res.passed, res.exit = false, -1
+		res.output += "\nThe checks ran out of time before this check ended."
 	case ctx.Err() != nil:
 		res.passed, res.exit = false, -1
 		res.output += fmt.Sprintf("\nThe check did not end in %s.", checkTimeout)

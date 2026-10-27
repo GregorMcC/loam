@@ -377,6 +377,22 @@ func TestRunStopFailureFromALimitCountsNoTry(t *testing.T) {
 	}
 }
 
+// A turn that you start in the session of a Ready run, and that ends on an
+// API error, leaves the run Ready.
+func TestRunStopFailureLeavesARunThatIsNotRunning(t *testing.T) {
+	s, r := gateRun(t, "3")
+	writeAndCommit(t, r.Folder, "hello.txt", "hi there\n")
+	if code, reason := stopHook(t, r, "Stop"); code != 0 {
+		t.Fatalf("passing gate: code %d, reason:\n%s", code, reason)
+	}
+	if code, _ := stopHook(t, r, "StopFailure"); code != 0 {
+		t.Fatalf("code %d", code)
+	}
+	if got, _ := s.GetRun(r.ID); got.State != store.RunReady {
+		t.Fatalf("%+v", got)
+	}
+}
+
 func TestRunMaxTriesStaysUnderTheBlockCapOfClaudeCode(t *testing.T) {
 	runCLI(t)
 	_, _, err := lrRun(t, "", "run", "start", "alpha", "--title", "Say hi", "--max-tries", "9")

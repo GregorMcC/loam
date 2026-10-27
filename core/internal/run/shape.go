@@ -232,8 +232,12 @@ func draftRun(ctx context.Context, s *store.Store, r store.Run, change string) (
 }
 
 // askForDraft runs claude -p in the folder of the run, with read-only tools,
-// and returns the draft, or why there is none.
+// and returns the draft, or why there is none. claude -p asks no trust
+// question, so as for a run, the folder must be one that Claude Code trusts.
 func askForDraft(ctx context.Context, r store.Run, change string) (draft, string) {
+	if !claudebin.Trusted(r.Folder) {
+		return draft{}, fmt.Sprintf("%v %s. Run claude in it once and choose Yes, then draft the run again", ErrUntrusted, r.Folder)
+	}
 	claude, err := claudebin.Find()
 	if err != nil {
 		return draft{}, err.Error()
@@ -247,6 +251,7 @@ func askForDraft(ctx context.Context, r store.Run, change string) (draft, string
 	}
 	cmd := exec.CommandContext(ctx, claude, args...)
 	cmd.Dir = r.Folder
+	cmd.WaitDelay = time.Second
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
 	if err := cmd.Run(); err != nil {
