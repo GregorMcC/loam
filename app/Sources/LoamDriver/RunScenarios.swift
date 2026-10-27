@@ -148,15 +148,15 @@ extension Scenarios {
         ] {
             try text.write(to: map.appendingPathComponent(name), atomically: true, encoding: .utf8)
         }
-        let plot = try rig.newPlot("Loam v1 build")
-        try rig.loam(["repo", "add", plot, repo.path])
-        try rig.loam(["link", "add", plot, "Build map", map.appendingPathComponent("map.md").path])
-
         let environment = shotEnvironment.merging([
             "LOAM_GH": fakeGH, "LOAM_FAKE_GH_STATE": ghState.path,
             "LOAM_FAKE_GH_LOG": rig.root.appendingPathComponent("gh-calls.jsonl").path,
             "GIT_SSH_COMMAND": ssh,
         ]) { $1 }
+        let plot = try rig.newPlot("Loam v1 build")
+        // The fake ssh serves the fetch of repo add, so it does not reach GitHub.
+        try rig.loam(["repo", "add", plot, repo.path], extra: environment)
+        try rig.loam(["link", "add", plot, "Build map", map.appendingPathComponent("map.md").path])
         let host = try await app.launchApp(
             client: LoamClient(binary: rig.binary, environment: environment), state: rig.stateFile, terminals: true)
         app.runtime.applyWindowAppearance(to: host.window)
@@ -183,6 +183,10 @@ extension Scenarios {
         try app.fill("intake-goal", with: "A driver scenario quits Loam while a merge runs, and the quit waits.")
         try app.fill("intake-check-name-0", with: "Tests")
         try app.fill("intake-check-command-0", with: "true")
+        // TAS-21: the Base picker starts on the default branch of origin.
+        try await app.waitUntil("the Base picker shows") { app.exists("intake-base") }
+        try confirm(model.runBases?.items.first?.title == "origin/main" && model.runBases?.first == nil,
+                    "the bases are \(String(describing: model.runBases))")
         await appearance(.darkAqua)
         app.screenshot("intake-night")
         await appearance(.aqua)
@@ -204,6 +208,19 @@ extension Scenarios {
         try await app.waitUntil("the ticket has its run") {
             model.intake?.items.first { $0.key == "map 135" }?.runID == run.id
         }
+
+        // TAS-21: a repo with no origin. The picker starts on the branch of the checkout, and the run starts from it.
+        try git(repo, ["remote", "remove", "origin"])
+        try app.click("intake-row-map 136")
+        try await app.waitUntil("the Base picker shows the branch") {
+            app.exists("intake-start") && app.exists("intake-base") && model.runBases?.first == "main"
+        }
+        try app.click("intake-start")
+        try await app.waitUntil("the run starts from main") {
+            if case .run(let id) = model.page { return id != run.id && model.runStatus?.run.id == id }
+            return model.runStartError != nil
+        }
+        try confirm(model.runStartError == nil, "the run did not start: \(model.runStartError ?? "")")
         NSApp.appearance = nil
     }
 

@@ -295,10 +295,28 @@ private struct IntakeDetail: View {
                 Text("Each check is a shell command that passes when it exits 0 in the worktree. The run is done when all pass and the work is committed.")
                     .loamText(LoamTheme.captionStyle, LoamColor.inkFaint)
             }
+            if let bases = model.runBases, bases.plot == plotID, !bases.items.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Base").loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+                    Picker("Base", selection: $draft.base) {
+                        ForEach(bases.items, id: \.title) { item in
+                            Text(item.title).font(.system(size: 12, design: .monospaced)).tag(item.value)
+                        }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    .help("The branch that the worktree of the run starts from")
+                    .accessibilityIdentifier("intake-base")
+                }
+            }
             Stepper(value: $draft.maxTries, in: 1...8) {
                 Text("\(draft.maxTries) \(draft.maxTries == 1 ? "try" : "tries")").loamText(LoamTheme.bodyStyle)
             }
             .accessibilityIdentifier("intake-tries")
+            .task(id: plotID) {
+                await model.readRunBases(plot: plotID)
+                if draft.base == nil, let first = model.runBases?.first { draft.base = first }
+            }
             if let error = model.runStartError {
                 Text(error).loamText(LoamTheme.captionStyle, LoamColor.rust).textSelection(.enabled)
                     .accessibilityIdentifier("intake-start-error")

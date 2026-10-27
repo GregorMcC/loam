@@ -268,6 +268,7 @@ public struct LoamClient: Sendable {
         var args = ["run", "start", "--title", draft.title, "--goal", draft.goal]
         for check in draft.checks { args += ["--check", "\(check.name)=\(check.command)"] }
         args += ["--max-tries", String(draft.maxTries)]
+        if let base = draft.base { args += ["--base", base] }
         if let link = draft.link { args += ["--link", link] }
         if let ticket = draft.ticket { args += ["--ticket", ticket] }
         if draft.approveSetup { args.append("--approve-setup") }
@@ -278,6 +279,7 @@ public struct LoamClient: Sendable {
     /// (ticket 207). Nothing starts until you approve the run. The command returns when the draft is done or failed.
     public func runShape(plot: String, draft: RunDraft) async throws -> RunResult {
         var args = ["run", "shape", "--title", draft.title, "--max-tries", String(draft.maxTries)]
+        if let base = draft.base { args += ["--base", base] }
         if let link = draft.link { args += ["--link", link] }
         if let ticket = draft.ticket { args += ["--ticket", ticket] }
         return try await read(args, positionals: [plot])

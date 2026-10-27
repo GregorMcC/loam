@@ -166,6 +166,8 @@ public final class AppModel {
     public internal(set) var runStartError: String?
     /// True while `loam run start` runs.
     public internal(set) var isStartingRun = false
+    /// The bases of the main repo of the plot of the start form (TAS-21), or nil before they are read.
+    public internal(set) var runBases: RunBases?
     /// The recurring runs of the plot that the Recurring page shows (ticket 208).
     public internal(set) var recurring: [Recurring] = []
     /// Why the last change of a recurring run failed, for the Recurring page.

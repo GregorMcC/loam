@@ -47,6 +47,22 @@ extension AppModel {
         }
     }
 
+    /// Reads the bases of the main repo of the plot for the start form (TAS-21). A plot with no main repo, or a
+    /// failed read, has no bases, and the form shows no Base picker.
+    public func readRunBases(plot: String) async {
+        guard let repo = repoCheckouts[plot]?.first(where: \.isMain) else {
+            runBases = nil
+            return
+        }
+        await readRunBases(plot: plot, repo: repo.id, branch: repo.branch)
+    }
+
+    func readRunBases(plot: String, repo: String, branch: String?) async {
+        // The name is only for the dry run: no branch or worktree is made.
+        let check = try? await client.worktreeCheck(plot: plot, repo: repo, name: "loam-run-base")
+        runBases = check.map { RunBases(plot: plot, check: $0, branch: branch) }
+    }
+
     /// `loam run start` from the Intake page. On success the run page shows the new run, and it returns true. On a
     /// failure, `runStartError` says why, and the page stays.
     public func startRun(plot: String, draft: RunDraft) async -> Bool {
