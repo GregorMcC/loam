@@ -27,9 +27,8 @@ extension Scenarios {
     }
 
     /// A click as the system sends it: the press and the release go on the event queue of the app, and the app takes them to the
-    /// window. The pointer of the system does not move, and no app becomes active.
-    private static func postClick(_ app: DriverApp, _ host: AppHost, at point: NSPoint, count: Int = 1,
-                                  flags: NSEvent.ModifierFlags = []) async {
+    /// window. The pointer of the system does not move, and no app becomes active. The caller waits for what the click does.
+    private static func postClick(_ host: AppHost, at point: NSPoint, count: Int = 1, flags: NSEvent.ModifierFlags = []) {
         for number in 1...count {
             for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
                 guard let event = NSEvent.mouseEvent(
@@ -38,9 +37,24 @@ extension Scenarios {
                     pressure: type == .leftMouseUp ? 0 : 1) else { continue }
                 NSApp.postEvent(event, atStart: false)
             }
-            await app.sleep(0.05)
         }
-        await app.sleep(0.5)
+    }
+
+    /// Where the window server has the window, in the coordinates of AppKit. It follows `window.frame` a moment after a change of the
+    /// frame. A press that is posted before that lands at a wrong point of the window: the shift is the difference of the two frames.
+    private static func windowServerFrame(of window: NSWindow) -> NSRect? {
+        guard let list = CGWindowListCopyWindowInfo([.optionIncludingWindow], CGWindowID(window.windowNumber)) as? [[String: Any]],
+              let dictionary = list.first?[kCGWindowBounds as String] as? NSDictionary,
+              let bounds = CGRect(dictionaryRepresentation: dictionary as CFDictionary),
+              let screen = NSScreen.screens.first else { return nil }
+        return NSRect(x: bounds.minX, y: screen.frame.height - bounds.maxY, width: bounds.width, height: bounds.height)
+    }
+
+    private static func windowServerHasFrame(_ window: NSWindow) -> Bool {
+        guard let server = windowServerFrame(of: window) else { return false }
+        let frame = window.frame
+        return [server.minX - frame.minX, server.minY - frame.minY, server.width - frame.width, server.height - frame.height]
+            .allSatisfy { abs($0) < 1 }
     }
 
     private static func windowButton(_ host: AppHost, _ type: NSWindow.ButtonType) throws -> NSButton {
@@ -98,55 +112,61 @@ extension Scenarios {
         let close = try windowButton(host, .closeButton), mini = try windowButton(host, .miniaturizeButton)
         let zoom = try windowButton(host, .zoomButton)
         func word(_ on: Bool) -> String { on ? "on" : "off" }
-        // The close button follows the model on the next turn of the main loop.
-        try? await app.waitUntil("the close button is \(word(!sheetShows)) \(state)", timeout: 5) { close.isEnabled == !sheetShows }
         check(close.isEnabled == !sheetShows, "the close button is \(word(close.isEnabled)), and macOS has it \(word(!sheetShows))")
         check(mini.isEnabled, "the minimize button is off")
         check(zoom.isEnabled, "the zoom button is off")
         let frame = window.frame
         let before = (sheetOpen: host.model.sheetIsOpen, native: window.attachedSheet != nil)
-        func putBack() async {
+        func waitForWindowServer() async throws {
+            try await app.waitUntil("the window server has the frame of the window") { windowServerHasFrame(window) }
+        }
+        func putBack() async throws {
             window.setFrame(frame, display: true)
-            await app.sleep(0.3)
+            try await app.waitUntil("the window is as it was") { window.frame == frame && !window.isZoomed }
+            try await waitForWindowServer()
         }
 
-        // The first click that the window gets in a run does not reach the view under it (seen in every run). One click on the title
-        // bar comes first, so the presses below are real: a button that ignores one is not a click that got lost.
-        try await postClick(app, host, at: emptyTitleBarPoint(host))
+        // A press that is posted while the window server has an older frame lands at a wrong point. The scenario sets a frame before
+        // the first press, and each press that zooms changes it. So the first press and each put back wait for the window server.
+        try await waitForWindowServer()
 
         // An Option-click on the zoom button zooms the window, also under a sheet.
-        await postClick(app, host, at: windowCentre(of: zoom), flags: .option)
-        let zoomedByOption = window.isZoomed
-        check(zoomedByOption, "an Option-click on the zoom button did not zoom the window")
-        await putBack()
+        postClick(host, at: windowCentre(of: zoom), flags: .option)
+        try await app.waitUntil("an Option-click on the zoom button zooms the window") { window.isZoomed }
+        try await putBack()
 
         // A plain click on the zoom button: under a sheet, the window zooms (macOS has no full screen then). A window that
         // goes to full screen leaves it again at once, so a failure does not keep the display.
         var zoomedByClick: Bool?
         if sheetShows {
-            await postClick(app, host, at: windowCentre(of: zoom))
-            zoomedByClick = window.isZoomed
+            postClick(host, at: windowCentre(of: zoom))
+            try await app.waitUntil("a click on the zoom button zooms the window or goes to full screen") {
+                window.isZoomed || window.styleMask.contains(.fullScreen)
+            }
             let fullScreen = window.styleMask.contains(.fullScreen)
-            check(window.isZoomed && !fullScreen, fullScreen ? "a click on the zoom button went to full screen" : "a click on the zoom button did not zoom the window")
+            zoomedByClick = window.isZoomed
+            check(!fullScreen, "a click on the zoom button went to full screen")
             if fullScreen {
                 window.toggleFullScreen(nil)
-                try? await app.waitUntil("the window leaves full screen", timeout: 10) { !window.styleMask.contains(.fullScreen) }
+                try await app.waitUntil("the window leaves full screen") { !window.styleMask.contains(.fullScreen) }
             }
-            await putBack()
+            try await putBack()
         }
 
         // A double click on the title bar does what the setting says. The check presses it for Zoom only.
         let action = doubleClickAction
         var zoomedByTitleBar: Bool?
         if action == "Maximize" {
-            try await postClick(app, host, at: emptyTitleBarPoint(host), count: 2)
-            zoomedByTitleBar = window.isZoomed
-            check(window.isZoomed, "a double click on the title bar did not zoom the window")
-            await putBack()
+            try postClick(host, at: emptyTitleBarPoint(host), count: 2)
+            try await app.waitUntil("a double click on the title bar zooms the window") { window.isZoomed }
+            zoomedByTitleBar = true
+            try await putBack()
         }
 
-        // A press on the close button: the window is asked to close with no sheet, and it is not asked under a sheet.
-        await postClick(app, host, at: windowCentre(of: close))
+        // A press on the close button: the window is asked to close with no sheet, and it is not asked under a sheet. A press that
+        // macOS ignores does nothing, so a pause stands for the wait.
+        postClick(host, at: windowCentre(of: close))
+        await app.sleep(0.5)
         check(spy.asked == (sheetShows ? 0 : 1), "a press on the close button asked the window to close \(spy.asked) times")
 
         check(window.frame == frame && !window.isZoomed && !window.isMiniaturized && !window.styleMask.contains(.fullScreen),
@@ -156,7 +176,7 @@ extension Scenarios {
         if sheetShows { check(original?.windowShouldClose?(window) == false, "the window agreed to close under the sheet") }
         func outcome(_ value: Bool?) -> String { value.map { $0 ? "zooms" : "does nothing" } ?? "not pressed" }
         Log.line("window buttons, \(state): close \(word(close.isEnabled)), minimize \(word(mini.isEnabled)), zoom \(word(zoom.isEnabled)), "
-                 + "close asked \(spy.asked), Option-click \(outcome(zoomedByOption)), click \(outcome(zoomedByClick)), "
+                 + "close asked \(spy.asked), Option-click zooms, click \(outcome(zoomedByClick)), "
                  + "double click (\(action)) \(outcome(zoomedByTitleBar))")
         if !wrong.isEmpty { throw DriverFailure("the window buttons \(state) differ from macOS:\n- " + wrong.joined(separator: "\n- ")) }
     }
