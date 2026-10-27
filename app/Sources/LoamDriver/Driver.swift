@@ -335,9 +335,9 @@ final class DriverApp: NSObject, NSApplicationDelegate {
         pane.removeFromSuperview()
         panes.removeAll { $0 === pane }
         layoutPanes()
-        Log.line(String(format: "pane %@ closed: exit wait %.3f s, free %.3f s, signals [%@], forced %@",
+        Log.line(String(format: "pane %@ closed: exit wait %.3f s, free %.3f s, signals [%@], forced %@, exit report lost %@",
                         name, result.waited, result.free, result.signals.joined(separator: ", "),
-                        result.forced ? "yes" : "no"))
+                        result.forced ? "yes" : "no", result.exitReportLost ? "yes" : "no"))
         return result
     }
 

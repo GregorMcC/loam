@@ -89,6 +89,58 @@ import Testing
         #expect(close.forced)
     }
 
+    /// libghostty can lose its exit report when the pane floods it with titles (ticket 135). The close then sees the
+    /// exit itself: no process is left on the terminal, and libghostty sends no more actions for the pane.
+    @Test func freesWhenTheExitReportIsLost() {
+        var close = SafeClose(startedAt: 0)
+        _ = close.next(now: 0, foreground: 500, exited: false)
+
+        #expect(close.next(now: 0.01, foreground: nil, exited: false, terminalEmpty: { true }, lastAction: 0.005) == [])
+        #expect(close.next(now: 0.5, foreground: nil, exited: false, terminalEmpty: { true }, lastAction: 0.005) == [])
+        #expect(close.next(now: 0.51, foreground: nil, exited: false, terminalEmpty: { true }, lastAction: 0.005) == [.free])
+        #expect(!close.forced)
+        #expect(close.exitReportLost)
+    }
+
+    /// libghostty still sends the actions that it read before the exit. A free before they end can hang
+    /// (ghostty-org/ghostty#14245), so the close waits until they stop.
+    @Test func waitsForTheActionsToStopWhenTheExitReportIsLost() {
+        var close = SafeClose(startedAt: 0)
+        _ = close.next(now: 0, foreground: 500, exited: false)
+
+        #expect(close.next(now: 0.01, foreground: nil, exited: false, terminalEmpty: { true }, lastAction: 0.01) == [])
+        #expect(close.next(now: 0.6, foreground: nil, exited: false, terminalEmpty: { true }, lastAction: 0.4) == [])
+        #expect(close.next(now: 0.9, foreground: nil, exited: false, terminalEmpty: { true }, lastAction: 0.4) == [.free])
+    }
+
+    @Test func usesTheExitReportWhenItComes() {
+        var close = SafeClose(startedAt: 0)
+        _ = close.next(now: 0, foreground: 500, exited: false)
+
+        #expect(close.next(now: 0.01, foreground: nil, exited: false, terminalEmpty: { true }) == [])
+        #expect(close.next(now: 0.02, foreground: nil, exited: true, terminalEmpty: { true }) == [.free])
+        #expect(!close.exitReportLost)
+    }
+
+    /// `login` stays on the terminal until its child exits.
+    @Test func waitsWhileAProcessIsOnTheTerminal() {
+        var close = SafeClose(startedAt: 0)
+        _ = close.next(now: 0, foreground: 500, exited: false)
+
+        #expect(close.next(now: 1.0, foreground: nil, exited: false, terminalEmpty: { false }) == [])
+        #expect(!close.isFinished)
+    }
+
+    /// A process that left the terminal (`setsid`) is in no list of the terminal, but its group got a SIGHUP.
+    @Test func waitsForAHungUpGroupThatLeftTheTerminal() {
+        var close = SafeClose(startedAt: 0)
+        let alive: Set<pid_t> = [500]
+        _ = close.next(now: 0, foreground: 500, exited: false, groupAlive: alive.contains)
+
+        #expect(close.next(now: 1.0, foreground: nil, exited: false, groupAlive: alive.contains, terminalEmpty: { true }) == [])
+        #expect(!close.isFinished)
+    }
+
     @Test func doesNothingAfterTheFree() {
         var close = SafeClose(startedAt: 0)
         _ = close.next(now: 0, foreground: nil, exited: true)

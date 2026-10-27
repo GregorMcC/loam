@@ -256,6 +256,12 @@ public final class TerminalRuntime {
 
     private func handle(target: ghostty_target_s, action: ghostty_action_s) -> Bool {
         actionCounts[action.tag.rawValue, default: 0] += 1
+        var view: TerminalSurfaceView?
+        if target.tag == GHOSTTY_TARGET_SURFACE, let surface = target.target.surface {
+            view = TerminalSurfaceView.from(ghostty_surface_userdata(surface))
+            // The safe close of a pane waits until its actions stop (ticket 135).
+            view?.lastActionAt = ProcessInfo.processInfo.systemUptime
+        }
         switch action.tag {
         case GHOSTTY_ACTION_RELOAD_CONFIG:
             reloadConfig(target: target, soft: action.action.reload_config.soft)
@@ -271,10 +277,6 @@ public final class TerminalRuntime {
             return commandHandler?(command) ?? false
         }
 
-        var view: TerminalSurfaceView?
-        if target.tag == GHOSTTY_TARGET_SURFACE, let surface = target.target.surface {
-            view = TerminalSurfaceView.from(ghostty_surface_userdata(surface))
-        }
         guard let view else { return false }
 
         switch action.tag {

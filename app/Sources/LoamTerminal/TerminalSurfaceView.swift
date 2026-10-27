@@ -89,6 +89,10 @@ public final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClien
     private var closer: SafeClose?
     private var closeTimer: Timer?
     private var closeCompletions: [(CloseResult) -> Void] = []
+    /// The device of the pane's terminal, read at the start of the close.
+    private var closeTerminal: dev_t?
+    /// When libghostty last sent an action for the pane. The close waits until the actions stop (ticket 135).
+    var lastActionAt: TimeInterval = 0
 
     /// What a close did. The driver logs it.
     public struct CloseResult: Sendable {
@@ -100,6 +104,8 @@ public final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClien
         public var signals: [String]
         /// True when the process did not exit and the free came from the deadline.
         public var forced: Bool
+        /// True when libghostty did not report the exit, and the close saw it on the terminal (ticket 135).
+        public var exitReportLost = false
     }
 
     /// Makes the pane and starts its process. A nil `spec.command` starts your
@@ -168,7 +174,8 @@ public final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClien
     /// Closes the pane with the safe order (spec 8.2): SIGHUP to the foreground
     /// process group, run the run loop until the process exits and every group
     /// that got a SIGHUP is gone (SIGKILL after 2 s), then `ghostty_surface_free`.
-    /// The completion runs after the free.
+    /// libghostty can lose its report of the exit, so the close also checks the
+    /// terminal itself (`SafeClose`). The completion runs after the free.
     /// A second call adds its completion to the running close.
     public func close(completion: ((CloseResult) -> Void)? = nil) {
         if let completion { closeCompletions.append(completion) }
@@ -178,6 +185,7 @@ public final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClien
             return
         }
         closer = SafeClose(startedAt: ProcessInfo.processInfo.systemUptime)
+        closeTerminal = terminalDevice()
         closeSignals = []
         closeStep()
         guard surface != nil else { return }
@@ -195,9 +203,12 @@ public final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClien
         guard let surface, var closer else { return }
         let now = ProcessInfo.processInfo.systemUptime
         let group = pid_t(truncatingIfNeeded: ghostty_surface_foreground_pid(surface))
+        let terminal = closeTerminal
         let steps = closer.next(now: now, foreground: group > 0 ? group : nil,
                                 exited: ghostty_surface_process_exited(surface),
-                                groupAlive: { killpg($0, 0) == 0 || errno == EPERM })
+                                groupAlive: { killpg($0, 0) == 0 || errno == EPERM },
+                                terminalEmpty: { terminal.flatMap(TerminalJobs.onTerminal)?.isEmpty ?? false },
+                                lastAction: lastActionAt)
         self.closer = closer
         for step in steps {
             switch step {
@@ -207,9 +218,21 @@ public final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClien
             case .free:
                 let waited = now - closer.startedAt
                 let free = freeSurface()
-                finishClose(CloseResult(waited: waited, free: free, signals: closeSignals, forced: closer.forced))
+                finishClose(CloseResult(waited: waited, free: free, signals: closeSignals, forced: closer.forced,
+                                        exitReportLost: closer.exitReportLost))
             }
         }
+    }
+
+    /// The device of the pane's terminal, or nil when the app cannot read it.
+    private func terminalDevice() -> dev_t? {
+        guard let surface else { return nil }
+        let name = ghostty_surface_tty_name(surface)
+        defer { ghostty_string_free(name) }
+        guard let pointer = name.ptr else { return nil }
+        let path = String(decoding: UnsafeRawBufferPointer(start: pointer, count: Int(name.len)), as: UTF8.self)
+        var info = stat()
+        return stat(path, &info) == 0 ? info.st_rdev : nil
     }
 
     private func freeSurface() -> TimeInterval {
