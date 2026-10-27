@@ -18,13 +18,13 @@ extension MainWindow {
 }
 
 extension MainWindowController {
-    /// Sets the window buttons now, and again after each change of `AppModel.sheetBlocksWindow`.
-    func observeWindowButtons() {
-        withObservationTracking {
-            _ = model.sheetBlocksWindow
-        } onChange: { [weak self] in
-            Task { @MainActor in self?.observeWindowButtons() }
-        }
+    /// Sets the window buttons from `AppModel.sheetBlocksWindow`. A sheet that opens or closes calls it (`syncTitleBarScrim`).
+    func syncWindowButtons() {
         (window as? MainWindow)?.syncWindowButtons()
     }
+
+    /// Full screen brings the window buttons again, and a window in full screen keeps its behaviour. So each end of full screen
+    /// sets them again.
+    func windowDidEnterFullScreen(_ notification: Notification) { syncWindowButtons() }
+    func windowDidExitFullScreen(_ notification: Notification) { syncWindowButtons() }
 }

@@ -100,9 +100,11 @@ extension MainWindowController {
         split.titleBarScrim = titleBarScrim
     }
 
-    /// Shows the scrim over the title bar while a sheet shows, with the sheets.
+    /// Shows the scrim over the title bar while a sheet shows, with the sheets. The window buttons follow the same change
+    /// (ticket 133).
     func syncTitleBarScrim() {
         titleBarScrim.setShown(model.sheetIsOpen)
+        syncWindowButtons()
     }
 }
 

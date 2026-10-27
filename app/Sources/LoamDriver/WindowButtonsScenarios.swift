@@ -54,13 +54,24 @@ extension Scenarios {
         return NSPoint(x: box.midX, y: box.midY)
     }
 
-    /// A point of the title bar that holds no window button and no toolbar item: left of the New session button.
+    /// A point of the title bar where a press lands on no control: the first one, from the New session button toward the title,
+    /// that is not over a window button, a toolbar item or the title itself.
     private static func emptyTitleBarPoint(_ host: AppHost) throws -> NSPoint {
         guard let frame = host.window.contentView?.superview, let item = find("new-session-button", in: frame) else {
             throw DriverFailure("the window has no New session button")
         }
         let box = item.convert(item.bounds, to: nil)
-        return NSPoint(x: box.minX - 60, y: box.midY)
+        for step in stride(from: 40.0, through: 400.0, by: 40.0) {
+            let point = NSPoint(x: box.minX - step, y: box.midY)
+            var view = frame.hitTest(point)
+            var onControl = false
+            while let current = view {
+                onControl = onControl || current is NSControl
+                view = current.superview
+            }
+            if !onControl { return point }
+        }
+        throw DriverFailure("the title bar has no point with no control, left of the New session button")
     }
 
     /// What `AppleActionOnDoubleClick` says about a double click on the title bar: "Maximize" (shown as Zoom, and the default
@@ -142,6 +153,8 @@ extension Scenarios {
         check(window.frame == frame && !window.isZoomed && !window.isMiniaturized && !window.styleMask.contains(.fullScreen),
               "the window is not as it was")
         check(host.model.sheetIsOpen == before.sheetOpen && (window.attachedSheet != nil) == before.native, "a press closed or opened a sheet")
+        // A close that does not come from the button is refused under a sheet too. A window that agreed would quit the app.
+        if sheetShows { check(original?.windowShouldClose?(window) == false, "the window agreed to close under the sheet") }
         func outcome(_ value: Bool?) -> String { value.map { $0 ? "zooms" : "does nothing" } ?? "not pressed" }
         Log.line("window buttons, \(state): close \(word(close.isEnabled)), minimize \(word(mini.isEnabled)), zoom \(word(zoom.isEnabled)), "
                  + "close asked \(spy.asked), Option-click \(outcome(zoomedByOption)), click \(outcome(zoomedByClick)), "

@@ -120,9 +120,18 @@ extension Scenarios {
             try await expectTitleBarScrim(app, host, shown: true)
         }
 
-        // 3. The sheet closes: the scrim goes, and the items act. New session opens a tab, so the item works.
+        // 3. The sheet closes: the scrim goes, and the items act. New session opens a tab, so the item works. A native sheet is on
+        // the window when it closes (ticket 133): the close button stays off then, and it is on when the native sheet ends.
+        let native = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 120), styleMask: [.titled], backing: .buffered, defer: false)
+        host.window.beginSheet(native) { _ in }
+        try await app.waitUntil("the native sheet shows") { host.window.attachedSheet === native }
         model.closeNewWorktree()
         try await app.waitUntil("the sheet closes") { !app.exists("new-worktree-sheet") }
+        guard let close = host.window.standardWindowButton(.closeButton) else { throw DriverFailure("no close button") }
+        try expectToolbar(!close.isEnabled, "the close button is on under a native sheet, after the sheet of Loam closed")
+        host.window.endSheet(native)
+        try await app.waitUntil("the native sheet ends") { host.window.attachedSheet == nil }
+        try expectToolbar(close.isEnabled, "the close button is off after both sheets ended")
         try await expectTitleBarScrim(app, host, shown: false)
         try await app.waitUntil("the items come back") {
             AccessibilityProbe.shared.isEnabled("new-session-button") && AccessibilityProbe.shared.isEnabled("panel-button")
