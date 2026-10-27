@@ -28,6 +28,25 @@ extension AppModel {
         runStartError?.contains("--approve-setup") == true
     }
 
+    /// `loam run shape` from the Intake page: Claude drafts the run, and the desk shows the draft. On success it
+    /// returns true. On a failure, `runStartError` says why, and the page stays. A draft that Claude could not make
+    /// is no failure: the desk shows the run with the reason.
+    public func shapeRun(plot: String, draft: RunDraft) async -> Bool {
+        guard !isStartingRun else { return false }
+        isStartingRun = true
+        runStartError = nil
+        defer { isStartingRun = false }
+        do {
+            let result = try await client.runShape(plot: plot, draft: draft)
+            await reloadRuns()
+            await openDesk(result.run.id)
+            return true
+        } catch {
+            runStartError = Self.message(for: error)
+            return false
+        }
+    }
+
     /// `loam run start` from the Intake page. On success the run page shows the new run, and it returns true. On a
     /// failure, `runStartError` says why, and the page stays.
     public func startRun(plot: String, draft: RunDraft) async -> Bool {

@@ -195,4 +195,90 @@ extension Scenarios {
         app.screenshot("desk-empty-night")
         NSApp.appearance = nil
     }
+
+    static func shapeShot(_ app: DriverApp) async throws {
+        do { try await shapeShotSteps(app) } catch { app.dumpAccessibility(); throw error }
+    }
+
+    /// Ticket 207: Shape. Claude drafts a run from a map ticket, and the run waits on the Shape tile. The tile
+    /// opens the desk on the draft. You change an assumption, typed, and the keys of the desk type into the field.
+    /// A approves the run, which starts with your change, and the desk is empty.
+    private static func shapeShotSteps(_ app: DriverApp) async throws {
+        let (rig, environment, _) = try shotRig(app)
+        let (repo, _) = try widgetsRepo(rig, onGitHub: false)
+        let plot = try rig.newPlot("Loam v1 build")
+        try rig.loam(["repo", "add", plot, repo.path], extra: environment)
+        // claude -p prints the draft, as claude -p --output-format json does. Other calls do what they did.
+        let draft = rig.root.appendingPathComponent("draft.json")
+        try #"""
+        {"type": "result", "subtype": "success", "is_error": false, "result": "",
+         "structured_output": {
+          "goal": "A search for a link label finds its plot, and a title match ranks above a label match.",
+          "checks": [{"name": "Search tests", "command": "go test ./search/..."}, {"name": "Vet", "command": "go vet ./..."}],
+          "assumptions": ["A label match counts for less than a title match, so titles stay first.",
+                          "Repos have labels too, and the search matches them the same way."],
+          "plan": ["Score the label of a link when its title does not match.", "Weight a label match below a title match.",
+                   "Add tests for a label match and for the order of the results."],
+          "size": "About 80 lines in one package."}}
+        """#.write(to: draft, atomically: true, encoding: .utf8)
+        let claude = rig.root.appendingPathComponent("bin/claude")
+        let stub = try String(contentsOf: claude, encoding: .utf8).replacingOccurrences(of: "#!/bin/sh\n", with: "")
+        try "#!/bin/sh\nfor a in \"$@\"; do [ \"$a\" = -p ] && exec cat '\(draft.path)'; done\n\(stub)"
+            .write(to: claude, atomically: true, encoding: .utf8)
+        let ticket = rig.root.appendingPathComponent("issues/12-plot-search-labels.md")
+        try FileManager.default.createDirectory(at: ticket.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "# Plot search matches link labels\n\nA search for the label of a link finds its plot.\n"
+            .write(to: ticket, atomically: true, encoding: .utf8)
+        try rig.loam(["run", "shape", plot, "--title", "Plot search matches link labels", "--ticket", ticket.path, "--json"],
+                     extra: environment)
+
+        let host = try await app.launchApp(
+            client: LoamClient(binary: rig.binary, environment: environment), state: rig.stateFile, terminals: true)
+        app.runtime.applyWindowAppearance(to: host.window)
+        let model = host.model
+        func appearance(_ name: NSAppearance.Name) async {
+            NSApp.appearance = NSAppearance(named: name)
+            await app.sleep(1)
+        }
+
+        // The Shape tile opens the desk on the draft.
+        await appearance(.darkAqua)
+        try app.click("sidebar-today")
+        try await app.waitUntil("the Shape tile counts the draft") {
+            model.page == .today && model.runs.first?.shape?.isDrafted == true && AccessibilityProbe.shared.isEnabled("today-tile-shape")
+        }
+        try app.click("today-tile-shape")
+        try await app.waitUntil("the desk shows the draft") {
+            model.page == .desk && app.exists("desk-shape") && app.exists("desk-assumption-1") && app.exists("desk-plan")
+        }
+        await app.sleep(0.5)
+        app.screenshot("desk-shape-night")
+        await appearance(.aqua)
+        app.screenshot("desk-shape-day")
+        await appearance(.darkAqua)
+
+        // Change the second assumption, typed. A, C, N, J and K type into the field, and the desk stays.
+        try app.click("desk-assumption-change-1")
+        try await app.waitUntil("the field has the keys") { app.fieldWithTheKeys() == "Change assumption 2" }
+        let answer = "No: a repo has no labels, so only links match."
+        try app.type(answer)
+        try await app.waitUntil("the answer is typed") { AccessibilityProbe.shared.node("desk-assumption-field")?.value == answer }
+        try confirmDesk(model.page == .desk && model.runs.first?.state == .shaping, "a key acted on the desk while you typed")
+        app.press(.returnKey)
+        try await app.waitUntil("the answer shows") {
+            app.exists("desk-assumption-answer-1") && model.desk.currentEdit.answers == [1: answer]
+        }
+        await app.sleep(0.5)
+        app.screenshot("desk-shape-changed-night")
+
+        // A approves the run. It starts with your change, and nothing else waits.
+        try app.type("a")
+        try await app.waitUntil("the run starts") {
+            model.runs.first.map { $0.state != .shaping } == true && app.exists("desk-empty")
+        }
+        let run = model.runs.first
+        try confirmDesk(run?.shape?.assumptions.last?.answer == answer && run?.worktreeID.isEmpty == false,
+                        "the run started without the change: \(String(describing: run))")
+        NSApp.appearance = nil
+    }
 }

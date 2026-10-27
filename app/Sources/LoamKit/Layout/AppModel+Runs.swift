@@ -51,6 +51,11 @@ extension AppModel {
 
     /// Shows the page of a run, and reads its history.
     public func openRun(_ id: String) async {
+        // You approve a draft at the desk.
+        if runs.first(where: { $0.id == id })?.state == .shaping {
+            await openDesk(id)
+            return
+        }
         if runStatus?.run.id != id { runStatus = nil }
         page = .run(id)
         await readRunStatus(id)

@@ -274,6 +274,32 @@ public struct LoamClient: Sendable {
         return try await read(args, positionals: [plot])
     }
 
+    /// `loam run shape <plot>`: records a run in Shaping, and Claude drafts its goal, checks, assumptions and plan
+    /// (ticket 207). Nothing starts until you approve the run. The command returns when the draft is done or failed.
+    public func runShape(plot: String, draft: RunDraft) async throws -> RunResult {
+        var args = ["run", "shape", "--title", draft.title, "--max-tries", String(draft.maxTries)]
+        if let link = draft.link { args += ["--link", link] }
+        if let ticket = draft.ticket { args += ["--ticket", ticket] }
+        return try await read(args, positionals: [plot])
+    }
+
+    /// `loam run redraft <run>`: Claude drafts the run again, with your change to the last draft.
+    public func runRedraft(_ id: String, change: String) async throws -> RunResult {
+        try await read(["run", "redraft", "--change", change], positionals: [id])
+    }
+
+    /// `loam run approve <run>`: starts a run in Shaping with its draft and your edits. A nil goal or nil checks
+    /// keep the draft. `answers` maps the index of an assumption, from 0, to what you want instead.
+    public func runApprove(_ id: String, goal: String? = nil, checks: [RunCheck]? = nil, answers: [Int: String] = [:],
+                           approveSetup: Bool = false) async throws -> RunStartResult {
+        var args = ["run", "approve"]
+        if let goal { args += ["--goal", goal] }
+        for check in checks ?? [] { args += ["--check", "\(check.name)=\(check.command)"] }
+        for (index, answer) in answers.sorted(by: { $0.key < $1.key }) { args += ["--answer", "\(index + 1)=\(answer)"] }
+        if approveSetup { args.append("--approve-setup") }
+        return try await read(args, positionals: [id])
+    }
+
     /// `loam intake list <plot>`: the open issues and map tickets of the plot.
     public func intake(plot: String) async throws -> IntakeList {
         try await read(["intake", "list"], positionals: [plot])

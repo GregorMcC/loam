@@ -1,11 +1,15 @@
 import Foundation
 
 extension AppModel {
-    /// The runs that wait for you at the desk: Ready to land, then Stopped, each the longest wait first.
+    /// The runs that wait for you at the desk: Shaping, then Ready to land, then Stopped, each the longest wait
+    /// first. Nothing starts until you approve a draft, so drafts come first.
     public var deskQueue: [Run] {
         let oldestFirst = runs.reversed()
-        return oldestFirst.filter { $0.state == .ready } + oldestFirst.filter { $0.state == .stopped }
+        return [RunState.shaping, .ready, .stopped].flatMap { state in oldestFirst.filter { $0.state == state } }
     }
+
+    /// The run that the desk shows.
+    public var deskRun: Run? { desk.runID.flatMap { id in runs.first { $0.id == id } } }
 
     /// Shows the desk on the run, or on the first run of the queue, and reads its work.
     public func openDesk(_ runID: String? = nil) async {
@@ -80,6 +84,75 @@ extension AppModel {
         onToast?(toast.text, toast.kind)
     }
 
+    // MARK: Shape
+
+    /// Edits the goal of the draft. A goal that is the same as the draft is no edit.
+    public func editDeskGoal(_ goal: String) {
+        editDeskShape { edit, run in
+            let goal = goal.trimmingCharacters(in: .whitespacesAndNewlines)
+            edit.goal = goal == run.goal ? nil : goal
+        }
+    }
+
+    /// Replaces the checks of the draft. Checks that are the same as the draft are no edit.
+    public func editDeskChecks(_ checks: [RunCheck]) {
+        editDeskShape { edit, run in edit.checks = checks == run.doneWhen ? nil : checks }
+    }
+
+    /// Says what you want in place of an assumption of the draft. No text keeps the assumption.
+    public func answerDeskAssumption(_ index: Int, _ answer: String) {
+        editDeskShape { edit, _ in
+            let answer = answer.trimmingCharacters(in: .whitespacesAndNewlines)
+            edit.answers[index] = answer.isEmpty ? nil : answer
+        }
+    }
+
+    private func editDeskShape(_ change: (inout ShapeEdit, Run) -> Void) {
+        guard let run = deskRun, run.state == .shaping else { return }
+        var edit = desk.shapeEdits[run.id] ?? ShapeEdit()
+        change(&edit, run)
+        desk.shapeEdits[run.id] = edit.isEmpty ? nil : edit
+    }
+
+    /// Starts the run with its draft and your edits (`loam run approve`), and shows the next run. After the core
+    /// refused a new setup command, this approval approves it.
+    public func approveDeskRun() async {
+        guard let id = desk.runID, !desk.busy, !desk.drafting.contains(id) else { return }
+        let edit = desk.currentEdit
+        let approveSetup = desk.needsSetupApproval
+        await deskAction(id) {
+            _ = try await self.client.runApprove(id, goal: edit.goal, checks: edit.checks, answers: edit.answers,
+                                                 approveSetup: approveSetup)
+            self.desk.shapeEdits[id] = nil
+        }
+    }
+
+    /// Claude drafts the run again with your change (`loam run redraft`). The draft takes a while, so the desk
+    /// stays free: you can look at other runs while Claude drafts.
+    public func redraftDeskRun(change: String) async {
+        let change = change.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let id = desk.runID, !change.isEmpty, !desk.drafting.contains(id) else { return }
+        desk.drafting.insert(id)
+        desk.error = nil
+        defer { desk.drafting.remove(id) }
+        do {
+            _ = try await client.runRedraft(id, change: change)
+        } catch {
+            if desk.runID == id { desk.error = Self.message(for: error) }
+            return
+        }
+        await reloadRuns()
+    }
+
+    /// Not now: cancels the run in Shaping (`loam run stop`), and shows the next run.
+    public func notNowDeskRun() async {
+        guard let id = desk.runID, !desk.busy, !desk.drafting.contains(id) else { return }
+        await deskAction(id) {
+            _ = try await self.client.runStop(id)
+            self.desk.shapeEdits[id] = nil
+        }
+    }
+
     /// Runs an action on the run, one at a time, then reads the runs again. A run that the action took from the
     /// queue gives its place to the next.
     private func deskAction(_ id: String, _ action: () async throws -> Void) async {
@@ -115,6 +188,11 @@ extension AppModel {
         desk.error = nil
         runStatus = nil
         guard let id else { return }
+        // A draft has no work to read yet.
+        if runs.first(where: { $0.id == id })?.state == .shaping {
+            await readRunStatus(id)
+            return
+        }
         do {
             let diff = try await client.runDiff(id)
             guard desk.runID == id else { return }

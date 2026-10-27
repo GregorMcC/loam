@@ -14,13 +14,36 @@ public struct DeskState: Equatable, Sendable {
     public var keepWorktree = false
     /// Why the last send-back or merge failed.
     public var error: String?
-    /// A send-back or a merge runs.
+    /// A send-back, a merge, or an approval runs.
     public var busy = false
+    /// Your edits of the drafts of runs in Shaping, by run, kept until you approve the run.
+    public var shapeEdits: [String: ShapeEdit] = [:]
+    /// The runs that Claude drafts again now.
+    public var drafting: Set<String> = []
 
     public init() {}
 
     /// The notes on the run that the desk shows.
     public var currentNotes: [DeskNote] { runID.flatMap { notes[$0] } ?? [] }
+
+    /// Your edits of the draft that the desk shows.
+    public var currentEdit: ShapeEdit { runID.flatMap { shapeEdits[$0] } ?? ShapeEdit() }
+
+    /// True when the last approval stopped at a new or changed setup command. The core names the command in
+    /// `error`, and the next approval approves it.
+    public var needsSetupApproval: Bool { error?.contains("--approve-setup") == true }
+}
+
+/// Your edits of the draft of a run in Shaping. Nil, or no answer, keeps what Claude drafted.
+public struct ShapeEdit: Equatable, Sendable {
+    public var goal: String?
+    public var checks: [RunCheck]?
+    /// What you want in place of an assumption, by its index.
+    public var answers: [Int: String] = [:]
+
+    public init() {}
+
+    public var isEmpty: Bool { goal == nil && checks == nil && answers.isEmpty }
 }
 
 /// One note of yours on the work of a run: on a line of a file, or on the whole run.

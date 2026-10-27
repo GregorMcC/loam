@@ -183,6 +183,8 @@ private struct IntakeDetail: View {
     let item: IntakeItem
     @State private var draft: RunDraft
     @State private var checks: [CheckRow] = [CheckRow()]
+    /// Shape with Claude waits for the draft.
+    @State private var shaping = false
 
     /// One editable check. The ID keeps each row's fields when a row above goes.
     struct CheckRow: Identifiable {
@@ -296,7 +298,16 @@ private struct IntakeDetail: View {
             }
             HStack(spacing: LoamTheme.space2) {
                 if model.isStartingRun { ProgressView().controlSize(.small) }
+                if shaping {
+                    Text("Claude is drafting the run. This takes a minute or two.")
+                        .loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+                }
                 Spacer()
+                Button("Shape with Claude") { shape() }
+                    .loamSecondaryButton()
+                    .disabled(model.isStartingRun || draft.title.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .help("Claude reads the issue and the repo, and drafts the goal, the checks and a plan. You approve the draft at the desk.")
+                    .accessibilityIdentifier("intake-shape")
                 Button(model.runStartNeedsSetupApproval ? "Approve the setup and start" : "Start run") { start() }
                     .loamPrimaryButton()
                     .disabled(model.isStartingRun || draft.title.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -328,6 +339,15 @@ private struct IntakeDetail: View {
         }
         draft.approveSetup = model.runStartNeedsSetupApproval
         Task { await model.startRun(plot: plotID, draft: draft) }
+    }
+
+    /// Claude drafts the goal and the checks, so the form gives only the title, the tries, and the issue.
+    private func shape() {
+        shaping = true
+        Task {
+            await model.shapeRun(plot: plotID, draft: draft)
+            shaping = false
+        }
     }
 
     private func open() {

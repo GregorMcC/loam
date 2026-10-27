@@ -1,9 +1,10 @@
 import LoamKit
 import SwiftUI
 
-/// The desk (ticket 207): the runs that wait for you, one at a time. A run that is ready shows its work by file,
-/// with your notes on its lines, the evidence that it is done, and Send back and Merge. J and K move through the
-/// queue, and Esc leaves for Today. While you type a note, the keys type into it, and Esc cancels the note.
+/// The desk (ticket 207): the runs that wait for you, one at a time. A run in Shaping shows Claude's draft, for you
+/// to edit and approve. A run that is ready shows its work by file, with your notes on its lines, the evidence that
+/// it is done, and Send back and Merge. J and K move through the queue, and Esc leaves for Today. While you type in
+/// a field, the keys type into it, and Esc leaves the field.
 struct DeskView: View {
     let model: AppModel
     @FocusState private var field: DeskField?
@@ -14,7 +15,9 @@ struct DeskView: View {
         VStack(spacing: 0) {
             DeskBar(model: model, queue: queue, typing: field != nil)
             Divider()
-            if let run {
+            if let run, run.state == .shaping {
+                DeskShape(model: model, run: run, field: $field)
+            } else if let run {
                 DeskItem(model: model, run: run, field: $field)
             } else {
                 DeskEmpty(model: model)
@@ -29,11 +32,15 @@ struct DeskView: View {
 enum DeskField: Hashable {
     case line
     case run
+    case goal
+    case check
+    case answer
+    case change
 }
 
 extension View {
     /// The key of the desk, or none while you type in a note.
-    fileprivate func deskKey(_ key: KeyEquivalent, typing: Bool) -> some View {
+    func deskKey(_ key: KeyEquivalent, typing: Bool) -> some View {
         keyboardShortcut(typing ? nil : KeyboardShortcut(key, modifiers: []))
     }
 }
@@ -87,7 +94,7 @@ private struct DeskEmpty: View {
     var body: some View {
         VStack(spacing: LoamTheme.space3) {
             Text("Nothing waits for you").loamText(LoamTheme.emptyTitleStyle)
-            Text("A run comes to the desk when it is ready to land, or when it stops.")
+            Text("A run comes to the desk when Claude has drafted it, when it is ready to land, or when it stops.")
                 .loamText(LoamTheme.bodyStyle, LoamColor.inkMuted)
             Button("Back to Today") { model.leaveDesk() }.loamSecondaryButton()
         }
@@ -124,7 +131,7 @@ private struct DeskItem: View {
 }
 
 /// The station, plot, issue and PR of the run, and its title.
-private struct DeskItemHeader: View {
+struct DeskItemHeader: View {
     let model: AppModel
     let run: Run
 
@@ -132,6 +139,7 @@ private struct DeskItemHeader: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 AttentionDot(mark: run.state == .ready ? .unread : .needs).frame(width: 8, height: 8)
+                    .accessibilityHidden(true)
                 Text(context).loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
             }
             Text(run.title).loamText(LoamTheme.plotNameStyle).textSelection(.enabled)
@@ -143,10 +151,16 @@ private struct DeskItemHeader: View {
     }
 
     private var context: String {
-        var parts = [run.state == .ready ? "Land" : "Stopped", model.plots.first { $0.id == run.plotID }?.name ?? ""]
+        let station = switch run.state {
+        case .shaping: "Shape"
+        case .ready: "Land"
+        default: "Stopped"
+        }
+        var parts = [station, model.plots.first { $0.id == run.plotID }?.name ?? ""]
         if let source = run.source { parts.append(source.key) }
         if let pr = run.pr { parts.append("#\(pr.number)") }
-        parts.append("\(run.tries) of \(run.maxTries) tries used")
+        if let size = run.shape?.size, run.state == .shaping { parts.append(size) }
+        if run.state != .shaping { parts.append("\(run.tries) of \(run.maxTries) tries used") }
         return parts.filter { !$0.isEmpty }.joined(separator: " \u{00B7} ")
     }
 }

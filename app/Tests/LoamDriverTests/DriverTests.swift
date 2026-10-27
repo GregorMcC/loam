@@ -338,6 +338,12 @@ struct DriverTests {
         ])
     }
 
+    /// Ticket 207: Claude drafts a run from a ticket. The Shape tile opens the desk on the draft, a changed
+    /// assumption is typed, and A approves the run, which starts with the change.
+    @Test func shapesARunAtTheDeskChangesAnAssumptionAndApprovesIt() async throws {
+        try await expectPass("shape-shot", environment: ["LOAM_DRIVER_LOAM": Self.loamBinary])
+    }
+
     /// Ticket 107: two plots with a worktree each that is ready to merge. The Ready to merge row counts 2,
     /// ⌘⇧L selects the first, then the second, then the first again, and the row goes while gh is missing.
     @Test func reachesTheWorktreesThatAreReadyToMergeWithCommandShiftL() async throws {

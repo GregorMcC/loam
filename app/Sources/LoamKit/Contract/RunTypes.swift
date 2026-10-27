@@ -64,6 +64,40 @@ public struct RunPR: Codable, Equatable, Sendable {
     public var url: String
 }
 
+/// One choice of a draft that the issue does not settle (ticket 207).
+public struct RunAssumption: Codable, Equatable, Sendable {
+    public var text: String
+    /// What you want instead, or empty when you keep the assumption.
+    public var answer: String
+
+    public init(text: String, answer: String = "") {
+        self.text = text
+        self.answer = answer
+    }
+}
+
+/// The draft of a run that started in Shaping: what Claude made of the issue besides the goal and the checks, and
+/// how the run starts when you approve it (ticket 207).
+public struct RunShape: Codable, Equatable, Sendable {
+    public var assumptions: [RunAssumption]
+    public var plan: [String]
+    public var size: String
+    /// When Claude finished the last draft. Nil while the run has no draft.
+    public var draftedAt: String?
+    public var repo: String
+    public var base: String
+    public var link: String
+    public var model: String
+
+    /// Claude has drafted the run, so you can approve it.
+    public var isDrafted: Bool { draftedAt != nil }
+
+    enum CodingKeys: String, CodingKey {
+        case assumptions, plan, size, repo, base, link, model
+        case draftedAt = "drafted_at"
+    }
+}
+
 /// One goal that a background Claude Code session works on in a worktree, until its checks pass.
 public struct Run: Codable, Equatable, Sendable, Identifiable {
     public var id: String
@@ -81,6 +115,8 @@ public struct Run: Codable, Equatable, Sendable, Identifiable {
     public var source: RunSource?
     /// The PR of the run. Nil before the run ships.
     public var pr: RunPR? = nil
+    /// The draft of a run that started in Shaping, or nil.
+    public var shape: RunShape? = nil
     /// The Claude Code session. Empty until the session starts.
     public var sessionID: String
     /// Why the run is in its state, such as the failed checks.
@@ -91,7 +127,7 @@ public struct Run: Codable, Equatable, Sendable, Identifiable {
     public var waitsOnGitHub: Bool { state == .shipping || (state == .ready && pr != nil) }
 
     enum CodingKeys: String, CodingKey {
-        case id, folder, title, goal, state, tries, source, pr, note
+        case id, folder, title, goal, state, tries, source, pr, shape, note
         case plotID = "plot_id", worktreeID = "worktree_id", doneWhen = "done_when", maxTries = "max_tries"
         case sessionID = "session_id", createdAt = "created_at", updatedAt = "updated_at"
     }

@@ -57,7 +57,7 @@ func decodeFixture(schema: String, data: Data) throws {
     case "run-start": _ = try d.decode(RunStartResult.self, from: data)
     case "run-list": _ = try d.decode([Run].self, from: data)
     case "run-status": _ = try d.decode(RunStatus.self, from: data)
-    case "run-stop", "run-send-back": _ = try d.decode(RunResult.self, from: data)
+    case "run-stop", "run-send-back", "run-shape": _ = try d.decode(RunResult.self, from: data)
     case "run-land": _ = try d.decode(RunLandResult.self, from: data)
     case "run-diff": _ = try d.decode(RunDiff.self, from: data)
     case "run-tick": _ = try d.decode(RunTickResult.self, from: data)
@@ -76,6 +76,17 @@ func decodeFixture(schema: String, data: Data) throws {
         let lines = try #require(file.hunks.first?.lines)
         #expect(lines.first == RunDiff.Line(kind: .del, old: 1, new: nil, text: "hello"))
         #expect(lines[1] == RunDiff.Line(kind: .add, old: nil, new: 1, text: "# Loam"))
+    }
+
+    /// Ticket 207: a Shaping run has the rest of Claude's draft in its shape.
+    @Test func aShapingRunDecodesItsDraft() throws {
+        let run = try JSONDecoder().decode(RunResult.self, from: Fixtures.data("run_shape")).run
+        #expect(run.state == .shaping && run.worktreeID.isEmpty)
+        let shape = try #require(run.shape)
+        #expect(shape.assumptions == [RunAssumption(text: "The plan shows as a numbered list.", answer: "")])
+        #expect(shape.plan.count == 2 && shape.size == "About 60 lines in the app." && shape.isDrafted)
+        let approved = try JSONDecoder().decode(RunStartResult.self, from: Fixtures.data("run_approve")).run
+        #expect(approved.shape?.assumptions.first?.answer == "The plan shows as steps with checkboxes.")
     }
 
     @Test func everyFixtureDecodes() throws {

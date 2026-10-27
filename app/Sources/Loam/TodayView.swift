@@ -77,7 +77,7 @@ private struct EmptyRuns: View {
     }
 }
 
-/// The three desk tiles: Shape, Land, and Stopped. A click on Land or Stopped opens the desk on its first run.
+/// The three desk tiles: Shape, Land, and Stopped. A click on a tile opens the desk on its first run.
 private struct DeskTiles: View {
     let tiles: [TodayContent.Tile]
     let model: AppModel
