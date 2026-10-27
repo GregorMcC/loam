@@ -78,6 +78,8 @@ extension Scenarios {
 
         // 1. No sheet: the scrim is gone, and every item is on.
         try await expectTitleBarScrim(app, host, shown: false)
+        let appKitItems = try expectAppKitItemsOn(host)
+        logMenuItemsWithNoCommand()
         for id in ["new-session-button", "panel-button"] {
             try expectToolbar(AccessibilityProbe.shared.isEnabled(id), "\(id) is off with no sheet")
         }
@@ -101,6 +103,8 @@ extension Scenarios {
         try expectToolbar(model.workspace.tabs(of: .plot(plot)).count == tabs, "a toolbar press opened a tab under the sheet")
         try expectToolbar(model.panel.visible == panelShows, "a toolbar press changed the plot panel under the sheet")
         try expectToolbar(model.sidebarCollapsed == sidebarHidden, "a toolbar press changed the sidebar under the sheet")
+        // The items that AppKit adds for a window (ticket 132) are off, as under a native sheet.
+        try expectAppKitItemsOff(host, baseline: appKitItems)
         app.screenshot("toolbar-under-sheet")
         // A resize moves the window buttons, so the scrim follows them, and the bar keeps the height of the title bar.
         host.window.setFrame(NSRect(x: 100, y: 100, width: 1000, height: 640), display: true)
@@ -123,6 +127,7 @@ extension Scenarios {
         }
         try app.click("new-session-button")
         try await app.waitUntil("New session opens a tab") { model.workspace.tabs(of: .plot(plot)).count == tabs + 1 }
+        try expectAppKitItemsBack(host, baseline: appKitItems)
 
         // 4. A native sheet (ticket 128): New Plot… asks for a name in a sheet. The commands that act on the window are off while
         // it shows, as under the sheets of Loam. Cancel closes it, and the commands run again.
