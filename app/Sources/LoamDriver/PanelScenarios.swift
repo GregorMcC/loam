@@ -176,6 +176,10 @@ struct PanelRig {
             output.append(line)
             let reply = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any]
             guard reply?["id"] as? Int == answered + 2 else { continue }
+            // A call that fails gets a reply too. The steps after it would then fail with no cause in the FAIL line.
+            if reply?["error"] != nil || (reply?["result"] as? [String: Any])?["isError"] as? Bool == true {
+                throw DriverFailure("loam mcp answered \(calls[answered].tool) with an error: \(line)")
+            }
             answered += 1
             if answered == calls.count { break }
             try ask(answered)
