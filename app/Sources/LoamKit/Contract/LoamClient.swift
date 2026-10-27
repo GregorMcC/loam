@@ -300,6 +300,27 @@ public struct LoamClient: Sendable {
         try await read(["run", "stop"], positionals: [id])
     }
 
+    /// `loam run diff`: the work that a run committed (ticket 207).
+    public func runDiff(_ id: String) async throws -> RunDiff {
+        try await read(["run", "diff"], positionals: [id])
+    }
+
+    /// `loam run send-back`: resumes the session of a run with your notes. A note is `<file>:<line>: <text>`, or
+    /// text alone.
+    public func runSendBack(_ id: String, notes: [String]) async throws -> RunResult {
+        try await read(["run", "send-back"] + notes.flatMap { ["--note", $0] }, positionals: [id])
+    }
+
+    /// `loam run land`: merges the PR of a run that is ready to land. `head` is the PR head that you read: the
+    /// merge throws `.notReady` when GitHub has another head.
+    public func runLand(_ id: String, head: String? = nil, keepWorktree: Bool = false,
+                        openPanes: [String] = []) async throws -> RunLandResult {
+        var args = ["run", "land"]
+        if let head { args += ["--head", head] }
+        if keepWorktree { args.append("--keep-worktree") }
+        return try await read(args + openPanes.flatMap { ["--open-pane", $0] }, positionals: [id])
+    }
+
     /// `loam run tick`: ships the runs whose checks passed. It pushes, opens the PR, and reads CI.
     public func runTick() async throws -> RunTickResult {
         try await read(["run", "tick"])

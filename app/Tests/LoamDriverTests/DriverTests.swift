@@ -330,6 +330,14 @@ struct DriverTests {
         ])
     }
 
+    /// Ticket 207: the Land tile opens the desk on a ready run, with its diff. A note on a line goes back to the
+    /// session, the change comes back through the gate and CI, and Merge lands the run.
+    @Test func reviewsARunAtTheDeskSendsANoteBackAndMergesIt() async throws {
+        try await expectPass("desk-shot", environment: [
+            "LOAM_DRIVER_LOAM": Self.loamBinary, "LOAM_DRIVER_FAKE_GH": Self.fakeGH,
+        ])
+    }
+
     /// Ticket 107: two plots with a worktree each that is ready to merge. The Ready to merge row counts 2,
     /// ⌘⇧L selects the first, then the second, then the first again, and the row goes while gh is missing.
     @Test func reachesTheWorktreesThatAreReadyToMergeWithCommandShiftL() async throws {

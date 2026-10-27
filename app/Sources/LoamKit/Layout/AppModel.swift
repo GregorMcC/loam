@@ -149,6 +149,8 @@ public final class AppModel {
     public var lastError: String?
     /// The runs of every plot, newest first, as the core last listed them (ticket 203).
     public internal(set) var runs: [Run] = [] { didSet { if runs != oldValue { onWorkspaceChange?() } } }
+    /// What the desk shows (ticket 207).
+    public internal(set) var desk = DeskState()
     /// The time between the ticks that ship runs (ticket 206).
     public var runTickInterval: Duration = .seconds(30)
     /// The loop of `startRunTicks`, or nil before it starts.

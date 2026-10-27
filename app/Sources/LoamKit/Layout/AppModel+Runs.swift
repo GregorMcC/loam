@@ -8,6 +8,8 @@ public enum AppPage: Equatable, Sendable {
     case run(String)
     /// The intake of a plot: its open issues and map tickets (ticket 204).
     case intake(String)
+    /// The desk: the runs that wait for you, one at a time (ticket 207). `AppModel.desk` says which.
+    case desk
 }
 
 extension AppModel {
@@ -15,11 +17,13 @@ extension AppModel {
     public var today: TodayContent { TodayContent(runs: runs, plots: plots) }
 
     /// Reads the runs of every plot. A failed read keeps the last list. The run page reads its run
-    /// again, so its history follows the gate.
+    /// again, so its history follows the gate. The desk follows its queue.
     public func reloadRuns() async {
         guard let all = try? await client.runs() else { return }
+        let place = deskQueue.firstIndex { $0.id == desk.runID }
         runs = all
         if case .run(let id) = page { await readRunStatus(id) }
+        if page == .desk { await followDeskQueue(from: place) }
     }
 
     /// `loam run tick`: ships the runs whose checks passed. When the tick moved a run, the runs are
@@ -57,10 +61,10 @@ extension AppModel {
         page = nil
     }
 
-    private func readRunStatus(_ id: String) async {
+    func readRunStatus(_ id: String) async {
         do {
             let status = try await client.runStatus(id)
-            guard page == .run(id) else { return }
+            guard page == .run(id) || (page == .desk && desk.runID == id) else { return }
             runStatus = status
         } catch {
             report(error)

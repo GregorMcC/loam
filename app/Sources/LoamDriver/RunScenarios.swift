@@ -298,7 +298,7 @@ extension Scenarios {
     /// A repo, widgets, on branch main with one commit and a local bare origin, and Claude Code trusts it. A run
     /// branches from origin's default branch. With `onGitHub`, origin is example/widgets on GitHub over SSH, and
     /// `ssh` is a fake ssh for `GIT_SSH_COMMAND` that serves the bare repo, so no git command reaches the network.
-    private static func widgetsRepo(_ rig: PanelRig, onGitHub: Bool) throws -> (repo: URL, ssh: String) {
+    static func widgetsRepo(_ rig: PanelRig, onGitHub: Bool) throws -> (repo: URL, ssh: String) {
         let fm = FileManager.default
         let origin = rig.root.appendingPathComponent("origin.git")
         let repo = rig.root.appendingPathComponent("widgets")
@@ -336,56 +336,9 @@ extension Scenarios {
     /// the tick pushes it to #1, CI passes, and the run waits on the Land tile of Today. The fake gh
     /// (`LOAM_DRIVER_FAKE_GH`) stands in for GitHub, and the scenario writes its CI state.
     private static func shipShotSteps(_ app: DriverApp) async throws {
-        guard let fakeGH = ProcessInfo.processInfo.environment["LOAM_DRIVER_FAKE_GH"] else {
-            throw DriverFailure("LOAM_DRIVER_FAKE_GH does not name the fake gh")
-        }
-        let (rig, shotEnvironment, _) = try shotRig(app)
-        let (repo, ssh) = try widgetsRepo(rig, onGitHub: true)
-        let ghState = rig.root.appendingPathComponent("gh-state.json")
-        try "{}".write(to: ghState, atomically: true, encoding: .utf8)
-        let plot = try rig.newPlot("Loam v1 build")
-        try rig.loam(["repo", "add", plot, repo.path])
-
-        let environment = shotEnvironment.merging([
-            "LOAM_GH": fakeGH, "LOAM_FAKE_GH_STATE": ghState.path,
-            "LOAM_FAKE_GH_LOG": rig.root.appendingPathComponent("gh-calls.jsonl").path,
-            "GIT_SSH_COMMAND": ssh,
-        ]) { $1 }
-        let text = try rig.loam(["run", "start", plot, "--title", "Plot search matches link labels",
-                                 "--goal", "A search for a link label finds its plot.", "--check", "Tests=true", "--json"],
-                                extra: environment)
-        let object = (try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])?["run"] as? [String: Any]
-        guard let run = object?["id"] as? String, let folder = (object?["folder"] as? String).map(URL.init(fileURLWithPath:)) else {
-            throw DriverFailure("run start printed no run: \(text)")
-        }
-        let session = "c57ef956-3136-4e86-bfde-da8facfe0523"
-        /// Commits a file in the worktree, as the session does, and ends the turn. The gate passes.
-        func commitAndStop(_ name: String) throws {
-            try "\(name)\n".write(to: folder.appendingPathComponent(name), atomically: true, encoding: .utf8)
-            try git(folder, ["add", name])
-            try git(folder, ["commit", "-q", "-m", "Add \(name)"])
-            try rig.loam(["run", "hook", run], extra: environment,
-                         input: #"{"hook_event_name": "Stop", "session_id": "\#(session)"}"#)
-        }
-        try rig.loam(["run", "hook", run], extra: environment,
-                     input: #"{"hook_event_name": "SessionStart", "session_id": "\#(session)", "source": "startup"}"#)
-        try commitAndStop("search.txt")
-        /// GitHub with PR #1 at the head of the worktree, and one check, ci / test, with the conclusion.
-        func setCI(_ conclusion: String) throws {
-            let head = try git(folder, ["rev-parse", "HEAD"])
-            let branch = try git(folder, ["branch", "--show-current"])
-            try """
-            {"refs": ["\(branch)"],
-             "pulls": [{"number": 1, "title": "Plot search matches link labels", "url": "https://github.com/example/widgets/pull/1",
-               "state": "OPEN", "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN", "baseRefName": "main",
-               "headRefName": "\(branch)", "headRefOid": "\(head)", "commits": {"totalCount": 2}}],
-             "details": {"1": {"commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "\(conclusion)",
-               "contexts": {"totalCount": 1, "nodes": [{"__typename": "CheckRun", "name": "test", "status": "COMPLETED",
-               "conclusion": "\(conclusion)", "isRequired": true,
-               "checkSuite": {"workflowRun": {"databaseId": 9001, "workflow": {"name": "ci"}}}}]}}}}]}}},
-             "logs": {"9001": "test\\tgo test\\t--- FAIL: TestSearchLabels (0.00s)\\ntest\\tgo test\\tFAIL\\n"}}
-            """.write(to: ghState, atomically: true, encoding: .utf8)
-        }
+        let gh = try GitHubRun(app, title: "Plot search matches link labels", goal: "A search for a link label finds its plot.")
+        let (run, rig, environment) = (gh.id, gh.rig, gh.environment)
+        try gh.commitAndStop("search.txt")
 
         let host = try await app.launchApp(
             client: LoamClient(binary: rig.binary, environment: environment), state: rig.stateFile, terminals: true)
@@ -414,7 +367,7 @@ extension Scenarios {
         app.screenshot("ship-run-page-pr")
 
         // CI fails: the failure goes back to the session as a try.
-        try setCI("FAILURE")
+        try gh.setCI("FAILURE")
         await model.tickRuns()
         try await app.waitUntil("the run runs again") {
             model.runStatus?.run.state == .running && model.runStatus?.run.note == "CI failed on #1: ci / test"
@@ -423,7 +376,7 @@ extension Scenarios {
         app.screenshot("ship-ci-failed")
 
         // The fix passes the checks, and a tick pushes it to #1.
-        try commitAndStop("labels.txt")
+        try gh.commitAndStop("labels.txt")
         await model.tickRuns()
         await model.reloadRuns()
         try await app.waitUntil("the fix is on #1") {
@@ -431,7 +384,7 @@ extension Scenarios {
         }
 
         // CI passes: the run is ready to land.
-        try setCI("SUCCESS")
+        try gh.setCI("SUCCESS")
         await model.tickRuns()
         try await app.waitUntil("the run is ready") {
             model.runStatus?.run.state == .ready && model.runStatus?.run.note == "CI passed on #1: 1 of 1 checks"

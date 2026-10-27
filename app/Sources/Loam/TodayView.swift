@@ -11,6 +11,7 @@ struct PageView: View {
             switch model.page {
             case .run(let id): RunPageView(model: model, id: id)
             case .intake(let plot): IntakeView(model: model, plotID: plot)
+            case .desk: DeskView(model: model)
             case .today, nil: TodayView(model: model)
             }
         }
@@ -34,7 +35,7 @@ struct TodayView: View {
                 if model.runs.isEmpty {
                     EmptyRuns()
                 } else {
-                    DeskTiles(tiles: today.tiles)
+                    DeskTiles(tiles: today.tiles, model: model)
                     if !today.needsYou.isEmpty {
                         RunSection(title: "Needs you", items: today.needsYou, model: model, id: "today-needs-you")
                     }
@@ -76,30 +77,38 @@ private struct EmptyRuns: View {
     }
 }
 
-/// The three desk tiles: Shape, Ship, and Stopped.
+/// The three desk tiles: Shape, Land, and Stopped. A click on Land or Stopped opens the desk on its first run.
 private struct DeskTiles: View {
     let tiles: [TodayContent.Tile]
+    let model: AppModel
 
     var body: some View {
         HStack(spacing: LoamTheme.space3) {
             ForEach(tiles, id: \.station) { tile in
-                VStack(alignment: .leading, spacing: LoamTheme.space2) {
-                    HStack(spacing: 6) {
-                        if tile.count > 0 { StationMark(station: tile.station) }
-                        Text(tile.station.words)
-                            .loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
-                    }
-                    Text("\(tile.count)")
-                        .font(.system(size: 26, weight: .semibold)).monospacedDigit()
-                        .foregroundStyle(tile.count > 0 ? LoamColor.ink : LoamColor.inkFaint)
-                }
-                .padding(LoamTheme.space4)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .loamCard()
-                .accessibilityElement(children: .combine)
-                .accessibilityIdentifier("today-tile-\(tile.station.rawValue)")
+                let first = model.deskQueue.first { $0.state.station == tile.station }
+                Button { Task { await model.openDesk(first?.id) } } label: { content(tile) }
+                    .buttonStyle(.plain)
+                    .disabled(first == nil)
+                    .accessibilityIdentifier("today-tile-\(tile.station.rawValue)")
             }
         }
+    }
+
+    private func content(_ tile: TodayContent.Tile) -> some View {
+        VStack(alignment: .leading, spacing: LoamTheme.space2) {
+            HStack(spacing: 6) {
+                if tile.count > 0 { StationMark(station: tile.station) }
+                Text(tile.station.words)
+                    .loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+            }
+            Text("\(tile.count)")
+                .font(.system(size: 26, weight: .semibold)).monospacedDigit()
+                .foregroundStyle(tile.count > 0 ? LoamColor.ink : LoamColor.inkFaint)
+        }
+        .padding(LoamTheme.space4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .loamCard()
+        .contentShape(Rectangle())
     }
 }
 
