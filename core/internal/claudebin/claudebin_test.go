@@ -72,3 +72,29 @@ func TestFindFailsWithNoClaude(t *testing.T) {
 		t.Fatalf("got %q, %v", got, err)
 	}
 }
+
+func TestTrustedReadsClaudeCodeConfigAndParents(t *testing.T) {
+	cfg := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", cfg)
+	root := t.TempDir()
+	trusted := filepath.Join(root, "worktrees")
+	child := filepath.Join(trusted, "plot", "app-fix")
+	other := filepath.Join(root, "other")
+	for _, d := range []string{child, other} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if claudebin.Trusted(child) {
+		t.Fatal("trusted with no config file")
+	}
+	body := `{"projects":{"` + trusted + `":{"hasTrustDialogAccepted":true},"` + other + `":{"hasTrustDialogAccepted":false}}}`
+	if err := os.WriteFile(filepath.Join(cfg, ".claude.json"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for dir, want := range map[string]bool{trusted: true, child: true, other: false, root: false} {
+		if got := claudebin.Trusted(dir); got != want {
+			t.Errorf("%s: trusted %v, want %v", dir, got, want)
+		}
+	}
+}

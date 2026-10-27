@@ -40,7 +40,7 @@ func (s *Store) SetArchived(id string, archived bool) error {
 }
 
 // DeletePlot removes an archived plot that has no worktrees: the plot, its
-// links and repos, its change log, its session records, and the repo settings
+// links and repos, its change log, its session records, its runs, and the repo settings
 // that no other plot uses. It returns the session records that it removed. It
 // does not touch the plot folder. An unknown plot wraps [ErrNotFound], a plot
 // that is not archived wraps [ErrNotArchived], and a plot with worktrees wraps
@@ -84,6 +84,8 @@ func (s *Store) DeletePlot(id string) ([]SessionRecord, error) {
 		return nil, err
 	}
 	for _, q := range []string{
+		`DELETE FROM run_events WHERE run_id IN (SELECT id FROM runs WHERE plot_id = ?)`,
+		`DELETE FROM runs WHERE plot_id = ?`,
 		`DELETE FROM session_pids WHERE session_id IN (SELECT session_id FROM sessions WHERE plot_id = ?)`,
 		`DELETE FROM sessions WHERE plot_id = ?`,
 		`DELETE FROM change_entries WHERE plot_id = ?`,

@@ -1,0 +1,172 @@
+package store_test
+
+import (
+	"errors"
+	"slices"
+	"testing"
+
+	"github.com/GregorMcC/loam/core/internal/store"
+)
+
+func addTestRun(t *testing.T, s *store.Store, plotID string) store.Run {
+	t.Helper()
+	r, err := s.AddRun(store.Run{
+		PlotID:   plotID,
+		Title:    "Drag a link to reorder",
+		Goal:     "A link in the brief moves by drag.",
+		Folder:   "/work/app-eng-523",
+		DoneWhen: []store.Check{{Name: "Go tests", Command: "go test ./..."}},
+		Source:   &store.RunSource{Kind: "linear", Key: "ENG-523", URL: "https://linear.app/x/issue/ENG-523"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+func TestAddRunGivesAnIDAndDefaults(t *testing.T) {
+	s := openStore(t)
+	p := newPlot(t, s, "A")
+	r := addTestRun(t, s, p.ID)
+	if len(r.ID) != store.IDLength || r.State != store.RunStarting || r.Tries != 0 || r.MaxTries != store.DefaultMaxTries {
+		t.Fatalf("%+v", r)
+	}
+	got, err := s.GetRun(r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Title != r.Title || got.Folder != r.Folder || !slices.Equal(got.DoneWhen, r.DoneWhen) ||
+		got.Source == nil || *got.Source != *r.Source || got.CreatedAt.IsZero() {
+		t.Fatalf("got %+v, want %+v", got, r)
+	}
+	if _, err := s.GetRun("nope"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("missing run: %v", err)
+	}
+}
+
+func TestAddRunChecksItsInput(t *testing.T) {
+	s := openStore(t)
+	p := newPlot(t, s, "A")
+	cases := map[string]store.Run{
+		"no plot":       {Title: "x", Folder: "/w"},
+		"no title":      {PlotID: p.ID, Folder: "/w"},
+		"no folder":     {PlotID: p.ID, Title: "x"},
+		"empty check":   {PlotID: p.ID, Title: "x", Folder: "/w", DoneWhen: []store.Check{{Name: "Tests"}}},
+		"bad max tries": {PlotID: p.ID, Title: "x", Folder: "/w", MaxTries: -1},
+	}
+	for name, r := range cases {
+		if _, err := s.AddRun(r); !errors.Is(err, store.ErrInvalid) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	if _, err := s.AddRun(store.Run{PlotID: "zzzzzzzzzz", Title: "x", Folder: "/w"}); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("unknown plot: %v", err)
+	}
+}
+
+func TestListRunsNewestFirstAndByPlot(t *testing.T) {
+	s := openStore(t)
+	a, b := newPlot(t, s, "A"), newPlot(t, s, "B")
+	r1 := addTestRun(t, s, a.ID)
+	r2 := addTestRun(t, s, b.ID)
+	r3 := addTestRun(t, s, a.ID)
+	ids := func(rs []store.Run) []string {
+		var out []string
+		for _, r := range rs {
+			out = append(out, r.ID)
+		}
+		return out
+	}
+	all, err := s.ListRuns("")
+	if err != nil || !slices.Equal(ids(all), []string{r3.ID, r2.ID, r1.ID}) {
+		t.Fatalf("all: %v %v", ids(all), err)
+	}
+	inA, err := s.ListRuns(a.ID)
+	if err != nil || !slices.Equal(ids(inA), []string{r3.ID, r1.ID}) {
+		t.Fatalf("plot A: %v %v", ids(inA), err)
+	}
+}
+
+func TestUpdateRunLogsStateChangesAndTries(t *testing.T) {
+	s := openStore(t)
+	p := newPlot(t, s, "A")
+	r := addTestRun(t, s, p.ID)
+
+	got, err := s.UpdateRun(r.ID, func(r *store.Run) error {
+		r.State = store.RunRunning
+		r.SessionID = "c57ef956-3136-4e86-bfde-da8facfe0523"
+		return nil
+	})
+	if err != nil || got.State != store.RunRunning || got.SessionID == "" {
+		t.Fatalf("%+v %v", got, err)
+	}
+	if _, err := s.UpdateRun(r.ID, func(r *store.Run) error {
+		r.Tries++
+		r.Note = "Go tests failed"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// An error from fn writes nothing.
+	boom := errors.New("boom")
+	if _, err := s.UpdateRun(r.ID, func(r *store.Run) error { r.State = store.RunLanded; return boom }); !errors.Is(err, boom) {
+		t.Fatalf("fn error: %v", err)
+	}
+	// The ID, the plot, and the creation time never change.
+	if _, err := s.UpdateRun(r.ID, func(r *store.Run) error { r.PlotID = "other"; return nil }); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("plot change: %v", err)
+	}
+	// A state must be known.
+	if _, err := s.UpdateRun(r.ID, func(r *store.Run) error { r.State = "done-ish"; return nil }); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("bad state: %v", err)
+	}
+
+	got, err = s.GetRun(r.ID)
+	if err != nil || got.State != store.RunRunning || got.Tries != 1 || got.Note != "Go tests failed" {
+		t.Fatalf("%+v %v", got, err)
+	}
+	events, err := s.RunEvents(r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var kinds []string
+	for _, e := range events {
+		kinds = append(kinds, e.Kind+":"+e.Detail)
+	}
+	want := []string{"state:starting", "state:running", "try:Go tests failed"}
+	if !slices.Equal(kinds, want) {
+		t.Fatalf("events %q, want %q", kinds, want)
+	}
+}
+
+func TestRunStateNeedsYou(t *testing.T) {
+	for st, want := range map[store.RunState]bool{
+		store.RunShaping: true, store.RunStopped: true, store.RunLimited: true,
+		store.RunStarting: false, store.RunRunning: false, store.RunReady: false,
+		store.RunStartUnknown: false, store.RunLanded: false, store.RunCancelled: false,
+	} {
+		if st.NeedsYou() != want {
+			t.Errorf("%s: NeedsYou %v", st, !want)
+		}
+	}
+}
+
+func TestDeletePlotRemovesItsRuns(t *testing.T) {
+	s := openStore(t)
+	gone, keep := newPlot(t, s, "Gone"), newPlot(t, s, "Keep")
+	addTestRun(t, s, gone.ID)
+	kept := addTestRun(t, s, keep.ID)
+	if err := s.SetArchived(gone.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DeletePlot(gone.ID); err != nil {
+		t.Fatal(err)
+	}
+	all, err := s.ListRuns("")
+	if err != nil || len(all) != 1 || all[0].ID != kept.ID {
+		t.Fatalf("%+v %v", all, err)
+	}
+	if ev, err := s.RunEvents(kept.ID); err != nil || len(ev) != 1 {
+		t.Fatalf("events of the kept run: %+v %v", ev, err)
+	}
+}

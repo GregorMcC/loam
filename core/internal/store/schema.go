@@ -132,6 +132,41 @@ ALTER TABLE worktrees ADD COLUMN link_id TEXT NOT NULL DEFAULT '';
 	// 9: what the app does when a refresh finds that GitHub merged the PR of
 	// a worktree of the repo path: ask, remove, or keep.
 	`ALTER TABLE repo_settings ADD COLUMN after_merge TEXT NOT NULL DEFAULT 'ask';`,
+	// 10: runs and their events. A run is one goal that a background
+	// session works on in a folder, until its Done when checks pass. The
+	// worktree ID is not a foreign key: a run outlives its worktree. Neither
+	// table is in the change log.
+	`
+CREATE TABLE runs (
+  id TEXT PRIMARY KEY,
+  plot_id TEXT NOT NULL REFERENCES plots(id),
+  worktree_id TEXT NOT NULL DEFAULT '',
+  folder TEXT NOT NULL,
+  title TEXT NOT NULL,
+  goal TEXT NOT NULL DEFAULT '',
+  done_when TEXT NOT NULL DEFAULT '[]',
+  state TEXT NOT NULL,
+  tries INTEGER NOT NULL DEFAULT 0,
+  max_tries INTEGER NOT NULL,
+  session_id TEXT NOT NULL DEFAULT '',
+  note TEXT NOT NULL DEFAULT '',
+  source_kind TEXT NOT NULL DEFAULT '',
+  source_key TEXT NOT NULL DEFAULT '',
+  source_url TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX runs_plot ON runs(plot_id, created_at);
+CREATE INDEX runs_session ON runs(session_id);
+CREATE TABLE run_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id TEXT NOT NULL REFERENCES runs(id),
+  at INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  detail TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX run_events_run ON run_events(run_id, id);
+`,
 }
 
 // SchemaVersion is the schema version of this binary.

@@ -92,8 +92,9 @@ func rules(tools []string) []string {
 // shellQuote quotes s for a POSIX shell.
 func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
 
-// settingsJSON returns the content of the per-session settings file.
-func settingsJSON(loam string) ([]byte, error) {
+// paneSettings returns the content of the settings file of a session in a
+// pane. The session gets its environment from the pane, so env is not used.
+func paneSettings(loam string, _ []string) ([]byte, error) {
 	type hook struct {
 		Type    string `json:"type"`
 		Command string `json:"command"`
@@ -208,7 +209,7 @@ func Prepare(s *store.Store, o StartOptions) (*Plan, error) {
 		return nil, err
 	}
 
-	plan, err := build(s, plot, dir, claude, id, []string{"--session-id", id}, o.Loam)
+	plan, err := build(s, plot, dir, claude, id, []string{"--session-id", id}, o.Loam, paneSettings)
 	if err != nil {
 		return nil, err
 	}
@@ -256,7 +257,7 @@ func prepareResume(s *store.Store, rec store.SessionRecord, idArgs []string, loa
 	if err != nil {
 		return nil, err
 	}
-	plan, err := build(s, plot, rec.StartFolder, claude, rec.SessionID, idArgs, loam)
+	plan, err := build(s, plot, rec.StartFolder, claude, rec.SessionID, idArgs, loam, paneSettings)
 	if err != nil {
 		return nil, err
 	}
@@ -362,7 +363,11 @@ func PrepareHome(s *store.Store, o HomeOptions) (*Plan, error) {
 	if err != nil {
 		return nil, err
 	}
-	return launch(s, dir, claude, id, []string{flag, id}, extra, nil, o.Loam)
+	settings, err := paneSettings(o.Loam, nil)
+	if err != nil {
+		return nil, err
+	}
+	return launch(s, dir, claude, id, []string{flag, id}, extra, nil, settings)
 }
 
 // refuseArchived fails for an archived plot. A session needs an active plot.
@@ -377,9 +382,14 @@ func findClaude() (string, error) {
 	return claudebin.Find()
 }
 
+// settingsFunc returns the content of a settings file. env is what the
+// session needs in its environment.
+type settingsFunc func(loam string, env []string) ([]byte, error)
+
 // build writes the seed and the settings file and returns the launch plan.
-// idArgs are the first claude arguments: --session-id or --resume.
-func build(s *store.Store, plot store.Plot, dir, claude, id string, idArgs []string, loam string) (*Plan, error) {
+// idArgs are the first claude arguments: --session-id or --resume. id names
+// the settings file.
+func build(s *store.Store, plot store.Plot, dir, claude, id string, idArgs []string, loam string, settings settingsFunc) (*Plan, error) {
 	extra, err := extraArgs()
 	if err != nil {
 		return nil, err
@@ -416,23 +426,23 @@ func build(s *store.Store, plot store.Plot, dir, claude, id string, idArgs []str
 		args = append(args, "--add-dir", a)
 	}
 	env := []string{"LOAM_PLOT=" + plot.ID, "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1"}
-	return launch(s, dir, claude, id, args, extra, env, loam)
+	b, err := settings(loam, env)
+	if err != nil {
+		return nil, err
+	}
+	return launch(s, dir, claude, id, args, extra, env, b)
 }
 
 // launch writes the settings file and returns the launch plan. args are the
 // claude arguments before --settings, and extra come after it. env is added
 // to the cleaned environment.
-func launch(s *store.Store, dir, claude, id string, args, extra, env []string, loam string) (*Plan, error) {
+func launch(s *store.Store, dir, claude, id string, args, extra, env []string, settings []byte) (*Plan, error) {
 	settingsDir := filepath.Join(s.Home(), "sessions")
 	if err := os.MkdirAll(settingsDir, 0o755); err != nil {
 		return nil, err
 	}
 	settingsPath := filepath.Join(settingsDir, id+".json")
-	b, err := settingsJSON(loam)
-	if err != nil {
-		return nil, err
-	}
-	if err := os.WriteFile(settingsPath, b, 0o644); err != nil {
+	if err := os.WriteFile(settingsPath, settings, 0o644); err != nil {
 		return nil, err
 	}
 
