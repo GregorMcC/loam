@@ -10,6 +10,7 @@ struct PageView: View {
         Group {
             switch model.page {
             case .run(let id): RunPageView(model: model, id: id)
+            case .intake(let plot): IntakeView(model: model, plotID: plot)
             case .today, nil: TodayView(model: model)
             }
         }

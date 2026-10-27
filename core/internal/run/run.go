@@ -206,6 +206,11 @@ func findOrMakeWorktree(s *store.Store, plot store.Plot, o StartOptions, title s
 			return store.Worktree{}, nil, err
 		}
 	}
+	// A refused setup command makes no worktree, so a second start with
+	// --approve-setup gets the same name.
+	if err := approveSetup(s, repo.Path, o.ApproveSetup); err != nil {
+		return store.Worktree{}, nil, err
+	}
 	res, err := worktree.Create(s, worktree.CreateOptions{PlotID: plot.ID, Repo: repo.ID, Name: name, Base: o.Base, Goal: title, Link: o.Link})
 	if err != nil {
 		return store.Worktree{}, nil, err
@@ -257,24 +262,33 @@ func slug(text string) string {
 	return out
 }
 
+// approveSetup checks that the setup command of the repo is approved. With
+// approve, it approves a new or changed command. A repo with no setup command
+// needs nothing.
+func approveSetup(s *store.Store, repoPath string, approve bool) error {
+	set, err := s.RepoSettings(repoPath)
+	if err != nil || set.Setup == "" || set.Setup == set.SetupApproved {
+		return err
+	}
+	if !approve {
+		return fmt.Errorf("the setup command of %s is new or changed: %s. A run cannot ask, so add --approve-setup to approve it, then start the run again: %w",
+			filepath.Base(repoPath), set.Setup, store.ErrInvalid)
+	}
+	return s.ApproveSetup(repoPath, set.Setup)
+}
+
 // setUp runs the setup command of the worktree's repo while setup has not
 // succeeded. A command that you have not approved runs only with approve.
 func setUp(s *store.Store, w store.Worktree, approve bool) error {
 	if w.SetupDone {
 		return nil
 	}
+	if err := approveSetup(s, w.Repo, approve); err != nil {
+		return err
+	}
 	set, err := s.RepoSettings(w.Repo)
 	if err != nil || set.Setup == "" {
 		return err
-	}
-	if set.Setup != set.SetupApproved {
-		if !approve {
-			return fmt.Errorf("the setup command of %s is new or changed: %s. A run cannot ask, so add --approve-setup to approve it, then start the run again: %w",
-				filepath.Base(w.Repo), set.Setup, store.ErrInvalid)
-		}
-		if err := s.ApproveSetup(w.Repo, set.Setup); err != nil {
-			return err
-		}
 	}
 	cmd := exec.Command("sh", "-c", set.Setup)
 	cmd.Dir = w.Path

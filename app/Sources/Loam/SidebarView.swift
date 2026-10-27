@@ -674,6 +674,13 @@ private struct SidebarTop: View {
                 } trailing: {
                     NeedsYouCountBadge(count: model.today.needsYouCount)
                 }
+                // Intake (ticket 204): the open issues and map tickets of the active plot.
+                AttentionRow(title: "Intake", count: 0, id: "sidebar-intake", alwaysOn: true,
+                             action: { Task { await model.showIntake() } }) {
+                    Image(systemName: "tray").font(.system(size: 12, weight: .medium)).foregroundStyle(LoamColor.inkMuted)
+                } trailing: {
+                    EmptyView()
+                }
                 // Ship state, not an alert: the symbol is `ink-muted` and the count is plain (ADR 0007).
                 if sidebar.showsReadyToMerge {
                     AttentionRow(title: WorktreeStage.readyToMerge.words, count: sidebar.readyToMergeCount,

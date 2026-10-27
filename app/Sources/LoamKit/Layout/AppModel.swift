@@ -152,6 +152,12 @@ public final class AppModel {
     public internal(set) var page: AppPage? { didSet { if page != oldValue { onWorkspaceChange?() } } }
     /// The run that the run page shows, with its history, as the core last read it.
     public internal(set) var runStatus: RunStatus?
+    /// The intake that the Intake page shows, as the core last read it (ticket 204).
+    public internal(set) var intake: IntakeList?
+    /// Why the last run did not start, for the Intake page.
+    public internal(set) var runStartError: String?
+    /// True while `loam run start` runs.
+    public internal(set) var isStartingRun = false
     /// Set when the launch check fails. The window shows it and loads nothing else.
     public private(set) var launchBlock: String?
     /// The setup steps that are not done. A non-empty list shows the setup banner.

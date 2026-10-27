@@ -151,6 +151,10 @@ func TestRunStartRefusesASetupCommandThatYouHaveNotApproved(t *testing.T) {
 	if !errors.Is(err, store.ErrInvalid) || !strings.Contains(err.Error(), "--approve-setup") {
 		t.Fatalf("err %v", err)
 	}
+	// The refusal makes no worktree, so the second start uses the same name.
+	if ws, _ := s.ListWorktrees(p.ID); len(ws) != 0 {
+		t.Fatalf("a refused start made %d worktrees", len(ws))
+	}
 	// --approve-setup approves the command, runs it, and starts the run.
 	out, _, err := lrRun(t, "", "run", "start", "alpha", "--title", "Fix the thing", "--approve-setup", "--json")
 	if err != nil {
@@ -158,6 +162,9 @@ func TestRunStartRefusesASetupCommandThatYouHaveNotApproved(t *testing.T) {
 	}
 	var got runStartOut
 	json.Unmarshal([]byte(out), &got)
+	if got.Worktree.Name != "fix-the-thing" {
+		t.Fatalf("worktree %q", got.Worktree.Name)
+	}
 	if _, err := os.Stat(filepath.Join(got.Worktree.Path, "set-up")); err != nil {
 		t.Fatalf("setup did not run: %v", err)
 	}

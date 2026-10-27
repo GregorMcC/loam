@@ -312,6 +312,14 @@ struct DriverTests {
         ])
     }
 
+    /// Ticket 204: the Intake page lists two GitHub issues and two open map tickets, filters them, and starts a run
+    /// from a ticket through the core. The new run shows its page, and the ticket shows its run.
+    @Test func listsTheIntakeAndStartsARunFromATicket() async throws {
+        try await expectPass("intake-shot", environment: [
+            "LOAM_DRIVER_LOAM": Self.loamBinary, "LOAM_DRIVER_FAKE_GH": Self.fakeGH,
+        ])
+    }
+
     /// Ticket 107: two plots with a worktree each that is ready to merge. The Ready to merge row counts 2,
     /// ⌘⇧L selects the first, then the second, then the first again, and the row goes while gh is missing.
     @Test func reachesTheWorktreesThatAreReadyToMergeWithCommandShiftL() async throws {

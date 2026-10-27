@@ -262,6 +262,23 @@ public struct LoamClient: Sendable {
     }
 
     /// `positionals` are the arguments that are not flags. They go after `--`, so none of them can be read as a flag.
+    /// `loam run start <plot>`: starts a run in a new worktree of the plot's main repo. Like the other run commands, it is
+    /// not in the change log, so it takes no `--actor`.
+    public func runStart(plot: String, draft: RunDraft) async throws -> RunStartResult {
+        var args = ["run", "start", "--title", draft.title, "--goal", draft.goal]
+        for check in draft.checks { args += ["--check", "\(check.name)=\(check.command)"] }
+        args += ["--max-tries", String(draft.maxTries)]
+        if let link = draft.link { args += ["--link", link] }
+        if let ticket = draft.ticket { args += ["--ticket", ticket] }
+        if draft.approveSetup { args.append("--approve-setup") }
+        return try await read(args, positionals: [plot])
+    }
+
+    /// `loam intake list <plot>`: the open issues and map tickets of the plot.
+    public func intake(plot: String) async throws -> IntakeList {
+        try await read(["intake", "list"], positionals: [plot])
+    }
+
     /// `loam run stop <run>`: stops the background session of a run.
     public func runStop(_ id: String) async throws -> RunStopResult {
         try await read(["run", "stop"], positionals: [id])

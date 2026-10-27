@@ -6,6 +6,8 @@ public enum AppPage: Equatable, Sendable {
     case today
     /// One run: its goal, its checks, its history, and its actions.
     case run(String)
+    /// The intake of a plot: its open issues and map tickets (ticket 204).
+    case intake(String)
 }
 
 extension AppModel {
