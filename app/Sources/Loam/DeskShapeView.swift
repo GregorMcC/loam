@@ -135,10 +135,17 @@ private struct DeskDraft: View {
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if changing != i {
-                    Button("Keep") { model.answerDeskAssumption(i, "") }
-                        .loamSecondaryButton()
-                        .disabled(current == nil)
-                        .accessibilityIdentifier("desk-assumption-keep-\(i)")
+                    // A kept assumption says so. A disabled Keep button read as broken.
+                    if current == nil {
+                        Label("Kept", systemImage: "checkmark")
+                            .loamText(LoamTheme.captionStyle, LoamColor.moss)
+                            .accessibilityIdentifier("desk-assumption-kept-\(i)")
+                    } else {
+                        Button("Keep") { model.answerDeskAssumption(i, "") }
+                            .loamSecondaryButton()
+                            .help("Keep the assumption as Claude drafted it")
+                            .accessibilityIdentifier("desk-assumption-keep-\(i)")
+                    }
                     Button("Change") {
                         answer = current ?? ""
                         changing = i

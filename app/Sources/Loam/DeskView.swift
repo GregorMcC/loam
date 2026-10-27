@@ -208,13 +208,13 @@ private struct DeskItem: View {
             Divider()
             HStack(spacing: 0) {
                 DeskFiles(model: model, typing: field.wrappedValue != nil)
-                    .frame(width: 240)
+                    .frame(width: 200)
                 Divider()
                 DeskDiff(model: model, field: field)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 Divider()
                 DeskEvidence(model: model, run: run, field: field)
-                    .frame(width: 300)
+                    .frame(width: 260)
             }
             Divider()
             DeskActions(model: model, run: run)
@@ -392,8 +392,14 @@ private struct DeskDiff: View {
             .frame(width: 40, alignment: .trailing)
             Text(marker(line.kind)).frame(width: 20)
                 .foregroundStyle(line.kind == .add ? LoamColor.moss : line.kind == .del ? LoamColor.rust : LoamColor.inkFaint)
-            Text(line.text.isEmpty ? " " : line.text).foregroundStyle(LoamColor.ink)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            // The indent stays apart from the code, so a long line wraps under its code.
+            let (indent, code) = line.indentAndCode
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                if !indent.isEmpty { Text(indent).fixedSize() }
+                Text(code.isEmpty ? " " : code)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .foregroundStyle(LoamColor.ink)
         }
         .loamText(LoamTheme.codeStyle, LoamColor.inkFaint)
         .padding(.trailing, LoamTheme.space4)

@@ -236,6 +236,16 @@ public struct RunDiff: Codable, Equatable, Sendable {
     }
 }
 
+extension RunDiff.Line {
+    /// The leading spaces and tabs of the line, and the rest. The desk draws them apart, so a long line wraps under
+    /// its code, not under its indent. A line of only spaces and tabs is all code.
+    public var indentAndCode: (indent: String, code: String) {
+        let indent = text.prefix { $0 == " " || $0 == "\t" }
+        guard indent.count < text.count else { return ("", text) }
+        return (String(indent), String(text.dropFirst(indent.count)))
+    }
+}
+
 /// Output of `loam run tick` (ticket 206): the runs that the tick moved.
 public struct RunTickResult: Codable, Equatable, Sendable {
     public var runs: [Run]

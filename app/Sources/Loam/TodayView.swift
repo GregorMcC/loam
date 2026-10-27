@@ -340,12 +340,30 @@ private struct RunHeader: View {
                     .loamSecondaryButton()
                     .accessibilityIdentifier("run-page-stop")
             }
-            Button("Watch") { model.watchRun(run) }
-                .loamPrimaryButton()
-                .disabled(run.shortSessionID == nil)
-                .help(run.shortSessionID == nil ? "The session has not started." : "Open the session in a tab with claude attach.")
-                .accessibilityIdentifier("run-page-watch")
+            if atDesk {
+                Button("Watch") { model.watchRun(run) }
+                    .loamSecondaryButton()
+                    .disabled(run.shortSessionID == nil)
+                    .help(watchHelp)
+                    .accessibilityIdentifier("run-page-watch")
+                // A run that waits for you goes to the desk, where you approve, send back, or merge it.
+                Button("Open at the desk") { Task { await model.openDesk(run.id) } }
+                    .loamPrimaryButton()
+                    .accessibilityIdentifier("run-page-desk")
+            } else {
+                Button("Watch") { model.watchRun(run) }
+                    .loamPrimaryButton()
+                    .disabled(run.shortSessionID == nil)
+                    .help(watchHelp)
+                    .accessibilityIdentifier("run-page-watch")
+            }
         }
+    }
+
+    private var atDesk: Bool { model.deskQueue.contains { $0.id == run.id } }
+
+    private var watchHelp: String {
+        run.shortSessionID == nil ? "The session has not started." : "Open the session in a tab with claude attach."
     }
 
     private var headline: String {

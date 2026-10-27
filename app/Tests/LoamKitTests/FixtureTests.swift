@@ -85,6 +85,15 @@ func decodeFixture(schema: String, data: Data) throws {
         #expect(lines[1] == RunDiff.Line(kind: .add, old: nil, new: 1, text: "# Loam"))
     }
 
+    /// The desk draws the indent of a line apart from its code, so a long line wraps under its code.
+    @Test func aDiffLineSplitsItsIndentFromItsCode() {
+        #expect(RunDiff.Line(kind: .add, text: "\t\tscore := Score(q)").indentAndCode == ("\t\t", "score := Score(q)"))
+        #expect(RunDiff.Line(kind: .add, text: "    x").indentAndCode == ("    ", "x"))
+        #expect(RunDiff.Line(kind: .add, text: "x").indentAndCode == ("", "x"))
+        #expect(RunDiff.Line(kind: .add, text: "   ").indentAndCode == ("", "   "))
+        #expect(RunDiff.Line(kind: .add, text: "").indentAndCode == ("", ""))
+    }
+
     /// Ticket 207: a Shaping run has the rest of Claude's draft in its shape.
     @Test func aShapingRunDecodesItsDraft() throws {
         let run = try JSONDecoder().decode(RunResult.self, from: Fixtures.data("run_shape")).run
