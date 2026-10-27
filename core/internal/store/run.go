@@ -69,6 +69,10 @@ func (st RunState) valid() bool {
 // run stops.
 const DefaultMaxTries = 3
 
+// MaxTriesLimit is the most tries a run can have. Claude Code lets a stop
+// happen after 8 blocked stops in a row, so a gate cannot hold more.
+const MaxTriesLimit = 8
+
 // Check is one Done when check of a run: a shell command that passes when it
 // exits 0 in the run's folder.
 type Check struct {
@@ -138,8 +142,9 @@ func (r *Run) check() error {
 			return fmt.Errorf("each Done when check needs a name and a command: %w", ErrInvalid)
 		}
 	}
-	if r.MaxTries < 1 {
-		return fmt.Errorf("a run needs at least 1 try: %w", ErrInvalid)
+	if r.MaxTries < 1 || r.MaxTries > MaxTriesLimit {
+		return fmt.Errorf("a run has 1 to %d tries, because Claude Code lets a session stop after %d blocked stops in a row: %w",
+			MaxTriesLimit, MaxTriesLimit, ErrInvalid)
 	}
 	if !r.State.valid() {
 		return fmt.Errorf("%q is not a run state: %w", r.State, ErrInvalid)
@@ -289,6 +294,27 @@ func (s *Store) UpdateRun(id string, fn func(*Run) error) (Run, error) {
 		}
 	}
 	return r, tx.commit()
+}
+
+// AddRunEvent adds a line to the history of a run, such as the result of
+// one check.
+func (s *Store) AddRunEvent(runID, kind, detail string) error {
+	tx, err := s.beginWrite()
+	if err != nil {
+		return err
+	}
+	defer tx.rollback()
+	ok, err := exists(tx.conn, `SELECT 1 FROM runs WHERE id = ?`, runID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("run %q: %w", runID, ErrNotFound)
+	}
+	if err := addRunEvent(tx, runID, time.Now().UnixMilli(), kind, detail); err != nil {
+		return err
+	}
+	return tx.commit()
 }
 
 // RunEvents returns the history of a run, oldest first.

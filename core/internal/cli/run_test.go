@@ -214,3 +214,122 @@ func realPath(t *testing.T, path string) string {
 	}
 	return r
 }
+
+// gateRun starts a run whose one check passes when hello.txt holds "hi there".
+func gateRun(t *testing.T, maxTries string) (*store.Store, store.Run) {
+	t.Helper()
+	s, _ := runCLI(t)
+	out, _, err := lrRun(t, "", "run", "start", "alpha", "--title", "Say hi", "--max-tries", maxTries,
+		"--check", "Hello=grep -qx 'hi there' hello.txt", "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got runStartOut
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatal(err)
+	}
+	return s, got.Run
+}
+
+// stopHook sends a Stop hook of the run and returns the exit code and stderr.
+func stopHook(t *testing.T, r store.Run, event string) (int, string) {
+	t.Helper()
+	in := `{"hook_event_name":"` + event + `","session_id":"c57ef956-3136-4e86-bfde-da8facfe0523","cwd":"` + r.Folder + `","error":"rate_limit"}`
+	_, errOut, err := lrRun(t, in, "run", "hook", r.ID)
+	var code exitCode
+	switch {
+	case err == nil:
+		return 0, errOut
+	case errors.As(err, &code):
+		return int(code), errOut
+	}
+	t.Fatal(err)
+	return 0, ""
+}
+
+func writeAndCommit(t *testing.T, dir, file, text string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, file), []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	testutil.Git(t, dir, "add", file)
+	testutil.Git(t, dir, "commit", "-q", "-m", "Write "+file)
+}
+
+func TestRunGateBlocksAStopUntilTheChecksPass(t *testing.T) {
+	s, r := gateRun(t, "3")
+
+	code, reason := stopHook(t, r, "Stop")
+	if code != 2 || !strings.Contains(reason, "Hello") || !strings.Contains(reason, "grep -qx 'hi there' hello.txt") ||
+		!strings.Contains(reason, "try 1 of 3") {
+		t.Fatalf("code %d, reason:\n%s", code, reason)
+	}
+	if got, _ := s.GetRun(r.ID); got.State != store.RunRunning || got.Tries != 1 {
+		t.Fatalf("after a failed gate: %+v", got)
+	}
+
+	// Work that is not committed fails the gate, even when the checks pass.
+	if err := os.WriteFile(filepath.Join(r.Folder, "hello.txt"), []byte("hi there\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, reason = stopHook(t, r, "Stop")
+	if code != 2 || !strings.Contains(reason, "Work committed") || !strings.Contains(reason, "hello.txt") {
+		t.Fatalf("uncommitted: code %d, reason:\n%s", code, reason)
+	}
+
+	writeAndCommit(t, r.Folder, "hello.txt", "hi there\n")
+	if code, reason = stopHook(t, r, "Stop"); code != 0 {
+		t.Fatalf("passing gate: code %d, reason:\n%s", code, reason)
+	}
+	got, _ := s.GetRun(r.ID)
+	if got.State != store.RunReady || got.Tries != 2 {
+		t.Fatalf("after the gate passed: %+v", got)
+	}
+	events, _ := s.RunEvents(r.ID)
+	var passed bool
+	for _, e := range events {
+		passed = passed || (e.Kind == "check" && strings.HasPrefix(e.Detail, "Hello passed"))
+	}
+	if !passed {
+		t.Fatalf("no check event: %+v", events)
+	}
+	// A later stop, such as after you type in an attached session, does not
+	// run the gate again.
+	if code, _ := stopHook(t, r, "Stop"); code != 0 {
+		t.Fatalf("stop after Ready: %d", code)
+	}
+}
+
+func TestRunGateStopsTheRunWhenTheTriesRunOut(t *testing.T) {
+	s, r := gateRun(t, "2")
+	if code, _ := stopHook(t, r, "Stop"); code != 2 {
+		t.Fatalf("try 1: %d", code)
+	}
+	// The last try lets the session stop, and the run needs you.
+	if code, _ := stopHook(t, r, "Stop"); code != 0 {
+		t.Fatalf("try 2: %d", code)
+	}
+	got, _ := s.GetRun(r.ID)
+	if got.State != store.RunStopped || got.Tries != 2 || !strings.Contains(got.Note, "Hello") {
+		t.Fatalf("%+v", got)
+	}
+}
+
+func TestRunStopFailureFromALimitCountsNoTry(t *testing.T) {
+	s, r := gateRun(t, "3")
+	if code, _ := stopHook(t, r, "StopFailure"); code != 0 {
+		t.Fatalf("code %d", code)
+	}
+	got, _ := s.GetRun(r.ID)
+	if got.State != store.RunLimited || got.Tries != 0 || !strings.Contains(got.Note, "rate_limit") {
+		t.Fatalf("%+v", got)
+	}
+}
+
+func TestRunMaxTriesStaysUnderTheBlockCapOfClaudeCode(t *testing.T) {
+	runCLI(t)
+	_, _, err := lrRun(t, "", "run", "start", "alpha", "--title", "Say hi", "--max-tries", "9")
+	if !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("err %v", err)
+	}
+}

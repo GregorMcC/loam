@@ -280,13 +280,9 @@ const noteTail = 20
 
 // failureNote is what, the error, and the last lines of the output.
 func failureNote(what string, err error, out string) string {
-	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
-	if len(lines) > noteTail {
-		lines = lines[len(lines)-noteTail:]
-	}
 	note := fmt.Sprintf("%s (%v)", what, err)
-	if tail := strings.TrimSpace(strings.Join(lines, "\n")); tail != "" {
-		note += ":\n" + tail
+	if t := strings.TrimSpace(tail(out, noteTail)); t != "" {
+		note += ":\n" + t
 	}
 	return note
 }

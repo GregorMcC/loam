@@ -1,11 +1,14 @@
 package run
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/GregorMcC/loam/core/internal/session"
@@ -44,8 +47,78 @@ func Hook(s *store.Store, runID string, in io.Reader, out, errOut io.Writer) int
 	switch h.Event {
 	case "SessionStart":
 		sessionStarted(s, runID, h, out, logf)
+	case "Stop":
+		return stopped(s, runID, errOut, logf)
+	case "StopFailure":
+		stopFailed(s, runID, h, logf)
 	}
 	return 0
+}
+
+// stopped is the gate. It runs the checks of a running run. When they pass,
+// the run is Ready. When they fail, the try counts: the stop is blocked with
+// the failures as the reason, or the run is Stopped when it has no tries
+// left. A run that is not running lets the session stop: you may have typed
+// in it after it was Ready.
+func stopped(s *store.Store, runID string, errOut io.Writer, logf func(string, ...any)) int {
+	r, err := s.GetRun(runID)
+	if err != nil {
+		logf("run %s: %v", runID, err)
+		return 0
+	}
+	if r.State != store.RunRunning && r.State != store.RunStarting && r.State != store.RunStartUnknown {
+		return 0
+	}
+	g := gate(context.Background(), s, r, logf)
+	block := false
+	r, err = s.UpdateRun(runID, func(r *store.Run) error {
+		if r.State != store.RunRunning && r.State != store.RunStarting && r.State != store.RunStartUnknown {
+			return nil // stopped while the checks ran
+		}
+		if len(g.failed) == 0 {
+			r.State, r.Note = store.RunReady, fmt.Sprintf("All %d checks passed", len(g.results))
+			return nil
+		}
+		r.Tries++
+		if r.Tries >= r.MaxTries {
+			r.State, r.Note = store.RunStopped, fmt.Sprintf("Checks failed after %d tries: %s", r.Tries, failedNames(g))
+			return nil
+		}
+		r.State, r.Note = store.RunRunning, fmt.Sprintf("Try %d failed: %s", r.Tries, failedNames(g))
+		block = true
+		return nil
+	})
+	if err != nil {
+		logf("run %s: record the gate: %v", runID, err)
+		return 0
+	}
+	if !block {
+		return 0
+	}
+	fmt.Fprint(errOut, reason(r, g))
+	return 2
+}
+
+// limitErrors are the StopFailure errors of a usage limit.
+var limitErrors = []string{"rate_limit", "billing_error"}
+
+// stopFailed records a turn that ended on an API error. A usage limit makes
+// the run Stopped by a limit. Any other error stops it. Neither counts a try.
+func stopFailed(s *store.Store, runID string, h hookInput, logf func(string, ...any)) {
+	note := strings.TrimSpace("Claude Code stopped: " + h.Error + " " + h.ErrorDetails)
+	_, err := s.UpdateRun(runID, func(r *store.Run) error {
+		if r.State.Ended() {
+			return nil
+		}
+		r.State, r.Note = store.RunStopped, note
+		if slices.Contains(limitErrors, h.Error) {
+			r.State = store.RunLimited
+		}
+		return nil
+	})
+	if err != nil {
+		logf("run %s: record the stop failure: %v", runID, err)
+	}
 }
 
 // sessionStarted records the session of the run, and adds a session record
