@@ -13,6 +13,7 @@ import (
 
 	"github.com/GregorMcC/loam/core/internal/session"
 	"github.com/GregorMcC/loam/core/internal/store"
+	"github.com/GregorMcC/loam/core/internal/worktree"
 )
 
 // hookInput is the part of the hook JSON that a run reads.
@@ -56,7 +57,8 @@ func Hook(s *store.Store, runID string, in io.Reader, out, errOut io.Writer) int
 }
 
 // stopped is the gate. It runs the checks of a running run. When they pass,
-// the run is Ready. When they fail, the try counts: the stop is blocked with
+// the run goes to Ship when its repo is on GitHub, else to Ready. When they
+// fail, the try counts: the stop is blocked with
 // the failures as the reason, or the run is Stopped when it has no tries
 // left. A run that is not running lets the session stop: you may have typed
 // in it after it was Ready.
@@ -70,13 +72,17 @@ func stopped(s *store.Store, runID string, errOut io.Writer, logf func(string, .
 		return 0
 	}
 	g := gate(context.Background(), s, r, logf)
+	ships := len(g.failed) == 0 && onGitHub(s, r)
 	block := false
 	r, err = s.UpdateRun(runID, func(r *store.Run) error {
 		if r.State != store.RunRunning && r.State != store.RunStarting && r.State != store.RunStartUnknown {
 			return nil // stopped while the checks ran
 		}
 		if len(g.failed) == 0 {
-			r.State, r.Note = store.RunReady, "All "+count(len(g.results), "check")+" passed"
+			r.State, r.Note = store.RunShipping, "All "+count(len(g.results), "check")+" passed"
+			if !ships {
+				r.State, r.Note = store.RunReady, r.Note+". The repo has no GitHub origin, so Loam opens no PR"
+			}
 			return nil
 		}
 		r.Tries++
@@ -97,6 +103,20 @@ func stopped(s *store.Store, runID string, errOut io.Writer, logf func(string, .
 	}
 	fmt.Fprint(errOut, reason(r, g))
 	return 2
+}
+
+// onGitHub reports whether Loam can ship the run: it works in a worktree of
+// a repo whose origin is on GitHub.
+func onGitHub(s *store.Store, r store.Run) bool {
+	if r.WorktreeID == "" {
+		return false
+	}
+	w, err := s.GetWorktree(r.WorktreeID)
+	if err != nil {
+		return false
+	}
+	_, ok := worktree.GitHubRepo(w.Repo)
+	return ok
 }
 
 // limitErrors are the StopFailure errors of a usage limit.

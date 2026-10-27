@@ -8,7 +8,8 @@
 //
 // The commands that act on GitHub are [Client.Merge], [Client.RerunFailed],
 // [Client.UpdateBranch], and [Client.DeleteBranch]. `loam worktree land`,
-// `rerun`, and `update` run them, and only when you ask.
+// `rerun`, and `update` run them, and only when you ask. [Client.CreatePR]
+// opens the PR of a run that passed its gate (`loam run tick`).
 package github
 
 import (

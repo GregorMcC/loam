@@ -75,3 +75,16 @@ func TestStartMovesAnIssueThatHasNotStarted(t *testing.T) {
 		t.Fatalf("%q %v %d queries", moved, err, len(f.Calls()))
 	}
 }
+
+// Ticket 206: Loam attaches the PR of a run to its issue.
+func TestAttachLinksAURLToAnIssue(t *testing.T) {
+	f := testutil.FakeLinear(t)
+	c := linear.NewClient(f.URL, testutil.LinearKey)
+	if err := c.Attach(context.Background(), "ENG-523", "https://github.com/example/widgets/pull/147", "PR #147"); err != nil {
+		t.Fatal(err)
+	}
+	v := f.Calls()[0].Variables
+	if v["id"] != "ENG-523" || v["url"] != "https://github.com/example/widgets/pull/147" || v["title"] != "PR #147" {
+		t.Fatalf("vars %+v", v)
+	}
+}

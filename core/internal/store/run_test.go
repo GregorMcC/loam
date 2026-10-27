@@ -139,6 +139,33 @@ func TestUpdateRunLogsStateChangesAndTries(t *testing.T) {
 	}
 }
 
+// Ticket 206: a shipped run keeps the PR that Loam opened for it.
+func TestUpdateRunKeepsThePROfAShippedRun(t *testing.T) {
+	s := openStore(t)
+	p := newPlot(t, s, "A")
+	r := addTestRun(t, s, p.ID)
+	if r.PR != nil {
+		t.Fatalf("a new run has PR %+v", r.PR)
+	}
+	_, err := s.UpdateRun(r.ID, func(r *store.Run) error {
+		r.State, r.PR = store.RunShipping, &store.RunPR{Number: 147, URL: "https://github.com/example/widgets/pull/147"}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetRun(r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State != store.RunShipping || got.PR == nil || got.PR.Number != 147 || got.PR.URL != "https://github.com/example/widgets/pull/147" {
+		t.Fatalf("got %+v, PR %+v", got, got.PR)
+	}
+	if got.State.NeedsYou() || got.State.Ended() {
+		t.Fatal("a shipping run waits for CI, not for you")
+	}
+}
+
 func TestRunStateNeedsYou(t *testing.T) {
 	for st, want := range map[store.RunState]bool{
 		store.RunShaping: true, store.RunStopped: true, store.RunLimited: true,

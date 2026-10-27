@@ -511,7 +511,7 @@ When the refresh after the merge fails, or the PR does not show a merge that Git
 
 ### Runs
 
-A run is one goal that a background Claude Code session (`claude --bg`) works on in a worktree of a plot, until its Done when checks pass. Runs are not in the change log. Each write of a run rewrites `loam.changed`.
+A run is one goal that a background Claude Code session (`claude --bg`) works on in a worktree of a plot, until its Done when checks pass and CI passes on its PR. Runs are not in the change log. Each write of a run rewrites `loam.changed`.
 
 ```json
 {
@@ -520,6 +520,7 @@ A run is one goal that a background Claude Code session (`claude --bg`) works on
   "done_when": [{ "name": "Go tests", "command": "go test ./..." }],
   "state": "running", "tries": 1, "max_tries": 3,
   "source": { "kind": "github", "key": "#57", "url": "https://github.com/example/widgets/issues/57" },
+  "pr": { "number": 147, "url": "https://github.com/example/widgets/pull/147" },
   "session_id": "c57ef956-3136-4e86-bfde-da8facfe0523", "note": "Try 1 failed: Go tests",
   "created_at": "2026-10-02T09:00:00Z", "updated_at": "2026-10-02T09:04:00Z"
 }
@@ -528,27 +529,46 @@ A run is one goal that a background Claude Code session (`claude --bg`) works on
 - `state` is one of these:
   - `shaping`: it waits for you to approve its goal and checks.
   - `starting`: Loam is starting its session.
-  - `running`: its session works, or the gate sent failures back.
-  - `ready`: every check passed.
+  - `running`: its session works, or the gate or CI sent failures back.
+  - `shipping`: every check passed, and the repo is on GitHub. `loam run tick` pushes the branch, opens the PR, and reads CI.
+  - `ready`: it waits for you to land it. Every check passed, and CI passed on its PR, or it has no PR. `note` says which.
   - `stopped`: it used all its tries, or a failure stopped it.
   - `limited`: Claude Code hit a usage limit (Stopped by a limit). It counts no try.
   - `start_unknown`: `claude --bg` did not return in time. The session may exist.
   - `landed`, `cancelled` (stopped by you), and `skipped` (a recurring run found no work).
 - `shaping`, `stopped`, and `limited` need you.
-- `tries` counts the failed gates. `max_tries` is 1 to 8, because Claude Code lets a session stop after 8 blocked stops in a row.
+- `tries` counts the failed gates and the CI failures. `max_tries` is 1 to 8, because Claude Code lets a session stop after 8 blocked stops in a row.
 - `session_id` is empty until the SessionStart hook of the session records it. `claude --bg` picks its own session ID. `claude attach`, `logs`, and `stop` take its first 8 characters.
+- `pr` is the PR that Loam opened for the run, or the open PR of its branch that Loam found. It is left out before the run ships.
 - `source` is the issue of the worktree's link, or the map ticket that `--ticket` names (`kind` `map`, `key` such as `map 135`, `url` the path of the ticket file). It is left out when there is none.
 
-The gate is the Stop hook of the session. Each time the session ends a turn, Loam runs each check with `sh -c` in the folder, then checks that `git status --porcelain` is empty ("Work committed"). When all pass, the run is `ready`. When one fails, the try counts. With tries left, the hook exits 2 and the failures go back to the session as its next prompt. With no tries left, the session stops and the run is `stopped`.
+The gate is the Stop hook of the session. Each time the session ends a turn, Loam runs each check with `sh -c` in the folder, then checks that `git status --porcelain` is empty ("Work committed"). When all pass, the run is `shipping` when the origin of its repo is on GitHub, else `ready`. When one fails, the try counts. With tries left, the hook exits 2 and the failures go back to the session as its next prompt. With no tries left, the session stops and the run is `stopped`.
 
 | Command | Output |
 | :- | :- |
 | `loam run start <plot> --title <text> [--goal <text>] [--check <name>=<command>]... [--worktree <name>] [--repo <repo>] [--base <branch>] [--link <link-id or URL> \| --ticket <file>] [--max-tries <n>] [--model <model>] [--approve-setup]` | `{ "run": {...}, "worktree": {...} }` |
 | `loam run list [<plot>]` | An array of runs, newest first. It is `[]` when none exists. |
-| `loam run status <run>` | `{ "run": {...}, "events": [{ "id": 1, "run_id": "...", "at": "...", "kind": "state", "detail": "running" }] }`. `kind` is `state`, `try`, `check`, or `linear`. |
+| `loam run status <run>` | `{ "run": {...}, "events": [{ "id": 1, "run_id": "...", "at": "...", "kind": "state", "detail": "running" }] }`. `kind` is `state`, `try`, `check`, `linear`, `ship`, or `ci`. |
 | `loam run stop <run>` | `{ "run": {...} }`. The run is `cancelled`. A run that has ended stays as it is. |
+| `loam run tick` | `{ "runs": [...], "warnings": ["..."] }`. `runs` are the runs that the tick moved. Both are `[]` when none. |
 
 `run start` uses the worktree that `--worktree` names, or makes it. With no `--worktree`, it makes a worktree with a name from the key of the link or the ticket, and the title. A run has `--link` or `--ticket`, not both (exit code 2). It refuses, with exit code 1, a folder that Claude Code does not trust: a background session cannot show the trust prompt. In git, Claude Code trusts a worktree when it trusts the main checkout of the repo. A setup command that you have not approved gives exit code 2 (`invalid`); `--approve-setup` approves it. When `claude --bg` fails, the run is `stopped` with the output in `note`, and the command exits 0.
+
+#### Ship
+
+`loam run tick` moves on each run in `shipping`. A tick that waits on GitHub changes nothing, so the app runs it often while a run ships. Only one tick runs at a time: a second one prints the empty result at once. For each run, the tick does the first step that applies:
+
+1. The run's worktree is gone, or the origin is not on GitHub: the run is `ready`, and `note` says why. gh missing or signed out makes it `ready` too, with the error in `note`.
+2. GitHub has the run's PR merged: the run is `landed`. Closed: the run is `stopped`.
+3. An open PR of the branch that is not the run's PR: it becomes the run's PR (event `ship`, "Found #12, the open PR of the branch").
+4. The head of the worktree is not the PR head: the tick runs `git push -u origin <branch>` when `origin/<branch>` is not the head. A failed push stops the run with the output in `note`. With no PR, it runs `gh pr create` with the title of the run, the base of the worktree, and a body with the goal, the Done when checks, and the issue (`Closes #57` for a GitHub issue, a link for a Linear issue). It names no local path. The events are `ship`: "Opened #12", or "Pushed the fix to #12". For a Linear issue, Loam attaches the PR to it (event `linear`). A failed attach is a warning.
+5. CI on the PR head:
+   - No checks: the run waits 3 minutes after the push, then is `ready` ("No CI ran on #12").
+   - A failed check: the try counts. With tries left, the run is `running` and Loam sends the session a prompt with each failed check and the last 60 lines of its failed log (`gh run view <id> --log-failed`). Loam runs `claude stop` and then `claude --bg --resume <session ID> "<prompt>"` with no other flag, so the session wakes with its own options and hooks. The next gate that passes ships the fix to the same PR. With no tries left, the run is `stopped`.
+   - Checks that run or wait: nothing changes.
+   - All passed: the run is `ready` ("CI passed on #12: 14 of 14 checks").
+
+Each CI result is a `ci` event.
 
 ### Intake
 

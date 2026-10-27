@@ -94,6 +94,28 @@ func FakeClaudeInvocation(t *testing.T) Invocation {
 	return inv
 }
 
+// FakeClaudeCalls returns the argv of each call of the fake claude, oldest
+// first.
+func FakeClaudeCalls(t *testing.T) [][]string {
+	t.Helper()
+	b, err := os.ReadFile(os.Getenv("LOAM_FAKE_CLAUDE_OUT") + ".log")
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls [][]string
+	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		var args []string
+		if err := json.Unmarshal([]byte(line), &args); err != nil {
+			t.Fatal(err)
+		}
+		calls = append(calls, args)
+	}
+	return calls
+}
+
 // FakeGH builds a fake `gh` and points LOAM_GH at it for the test. The fake
 // answers each GraphQL query from the GitHub state in state (JSON, see
 // internal/testutil/fakegh) and logs each call for [FakeGHCalls]. A merge, an

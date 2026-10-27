@@ -133,9 +133,10 @@ ALTER TABLE worktrees ADD COLUMN link_id TEXT NOT NULL DEFAULT '';
 	// a worktree of the repo path: ask, remove, or keep.
 	`ALTER TABLE repo_settings ADD COLUMN after_merge TEXT NOT NULL DEFAULT 'ask';`,
 	// 10: runs and their events. A run is one goal that a background
-	// session works on in a folder, until its Done when checks pass. The
-	// worktree ID is not a foreign key: a run outlives its worktree. Neither
-	// table is in the change log.
+	// session works on in a folder, until its Done when checks pass and CI
+	// passes on the PR that Loam opens for it. The worktree ID is not a
+	// foreign key: a run outlives its worktree. Neither table is in the change
+	// log.
 	`
 CREATE TABLE runs (
   id TEXT PRIMARY KEY,
@@ -153,6 +154,8 @@ CREATE TABLE runs (
   source_kind TEXT NOT NULL DEFAULT '',
   source_key TEXT NOT NULL DEFAULT '',
   source_url TEXT NOT NULL DEFAULT '',
+  pr_number INTEGER NOT NULL DEFAULT 0,
+  pr_url TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );

@@ -20,12 +20,13 @@ func newRunCmd() *cobra.Command {
 		Short: "Start, list, and stop runs: goals that a background session works on until their checks pass",
 		Long: "A run is one goal that a background Claude Code session (claude --bg) works on in a worktree of a plot.\n" +
 			"Each time the session ends a turn, Loam runs the Done when checks of the run in the worktree. When a check fails, Loam sends the output back to the session as its next try.\n" +
-			"A run stops when every check passes (Ready), when it uses all its tries (Stopped), or when you stop it.\n" +
+			"When every check passes in a repo on GitHub, the run ships: loam run tick pushes its branch, opens its PR, and reads CI. A CI failure goes back to the session as a try.\n" +
+			"A run stops when it is ready to land (Ready), when it uses all its tries (Stopped), or when you stop it.\n" +
 			"Runs are not in the change log.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
-	c.AddCommand(newRunStartCmd(), newRunListCmd(), newRunStatusCmd(), newRunStopCmd(), newRunHookCmd())
+	c.AddCommand(newRunStartCmd(), newRunListCmd(), newRunStatusCmd(), newRunStopCmd(), newRunTickCmd(), newRunHookCmd())
 	return c
 }
 
@@ -202,6 +203,36 @@ func newRunStopCmd() *cobra.Command {
 				}{r})
 			}
 			printRun(cmd.OutOrStdout(), r)
+			return nil
+		},
+	}
+}
+
+func newRunTickCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "tick",
+		Short: "Ship the runs whose checks passed: push, open the PR, and read CI",
+		Long: "Move on each run in Shipping. Loam pushes the branch of the run and opens its PR. When CI passes on the PR, the run is Ready.\n" +
+			"When CI fails, Loam sends the end of each failed log back to the session, and the failure counts a try. On the last try, the run stops.\n" +
+			"A tick that waits on GitHub changes nothing, so it is safe to run often. The app runs it while a run ships.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			s, err := openStore()
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+			res, err := run.Tick(cmd.Context(), s)
+			if err != nil {
+				return err
+			}
+			printWarnings(cmd, res.Warnings)
+			if JSON(cmd) {
+				return printJSON(cmd, res)
+			}
+			for _, r := range res.Runs {
+				printRun(cmd.OutOrStdout(), r)
+			}
 			return nil
 		},
 	}

@@ -1,6 +1,6 @@
-// Package linear reads issues from Linear and moves an issue to In Progress
-// when a run starts from it. It talks to the Linear GraphQL API with a
-// personal API key.
+// Package linear reads issues from Linear, moves an issue to In Progress
+// when a run starts from it, and attaches the PR of the run to the issue. It
+// talks to the Linear GraphQL API with a personal API key.
 package linear
 
 import (
@@ -223,6 +223,24 @@ func (c *Client) Start(ctx context.Context, id string) (string, error) {
 		return "", fmt.Errorf("Linear did not move %s to %s", id, first.Name)
 	}
 	return first.Name, nil
+}
+
+// Attach links url to the issue, such as ENG-523, with title as the name of
+// the link. Linear shows the link on the issue.
+func (c *Client) Attach(ctx context.Context, id, url, title string) error {
+	var out struct {
+		AttachmentLinkURL struct {
+			Success bool `json:"success"`
+		} `json:"attachmentLinkURL"`
+	}
+	m := `mutation($id: String!, $url: String!, $title: String) { attachmentLinkURL(issueId: $id, url: $url, title: $title) { success } }`
+	if err := c.query(ctx, m, map[string]any{"id": id, "url": url, "title": title}, &out); err != nil {
+		return err
+	}
+	if !out.AttachmentLinkURL.Success {
+		return fmt.Errorf("Linear did not attach %s to %s", url, id)
+	}
+	return nil
 }
 
 // query sends one GraphQL request and decodes its data into out.

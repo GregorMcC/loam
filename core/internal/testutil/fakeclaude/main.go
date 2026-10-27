@@ -1,6 +1,7 @@
 // Command fakeclaude stands in for `claude` in tests. It writes its argv, its
 // environment, and its working folder as JSON to the file named in
-// LOAM_FAKE_CLAUDE_OUT. It then exits 0.
+// LOAM_FAKE_CLAUDE_OUT, and adds its argv as one JSON line to that name with
+// ".log" after it, so a test sees each call. It then exits 0.
 //
 // With LOAM_FAKE_CLAUDE_HOOKS=1 it acts as a session instead of exiting. It
 // runs the hooks of the --settings file, as Claude Code does, and reads one
@@ -51,6 +52,21 @@ import (
 	"time"
 )
 
+// appendCall adds args to the call log as one JSON line.
+func appendCall(file string, args []string) error {
+	line, err := json.Marshal(args)
+	if err != nil {
+		return err
+	}
+	f, err := os.OpenFile(file, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.Write(append(line, '\n'))
+	return err
+}
+
 func main() {
 	// First, so the invocation file shows that the SIGHUP handler is in place.
 	hupWait, err := time.ParseDuration(os.Getenv("LOAM_FAKE_CLAUDE_HUP_WAIT"))
@@ -71,6 +87,10 @@ func main() {
 	}
 	b, _ := json.Marshal(map[string]any{"args": os.Args[1:], "env": env, "cwd": cwd})
 	if err := os.WriteFile(out, b, 0o644); err != nil {
+		fmt.Fprintln(os.Stderr, "fakeclaude:", err)
+		os.Exit(2)
+	}
+	if err := appendCall(out+".log", os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "fakeclaude:", err)
 		os.Exit(2)
 	}

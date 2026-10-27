@@ -234,7 +234,7 @@ func refreshRepo(ctx context.Context, client *github.Client, clientErr error, re
 	for i, w := range ws {
 		keys[i] = store.PRKey{Repo: w.Repo, Branch: w.Branch}
 	}
-	ghRepo, ok := githubRepo(repoPath)
+	ghRepo, ok := GitHubRepo(repoPath)
 	if !ok {
 		// The state of an old GitHub remote does not apply: clear it.
 		rows := make([]store.PRState, len(keys))
@@ -271,7 +271,7 @@ func refreshRepo(ctx context.Context, client *github.Client, clientErr error, re
 			c.Stage = prStage(b.PR, last)
 		}
 		if b.Pushed {
-			c.CompareURL = ghRepo.CompareURL(compareBase(w), w.Branch)
+			c.CompareURL = ghRepo.CompareURL(CompareBase(w), w.Branch)
 		}
 		data, err := json.Marshal(c)
 		if err != nil {
@@ -282,20 +282,20 @@ func refreshRepo(ctx context.Context, client *github.Client, clientErr error, re
 	return r, nil
 }
 
-// compareBase returns the base of the compare page of a worktree: the branch
-// of origin that the worktree started from. It is empty for a local base, or
-// none, because GitHub may not have that branch. Then GitHub compares with
-// its default branch.
-func compareBase(w store.Worktree) string {
+// CompareBase returns the base of the compare page and the PR of a worktree:
+// the branch of origin that the worktree started from. It is empty for a
+// local base, or none, because GitHub may not have that branch. Then GitHub
+// uses its default branch.
+func CompareBase(w store.Worktree) string {
 	if base, ok := strings.CutPrefix(w.Base, remote+"/"); ok {
 		return base
 	}
 	return ""
 }
 
-// githubRepo returns the GitHub repo of the origin remote of a repo. It
+// GitHubRepo returns the GitHub repo of the origin remote of a repo. It
 // returns false when the repo has no origin, or origin is not on GitHub.
-func githubRepo(repoPath string) (github.Repo, bool) {
+func GitHubRepo(repoPath string) (github.Repo, bool) {
 	u, err := git(repoPath, "remote", "get-url", remote)
 	if err != nil {
 		return github.Repo{}, false

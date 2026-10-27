@@ -11,7 +11,8 @@ import (
 )
 
 // RunState is where a run is. A run moves from Starting to Running, then to
-// Ready when its gate passes. Shaping, Stopped, and Limited need you.
+// Shipping when its gate passes, and to Ready when CI passes on its PR.
+// Shaping, Stopped, and Limited need you.
 type RunState string
 
 const (
@@ -23,7 +24,11 @@ const (
 	// RunRunning has a background session in a turn, or between the turns
 	// that its gate asks for.
 	RunRunning RunState = "running"
-	// RunReady passed its gate: every Done when check passed.
+	// RunShipping passed its gate. Loam pushes its branch, opens its PR, and
+	// waits for CI. A CI failure sends the run back to Running with a try.
+	RunShipping RunState = "shipping"
+	// RunReady waits for you to land it: its gate passed, and CI passed on its
+	// PR, or it has no PR.
 	RunReady RunState = "ready"
 	// RunStopped used all its tries, or a failure stopped it.
 	RunStopped RunState = "stopped"
@@ -42,7 +47,7 @@ const (
 	RunSkipped RunState = "skipped"
 )
 
-var runStates = []RunState{RunShaping, RunStarting, RunRunning, RunReady, RunStopped, RunLimited,
+var runStates = []RunState{RunShaping, RunStarting, RunRunning, RunShipping, RunReady, RunStopped, RunLimited,
 	RunStartUnknown, RunLanded, RunCancelled, RunSkipped}
 
 // NeedsYou reports whether the state waits for you: Shaping, Stopped, and
@@ -88,6 +93,12 @@ type RunSource struct {
 	URL  string `json:"url"`
 }
 
+// RunPR is the pull request that Loam opened for a run.
+type RunPR struct {
+	Number int    `json:"number"`
+	URL    string `json:"url"`
+}
+
 // Run is one goal that a background Claude Code session works on in a
 // folder, until its Done when checks pass. A run is not in the change log.
 type Run struct {
@@ -105,6 +116,8 @@ type Run struct {
 	Tries    int        `json:"tries"`
 	MaxTries int        `json:"max_tries"`
 	Source   *RunSource `json:"source,omitempty"`
+	// PR is the pull request of the run, or nil before Loam ships it.
+	PR *RunPR `json:"pr,omitempty"`
 	// SessionID is the Claude Code session ID, from its SessionStart hook.
 	// It is empty until the session starts.
 	SessionID string `json:"session_id"`
@@ -186,10 +199,10 @@ func (s *Store) AddRun(r Run) (Run, error) {
 	now := time.Now().UnixMilli()
 	r.Tries = 0
 	r.CreatedAt, r.UpdatedAt = tm(now), tm(now)
-	checks, src := encodeRun(r)
-	if err := tx.exec(`INSERT INTO runs(`+runCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	checks, src, pr := encodeRun(r)
+	if err := tx.exec(`INSERT INTO runs(`+runCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.ID, r.PlotID, r.WorktreeID, r.Folder, r.Title, r.Goal, checks, r.State, r.MaxTries, r.SessionID, r.Note,
-		src.Kind, src.Key, src.URL, now, now); err != nil {
+		src.Kind, src.Key, src.URL, pr.Number, pr.URL, now, now); err != nil {
 		return Run{}, err
 	}
 	if err := addRunEvent(tx, r.ID, now, "state", string(r.State)); err != nil {
@@ -268,6 +281,10 @@ func (s *Store) UpdateRun(id string, fn func(*Run) error) (Run, error) {
 		src := *old.Source
 		r.Source = &src
 	}
+	if old.PR != nil {
+		pr := *old.PR
+		r.PR = &pr
+	}
 	if err := fn(&r); err != nil {
 		return Run{}, err
 	}
@@ -279,11 +296,12 @@ func (s *Store) UpdateRun(id string, fn func(*Run) error) (Run, error) {
 	}
 	now := time.Now().UnixMilli()
 	r.UpdatedAt = tm(now)
-	checks, src := encodeRun(r)
+	checks, src, pr := encodeRun(r)
 	if err := tx.exec(`UPDATE runs SET worktree_id = ?, folder = ?, title = ?, goal = ?, done_when = ?, state = ?, tries = ?,
-  max_tries = ?, session_id = ?, note = ?, source_kind = ?, source_key = ?, source_url = ?, updated_at = ? WHERE id = ?`,
+  max_tries = ?, session_id = ?, note = ?, source_kind = ?, source_key = ?, source_url = ?, pr_number = ?, pr_url = ?,
+  updated_at = ? WHERE id = ?`,
 		r.WorktreeID, r.Folder, r.Title, r.Goal, checks, r.State, r.Tries, r.MaxTries, r.SessionID, r.Note,
-		src.Kind, src.Key, src.URL, now, r.ID); err != nil {
+		src.Kind, src.Key, src.URL, pr.Number, pr.URL, now, r.ID); err != nil {
 		return Run{}, err
 	}
 	if r.Tries != old.Tries {
@@ -340,9 +358,9 @@ func (s *Store) RunEvents(runID string) ([]RunEvent, error) {
 
 // runCols are the columns of a run record.
 const runCols = `id, plot_id, worktree_id, folder, title, goal, done_when, state, tries, max_tries, session_id, note,
-  source_kind, source_key, source_url, created_at, updated_at`
+  source_kind, source_key, source_url, pr_number, pr_url, created_at, updated_at`
 
-func encodeRun(r Run) (checks string, src RunSource) {
+func encodeRun(r Run) (checks string, src RunSource, pr RunPR) {
 	b, err := json.Marshal(append([]Check{}, r.DoneWhen...))
 	if err != nil { // a slice of string pairs always encodes
 		panic(err)
@@ -350,16 +368,20 @@ func encodeRun(r Run) (checks string, src RunSource) {
 	if r.Source != nil {
 		src = *r.Source
 	}
-	return string(b), src
+	if r.PR != nil {
+		pr = *r.PR
+	}
+	return string(b), src, pr
 }
 
 func scanRun(sc interface{ Scan(...any) error }) (Run, error) {
 	var r Run
 	var checks string
 	var src RunSource
+	var pr RunPR
 	var created, updated int64
 	err := sc.Scan(&r.ID, &r.PlotID, &r.WorktreeID, &r.Folder, &r.Title, &r.Goal, &checks, &r.State, &r.Tries,
-		&r.MaxTries, &r.SessionID, &r.Note, &src.Kind, &src.Key, &src.URL, &created, &updated)
+		&r.MaxTries, &r.SessionID, &r.Note, &src.Kind, &src.Key, &src.URL, &pr.Number, &pr.URL, &created, &updated)
 	if err != nil {
 		return Run{}, err
 	}
@@ -368,6 +390,9 @@ func scanRun(sc interface{ Scan(...any) error }) (Run, error) {
 	}
 	if src.Kind != "" || src.Key != "" || src.URL != "" {
 		r.Source = &src
+	}
+	if pr.Number != 0 {
+		r.PR = &pr
 	}
 	r.CreatedAt, r.UpdatedAt = tm(created), tm(updated)
 	return r, nil

@@ -1030,5 +1030,15 @@
     ],
     "exit_code": 0,
     "schema": "run-stop"
+  },
+  {
+    "name": "run_tick",
+    "args": [
+      "run",
+      "tick",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "run-tick"
   }
 ]

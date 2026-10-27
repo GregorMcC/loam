@@ -308,7 +308,7 @@ func TestRunGateBlocksAStopUntilTheChecksPass(t *testing.T) {
 		t.Fatalf("passing gate: code %d, reason:\n%s", code, reason)
 	}
 	got, _ := s.GetRun(r.ID)
-	if got.State != store.RunReady || got.Tries != 2 {
+	if got.State != store.RunReady || got.Tries != 2 || got.Note != "All 2 checks passed. The repo has no GitHub origin, so Loam opens no PR" {
 		t.Fatalf("after the gate passed: %+v", got)
 	}
 	events, _ := s.RunEvents(r.ID)
@@ -323,6 +323,21 @@ func TestRunGateBlocksAStopUntilTheChecksPass(t *testing.T) {
 	// run the gate again.
 	if code, _ := stopHook(t, r, "Stop"); code != 0 {
 		t.Fatalf("stop after Ready: %d", code)
+	}
+}
+
+// Ticket 206: a run whose repo is on GitHub goes to Ship when its gate
+// passes. Loam pushes it and opens its PR on the next tick.
+func TestRunGatePassShipsARunWhoseRepoIsOnGitHub(t *testing.T) {
+	s, r := gateRun(t, "3")
+	testutil.Git(t, r.Folder, "remote", "set-url", "origin", testutil.GitHubOrigin)
+	writeAndCommit(t, r.Folder, "hello.txt", "hi there\n")
+	if code, reason := stopHook(t, r, "Stop"); code != 0 {
+		t.Fatalf("passing gate: code %d, reason:\n%s", code, reason)
+	}
+	got, _ := s.GetRun(r.ID)
+	if got.State != store.RunShipping || got.Note != "All 2 checks passed" || got.PR != nil {
+		t.Fatalf("after the gate passed: %+v", got)
 	}
 }
 

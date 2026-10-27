@@ -26,6 +26,8 @@
 //   - "merge_refusal": the message of GitHub for a merge that it refuses, such
 //     as "Pull request is not mergeable". The PR stays open. A state file with no
 //     "merge_refusal" merges again, so a test can fail a merge and then retry it.
+//   - "logs": the log of the failed jobs of a run, as gh run view --log-failed
+//     prints it, by run ID.
 //
 // The fake answers these commands:
 //
@@ -45,6 +47,9 @@
 //   - gh issue list: prints "issues".
 //   - gh run rerun <id> --failed: does nothing, or fails as "rerun_refusals"
 //     says.
+//   - gh pr create --head <branch>: adds an open PR to "pulls", with the next
+//     free number, and prints its URL.
+//   - gh run view <id> --log-failed: prints the log of "logs".
 //
 // LOAM_FAKE_GH_FAIL makes each call fail as gh does, with the exit code and
 // the text that gh prints (see [failures]). "hang" waits for a minute, as a
@@ -77,6 +82,7 @@ type state struct {
 	RerunRefusals  map[string]string          `json:"rerun_refusals,omitempty"`
 	MergeRefusal   string                     `json:"merge_refusal,omitempty"`
 	Issues         []map[string]any           `json:"issues,omitempty"`
+	Logs           map[string]string          `json:"logs,omitempty"`
 }
 
 func main() {
@@ -123,6 +129,10 @@ func main() {
 		issues(st)
 	case len(args) > 2 && args[0] == "run" && args[1] == "rerun":
 		rerun(st, args[2])
+	case len(args) > 1 && args[0] == "pr" && args[1] == "create":
+		create(st, args[2:])
+	case len(args) > 2 && args[0] == "run" && args[1] == "view":
+		fmt.Print(st.Logs[args[2]])
 	default:
 		fail(2, "fakegh: unknown command "+strings.Join(args, " "))
 	}
@@ -297,6 +307,40 @@ func rerun(st *state, id string) {
 	if msg, ok := st.RerunRefusals[id]; ok {
 		fail(1, fmt.Sprintf("failed to rerun: HTTP 403: %s (https://api.github.com/repos/example/widgets/actions/runs/%s/rerun-failed-jobs)", msg, id))
 	}
+}
+
+// create opens a PR, as gh pr create does: it prints the URL of the PR.
+func create(st *state, args []string) {
+	var head, base, title string
+	for i := 0; i+1 < len(args); i++ {
+		switch args[i] {
+		case "--head":
+			head = args[i+1]
+		case "--base":
+			base = args[i+1]
+		case "--title":
+			title = args[i+1]
+		}
+	}
+	if head == "" {
+		fail(1, "fakegh: pr create needs --head")
+	}
+	number := 1
+	for _, p := range st.Pulls {
+		if n, ok := p["number"].(float64); ok && int(n) >= number {
+			number = int(n) + 1
+		}
+	}
+	url := fmt.Sprintf("https://github.com/example/widgets/pull/%d", number)
+	st.Pulls = append(st.Pulls, map[string]any{
+		"number": number, "title": title, "url": url, "state": "OPEN", "headRefName": head,
+		"baseRefName": base, "headRefOid": st.head(head), "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN",
+	})
+	if !slices.Contains(st.Refs, head) {
+		st.Refs = append(st.Refs, head)
+	}
+	st.write()
+	fmt.Println(url)
 }
 
 // issues prints the open issues, as gh issue list --json does.

@@ -729,7 +729,7 @@ func openTarget(ctx context.Context, s *store.Store, w store.Worktree) (*target,
 	if err != nil {
 		return nil, ghUnavailable(err)
 	}
-	repo, ok := githubRepo(w.Repo)
+	repo, ok := GitHubRepo(w.Repo)
 	if !ok {
 		return nil, noteError(NoteNoGitHubRemote, w.Repo)
 	}

@@ -647,6 +647,26 @@ func scenario(t *testing.T) *harness {
 	h.run("linear_key_rm", "linear-key", 0, "linear", "key", "rm")
 	h.run("run_status", "run-status", 0, "run", "status", started.Run.ID)
 	h.run("run_stop", "run-stop", 0, "run", "stop", started.Run.ID)
+
+	// Ship (ticket 206). A run with no checks passes its gate at once, when
+	// its session ends a turn. The repo is on GitHub, so the run ships: the
+	// tick pushes the branch over the fake ssh and opens the PR on the fake gh.
+	out, errOut, code = h.raw("run", "start", "Runs", "--title", "Tidy the README", "--json")
+	if code != 0 {
+		t.Fatalf("run start: exit %d: %s", code, errOut)
+	}
+	var tidy struct {
+		Run struct{ ID string } `json:"run"`
+	}
+	parse([]byte(out), &tidy)
+	for _, event := range []string{"SessionStart", "Stop"} {
+		h.stdin = fmt.Sprintf(`{"hook_event_name":%q,"session_id":"c57ef956-3136-4e86-bfde-da8facfe0523"}`, event)
+		if _, errOut, code := h.raw("run", "hook", tidy.Run.ID); code != 0 {
+			t.Fatalf("run hook %s: exit %d: %s", event, code, errOut)
+		}
+	}
+	h.stdin = ""
+	h.run("run_tick", "run-tick", 0, "run", "tick")
 	return h
 }
 
