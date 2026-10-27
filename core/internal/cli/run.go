@@ -33,7 +33,7 @@ func newRunStartCmd() *cobra.Command {
 	var o run.StartOptions
 	var checks []string
 	c := &cobra.Command{
-		Use:   "start <plot> --title <text> [--goal <text>] [--check <name>=<command>]... [--worktree <name>] [--repo <repo>] [--base <branch>] [--link <link-id or URL>] [--max-tries <n>] [--model <model>] [--approve-setup]",
+		Use:   "start <plot> --title <text> [--goal <text>] [--check <name>=<command>]... [--worktree <name>] [--repo <repo>] [--base <branch>] [--link <link-id or URL> | --ticket <file>] [--max-tries <n>] [--model <model>] [--approve-setup]",
 		Short: "Start a run in a worktree of a plot",
 		Long: "Start a run. Loam uses the worktree that --worktree names, or makes it. With no --worktree, Loam makes a new worktree with a name from the link key and the title.\n" +
 			"--check adds one Done when check: a name, \"=\", and a shell command that passes when it exits 0 in the worktree. Give it once for each check.\n" +
@@ -84,6 +84,7 @@ func newRunStartCmd() *cobra.Command {
 	f.StringVar(&o.Repo, "repo", "", "the repo of a new worktree (default: the main repo)")
 	f.StringVar(&o.Base, "base", "", "start a new worktree's branch from this branch, not from the default branch of origin")
 	f.StringVar(&o.Link, "link", "", "the link that the work starts from: a link ID of the plot, or the URL of an issue")
+	f.StringVar(&o.Ticket, "ticket", "", "the ticket of a wayfinder map that the work starts from: the path of its file, as loam intake list gives it")
 	f.IntVar(&o.MaxTries, "max-tries", store.DefaultMaxTries, "how many times the checks can fail before the run stops")
 	f.StringVar(&o.Model, "model", "", "the Claude model of the session (default: your Claude Code setting)")
 	f.BoolVar(&o.ApproveSetup, "approve-setup", false, "approve the setup command of the repo when it is new or changed")

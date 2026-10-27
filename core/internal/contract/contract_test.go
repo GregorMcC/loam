@@ -602,6 +602,26 @@ func scenario(t *testing.T) *harness {
 		"--goal", "The login form works on phones.", "--check", "Go tests=go test ./...",
 		"--link", "https://github.com/example/widgets/issues/57"), &started)
 	h.run("run_list", "run-list", 0, "run", "list", "Runs")
+	// The intake of the plot: the issues of its GitHub repo, from the fake gh,
+	// and the tickets of a map in its links. Issue 57 has the run above.
+	tickets := filepath.Join(h.root, "build", "issues")
+	if err := os.MkdirAll(tickets, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, text := range map[string]string{
+		"../map.md":           "# Build\n",
+		"12-run-page-plan.md": "Status: open\nBlocked by: none\n\n# Run page: show the plan\n",
+		"13-run-page-diff.md": "Status: open\nBlocked by: 12\n\n# Run page: show the diff\n",
+		"9-first-ticket.md":   "Status: resolved\n\n# The first ticket\n",
+	} {
+		if err := os.WriteFile(filepath.Join(tickets, name), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, errOut, code := h.raw("link", "add", "Runs", "Build map", filepath.Join(h.root, "build", "map.md")); code != 0 {
+		t.Fatalf("link add: exit %d: %s", code, errOut)
+	}
+	h.run("intake_list", "intake-list", 0, "intake", "list", "Runs")
 	h.run("run_status", "run-status", 0, "run", "status", started.Run.ID)
 	h.run("run_stop", "run-stop", 0, "run", "stop", started.Run.ID)
 	return h

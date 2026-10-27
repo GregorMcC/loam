@@ -537,18 +537,32 @@ A run is one goal that a background Claude Code session (`claude --bg`) works on
 - `shaping`, `stopped`, and `limited` need you.
 - `tries` counts the failed gates. `max_tries` is 1 to 8, because Claude Code lets a session stop after 8 blocked stops in a row.
 - `session_id` is empty until the SessionStart hook of the session records it. `claude --bg` picks its own session ID. `claude attach`, `logs`, and `stop` take its first 8 characters.
-- `source` is the issue of the worktree's link. It is left out when there is none.
+- `source` is the issue of the worktree's link, or the map ticket that `--ticket` names (`kind` `map`, `key` such as `map 135`, `url` the path of the ticket file). It is left out when there is none.
 
 The gate is the Stop hook of the session. Each time the session ends a turn, Loam runs each check with `sh -c` in the folder, then checks that `git status --porcelain` is empty ("Work committed"). When all pass, the run is `ready`. When one fails, the try counts. With tries left, the hook exits 2 and the failures go back to the session as its next prompt. With no tries left, the session stops and the run is `stopped`.
 
 | Command | Output |
 | :- | :- |
-| `loam run start <plot> --title <text> [--goal <text>] [--check <name>=<command>]... [--worktree <name>] [--repo <repo>] [--base <branch>] [--link <link-id or URL>] [--max-tries <n>] [--model <model>] [--approve-setup]` | `{ "run": {...}, "worktree": {...} }` |
+| `loam run start <plot> --title <text> [--goal <text>] [--check <name>=<command>]... [--worktree <name>] [--repo <repo>] [--base <branch>] [--link <link-id or URL> \| --ticket <file>] [--max-tries <n>] [--model <model>] [--approve-setup]` | `{ "run": {...}, "worktree": {...} }` |
 | `loam run list [<plot>]` | An array of runs, newest first. It is `[]` when none exists. |
 | `loam run status <run>` | `{ "run": {...}, "events": [{ "id": 1, "run_id": "...", "at": "...", "kind": "state", "detail": "running" }] }` |
 | `loam run stop <run>` | `{ "run": {...} }`. The run is `cancelled`. A run that has ended stays as it is. |
 
-`run start` uses the worktree that `--worktree` names, or makes it. With no `--worktree`, it makes a worktree with a name from the link key and the title. It refuses, with exit code 1, a folder that Claude Code does not trust: a background session cannot show the trust prompt. In git, Claude Code trusts a worktree when it trusts the main checkout of the repo. A setup command that you have not approved gives exit code 2 (`invalid`); `--approve-setup` approves it. When `claude --bg` fails, the run is `stopped` with the output in `note`, and the command exits 0.
+`run start` uses the worktree that `--worktree` names, or makes it. With no `--worktree`, it makes a worktree with a name from the key of the link or the ticket, and the title. A run has `--link` or `--ticket`, not both (exit code 2). It refuses, with exit code 1, a folder that Claude Code does not trust: a background session cannot show the trust prompt. In git, Claude Code trusts a worktree when it trusts the main checkout of the repo. A setup command that you have not approved gives exit code 2 (`invalid`); `--approve-setup` approves it. When `claude --bg` fails, the run is `stopped` with the output in `note`, and the command exits 0.
+
+### Intake
+
+The intake of a plot is the work that it can start runs from: the open issues of its GitHub repos, through `gh`, and the open tickets of the wayfinder maps in its links. A map is a local link to a file called `map.md`. Its tickets are the `.md` files in the `issues` folder next to it. A ticket file starts with lines such as `Status: open` and `Blocked by: 135`, then a `# Title` line. A ticket whose status is resolved, done, closed, dropped, or wontfix is not open.
+
+| Command | Output |
+| :- | :- |
+| `loam intake list <plot>` | `{ "plot_id": "...", "sources": [{ "kind": "github", "label": "example/widgets", "error": "" }], "items": [{ "source": "github", "key": "#57", "title": "...", "status": "Open", "labels": ["bug"], "url": "https://github.com/example/widgets/issues/57", "updated_at": "...", "run_id": "runraaaaab" }] }` |
+
+- The items are the GitHub issues first, the newest change first (at most 100 for each repo), then the map tickets in number order.
+- `status` is for a person to read: `Open`, or `Blocked by 135` for a ticket.
+- `url` is what `loam run start` takes: `--link` for an issue, `--ticket` for a ticket.
+- `run_id` is the newest run with the item as its `source`, or empty.
+- A source that Loam cannot read, such as a repo when `gh` is missing or rate-limited, has its `error`, and the other sources still show. The command exits 0.
 
 ### Sessions
 

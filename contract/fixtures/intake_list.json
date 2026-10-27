@@ -1,0 +1,61 @@
+{
+  "items": [
+    {
+      "key": "#61",
+      "labels": [
+        "feature"
+      ],
+      "run_id": "",
+      "source": "github",
+      "status": "Open",
+      "title": "Show the plan on the run page",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "url": "https://github.com/example/widgets/issues/61"
+    },
+    {
+      "key": "#57",
+      "labels": [
+        "bug"
+      ],
+      "run_id": "runraaaaab",
+      "source": "github",
+      "status": "Open",
+      "title": "The login form breaks on phones",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "url": "https://github.com/example/widgets/issues/57"
+    },
+    {
+      "key": "map 12",
+      "labels": [],
+      "run_id": "",
+      "source": "map",
+      "status": "Open",
+      "title": "Run page: show the plan",
+      "updated_at": "",
+      "url": "/tmp/loam-contract/build/issues/12-run-page-plan.md"
+    },
+    {
+      "key": "map 13",
+      "labels": [],
+      "run_id": "",
+      "source": "map",
+      "status": "Blocked by 12",
+      "title": "Run page: show the diff",
+      "updated_at": "",
+      "url": "/tmp/loam-contract/build/issues/13-run-page-diff.md"
+    }
+  ],
+  "plot_id": "plotaaaaae",
+  "sources": [
+    {
+      "error": "",
+      "kind": "github",
+      "label": "example/widgets"
+    },
+    {
+      "error": "",
+      "kind": "map",
+      "label": "Build map"
+    }
+  ]
+}

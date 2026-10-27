@@ -21,6 +21,8 @@
 //     ruleset, by branch. The branch stays.
 //   - "rerun_refusals": the message of GitHub for a run that GitHub does not
 //     run again, by run ID.
+//   - "issues": the open issues of the repo, as gh issue list --json prints
+//     them.
 //   - "merge_refusal": the message of GitHub for a merge that it refuses, such
 //     as "Pull request is not mergeable". The PR stays open. A state file with no
 //     "merge_refusal" merges again, so a test can fail a merge and then retry it.
@@ -40,6 +42,7 @@
 //     in the queue. With --auto, the PR stays open, unless "auto_merges_clean"
 //     merges it. --match-head-commit must be the PR head.
 //   - gh pr update-branch <number>: a PR that is behind its base is clean.
+//   - gh issue list: prints "issues".
 //   - gh run rerun <id> --failed: does nothing, or fails as "rerun_refusals"
 //     says.
 //
@@ -73,6 +76,7 @@ type state struct {
 	DeleteRefusals map[string]string          `json:"delete_refusals,omitempty"`
 	RerunRefusals  map[string]string          `json:"rerun_refusals,omitempty"`
 	MergeRefusal   string                     `json:"merge_refusal,omitempty"`
+	Issues         []map[string]any           `json:"issues,omitempty"`
 }
 
 func main() {
@@ -115,6 +119,8 @@ func main() {
 		merge(st, args[2:])
 	case len(args) > 2 && args[0] == "pr" && args[1] == "update-branch":
 		updateBranch(st, args[2])
+	case len(args) > 1 && args[0] == "issue" && args[1] == "list":
+		issues(st)
 	case len(args) > 2 && args[0] == "run" && args[1] == "rerun":
 		rerun(st, args[2])
 	default:
@@ -291,6 +297,19 @@ func rerun(st *state, id string) {
 	if msg, ok := st.RerunRefusals[id]; ok {
 		fail(1, fmt.Sprintf("failed to rerun: HTTP 403: %s (https://api.github.com/repos/example/widgets/actions/runs/%s/rerun-failed-jobs)", msg, id))
 	}
+}
+
+// issues prints the open issues, as gh issue list --json does.
+func issues(st *state) {
+	list := st.Issues
+	if list == nil {
+		list = []map[string]any{}
+	}
+	b, err := json.Marshal(list)
+	if err != nil {
+		fail(2, "fakegh: "+err.Error())
+	}
+	fmt.Println(string(b))
 }
 
 // updateBranch brings a PR up to date with its base, as gh pr update-branch does.

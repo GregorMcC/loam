@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam intake list --json",
+  "description": "The open issues of the GitHub repos of a plot, the newest change first, then the open tickets of the maps in its links, in number order.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["plot_id", "sources", "items"],
+  "properties": {
+    "plot_id": { "$ref": "defs.json#/$defs/id" },
+    "sources": {
+      "description": "Each GitHub repo of the plot, and each map in its links.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "label", "error"],
+        "properties": {
+          "kind": { "enum": ["github", "map"] },
+          "label": { "description": "The repo, such as example/widgets, or the label of the map link.", "type": "string" },
+          "error": { "description": "Why Loam could not read the source, or empty.", "type": "string" }
+        }
+      }
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source", "key", "title", "status", "labels", "url", "updated_at", "run_id"],
+        "properties": {
+          "source": { "enum": ["github", "map"] },
+          "key": { "description": "#48, owner/repo#48, or map 135. It is the key of a run that starts from the item.", "type": "string", "minLength": 1 },
+          "title": { "type": "string" },
+          "status": { "description": "For a person to read: Open, or Blocked by 135.", "type": "string" },
+          "labels": { "type": "array", "items": { "type": "string" } },
+          "url": { "description": "The web page of an issue, for run start --link, or the path of a ticket file, for run start --ticket.", "type": "string", "minLength": 1 },
+          "updated_at": { "description": "The last change on GitHub, or empty for a ticket.", "type": "string" },
+          "run_id": { "description": "The newest run that started from the item, or empty.", "anyOf": [{ "$ref": "defs.json#/$defs/id" }, { "const": "" }] }
+        }
+      }
+    }
+  }
+}

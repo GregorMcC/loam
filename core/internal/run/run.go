@@ -13,6 +13,7 @@ package run
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -23,8 +24,10 @@ import (
 	"unicode"
 
 	"github.com/GregorMcC/loam/core/internal/claudebin"
+	"github.com/GregorMcC/loam/core/internal/intake"
 	"github.com/GregorMcC/loam/core/internal/session"
 	"github.com/GregorMcC/loam/core/internal/store"
+	"github.com/GregorMcC/loam/core/internal/wayfinder"
 	"github.com/GregorMcC/loam/core/internal/worktree"
 )
 
@@ -53,7 +56,10 @@ type StartOptions struct {
 	// means the default branch of origin.
 	Base string
 	// Link is the link that the work starts from, as for a new worktree.
-	Link     string
+	Link string
+	// Ticket is the file of a ticket of a wayfinder map that the work starts
+	// from. A run has a link or a ticket, not both.
+	Ticket   string
 	MaxTries int
 	Model    string
 	// ApproveSetup approves the setup command of the repo when it is new or
@@ -88,8 +94,19 @@ func Start(ctx context.Context, s *store.Store, o StartOptions) (*StartResult, e
 		return nil, fmt.Errorf("a run needs a title: %w", store.ErrInvalid)
 	}
 	res := &StartResult{}
+	var ticket *store.RunSource
+	if o.Ticket != "" {
+		if o.Link != "" {
+			return nil, fmt.Errorf("a run starts from a link or a ticket, not both: %w", store.ErrInvalid)
+		}
+		t, err := wayfinder.ReadTicket(o.Ticket)
+		if err != nil {
+			return nil, fmt.Errorf("%s is not a ticket of a map: %v: %w", o.Ticket, err, store.ErrInvalid)
+		}
+		ticket = &store.RunSource{Kind: intake.Map, Key: t.Key, URL: t.Path}
+	}
 
-	wt, warnings, err := findOrMakeWorktree(s, plot, o, title)
+	wt, warnings, err := findOrMakeWorktree(s, plot, o, title, ticket)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +124,7 @@ func Start(ctx context.Context, s *store.Store, o StartOptions) (*StartResult, e
 
 	r, err := s.AddRun(store.Run{
 		PlotID: plot.ID, WorktreeID: wt.ID, Folder: wt.Path, Title: title, Goal: strings.TrimSpace(o.Goal),
-		DoneWhen: o.DoneWhen, MaxTries: o.MaxTries, Source: sourceOf(wt.Link),
+		DoneWhen: o.DoneWhen, MaxTries: o.MaxTries, Source: cmp.Or(ticket, sourceOf(wt.Link)),
 	})
 	if err != nil {
 		return nil, err
@@ -152,8 +169,9 @@ func stopAfter(s *store.Store, id string, err error) error {
 }
 
 // findOrMakeWorktree returns the worktree that o names, and makes it when it
-// does not exist.
-func findOrMakeWorktree(s *store.Store, plot store.Plot, o StartOptions, title string) (store.Worktree, []string, error) {
+// does not exist. A new worktree without a name takes its name from the key
+// of the ticket, or of the link, and the title.
+func findOrMakeWorktree(s *store.Store, plot store.Plot, o StartOptions, title string, ticket *store.RunSource) (store.Worktree, []string, error) {
 	name := o.Worktree
 	if name != "" {
 		w, err := worktree.Find(s, plot.ID, o.Repo, name)
@@ -178,7 +196,13 @@ func findOrMakeWorktree(s *store.Store, plot store.Plot, o StartOptions, title s
 	}
 	if name == "" {
 		var err error
-		if name, err = freeName(s, plot, repo.Path, title, o.Link); err != nil {
+		key := ""
+		if ticket != nil {
+			key = ticket.Key
+		} else if l, err := worktree.ResolveLink(plot, repo.Path, o.Link); err == nil && l != nil {
+			key = l.Key
+		}
+		if name, err = freeName(s, plot, title, key); err != nil {
 			return store.Worktree{}, nil, err
 		}
 	}
@@ -189,16 +213,11 @@ func findOrMakeWorktree(s *store.Store, plot store.Plot, o StartOptions, title s
 	return res.Worktree, res.Warnings, nil
 }
 
-// freeName returns a worktree name from the key of the link and the title,
-// such as eng-523-drag-a-link-to-reorder, with a number added when the plot
-// has a worktree of that name.
-func freeName(s *store.Store, plot store.Plot, repoPath, title, link string) (string, error) {
-	base := slug(title)
-	if link != "" {
-		if l, err := worktree.ResolveLink(plot, repoPath, link); err == nil && l != nil && l.Key != "" {
-			base = slug(l.Key + " " + title)
-		}
-	}
+// freeName returns a worktree name from the key and the title, such as
+// eng-523-drag-a-link-to-reorder, with a number added when the plot has a
+// worktree of that name.
+func freeName(s *store.Store, plot store.Plot, title, key string) (string, error) {
+	base := slug(strings.TrimSpace(key + " " + title))
 	if base == "" {
 		base = "run"
 	}

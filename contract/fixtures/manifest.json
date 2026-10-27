@@ -957,6 +957,17 @@
     "schema": "run-list"
   },
   {
+    "name": "intake_list",
+    "args": [
+      "intake",
+      "list",
+      "Runs",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "intake-list"
+  },
+  {
     "name": "run_status",
     "args": [
       "run",
