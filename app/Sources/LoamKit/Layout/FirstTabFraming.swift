@@ -13,7 +13,7 @@ public protocol FirstTabFraming: NSView {
     /// Where the tab at a 0-based position draws now. It differs from `tabFrame(at:)` only while
     /// a tab drag moves the tabs (ticket 98).
     func shownTabFrame(at index: Int) -> CGRect?
-    /// True from the start of a tab drag to its end. The end comes after the last slide: a press before it starts no
-    /// drag (ticket 131).
+    /// True while a tab drag runs, with the slides after the release or Escape. The drag ends after the last slide, and a
+    /// press before that end starts no drag (ticket 131).
     var isDragging: Bool { get }
 }

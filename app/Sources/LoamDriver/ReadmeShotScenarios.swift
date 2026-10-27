@@ -238,9 +238,10 @@ extension Scenarios {
             model.goToPane(pane)
             try await app.waitUntil("the pane has the keys") { app.window.firstResponder === (try? surface(pane)) }
         }
-        // The waits for the real Claude Code session, for a shell command and for a pane that settles keep their deadlines,
-        // and so do the waits that can never end. This scenario is not in the suite: a person runs it with the app in
-        // front, and a stuck session would hold the keyboard until the limit of 1200 s.
+        // The waits on the panes (the real Claude Code session, the shell commands, a pane that settles) keep their
+        // deadlines, and so do the waits that can never end. The waits on the app itself have none. This scenario is not in
+        // the suite: a person runs it with the app in front, and a stuck session would hold the keyboard until the limit
+        // of 1200 s.
 
         /// Waits until the screen of the pane stays the same for `seconds`.
         func settle(_ pane: PaneID, _ seconds: Double = 1.2, timeout: TimeInterval = 30) async throws {
@@ -258,7 +259,7 @@ extension Scenarios {
         /// Types a command into a shell and waits for the next prompt.
         func run(_ pane: PaneID, _ command: String, timeout: TimeInterval = 60) async throws {
             try await focus(pane)
-            try await app.waitUntil("a shell prompt") { atPrompt(pane) }
+            try await app.waitUntil("a shell prompt", timeout: 20) { atPrompt(pane) }
             let before = text(pane)
             try app.type(command)
             app.press(.returnKey)
@@ -368,7 +369,7 @@ extension Scenarios {
         if model.workspace.session(of: claudePane)?.started != true {
             // The trust question starts on "No, exit". Move to "Yes, I trust this folder".
             app.press(.down)
-            try await app.waitUntil("Yes is selected") {
+            try await app.waitUntil("Yes is selected", timeout: 5) {
                 text(claudePane).split(separator: "\n").contains { $0.contains("❯") && $0.contains("Yes") }
             }
             app.press(.returnKey)
