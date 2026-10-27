@@ -76,12 +76,12 @@ func stopped(s *store.Store, runID string, errOut io.Writer, logf func(string, .
 			return nil // stopped while the checks ran
 		}
 		if len(g.failed) == 0 {
-			r.State, r.Note = store.RunReady, fmt.Sprintf("All %d checks passed", len(g.results))
+			r.State, r.Note = store.RunReady, "All "+count(len(g.results), "check")+" passed"
 			return nil
 		}
 		r.Tries++
 		if r.Tries >= r.MaxTries {
-			r.State, r.Note = store.RunStopped, fmt.Sprintf("Checks failed after %d tries: %s", r.Tries, failedNames(g))
+			r.State, r.Note = store.RunStopped, "Checks failed after "+count(r.Tries, "try")+": "+failedNames(g)
 			return nil
 		}
 		r.State, r.Note = store.RunRunning, fmt.Sprintf("Try %d failed: %s", r.Tries, failedNames(g))
@@ -157,4 +157,16 @@ func hookLog(home string) func(string, ...any) {
 		defer f.Close()
 		fmt.Fprintf(f, "%s %s\n", time.Now().Format(time.RFC3339), fmt.Sprintf(format, a...))
 	}
+}
+
+// count gives n and the noun, such as "1 try" or "3 tries".
+func count(n int, noun string) string {
+	switch {
+	case n == 1:
+	case strings.HasSuffix(noun, "y"):
+		noun = strings.TrimSuffix(noun, "y") + "ies"
+	default:
+		noun += "s"
+	}
+	return fmt.Sprintf("%d %s", n, noun)
 }

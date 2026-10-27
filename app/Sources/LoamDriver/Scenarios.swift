@@ -71,6 +71,7 @@ enum Scenarios {
         Scenario(name: "tab-close", limit: 90, body: tabClose),
         Scenario(name: "tab-drag", limit: 90, body: tabDrag),
         Scenario(name: "plot-drag", limit: 120, body: plotDrag),
+        Scenario(name: "today-shot", limit: 120, body: todayShot),
         Scenario(name: "readme-shots", limit: 1200, body: readmeShots),
     ]
 

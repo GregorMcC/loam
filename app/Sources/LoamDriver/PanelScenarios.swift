@@ -63,9 +63,10 @@ struct PanelRig {
         ((try? String(contentsOf: openLog, encoding: .utf8)) ?? "").split(separator: "\n").map(String.init)
     }
 
-    /// Runs `loam` with the temp store and returns stdout. Throws on a non-zero exit.
+    /// Runs `loam` with the temp store and returns stdout. Throws on a non-zero exit. `input` is the
+    /// text on stdin.
     @discardableResult
-    func loam(_ args: [String], extra: [String: String] = [:]) throws -> String {
+    func loam(_ args: [String], extra: [String: String] = [:], input: String? = nil) throws -> String {
         let process = Process()
         process.executableURL = binary
         process.arguments = args
@@ -74,7 +75,13 @@ struct PanelRig {
         let out = Pipe()
         process.standardOutput = out
         process.standardError = FileHandle.nullDevice
+        let stdin = input.map { _ in Pipe() }
+        if let stdin { process.standardInput = stdin }
         try process.run()
+        if let stdin, let input {
+            stdin.fileHandleForWriting.write(Data(input.utf8))
+            try stdin.fileHandleForWriting.close()
+        }
         // The read blocks the main thread until `loam` ends, which a busy machine can hold for more than 10 s.
         let data = Watchdog.excuse { out.fileHandleForReading.readDataToEndOfFile() }
         process.waitUntilExit()

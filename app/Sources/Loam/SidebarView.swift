@@ -666,6 +666,14 @@ private struct SidebarTop: View {
                 } trailing: {
                     PlainCount(count: sidebar.doneUnreadCount)
                 }
+                // Today (ticket 203): the runs of every plot. The count is the runs that need you. The row
+                // is a button even with no run, since Today explains how to start one.
+                AttentionRow(title: "Today", count: model.today.needsYouCount, id: "sidebar-today", alwaysOn: true,
+                             action: { model.showToday() }) {
+                    Image(systemName: "sun.horizon").font(.system(size: 12, weight: .medium)).foregroundStyle(LoamColor.inkMuted)
+                } trailing: {
+                    NeedsYouCountBadge(count: model.today.needsYouCount)
+                }
                 // Ship state, not an alert: the symbol is `ink-muted` and the count is plain (ADR 0007).
                 if sidebar.showsReadyToMerge {
                     AttentionRow(title: WorktreeStage.readyToMerge.words, count: sidebar.readyToMergeCount,
@@ -684,11 +692,13 @@ private struct SidebarTop: View {
     }
 }
 
-/// A fixed row: the mark, the title, and the count. It is a button only while the count is above 0.
+/// A fixed row: the mark, the title, and the count. It is a button only while the count is above 0,
+/// unless `alwaysOn` is set.
 private struct AttentionRow<Mark: View, Trailing: View>: View {
     let title: String
     let count: Int
     let id: String
+    var alwaysOn = false
     let action: () -> Void
     @ViewBuilder var mark: () -> Mark
     @ViewBuilder var trailing: () -> Trailing
@@ -706,11 +716,11 @@ private struct AttentionRow<Mark: View, Trailing: View>: View {
             }
             .padding(.horizontal, 8)
             .frame(height: 28)
-            .background(hovering && count > 0 ? LoamColor.inkFill : Color.clear, in: RoundedRectangle(cornerRadius: 7))
+            .background(hovering && (count > 0 || alwaysOn) ? LoamColor.inkFill : Color.clear, in: RoundedRectangle(cornerRadius: 7))
             .contentShape(RoundedRectangle(cornerRadius: 7))
         }
         .buttonStyle(.plain)
-        .disabled(count == 0)
+        .disabled(count == 0 && !alwaysOn)
         .onHover { hovering = $0 }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(count > 0 ? "\(title): \(count)" : title)

@@ -315,6 +315,16 @@ func TestRunGateStopsTheRunWhenTheTriesRunOut(t *testing.T) {
 	}
 }
 
+func TestRunNoteCountsOneTryInTheSingular(t *testing.T) {
+	s, r := gateRun(t, "1")
+	if code, _ := stopHook(t, r, "Stop"); code != 0 {
+		t.Fatalf("code %d", code)
+	}
+	if got, _ := s.GetRun(r.ID); got.Note != "Checks failed after 1 try: Hello" {
+		t.Fatalf("note %q", got.Note)
+	}
+}
+
 func TestRunStopFailureFromALimitCountsNoTry(t *testing.T) {
 	s, r := gateRun(t, "3")
 	if code, _ := stopHook(t, r, "StopFailure"); code != 0 {

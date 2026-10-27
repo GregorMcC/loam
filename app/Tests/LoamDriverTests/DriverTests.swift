@@ -304,6 +304,14 @@ struct DriverTests {
         ])
     }
 
+    /// Ticket 203: five runs in two plots. The Today row opens Today with its tiles, the line, and the runs.
+    /// A run row opens the run page with its note and history, and Back goes to Today.
+    @Test func showsTodayAndTheRunPage() async throws {
+        try await expectPass("today-shot", environment: [
+            "LOAM_DRIVER_LOAM": Self.loamBinary, "LOAM_DRIVER_FAKE_CLAUDE": Self.fakeClaude,
+        ])
+    }
+
     /// Ticket 107: two plots with a worktree each that is ready to merge. The Ready to merge row counts 2,
     /// ⌘⇧L selects the first, then the second, then the first again, and the row goes while gh is missing.
     @Test func reachesTheWorktreesThatAreReadyToMergeWithCommandShiftL() async throws {

@@ -145,6 +145,13 @@ public final class AppModel {
     public var sidebarCollapsed = false { didSet { onWorkspaceChange?(); saveLayout() } }
     /// The last core error, in words for a person. The window shows it.
     public var lastError: String?
+    /// The runs of every plot, newest first, as the core last listed them (ticket 203).
+    public internal(set) var runs: [Run] = [] { didSet { if runs != oldValue { onWorkspaceChange?() } } }
+    /// The page that the well shows in place of the tabs and panes: Today or a run. Nil shows the panes.
+    /// A move to a space or a pane closes it.
+    public internal(set) var page: AppPage? { didSet { if page != oldValue { onWorkspaceChange?() } } }
+    /// The run that the run page shows, with its history, as the core last read it.
+    public internal(set) var runStatus: RunStatus?
     /// Set when the launch check fails. The window shows it and loads nothing else.
     public private(set) var launchBlock: String?
     /// The setup steps that are not done. A non-empty list shows the setup banner.
@@ -310,6 +317,7 @@ public final class AppModel {
             await reloadPlots()
             await review.reload()
             await reloadWorktrees()
+            await reloadRuns()
             if shouldStartFeed {
                 startFeed()
                 shipRefresh.start()
@@ -502,7 +510,7 @@ public final class AppModel {
         await panel.load(plotID: workspace.activePlotID)
     }
 
-    private func report(_ error: Error) {
+    func report(_ error: Error) {
         lastError = Self.message(for: error)
     }
 
@@ -544,6 +552,7 @@ public final class AppModel {
                 await self.reloadPlots()
                 await self.review.reload()
                 await self.reloadWorktrees()
+                await self.reloadRuns()
             }
         }
     }
@@ -637,6 +646,7 @@ public final class AppModel {
 
     private func activate(_ space: Space) {
         endWorktreeSelection()
+        page = nil
         let opens = space != workspace.activeSpace
         // A switch with the panel open marks the plot that you leave as seen.
         if panel.visible, opens { review.markSeen(plot: workspace.activePlotID) }
@@ -747,7 +757,14 @@ public final class AppModel {
     public func openTab(_ kind: PaneSpec.Kind = .shell, folder: String? = nil, repo: String? = nil,
                         worktree: WorktreeRef? = nil) {
         guard let space = workspace.activeSpace else { return }
+        page = nil
         workspace.openTab(spec(kind, in: space, folder: folder, repo: repo, worktree: worktree))
+    }
+
+    /// Opens a tab with a spec that the caller built, such as the attach tab of a run (ticket 203).
+    func openTab(_ spec: PaneSpec) {
+        page = nil
+        workspace.openTab(spec)
     }
 
     /// ⌘D and ⌘⇧D split with a session. A shell split comes from the menu or ⌘J.
@@ -1089,6 +1106,7 @@ public final class AppModel {
 
     public func focus(_ pane: PaneID) {
         endWorktreeSelection()
+        page = nil
         let changed = workspace.spec(of: pane).flatMap { workspace.selectedTab(of: $0.space) }?.focused != pane
         workspace.focus(pane)
         if changed { useTimes?.record(SwitcherItem.paneKey(pane.uuidString)) }
