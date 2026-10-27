@@ -242,11 +242,10 @@ enum Scenarios {
         guard let after = pane.size else { throw DriverFailure("the pane has no size") }
         Log.line("grid \(before.columns)x\(before.rows) to \(after.columns)x\(after.rows)")
 
-        // libghostty sends the PTY resize after a short coalescing delay.
-        await app.sleep(0.5)
-        try app.type("stty size")
-        app.press(.returnKey)
+        // libghostty sends the PTY resize after a short coalescing delay. The shell asks until it has the new size.
         let expected = "\(after.rows) \(after.columns)"
+        try app.type("until [ \"$(stty size)\" = \"\(expected)\" ]; do sleep 0.05; done; stty size")
+        app.press(.returnKey)
         try await app.waitUntil("stty size is \(expected)") { app.lines(pane).contains(expected) }
         _ = await app.close(pane)
     }
@@ -287,10 +286,11 @@ enum Scenarios {
     static func spam(_ app: DriverApp) async throws {
         let a = try app.addPane("A", command: #"/bin/zsh -fc 'while :; do printf "\e]0;t%s\a" $RANDOM; done'"#)
         let b = try app.addPane("B", command: zsh)
+        try await app.waitUntil("the title loop ran") { (app.runtime.actionCounts[GHOSTTY_ACTION_SET_TITLE.rawValue] ?? 0) > 100 }
+        // The loop floods the pane for a while before the close. A close right after the first titles waited the 5 s for the exit
+        // in 1 run of 3, and then forced it.
         await app.sleep(3)
-        let titles = app.runtime.actionCounts[GHOSTTY_ACTION_SET_TITLE.rawValue] ?? 0
-        Log.line("title actions so far: \(titles)")
-        try require(titles > 100, "the title loop did not run")
+        Log.line("title actions so far: \(app.runtime.actionCounts[GHOSTTY_ACTION_SET_TITLE.rawValue] ?? 0)")
         app.screenshot("spam")
 
         let result = await app.close(a)

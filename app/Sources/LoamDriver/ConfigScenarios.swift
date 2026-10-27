@@ -57,6 +57,7 @@ extension Scenarios {
         let beforeClash = loads.count
         try app.writeConfig("background = #305020\nkeybind = cmd+p=new_split:right")
         try await app.waitUntil("the reload with the keybind") { loads.count > beforeClash }
+        // The file watch can load the file once more. Let it end, so a load from the watch cannot pass for the one from ⌘⇧,.
         await app.sleep(0.5)
 
         // ⌘⇧, reloads with no file change.
@@ -119,7 +120,7 @@ extension Scenarios {
             commands.removeAll()
             app.press(letter: letter, flags: flags)
             try await app.waitUntil("\(name) runs \(expected)") { !commands.isEmpty }
-            await app.sleep(0.05)
+            await app.sleep(0.05)  // A negative check: a second command would be in by now.
             try check(commands == [expected], "\(name) ran \(commands), not \(expected)")
         }
 

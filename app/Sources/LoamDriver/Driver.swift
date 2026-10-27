@@ -47,15 +47,20 @@ public struct AppHost {
     /// The app's quit, without the process exit: the question when a session is mid-turn, the
     /// last layout write, and the safe close of every pane. It calls back with false on Cancel.
     public let quit: @MainActor (@escaping @MainActor (Bool) -> Void) -> Void
+    /// True while the plot panel column slides open or shut. A press during a slide starts the next slide at the end of the
+    /// first, so this stays true until the column has the state of the model (ticket 134).
+    public let panelIsSliding: @MainActor () -> Bool
 
     public init(window: NSWindow, model: AppModel, owner: AnyObject,
                 paneView: @escaping @MainActor (PaneID) -> NSView? = { _ in nil },
-                quit: @escaping @MainActor (@escaping @MainActor (Bool) -> Void) -> Void = { $0(true) }) {
+                quit: @escaping @MainActor (@escaping @MainActor (Bool) -> Void) -> Void = { $0(true) },
+                panelIsSliding: @escaping @MainActor () -> Bool) {
         self.window = window
         self.model = model
         self.owner = owner
         self.paneView = paneView
         self.quit = quit
+        self.panelIsSliding = panelIsSliding
     }
 }
 

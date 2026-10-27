@@ -167,6 +167,13 @@ extension Scenarios {
         func sheetCloses() async throws {
             try await app.waitUntil("the sheet closes") { !model.landSheet.isOpen && !app.exists("land-sheet") }
         }
+        /// The card of the sheet has the keys, not the box. The sheet asks for them after it opens, and SwiftUI moves them at
+        /// its next update (ticket 123).
+        func cardHasTheKeys() async throws {
+            try await app.waitUntil("the card of the sheet has the keys") {
+                app.rootViewWithTheKeys() == "LandSheetView" && !(host.window.firstResponder is NSTextView)
+            }
+        }
 
         // 2. A worktree that GitHub does not let merge: native-panel has 2 failed checks and 2 files that are not committed.
         // Merge stays off, whatever you press. Return and Command-Return do nothing, and the call to GitHub never happens.
@@ -367,7 +374,8 @@ extension Scenarios {
         // the box the keys, and Tab and Shift-Tab in the box keep them there.
         try expectLand(model.openLandSheet(rename.id), "the sheet did not open for rename-users")
         try await app.waitUntil("the sheet shows the plan of rename-users") { sheetIsUp(25) }
-        await app.sleep(0.5)
+        try await cardHasTheKeys()
+        await app.sleep(0.5)  // A negative check: a late move of the keys into the box would show by now.
         try expectLand(app.rootViewWithTheKeys() == "LandSheetView" && !(host.window.firstResponder is NSTextView),
                        "the card does not have the keys at the open: \(app.rootViewWithTheKeys() ?? "the window") has them")
         app.press(.backtab)
@@ -384,7 +392,8 @@ extension Scenarios {
         // about the focus of a field a short time after the window does, so for this Return its focus is still the sheet.
         try expectLand(model.openLandSheet(rename.id), "the sheet did not open for rename-users")
         try await app.waitUntil("the sheet shows the plan of rename-users") { sheetIsUp(25) }
-        await app.sleep(0.5)
+        try await cardHasTheKeys()
+        await app.sleep(0.5)  // The sheet asks for the keys just after it opens. A focus before that can lose them.
         try expectLand(AccessibilityProbe.shared.focus("land-sheet-where"), "the box took no focus")
         try composing("n")
         try expectLand(try editor().hasMarkedText(), "the box has no composed text")
@@ -398,7 +407,8 @@ extension Scenarios {
         let sentence25 = "Merged #25 Rename users."
         try expectLand(model.openLandSheet(rename.id), "the sheet did not open again for rename-users")
         try await app.waitUntil("the sheet shows the plan of rename-users again") { sheetIsUp(25) }
-        await app.sleep(0.5)
+        try await cardHasTheKeys()
+        await app.sleep(0.5)  // The sheet asks for the keys just after it opens. A focus before that can lose them.
         try expectLand(AccessibilityProbe.shared.focus("land-sheet-where"), "the box took no focus again")
         try await app.waitUntil("the box has the keys") { host.window.firstResponder is NSTextView }
         try await app.waitUntil("the sentence is selected") {
@@ -434,7 +444,7 @@ extension Scenarios {
         // held key do nothing, and a new press takes the new commit.
         try expectLand(model.openLandSheet(rename.id), "the sheet did not open again for rename-users")
         try await app.waitUntil("the sheet shows the plan of rename-users again") { sheetIsUp(25) }
-        await app.sleep(0.5)
+        try await cardHasTheKeys()
         let newHead = String(repeating: "c", count: 40)
         try landGitHub(head: head, newHead: newHead).write(to: ghState)
         app.keyDown(.returnKey)

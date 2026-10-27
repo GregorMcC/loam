@@ -101,7 +101,7 @@ extension Scenarios {
         let panelShows = model.panel.visible
         let sidebarHidden = model.sidebarCollapsed
         for id in ["new-session-button", "panel-button"] { _ = AccessibilityProbe.shared.press(id) }
-        await app.sleep(0.5)
+        await app.sleep(0.5)  // A negative check: a press that worked would have opened the tab by now.
         try expectToolbar(model.workspace.tabs(of: .plot(plot)).count == tabs, "a toolbar press opened a tab under the sheet")
         try expectToolbar(model.panel.visible == panelShows, "a toolbar press changed the plot panel under the sheet")
         try expectToolbar(model.sidebarCollapsed == sidebarHidden, "a toolbar press changed the sidebar under the sheet")

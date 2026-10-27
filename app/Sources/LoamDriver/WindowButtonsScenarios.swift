@@ -40,23 +40,6 @@ extension Scenarios {
         }
     }
 
-    /// Where the window server has the window, in the coordinates of AppKit. It follows `window.frame` a moment after a change of the
-    /// frame. A press that is posted before that lands at a wrong point of the window: the shift is the difference of the two frames.
-    private static func windowServerFrame(of window: NSWindow) -> NSRect? {
-        guard let list = CGWindowListCopyWindowInfo([.optionIncludingWindow], CGWindowID(window.windowNumber)) as? [[String: Any]],
-              let dictionary = list.first?[kCGWindowBounds as String] as? NSDictionary,
-              let bounds = CGRect(dictionaryRepresentation: dictionary as CFDictionary),
-              let screen = NSScreen.screens.first else { return nil }
-        return NSRect(x: bounds.minX, y: screen.frame.height - bounds.maxY, width: bounds.width, height: bounds.height)
-    }
-
-    private static func windowServerHasFrame(_ window: NSWindow) -> Bool {
-        guard let server = windowServerFrame(of: window) else { return false }
-        let frame = window.frame
-        return [server.minX - frame.minX, server.minY - frame.minY, server.width - frame.width, server.height - frame.height]
-            .allSatisfy { abs($0) < 1 }
-    }
-
     private static func windowButton(_ host: AppHost, _ type: NSWindow.ButtonType) throws -> NSButton {
         guard let button = host.window.standardWindowButton(type) else { throw DriverFailure("the window has no button \(type)") }
         return button
@@ -118,7 +101,7 @@ extension Scenarios {
         let frame = window.frame
         let before = (sheetOpen: host.model.sheetIsOpen, native: window.attachedSheet != nil)
         func waitForWindowServer() async throws {
-            try await app.waitUntil("the window server has the frame of the window") { windowServerHasFrame(window) }
+            try await app.waitUntil("the window server has the frame of the window") { app.windowServerHasFrame() }
         }
         func putBack() async throws {
             window.setFrame(frame, display: true)

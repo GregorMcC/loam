@@ -231,6 +231,10 @@ final class AccessibilityProbe {
         thread.start()
     }
 
+    /// Drops the scan, so the next read scans again. A scan can be 150 ms old, and a read right after a move of the window
+    /// would give the old place of an element (ticket 134).
+    func rescan() { scanned = .distantPast }
+
     func node(_ id: String) -> Node? {
         if Date().timeIntervalSince(scanned) > 0.15 {
             nodes = scan()
@@ -700,7 +704,8 @@ extension Scenarios {
         try app.fill("panel-what", with: "mine")
         try await app.waitUntil("the Save button for What") { app.exists("panel-save-what") }
         try rig.loam(["set", plot, "what", "theirs"])
-        await app.sleep(1)
+        let theirs = try rig.lastChangeID(plot)
+        try await app.waitUntil("the app has the change by the CLI") { host.model.review.changes.contains { $0.id == theirs } }
         try app.click("panel-save-what")
         try await app.waitUntil("the clash box") { app.exists("panel-clash") }
         app.screenshot("panel-clash")
@@ -768,16 +773,16 @@ extension Scenarios {
 
         // 4. Closing the panel marks every change seen.
         let newest = try rig.lastChangeID(plot)
-        await app.sleep(0.5)
+        try await app.waitUntil("the app has the newest change") { host.model.review.changes.contains { $0.id == newest } }
         try app.pressMenuKey("i")
         try await app.waitUntil("last_seen_changes holds the newest change") {
             (rig.stateFile.lastSeenChanges() ?? [:])[plot] == newest
         }
         try await app.waitUntil("the panel is closed") { !app.exists("panel-whereItStands") }
-        await app.sleep(0.5)
+        try await app.waitForPanelSlide(host)
         try app.pressMenuKey("i")
         try await app.waitUntil("the panel shows again") { app.exists("panel-whereItStands") }
-        await app.sleep(0.5)
+        await app.sleep(0.5)  // A negative check: the box would show once the panel has loaded.
         try check(!app.exists("panel-new-since"), "the new box shows after the changes were seen")
 
         // 4b. A second ⌘I while the panel still slides counts from the first (ticket 125). Two quick presses hide
@@ -792,7 +797,8 @@ extension Scenarios {
             try await app.waitUntil("the column ends as the model: \(what)") {
                 column.isCollapsed != shown && app.exists("panel-whereItStands") == shown
             }
-            await app.sleep(0.5)  // The first slide ends by now, and must not change the column.
+            try await app.waitForPanelSlide(host)
+            await app.sleep(0.5)  // A negative check: the end of the first slide must not change the column.
             try check(column.isCollapsed != shown && app.exists("panel-whereItStands") == shown,
                       "the end of the first slide undid the second ⌘I: \(what)")
         }
@@ -806,7 +812,7 @@ extension Scenarios {
         // 5. A plot that is not active shows its count in the sidebar.
         try app.pressMenuKey("i")
         try await app.waitUntil("the panel is closed again") { !app.exists("panel-whereItStands") }
-        await app.sleep(0.5)
+        try await app.waitForPanelSlide(host)
         host.model.activate(number: 2)
         try await app.waitUntil("the other plot is active") { host.model.workspace.activePlotID == other }
         try await rig.claudeSetsWhere(plot, "while you were away", app: app)
@@ -823,7 +829,8 @@ extension Scenarios {
         let total = try rig.changes(plot).count
         host.model.activate(number: 1)
         try await app.waitUntil("the review plot is active") { host.model.workspace.activePlotID == plot }
-        await app.sleep(0.5)
+        let latest = try rig.lastChangeID(plot)
+        try await app.waitUntil("the app has the changes of the CLI") { host.model.review.changes.contains { $0.id == latest } }
         try app.pressMenuKey("i")
         try await app.waitUntil("the first page") { app.text(of: "change-log-range") == "1 to 10 of \(total)" }
         let oldest = try rig.changes(plot).compactMap { $0["id"] as? Int }.min() ?? 0

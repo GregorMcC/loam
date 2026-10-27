@@ -170,8 +170,7 @@ extension Scenarios {
         // 3. Return in the popover types the prompt into the input and gives the session the keys. You hold Return
         // a little: its repeats reach the terminal, which drops them until a new key down. Nothing is sent: the fake
         // `claude` got no prompt.
-        try await app.waitUntil("the popover has the keys") { !hasTheKeys(session) }
-        await app.sleep(0.3)
+        try await app.waitUntil("the popover has the keys") { !hasTheKeys(session) && app.rootViewWithTheKeys() == "PRPopoverView" }
         app.keyDown(.returnKey)
         try await app.waitUntil("the session has the keys") { hasTheKeys(session) }
         for _ in 0..<3 { app.keyDown(.returnKey, isARepeat: true) }

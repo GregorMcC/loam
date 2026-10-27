@@ -232,7 +232,7 @@ extension Scenarios {
         try app.pressMenuKey("w")
         try await app.waitUntil("one tab left") { model.workspace.tabs(of: .plot(plot)).count == 1 }
         try check(model.workspace.paneIDs(of: .plot(plot)) == [shell], "the shell pane is gone")
-        await app.sleep(0.5)  // The safe close runs, then the socket goes.
-        try check(!fm.fileExists(atPath: socket), "the first pane's socket is still there")
+        // The safe close runs, then the socket goes.
+        try await app.waitUntil("the socket of the first pane goes") { !fm.fileExists(atPath: socket) }
     }
 }

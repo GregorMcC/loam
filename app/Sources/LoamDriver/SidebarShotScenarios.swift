@@ -61,12 +61,14 @@ extension Scenarios {
         let paneThree = model.workspace.paneIDs(of: .plot(third))[0]
         try want(model.sidebar.needsYouCount == 0 && model.sidebar.doneUnreadCount == 0, "a pane is in a state at the start")
         // A pane starts its session when its plot first shows.
+        func started(_ panes: [PaneID]) -> Bool {
+            panes.allSatisfy { pane in (host.paneView(pane) as? TerminalSurfaceView).map { $0.foregroundProcessGroup > 0 && !$0.processExited } ?? false }
+        }
         model.activate(number: 2)
-        await app.sleep(1.5)
+        try await app.waitUntil("the sessions of plot 2 started") { started(panesTwo) }
         model.activate(number: 3)
-        await app.sleep(1.5)
+        try await app.waitUntil("the session of plot 3 started") { started([paneThree]) }
         model.activate(number: 1)
-        await app.sleep(1)
         // SessionStart gives each pane the session ID that the later events carry.
         for pane in panesTwo + [paneThree] { model.apply(try paneEvent("SessionStart"), to: pane) }
         model.apply(try paneEvent("PermissionRequest"), to: panesTwo[0])

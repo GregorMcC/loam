@@ -426,7 +426,7 @@ extension Scenarios {
         await appearance(.darkAqua)
         try app.pressMenuKey("p")
         try await app.waitUntil("the switcher shows") { app.exists("switcher-field") }
-        await app.sleep(0.3)
+        try await app.waitUntil("the field has the keys") { (app.window.firstResponder as? NSTextView)?.isFieldEditor == true }
         try app.type("design")
         try await app.waitUntil("the switcher lists matches") { app.exists("switcher-row-1") }
         await app.sleep(0.8)
