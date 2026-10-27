@@ -184,7 +184,7 @@ extension Scenarios {
                                     .closePane, .selectHome] {
             if app.runtime.commandHandler?(command) == true { throw DriverFailure("the command \(command) ran under the sheet") }
         }
-        await app.sleep(0.5)
+        await app.sleep(0.5)  // A negative check: a key that worked would have changed the window by now.
 
         let after = state()
         if after != before { throw DriverFailure("a key changed the window under the sheet.\nbefore: \(before)\nafter:  \(after)") }

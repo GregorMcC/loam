@@ -214,7 +214,8 @@ if let scenario = Driver.scenarioName {
         if let runtime { connectTerminalConfig(runtime, to: model.terminalConfig) }
         return AppHost(window: controller.window!, model: model, owner: controller,
                        paneView: { [weak controller] in controller?.paneContent($0) },
-                       quit: { [weak controller] done in controller?.requestQuit(done) ?? done(true) })
+                       quit: { [weak controller] done in controller?.requestQuit(done) ?? done(true) },
+                       panelIsSliding: { [weak controller] in controller?.panelIsSliding ?? false })
     }
 }
 #endif

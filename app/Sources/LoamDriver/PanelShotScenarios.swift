@@ -61,7 +61,7 @@ extension Scenarios {
         }
         try app.pressMenuKey("i")
         try await app.waitUntil("the panel is closed") { !app.exists("panel-whereItStands") }
-        await app.sleep(0.4)
+        try await app.waitForPanelSlide(host)
         try app.pressMenuKey("i")
         try await app.waitUntil("the panel shows again") { app.exists("panel-whereItStands") }
         try await rig.claudeSetsWhere(plot, "The frame and the color are done. The plot panel now uses native "
@@ -145,7 +145,8 @@ extension Scenarios {
         try app.fill("panel-what", with: "A terminal for work that Claude Code does with you.")
         try await app.waitUntil("the Save button for What") { app.exists("panel-save-what") }
         try rig.loam(["set", plot, "what", "A macOS terminal that seeds Claude Code sessions."])
-        await app.sleep(1)
+        let theirs = try rig.lastChangeID(plot)
+        try await app.waitUntil("the app has the change by the CLI") { host.model.review.changes.contains { $0.id == theirs } }
         try app.click("panel-save-what")
         try await app.waitUntil("the clash box") { app.exists("panel-clash") }
         for width in [520.0, 260.0] {

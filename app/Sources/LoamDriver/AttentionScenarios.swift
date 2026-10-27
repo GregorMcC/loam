@@ -178,9 +178,10 @@ extension Scenarios {
         try await show(one, paneOne)
         try await app.waitUntil("plot three needs you") { state(paneThree) == .needsYou }
         try await app.waitUntil("the badge on plot three") { app.text(of: "plot-\(three)")?.contains("Needs you: 1") == true }
-        await app.sleep(0.3)
-        let needsDots = dots(in: app.window.contentView).filter { $0.mark == .needs && !$0.isHidden }
-        try expect(!needsDots.isEmpty, "no needs-you dot shows")
+        func shownNeedsDots() -> [AttentionDotView] { dots(in: app.window.contentView).filter { $0.mark == .needs && !$0.isHidden } }
+        try await app.waitUntil("a needs-you dot shows") { !shownNeedsDots().isEmpty }
+        await app.sleep(0.3)  // A negative check: the halo would start with the dot.
+        let needsDots = shownNeedsDots()
         try expect(!needsDots.contains { $0.isHaloRunning }, "the halo runs under Reduce Motion")
         Log.line("RESULT reduce motion: \(needsDots.count) needs-you dots, no halo")
 
@@ -190,7 +191,14 @@ extension Scenarios {
         try await app.waitUntil("the title bar button") {
             needsYouButtonShows(app) && app.text(of: "needs-you-button")?.contains("1 elsewhere needs you") == true
         }
-        await app.sleep(0.5)  // The sidebar slides out.
+        // The sidebar has slid out when the item is collapsed and its view keeps its frame from one check to the next.
+        let sidebarItem = (app.window.contentViewController as? NSSplitViewController)?.splitViewItems.first
+        var sidebarFrame: CGRect?
+        try await app.waitUntil("the sidebar has slid out") {
+            let frame = sidebarItem?.viewController.view.frame
+            defer { sidebarFrame = frame }
+            return sidebarItem?.isCollapsed == true && frame == sidebarFrame
+        }
         app.screenshot("title-bar-button")
         // Ticket 63: the window buttons do not cover the first tab. The tab starts after them, or
         // (with the toolbar of ticket 68) under the toolbar row that holds them.

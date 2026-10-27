@@ -17,6 +17,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private let panelItem: NSSplitViewItem
     /// True while the panel column slides open or shut (ticket 125).
     private var panelSlides = false
+    /// True while a slide runs. The driver waits for its end (ticket 134).
+    var panelIsSliding: Bool { panelSlides }
     private let columnView: PaneColumnView
     /// Calls `reloadSubtitleBranch` when the main repo's `HEAD` changes (a branch switch in a pane).
     private var headWatcher: HeadWatcher?

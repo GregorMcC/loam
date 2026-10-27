@@ -346,7 +346,7 @@ extension Scenarios {
         }
         // Only the active plot shows its tree. A plot that got its first pane while active can stay
         // open, so close the others with their disclosure arrows.
-        await app.sleep(0.5)
+        try await app.waitUntil("the tree of the main checkout shows") { app.exists("pane-row-\(claudePane.uuidString)") }
         for (other, pane) in zip([notes, website], otherPanes) where app.exists("pane-row-\(pane.uuidString)") {
             try ensure(AccessibilityProbe.shared.discloseRow("plot-\(other)", open: false), "the tree of \(other) did not close")
         }
@@ -426,7 +426,7 @@ extension Scenarios {
         await appearance(.darkAqua)
         try app.pressMenuKey("p")
         try await app.waitUntil("the switcher shows") { app.exists("switcher-field") }
-        await app.sleep(0.3)
+        try await app.waitUntil("the field has the keys") { (app.window.firstResponder as? NSTextView)?.isFieldEditor == true }
         try app.type("design")
         try await app.waitUntil("the switcher lists matches") { app.exists("switcher-row-1") }
         await app.sleep(0.8)

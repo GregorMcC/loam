@@ -253,12 +253,19 @@ extension Scenarios {
         if let screen = host.window.screen?.visibleFrame {
             host.window.setFrameOrigin(NSPoint(x: screen.maxX - host.window.frame.width, y: host.window.frame.minY))
         }
-        await app.sleep(0.3)
         let row = "panel-repo-\(repo)"
-        guard let frame = AccessibilityProbe.shared.node(row)?.frame else { throw DriverFailure("no Repos row \(repo)") }
         // The accessibility frame has its origin at the top left of the main screen, AppKit at the bottom left.
         let screenHeight = NSScreen.screens.first?.frame.height ?? 0
-        let point = host.window.convertPoint(fromScreen: NSPoint(x: frame.minX + 40, y: screenHeight - frame.midY))
+        /// The point of the row in the window, from a new accessibility scan: an old scan has the row where the window
+        /// stood. It is nil until the row stands in the window.
+        func pointOnRow() -> NSPoint? {
+            AccessibilityProbe.shared.rescan()
+            guard let frame = AccessibilityProbe.shared.node(row)?.frame else { return nil }
+            let point = host.window.convertPoint(fromScreen: NSPoint(x: frame.minX + 40, y: screenHeight - frame.midY))
+            return host.window.contentView?.bounds.contains(point) == true ? point : nil
+        }
+        try await app.waitUntil("the Repos row stands in the moved window") { pointOnRow() != nil }
+        guard let point = pointOnRow() else { throw DriverFailure("no Repos row \(repo)") }
         let open = OpenMenus()
         let begin = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { note in
             // AppKit posts it on the main thread, from the menu that begins.
@@ -269,7 +276,7 @@ extension Scenarios {
             NotificationCenter.default.removeObserver(begin)
             open.menus.first?.cancelTracking()
         }
-        app.postRightMouseDown(at: point)
+        try await app.postRightMouseDown(at: point)
         try await app.waitUntil("the Repo actions menu opens") { !open.menus.isEmpty }
         let menu = open.menus[0]
         try expectMerge(menu.items.map(\.title) == ["After a merge on GitHub", "", "Remove repo"], "the menu holds \(menu.items.map(\.title))")

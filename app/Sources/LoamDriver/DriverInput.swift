@@ -191,10 +191,31 @@ extension DriverApp {
         }
     }
 
+    /// Where the window server has the window, in the coordinates of AppKit. It follows `window.frame` a moment after a
+    /// change of the frame.
+    private func windowServerFrame() -> NSRect? {
+        guard let list = CGWindowListCopyWindowInfo([.optionIncludingWindow], CGWindowID(window.windowNumber)) as? [[String: Any]],
+              let dictionary = list.first?[kCGWindowBounds as String] as? NSDictionary,
+              let bounds = CGRect(dictionaryRepresentation: dictionary as CFDictionary),
+              let screen = NSScreen.screens.first else { return nil }
+        return NSRect(x: bounds.minX, y: screen.frame.height - bounds.maxY, width: bounds.width, height: bounds.height)
+    }
+
+    /// True when the window server has the frame that the window has. An event on the event queue of the app lands at a
+    /// wrong point while the server still has an older frame: the shift is the difference of the two frames (ticket 133).
+    func windowServerHasFrame() -> Bool {
+        guard let server = windowServerFrame() else { return false }
+        let frame = window.frame
+        return [server.minX - frame.minX, server.minY - frame.minY, server.width - frame.width, server.height - frame.height]
+            .allSatisfy { abs($0) < 1 }
+    }
+
     /// A right mouse down on the event queue of the app, at a point of the window. AppKit shows the context menu of the
     /// view there, outside of the code of the scenario, so the scenario goes on while the menu is open (ticket 113). No
-    /// mouse up follows, since a mouse up over the menu would pick the item under it.
-    func postRightMouseDown(at point: NSPoint) {
+    /// mouse up follows, since a mouse up over the menu would pick the item under it. The press waits until the window
+    /// server has the frame of the window, so a move or a resize before it does not shift the press (ticket 134).
+    func postRightMouseDown(at point: NSPoint) async throws {
+        try await waitUntil("the window server has the frame of the window") { windowServerHasFrame() }
         guard let event = NSEvent.mouseEvent(
             with: .rightMouseDown, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
             windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)
@@ -242,6 +263,15 @@ extension DriverApp {
         Log.line(String(format: "ok after %.2f s: %@", Date().timeIntervalSince(start), what))
     }
 
+    /// Waits until the plot panel column has ended its slide. The model and `isCollapsed` of the column change at the press,
+    /// but the column is at its place only after the slide (ticket 125).
+    func waitForPanelSlide(_ host: AppHost) async throws {
+        try await waitUntil("the plot panel column ends its slide") { !host.panelIsSliding() }
+    }
+
+    /// A fixed wait. Use it where a scenario gives the app time to do something that it must not do, or where a shot waits
+    /// for an animation that shows no state. Never use it before a check that something happened: wait for that with
+    /// `waitUntil` (ticket 134).
     func sleep(_ seconds: Double) async {
         try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
     }

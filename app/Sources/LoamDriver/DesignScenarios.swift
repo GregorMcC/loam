@@ -1,4 +1,5 @@
 import AppKit
+import GhosttyKit
 import LoamKit
 import LoamTerminal
 
@@ -45,7 +46,8 @@ extension Scenarios {
             app.backgroundPixel(pane).map { near($0, 0x282a36) } ?? false
         }
         NSApp.appearance = NSAppearance(named: .darkAqua)
-        await app.sleep(0.5)
+        try await app.waitUntil("the window follows Night") { app.window.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua }
+        await app.sleep(0.5)  // A negative check: the pane would show the theme of Night by now.
         try check(app.backgroundPixel(pane).map { near($0, 0x282a36) } ?? false, "your theme lost in Night")
         Log.line("RESULT your theme wins")
         NSApp.appearance = nil
@@ -85,8 +87,9 @@ extension Scenarios {
 
         // A zsh pane: terminfo resolves and the shell integration is on.
         let shell = try app.addPane("B", command: "/bin/zsh")
-        // Your zsh startup files set the prompt, so the pane gets the input and answers when it is ready.
-        await app.sleep(1)
+        // Your zsh startup files set the prompt, so the pane gets the input and answers when it is ready. The shell integration
+        // reports the folder before the first prompt.
+        try await app.waitUntil("the shell reports its folder") { (app.runtime.actionCounts[GHOSTTY_ACTION_PWD.rawValue] ?? 0) > 0 }
         try app.type("echo \"res=${GHOSTTY_RESOURCES_DIR-unset} features=${GHOSTTY_SHELL_FEATURES:+on}\"; infocmp xterm-ghostty >/dev/null && echo terminfo-ok")
         app.press(.returnKey)
         try await app.waitUntil("the zsh output") { app.lines(shell).contains("terminfo-ok") }
@@ -101,7 +104,7 @@ extension Scenarios {
         app.runtime.applyWindowAppearance(to: app.window)
         try check(app.window.titleVisibility == .hidden, "the title shows with macos-titlebar-style = transparent")
         try app.writeConfig("macos-titlebar-style = tabs")
-        await app.sleep(0.5)
+        try await app.waitUntil("the config reloads with the tabs style") { app.runtime.windowAppearance.titlebarStyle == "tabs" }
         app.runtime.applyWindowAppearance(to: app.window)
         try check(app.window.titleVisibility == .hidden, "the title shows with macos-titlebar-style = tabs")
         Log.line("RESULT title stays hidden")
@@ -162,7 +165,7 @@ extension Scenarios {
         guard let root = app.window.contentView, let hint = find(root), let area = hint.superview else {
             throw DriverFailure("the empty hint is missing")
         }
-        await app.sleep(0.3)
+        try await app.waitForPanelSlide(host)
         Log.line("RESULT hint \(hint.frame) in pane area \(area.bounds)")
         app.screenshot("empty-hint")
         try check(!hint.isHidden && hint.frame.width > 0 && hint.frame.height > 0, "the hint does not show")
