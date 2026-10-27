@@ -113,6 +113,38 @@ import Testing
         #expect(close.next(now: 0.9, foreground: nil, exited: false, terminalEmpty: { true }, lastAction: 0.4) == [.free])
     }
 
+    @Test func restartsTheQuietTimeWhenAProcessComesBack() {
+        var close = SafeClose(startedAt: 0)
+        _ = close.next(now: 0, foreground: 500, exited: false)
+        _ = close.next(now: 0.01, foreground: nil, exited: false, terminalEmpty: { true })
+        _ = close.next(now: 0.3, foreground: nil, exited: false, terminalEmpty: { false })
+
+        #expect(close.next(now: 0.4, foreground: nil, exited: false, terminalEmpty: { true }) == [])
+        #expect(close.next(now: 0.6, foreground: nil, exited: false, terminalEmpty: { true }) == [])
+        #expect(close.next(now: 0.9, foreground: nil, exited: false, terminalEmpty: { true }) == [.free])
+    }
+
+    @Test func givesUpWhenTheActionsDoNotStop() {
+        var close = SafeClose(startedAt: 0)
+        _ = close.next(now: 0, foreground: 500, exited: false)
+
+        for now in stride(from: 0.01, to: 5.0, by: 0.01) {
+            #expect(!close.next(now: now, foreground: nil, exited: false, terminalEmpty: { true }, lastAction: now).contains(.free))
+        }
+        #expect(close.next(now: 5.0, foreground: nil, exited: false, terminalEmpty: { true }, lastAction: 5.0) == [.free])
+        #expect(close.forced)
+        #expect(!close.exitReportLost)
+    }
+
+    /// Before the SIGHUP, an empty terminal can be a process that has not started yet.
+    @Test func waitsForAProcessThatHasNotStarted() {
+        var close = SafeClose(startedAt: 0)
+
+        #expect(close.next(now: 0, foreground: nil, exited: false, terminalEmpty: { true }) == [])
+        #expect(close.next(now: 1.0, foreground: nil, exited: false, terminalEmpty: { true }) == [])
+        #expect(!close.isFinished)
+    }
+
     @Test func usesTheExitReportWhenItComes() {
         var close = SafeClose(startedAt: 0)
         _ = close.next(now: 0, foreground: 500, exited: false)

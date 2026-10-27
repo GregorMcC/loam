@@ -18,11 +18,13 @@ import Foundation
 /// libghostty can lose its report of the exit (ticket 135). Its reader and
 /// its exit watcher both push to the app mailbox. When the mailbox is full,
 /// the exit watcher waits once for room, and gives up if the reader fills
-/// the room first. A pane that floods its title does that. So the close
-/// also counts the process as exited when no process is left on the terminal
-/// and libghostty has sent no action for the pane for `quietFor` seconds.
-/// In that time libghostty sends the actions that it read before the exit,
-/// so the free does not wait on the mailbox.
+/// the room first. A pane that floods its title does that. To work around
+/// it, the close also counts the process as exited when it has hung up a
+/// group, no process is left on the terminal, and libghostty has sent no
+/// action for the pane for `quietFor` seconds. In that time libghostty sends
+/// the actions that it read before the exit, so the free does not wait on the
+/// mailbox. Before the SIGHUP, an empty terminal can be a process that has not
+/// started yet, so it does not count.
 ///
 /// The caller polls `next` on the main run loop and runs the steps it returns.
 public struct SafeClose: Sendable {
@@ -71,7 +73,7 @@ public struct SafeClose: Sendable {
             isFinished = true
             return [.free]
         }
-        if groupsGone, terminalEmpty() {
+        if groupsGone, !hungUp.isEmpty, terminalEmpty() {
             let since = emptySince ?? now
             emptySince = since
             if now - max(since, lastAction) >= quietFor {

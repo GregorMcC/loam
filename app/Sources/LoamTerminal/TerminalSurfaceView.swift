@@ -91,7 +91,8 @@ public final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClien
     private var closeCompletions: [(CloseResult) -> Void] = []
     /// The device of the pane's terminal, read at the start of the close.
     private var closeTerminal: dev_t?
-    /// When libghostty last sent an action for the pane. The close waits until the actions stop (ticket 135).
+    /// When libghostty last sent an action for the pane. The close waits until the actions stop (ticket 135). Any
+    /// action counts, also one from your mouse. At worst it holds the close until the deadline of `SafeClose`.
     var lastActionAt: TimeInterval = 0
 
     /// What a close did. The driver logs it.
@@ -187,11 +188,11 @@ public final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClien
         closer = SafeClose(startedAt: ProcessInfo.processInfo.systemUptime)
         closeTerminal = terminalDevice()
         closeSignals = []
-        closeStep()
+        closeStep(drain: false)
         guard surface != nil else { return }
         // A timer in the common modes keeps the close going during menus and sheets.
         let timer = Timer(timeInterval: 0.01, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.closeStep() }
+            MainActor.assumeIsolated { self?.closeStep(drain: true) }
         }
         RunLoop.main.add(timer, forMode: .common)
         closeTimer = timer
@@ -199,7 +200,11 @@ public final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClien
 
     private var closeSignals: [String] = []
 
-    private func closeStep() {
+    /// `drain` takes the messages that libghostty has queued first, so `lastActionAt` is up to date when the main thread
+    /// was busy (ticket 135). The first step runs inside `close`, in the caller's code, so it does not drain.
+    private func closeStep(drain: Bool) {
+        guard surface != nil, closer != nil else { return }
+        if drain { runtime.tick() }
         guard let surface, var closer else { return }
         let now = ProcessInfo.processInfo.systemUptime
         let group = pid_t(truncatingIfNeeded: ghostty_surface_foreground_pid(surface))
