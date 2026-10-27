@@ -117,7 +117,7 @@ extension Scenarios {
             throw DriverFailure("the close question has no Close button")
         }
         confirm.performClick(nil)
-        try await app.waitUntil("the session tab is gone", timeout: 15) { tabs().map(\.id) == [shellTwo] }
+        try await app.waitUntil("the session tab is gone") { tabs().map(\.id) == [shellTwo] }
         try expect(selected() == shellTwo, "the selection moved after the confirmed close")
         Log.line("RESULT the mid-turn tab asked first, Cancel kept it, Close closed it")
     }

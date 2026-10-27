@@ -39,7 +39,19 @@ extension Scenarios {
             throw DriverFailure("no tab bar")
         }
         content.layoutSubtreeIfNeeded()
-        await app.sleep(0.5)
+        func frames(_ count: Int) -> [CGRect?] { (0..<count).map { bar.tabFrame(at: $0) } }
+        func shown(_ count: Int) -> [CGRect?] { (0..<count).map { bar.shownTabFrame(at: $0) } }
+        /// True when no tab keeps an offset and no drag runs. A cancel slides the tabs back, and the drag ends after the
+        /// slide. A press before that end starts no drag (ticket 131).
+        func atRest(_ count: Int = 4) -> Bool { !bar.isDragging && shown(count) == frames(count) }
+        /// True when the tab at a 0-based position draws at `x`: its slide has ended.
+        func slid(_ index: Int, to x: CGFloat) -> Bool { abs((bar.shownTabFrame(at: index)?.minX ?? .infinity) - x) < 0.5 }
+        var laidOut: [CGRect?] = []
+        try await app.waitUntil("the tab bar shows four tabs") {
+            content.layoutSubtreeIfNeeded()
+            defer { laidOut = frames(4) }
+            return !laidOut.contains { $0 == nil } && laidOut == frames(4)
+        }
         func frame(_ index: Int) throws -> CGRect {
             guard let frame = bar.tabFrame(at: index) else { throw DriverFailure("no tab \(index + 1)") }
             return frame
@@ -61,15 +73,14 @@ extension Scenarios {
         app.mouse(.leftMouseDown, at: grab, on: bar)
         let pastTwo = point(two.midX + 6, one.midY)
         await glide(from: grab, to: pastTwo)
+        try check(bar.isDragging, "the drag of tab 1 did not start")
         await app.sleep(0.07)
         app.screenshot("tab-drag-mid-slide")
-        await app.sleep(0.3)
-        let shownTwo = bar.shownTabFrame(at: 1) ?? .zero
-        try check(abs(shownTwo.minX - one.minX) < 0.5,
-                  "tab 2 did not slide into the slot of tab 1: \(shownTwo.minX) against \(one.minX)")
+        try await app.waitUntil("tab 2 slides into the slot of tab 1") { slid(1, to: one.minX) }
         let pastThree = point(three.midX + 6, one.midY)
         await glide(from: pastTwo, to: pastThree)
-        await app.sleep(0.3)
+        // Tab 3 takes the slot after tab 2, which now sits in the slot of tab 1.
+        try await app.waitUntil("tab 3 slides into the slot of tab 2") { slid(2, to: one.minX + two.width + (two.minX - one.maxX)) }
         app.screenshot("tab-drag-past-two")
         let shownOne = bar.shownTabFrame(at: 0) ?? .zero
         try check(abs(shownOne.midX - (three.midX + 6)) < 1, "the dragged tab does not follow the pointer: \(shownOne)")
@@ -77,10 +88,7 @@ extension Scenarios {
         app.mouse(.leftMouseUp, at: pastThree, on: bar)
         try await app.waitUntil("the tab lands in slot 3") { ids() == [start[1], start[2], start[0], start[3]] }
         try check(selected() == start[3], "the drag changed the selected tab")
-        await app.sleep(0.2)
-        for index in 0..<4 {
-            try check(bar.shownTabFrame(at: index) == bar.tabFrame(at: index), "tab \(index + 1) kept an offset after the drop")
-        }
+        try await app.waitUntil("the tabs are at rest after the drop") { atRest() }
         app.screenshot("tab-drag-dropped")
         // ⌘1 follows the new order.
         model.selectTab(number: 1)
@@ -94,12 +102,11 @@ extension Scenarios {
         app.mouse(.leftMouseDown, at: point(first.midX, first.midY), on: bar)
         let right = point((try frame(1)).maxX + 4, first.midY)
         await glide(from: point(first.midX, first.midY), to: right)
-        await app.sleep(0.25)
+        try check(bar.isDragging, "the drag of tab 1 before Escape did not start")
+        try await app.waitUntil("tab 2 slides into the slot of tab 1 before Escape") { slid(1, to: first.minX) }
         app.pressThroughApp(.escape)
-        await app.sleep(0.45)
-        try check((0..<4).allSatisfy { bar.shownTabFrame(at: $0) == bar.tabFrame(at: $0) }, "Escape left a tab out of place")
+        try await app.waitUntil("Escape puts the tabs back") { atRest() }
         app.mouse(.leftMouseUp, at: right, on: bar)
-        await app.sleep(0.1)
         try check(ids() == order, "Escape changed the order")
         try check(selected() == order[3], "the release after Escape selected a tab")
         Log.line("RESULT Escape sent the tab back")
@@ -108,61 +115,75 @@ extension Scenarios {
         first = try frame(0)
         app.mouse(.leftMouseDown, at: point(first.midX, first.midY), on: bar)
         await glide(from: point(first.midX, first.midY), to: right)
+        try check(bar.isDragging, "the second drag of tab 1 did not start")
         let below = point((try frame(1)).maxX + 4, bar.bounds.height + 80)
         await glide(from: right, to: below)
         app.mouse(.leftMouseUp, at: below, on: bar)
-        await app.sleep(0.45)
+        try await app.waitUntil("the release outside puts the tabs back") { atRest() }
         try check(ids() == order, "a release outside the bar changed the order")
-        try check((0..<4).allSatisfy { bar.shownTabFrame(at: $0) == bar.tabFrame(at: $0) }, "the release outside left a tab out of place")
         Log.line("RESULT a release outside the bar sent the tab back")
 
         // 4. A move under 4 pt is a click: it selects the tab.
         let second = try frame(1)
         app.mouse(.leftMouseDown, at: point(second.midX, second.midY), on: bar)
         app.mouse(.leftMouseDragged, at: point(second.midX + 2, second.midY), on: bar)
+        try check(!bar.isDragging, "a move under 4 pt started a drag")
         app.mouse(.leftMouseUp, at: point(second.midX + 2, second.midY), on: bar)
         try await app.waitUntil("the click selects tab 2") { selected() == order[1] }
         try check(ids() == order, "a click moved a tab")
 
-        // 5. Reduce Motion: nothing slides, a line marks the drop point, the release moves at once.
+        // 5. Reduce Motion: nothing slides, a line marks the drop point, the release moves it at once.
         LoamMotion.reduceMotionOverride = true
         let last = try frame(3)
         app.mouse(.leftMouseDown, at: point(last.midX, last.midY), on: bar)
         let left = point((try frame(1)).midX - 6, last.midY)
         await glide(from: point(last.midX, last.midY), to: left)
+        try check(bar.isDragging, "the drag of tab 4 under Reduce Motion did not start")
         await app.sleep(0.1)
-        try check((0..<4).allSatisfy { bar.shownTabFrame(at: $0) == bar.tabFrame(at: $0) }, "a tab moved under Reduce Motion")
+        try check(shown(4) == frames(4), "a tab moved under Reduce Motion")
         app.screenshot("tab-drag-reduce-motion")
         app.mouse(.leftMouseUp, at: left, on: bar)
         try check(ids() == [order[0], order[3], order[1], order[2]], "the Reduce Motion drop did not move the tab at once: \(ids())")
         Log.line("RESULT Reduce Motion showed the line and moved the tab at once")
 
-        // 6. Ten tabs: each pointer move and the redraw of the bar fit well inside one frame.
+        // 6. Ten tabs: each pointer move and the redraw of the bar fit well inside one frame: the worst move in time of the
+        // main thread on the CPU, and the median move on the clock. A busy machine can hold the thread off the CPU for a
+        // frame, which only the worst move on the clock counts (ticket 125).
         LoamMotion.reduceMotionOverride = false
         for _ in 0..<6 { model.openTab() }
         try await app.waitUntil("ten tabs") { ids().count == 10 }
-        content.layoutSubtreeIfNeeded()
-        await app.sleep(0.3)
+        laidOut = []
+        try await app.waitUntil("the tab bar shows ten tabs") {
+            content.layoutSubtreeIfNeeded()
+            defer { laidOut = frames(10) }
+            return !laidOut.contains { $0 == nil } && laidOut == frames(10)
+        }
+        try await app.waitUntil("the tabs are at rest after the Reduce Motion drop") { atRest(10) }
         let head = try frame(0), tail = try frame(9)
         var at = point(head.midX, head.midY)
         app.mouse(.leftMouseDown, at: at, on: bar)
-        var costs: [Double] = []
+        var cpu: [Double] = [], wall: [Double] = []
         while at.x < bar.convert(CGPoint(x: tail.midX, y: 0), to: nil).x {
             at.x += 6
-            let begin = ProcessInfo.processInfo.systemUptime
+            let begin = (cpu: clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID), wall: ProcessInfo.processInfo.systemUptime)
             app.mouse(.leftMouseDragged, at: at, on: bar)
             bar.layoutSubtreeIfNeeded()
             bar.display()
-            costs.append((ProcessInfo.processInfo.systemUptime - begin) * 1000)
+            cpu.append(Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - begin.cpu) / 1_000_000)
+            wall.append((ProcessInfo.processInfo.systemUptime - begin.wall) * 1000)
             await app.sleep(0.008)
         }
+        try check(bar.isDragging, "the drag across ten tabs did not start")
         app.screenshot("tab-drag-ten-tabs")
         app.pressThroughApp(.escape)
-        await app.sleep(0.45)
+        try await app.waitUntil("Escape puts the ten tabs back") { atRest(10) }
         app.mouse(.leftMouseUp, at: at, on: bar)
-        let worst = costs.max() ?? 0, mean = costs.reduce(0, +) / Double(max(costs.count, 1))
-        Log.line(String(format: "RESULT ten tabs: %d moves, mean %.2f ms, worst %.2f ms per move and redraw", costs.count, mean, worst))
-        try check(worst < 8, "a move and redraw took \(worst) ms, more than one frame at 120 Hz")
+        let worst = cpu.max() ?? 0, mean = cpu.reduce(0, +) / Double(max(cpu.count, 1))
+        let median = wall.sorted().dropFirst(wall.count / 2).first ?? 0
+        Log.line(String(format: "RESULT ten tabs: %d moves, mean %.2f ms, worst %.2f ms of CPU per move and redraw, median %.2f ms on the clock",
+                        cpu.count, mean, worst, median))
+        try check(worst < 8, "a move and redraw took \(worst) ms of CPU, more than one frame at 120 Hz")
+        try check(median < 8, "the median move and redraw took \(median) ms, more than one frame at 120 Hz")
     }
 
     private static func tabBar(in view: NSView) -> (any FirstTabFraming)? {

@@ -169,7 +169,7 @@ extension Scenarios {
         let sentence = "Merged #142 Link labels."
         let before = try rig.lastChangeID(plot)
         try app.click("panel-merged-remove-\(labels.id)")
-        try await app.waitUntil("the worktree goes", timeout: 30) {
+        try await app.waitUntil("the worktree goes") {
             model.worktreeStatus(labels.id) == nil && !FileManager.default.fileExists(atPath: labels.path)
         }
         try expectMerge(!model.workspace.allPaneIDs.contains(shell), "the shell of link-labels is still open")
@@ -219,7 +219,7 @@ extension Scenarios {
             barToast?(text, kind)
         }
         try await merge([142, 143, 144, 145, 146])
-        try await app.waitUntil("the toast of the removal", timeout: 20) {
+        try await app.waitUntil("the toast of the removal") {
             toasts == ["#144 was merged on GitHub. Loam removed the worktree rename-users."]
         }
         try expectMerge(!FileManager.default.fileExists(atPath: rename.path), "the folder of rename-users is still there")

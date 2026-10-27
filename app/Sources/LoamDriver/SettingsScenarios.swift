@@ -40,7 +40,7 @@ extension Scenarios {
             NSApp.windows.first { $0.identifier?.rawValue == "dev.loam.settings" && $0.isVisible }
         }
         try await app.waitUntil("the settings window") { settingsWindow() != nil }
-        try await app.waitUntil("the loam check", timeout: 10) { host.model.settings.loamStatus != .checking }
+        try await app.waitUntil("the loam check") { host.model.settings.loamStatus != .checking }
         Log.line("loam status: \(host.model.settings.loamStatus)")
         try check(host.model.settings.loamStatus != .checking, "the loam check did not finish")
         await app.sleep(0.5)
@@ -61,11 +61,11 @@ extension Scenarios {
         // A hand edit applies at once.
         try #"{"repo_folders": ["\#(second.path)"], "theme_hint": "keep me"}"#
             .write(to: file.url, atomically: true, encoding: .utf8)
-        try await app.waitUntil("the hand edit", timeout: 5) { host.model.panel.suggestionRoots == [second.path] }
+        try await app.waitUntil("the hand edit") { host.model.panel.suggestionRoots == [second.path] }
 
         // Invalid JSON shows the error and is not replaced.
         try "{ broken".write(to: file.url, atomically: true, encoding: .utf8)
-        try await app.waitUntil("the file error", timeout: 5) { host.model.settings.fileError != nil }
+        try await app.waitUntil("the file error") { host.model.settings.fileError != nil }
         host.model.settings.addRepoFolder(first.path)
         try check(try String(contentsOf: file.url, encoding: .utf8) == "{ broken", "Loam replaced an invalid file")
         await app.sleep(0.3)
@@ -73,7 +73,7 @@ extension Scenarios {
 
         // The Terminal tab.
         try #"{"repo_folders": ["~/Development"]}"#.write(to: file.url, atomically: true, encoding: .utf8)
-        try await app.waitUntil("the fixed file", timeout: 5) { host.model.settings.fileError == nil }
+        try await app.waitUntil("the fixed file") { host.model.settings.fileError == nil }
         if let tabs = settingsWindow()?.contentViewController as? NSTabViewController {
             tabs.selectedTabViewItemIndex = 1
             await app.sleep(0.5)

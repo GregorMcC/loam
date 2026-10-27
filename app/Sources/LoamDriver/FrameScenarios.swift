@@ -214,7 +214,8 @@ extension Scenarios {
         /// appearance from the terminal background (`window-theme = auto`), after the chrome.
         func shot(_ name: String, _ appearance: NSAppearance.Name) async throws {
             NSApp.appearance = NSAppearance(named: appearance)
-            // A single theme (no dark: and light: pair) stays dark in Day, so a timeout does not fail the run.
+            // A single theme (no dark: and light: pair) stays dark in Day, so this wait can never end. It keeps its deadline,
+            // and the run goes on (ticket 131).
             try? await app.waitUntil("\(name): the panes and the window agree", timeout: 10) {
                 guard let pixel = panePixel() else { return false }
                 let darkPane = pixel.0 + pixel.1 + pixel.2 < 3 * 128

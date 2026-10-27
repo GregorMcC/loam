@@ -245,7 +245,7 @@ extension Scenarios {
         }
         try check(Date().timeIntervalSince(firstStop) < model.shipRefresh.timing.stopWindow.seconds, "the second Stop came after the window")
         try check(refreshes() == beforeStops, "a refresh ran before the window ended")
-        try await app.waitUntil("one refresh after the Stops", timeout: 10) { refreshes() == beforeStops + 1 }
+        try await app.waitUntil("one refresh after the Stops") { refreshes() == beforeStops + 1 }
         try await app.waitUntil("review required") { line(labels) == "link-labels #22, Review required" }
         await app.sleep(1.5)
         try check(refreshes() == beforeStops + 1, "\(refreshes() - beforeStops) refreshes for two Stops")

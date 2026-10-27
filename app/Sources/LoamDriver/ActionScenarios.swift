@@ -22,7 +22,7 @@ extension Scenarios {
         app.runtime.applyWindowAppearance(to: host.window)
         try await app.waitUntil("a plot is active") { host.model.workspace.activePlotID == plot }
         host.model.openTab()
-        try await app.waitUntil("a pane has the keys", timeout: 10) {
+        try await app.waitUntil("a pane has the keys") {
             guard let pane = host.model.workspace.focusedPane else { return false }
             return host.window.firstResponder === host.paneView(pane)
         }
@@ -34,8 +34,8 @@ extension Scenarios {
         try expectThat(app.exists("action-bar-new-session") && app.exists("action-bar-actions"), "the bar has no buttons")
 
         // A change by Claude shows as a toast in the bar.
-        try await rig.claudeSetsWhere(plot, "The bar and the actions menu are built.")
-        try await app.waitUntil("the toast shows", timeout: 10) {
+        try await rig.claudeSetsWhere(plot, "The bar and the actions menu are built.", app: app)
+        try await app.waitUntil("the toast shows") {
             app.text(of: "action-bar-toast")?.contains("Claude set Where it stands") == true
         }
         NSApp.appearance = NSAppearance(named: .darkAqua)
@@ -86,7 +86,7 @@ extension Scenarios {
         }
         app.screenshot("night-menu-filter")
         app.press(.returnKey)
-        try await app.waitUntil("Return splits the pane", timeout: 10) {
+        try await app.waitUntil("Return splits the pane") {
             tab()?.tree.paneIDs.count == 2 && !app.exists("actions-menu")
         }
         if case .split(let axis, _, _, _) = tab()?.tree {
@@ -102,7 +102,7 @@ extension Scenarios {
             app.exists("actions-row-Split right with shell") && !app.exists("actions-row-Split down with shell")
         }
         app.press(.returnKey)
-        try await app.waitUntil("Return splits with a shell", timeout: 10) {
+        try await app.waitUntil("Return splits with a shell") {
             tab()?.tree.paneIDs.count == 3 && !app.exists("actions-menu")
         }
         let shellPane = host.model.workspace.focusedPane
@@ -114,28 +114,28 @@ extension Scenarios {
         try await app.waitUntil("the search field has the keys") { host.window.firstResponder is NSTextView }
         try app.type("add link")
         app.press(.returnKey)
-        try await app.waitUntil("Add link opens the panel and its row", timeout: 10) {
+        try await app.waitUntil("Add link opens the panel and its row") {
             app.exists("plot-panel") && app.exists("panel-new-link-target")
         }
         try app.click("panel-add-cancel")
 
         // Day and a third-party theme, with the panel open. The bar ends where the well ends, so
         // it is narrower now, and the toast shows only while it fits.
-        try await app.waitUntil("the toast fades", timeout: ActionBarModel.toastSeconds + 5) { !app.exists("action-bar-toast") }
+        try await app.waitUntil("the toast fades") { !app.exists("action-bar-toast") }
         for (name, appearance, theme) in [("day", NSAppearance.Name.aqua, ""), ("catppuccin", .darkAqua, "theme = Catppuccin Mocha\n")] {
             if !theme.isEmpty {
                 try app.writeConfig(extra + "\n" + theme)
                 app.runtime.reloadConfig()
-                try await app.waitUntil("the chrome follows Catppuccin Mocha", timeout: 10) {
+                try await app.waitUntil("the chrome follows Catppuccin Mocha") {
                     ChromePalette.shared.current?.bedrock == 0x1e1e2e
                 }
             }
             NSApp.appearance = NSAppearance(named: appearance)
-            try await app.waitUntil("\(name): the window follows", timeout: 10) {
+            try await app.waitUntil("\(name): the window follows") {
                 (host.window.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua) == (appearance == .darkAqua)
             }
-            try await rig.claudeSetsWhere(plot, "Shot in \(name).")
-            try await app.waitUntil("\(name): the panel runs the full height", timeout: 5) {
+            try await rig.claudeSetsWhere(plot, "Shot in \(name).", app: app)
+            try await app.waitUntil("\(name): the panel runs the full height") {
                 guard let panel = panelItem(host)?.viewController.view,
                       let split = panel.superview else { return false }
                 return abs(panel.frame.height - split.bounds.height) < 1

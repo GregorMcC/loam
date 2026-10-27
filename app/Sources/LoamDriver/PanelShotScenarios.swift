@@ -53,7 +53,7 @@ extension Scenarios {
 
         // The change log: a change by Claude, undone. Closing the panel marks it seen. Then a second
         // change by Claude shows as new.
-        try await rig.claudeSetsWhere(plot, "The panel is next.")
+        try await rig.claudeSetsWhere(plot, "The panel is next.", app: app)
         let first = try rig.lastChangeID(plot)
         try rig.loam(["undo", "\(first)", "--actor", "app"])
         try await app.waitUntil("the undone change") {
@@ -65,14 +65,14 @@ extension Scenarios {
         try app.pressMenuKey("i")
         try await app.waitUntil("the panel shows again") { app.exists("panel-whereItStands") }
         try await rig.claudeSetsWhere(plot, "The frame and the color are done. The plot panel now uses native "
-            + "form sections. Next: check the panel at 260 and 520 px in Night, Day, and a dark theme.")
+            + "form sections. Next: check the panel at 260 and 520 px in Night, Day, and a dark theme.", app: app)
         try await app.waitUntil("the new change") { app.exists("panel-new-since") }
 
         try await app.waitUntil("2 demo panes ran") {
             ((try? fm.contentsOfDirectory(atPath: "\(app.outFolder)/demo-runs"))?.count ?? 0) >= 2
         }
         /// Sets Night or Day and waits until the focused pane follows, as `frame-shot` does. A single
-        /// theme stays dark in Day, so a timeout does not fail the run.
+        /// theme stays dark in Day, so this wait can never end. It keeps its deadline, and the run goes on (ticket 131).
         func appearance(_ name: NSAppearance.Name) async {
             NSApp.appearance = NSAppearance(named: name)
             let pane = host.model.workspace.selectedTab(of: .plot(plot))?.focused

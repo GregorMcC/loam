@@ -65,9 +65,14 @@ extension Scenarios {
         let out = Pipe()
         process.standardOutput = out
         process.standardError = FileHandle.nullDevice
-        guard (try? process.run()) != nil else { return [:] }
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
+        // The read blocks the main thread until `go` ends, which a busy machine can hold for more than 10 s (ticket 131).
+        let data = Watchdog.excuse { () -> Data? in
+            guard (try? process.run()) != nil else { return nil }
+            let data = out.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            return data
+        }
+        guard let data else { return [:] }
         // One line for each name, empty when the value is empty. Keep the empty lines, so each
         // value stays with its name.
         let values = String(decoding: data, as: UTF8.self).split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
@@ -233,6 +238,11 @@ extension Scenarios {
             model.goToPane(pane)
             try await app.waitUntil("the pane has the keys") { app.window.firstResponder === (try? surface(pane)) }
         }
+        // The waits on the panes (the real Claude Code session, the shell commands, a pane that settles) keep their
+        // deadlines, and so do the waits that can never end. The waits on the app itself have none. This scenario is not in
+        // the suite: a person runs it with the app in front, and a stuck session would hold the keyboard until the limit
+        // of 1200 s.
+
         /// Waits until the screen of the pane stays the same for `seconds`.
         func settle(_ pane: PaneID, _ seconds: Double = 1.2, timeout: TimeInterval = 30) async throws {
             var last = text(pane)
@@ -379,6 +389,7 @@ extension Scenarios {
         try await app.openPanel(host)
         scrollPanel(host, toEnd: false)
         try await focus(claudePane)
+        /// A single theme stays dark in Day, so the wait for the pane can never end. It keeps its deadline, and the run goes on.
         func appearance(_ name: NSAppearance.Name) async {
             NSApp.appearance = NSAppearance(named: name)
             try? await app.waitUntil("the pane follows \(name.rawValue)", timeout: 10) {
@@ -395,6 +406,8 @@ extension Scenarios {
             let previous = NSWorkspace.shared.frontmostApplication
             NSApp.activate()
             host.window.makeKeyAndOrderFront(nil)
+            // These three waits can fail to end (the app stays inactive, an image stays on the clipboard), so they keep their
+            // deadlines and the shot goes on.
             try? await app.waitUntil("the window is active", timeout: 2) { NSApp.isActive && host.window.isKeyWindow }
             // When the pane gets the focus, Claude Code can show a short note about an image on
             // your clipboard. Wait for the note to go.
@@ -412,20 +425,20 @@ extension Scenarios {
         // The quick switcher, with a query.
         await appearance(.darkAqua)
         try app.pressMenuKey("p")
-        try await app.waitUntil("the switcher shows", timeout: 5) { app.exists("switcher-field") }
+        try await app.waitUntil("the switcher shows") { app.exists("switcher-field") }
         await app.sleep(0.3)
         try app.type("design")
-        try await app.waitUntil("the switcher lists matches", timeout: 5) { app.exists("switcher-row-1") }
+        try await app.waitUntil("the switcher lists matches") { app.exists("switcher-row-1") }
         await app.sleep(0.8)
         try await shot("switcher")
         app.press(.escape)
-        try await app.waitUntil("the switcher closes", timeout: 5) { !app.exists("switcher-field") }
+        try await app.waitUntil("the switcher closes") { !app.exists("switcher-field") }
 
         // The chrome follows a Ghostty theme from a config reload: a dark one and a light one.
         for (theme, background) in [("Dracula", UInt32(0x282a36)), ("Catppuccin Latte", UInt32(0xeff1f5))] {
             try app.writeConfig(config + "theme = \(theme)\n")
             app.runtime.reloadConfig()
-            try await app.waitUntil("the chrome follows \(theme)", timeout: 10) { ChromePalette.shared.current?.bedrock == background }
+            try await app.waitUntil("the chrome follows \(theme)") { ChromePalette.shared.current?.bedrock == background }
             try await settle(claudePane, 1.5)
             try await shot("theme-" + theme.lowercased().replacingOccurrences(of: " ", with: "-"))
         }

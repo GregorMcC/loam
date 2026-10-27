@@ -82,12 +82,12 @@ extension Scenarios {
             if !theme.isEmpty {
                 try app.writeConfig(theme)
                 app.runtime.reloadConfig()
-                try await app.waitUntil("the chrome follows Catppuccin Mocha", timeout: 10) {
+                try await app.waitUntil("the chrome follows Catppuccin Mocha") {
                     ChromePalette.shared.current?.bedrock == 0x1e1e2e
                 }
             }
             NSApp.appearance = NSAppearance(named: appearance)
-            try await app.waitUntil("\(name): the window follows", timeout: 10) {
+            try await app.waitUntil("\(name): the window follows") {
                 (host.window.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua) == (appearance == .darkAqua)
             }
             await app.sleep(1)

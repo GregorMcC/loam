@@ -73,7 +73,7 @@ extension Scenarios {
     static func quitHome(_ host: AppHost, _ app: DriverApp) async throws {
         var answer: Bool?
         host.quit { answer = $0 }
-        try await app.waitUntil("quit answered", timeout: 15) { answer != nil }
+        try await app.waitUntil("quit answered") { answer != nil }
         try expect(answer == true, "quit did not finish")
     }
 
@@ -120,7 +120,7 @@ extension Scenarios {
         // 3. Two plots arrive. Home stays active. ⌃0 comes back to Home from a plot.
         let first = try setup.rig.newPlot("Loam v1 build")
         _ = try setup.rig.newPlot("Release notes")
-        try await app.waitUntil("the plots arrive", timeout: 10) { model.plots.count == 2 }
+        try await app.waitUntil("the plots arrive") { model.plots.count == 2 }
         try expect(model.workspace.activeSpace == .home, "a new plot took the active space from Home")
         model.activate(plot: first)
         try await app.waitUntil("the plot is active") { model.workspace.activePlotID == first }
@@ -154,7 +154,7 @@ extension Scenarios {
             app.exists("actions-row-New session in Home") && !app.exists("actions-row-New shell in Home")
         }
         app.press(.returnKey)
-        try await app.waitUntil("Return opens a session in Home", timeout: 10) {
+        try await app.waitUntil("Return opens a session in Home") {
             model.workspace.activeSpace == .home && homeTabs().count == 3 && !app.exists("actions-menu")
         }
         let second = focused()!

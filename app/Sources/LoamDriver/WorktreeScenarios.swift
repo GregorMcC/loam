@@ -37,31 +37,8 @@ extension Scenarios {
     }
 
     /// One MCP call as Claude would make it. The setup command that it sets is not approved.
-    private static func mcpCall(_ rig: PanelRig, _ tool: String, _ arguments: [String: Any]) async throws {
-        let process = Process()
-        process.executableURL = rig.binary
-        process.arguments = ["mcp"]
-        process.environment = ProcessInfo.processInfo.environment.merging(rig.environment) { $1 }
-            .merging(["CLAUDE_CODE_SESSION_ID": "cccccccc-1111-4222-8333-444444444444"]) { $1 }
-        let stdin = Pipe()
-        process.standardInput = stdin
-        process.standardOutput = Pipe()
-        process.standardError = FileHandle.nullDevice
-        try process.run()
-        func send(_ object: [String: Any]) throws {
-            var data = try JSONSerialization.data(withJSONObject: object)
-            data.append(0x0A)
-            try stdin.fileHandleForWriting.write(contentsOf: data)
-        }
-        try send(["jsonrpc": "2.0", "id": 1, "method": "initialize", "params": [
-            "protocolVersion": "2025-06-18", "capabilities": [String: Any](),
-            "clientInfo": ["name": "loam-driver", "version": "1"]]])
-        try send(["jsonrpc": "2.0", "method": "notifications/initialized"])
-        try send(["jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": ["name": tool, "arguments": arguments]])
-        try await Task.sleep(for: .milliseconds(600))
-        try stdin.fileHandleForWriting.close()
-        for _ in 0..<100 where process.isRunning { try await Task.sleep(for: .milliseconds(50)) }
-        if process.isRunning { process.terminate() }
+    private static func mcpCall(_ app: DriverApp, _ rig: PanelRig, _ tool: String, _ arguments: [String: Any]) async throws {
+        try await rig.mcp([(tool, arguments)], session: "cccccccc-1111-4222-8333-444444444444", app: app)
     }
 
     private static func worktreeSteps(_ app: DriverApp) async throws {
@@ -98,7 +75,7 @@ extension Scenarios {
         let repoID = (try rig.show(plot)["repos"] as? [[String: Any]])?.first?["id"] as? String ?? ""
         try check(!repoID.isEmpty, "the plot has no repo")
         // A setup command that Claude sets is new, so the pane asks before it runs.
-        try await mcpCall(rig, "update_repo", ["plot": plot, "repo_id": repoID, "setup": "echo ran > setup-marker"])
+        try await mcpCall(app, rig, "update_repo", ["plot": plot, "repo_id": repoID, "setup": "echo ran > setup-marker"])
 
         let environment = rig.environment.merging(try rig.neutralPrompt()) { $1 }.merging([
             "PATH": bin.path + ":" + (ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"),
@@ -123,7 +100,7 @@ extension Scenarios {
         try app.fill("new-worktree-branch", with: "fix-login")
         try await app.waitUntil("the branch is good") { sheet.branchState == .new }
         try app.click("new-worktree-start")
-        try await app.waitUntil("the sheet closes", timeout: 20) { !sheet.isOpen }
+        try await app.waitUntil("the sheet closes") { !sheet.isOpen }
         guard let made = model.worktrees[plot]?.first(where: { $0.worktree.branch == "fix-login" })?.worktree else {
             throw DriverFailure("no worktree: \(model.lastError ?? "no error")")
         }
