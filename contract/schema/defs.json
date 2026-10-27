@@ -345,6 +345,65 @@
           "minimum": 1
         }
       }
+    },
+    "runState": {
+      "description": "Where a run is. shaping, stopped, and limited need you.",
+      "enum": ["shaping", "starting", "running", "ready", "stopped", "limited", "start_unknown", "landed", "cancelled", "skipped"]
+    },
+    "runCheck": {
+      "description": "A Done when check: a shell command that passes when it exits 0 in the folder of the run.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "command"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "command": { "type": "string", "minLength": 1 }
+      }
+    },
+    "runSource": {
+      "description": "The issue that a run started from.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "key", "url"],
+      "properties": {
+        "kind": { "enum": ["linear", "github", "map", "recurring"] },
+        "key": { "type": "string" },
+        "url": { "type": "string" }
+      }
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "plot_id", "worktree_id", "folder", "title", "goal", "done_when", "state", "tries", "max_tries", "session_id", "note", "created_at", "updated_at"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "plot_id": { "$ref": "#/$defs/id" },
+        "worktree_id": { "description": "The worktree of the run. It can be gone. It is empty for a run in a repo folder.", "anyOf": [{ "$ref": "#/$defs/id" }, { "const": "" }] },
+        "folder": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "goal": { "type": "string" },
+        "done_when": { "type": "array", "items": { "$ref": "#/$defs/runCheck" } },
+        "state": { "$ref": "#/$defs/runState" },
+        "tries": { "description": "How many times the gate failed.", "type": "integer", "minimum": 0 },
+        "max_tries": { "type": "integer", "minimum": 1, "maximum": 8 },
+        "source": { "description": "It is left out when the run has no issue.", "$ref": "#/$defs/runSource" },
+        "session_id": { "description": "The Claude Code session of the run. It is empty until the session starts.", "type": "string" },
+        "note": { "description": "Why the run is in its state, such as the failed checks.", "type": "string" },
+        "created_at": { "$ref": "#/$defs/time" },
+        "updated_at": { "$ref": "#/$defs/time" }
+      }
+    },
+    "runEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "run_id", "at", "kind", "detail"],
+      "properties": {
+        "id": { "type": "integer", "minimum": 1 },
+        "run_id": { "$ref": "#/$defs/id" },
+        "at": { "$ref": "#/$defs/time" },
+        "kind": { "description": "state: the new state. try: a failed gate, with its note. check: the result of one check.", "enum": ["state", "try", "check"] },
+        "detail": { "type": "string" }
+      }
     }
   }
 }

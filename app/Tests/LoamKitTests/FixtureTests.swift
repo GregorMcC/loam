@@ -54,6 +54,10 @@ func decodeFixture(schema: String, data: Data) throws {
     case "worktree-rerun": _ = try d.decode(RerunResult.self, from: data)
     case "worktree-update": _ = try d.decode(UpdateResult.self, from: data)
     case "delete": _ = try d.decode(DeleteResult.self, from: data)
+    case "run-start": _ = try d.decode(RunStartResult.self, from: data)
+    case "run-list": _ = try d.decode([Run].self, from: data)
+    case "run-status": _ = try d.decode(RunStatus.self, from: data)
+    case "run-stop": _ = try d.decode(RunStopResult.self, from: data)
     default: Issue.record("No Swift type for schema \(schema)")
     }
 }

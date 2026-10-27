@@ -203,6 +203,16 @@ func (h *harness) harvest() {
 	for _, w := range wts {
 		h.token("wtre", w.Worktree.ID)
 	}
+	out, _, _ = h.raw("run", "list", "--json")
+	var runs []struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(out), &runs); err != nil {
+		h.t.Fatal(err)
+	}
+	for _, r := range runs {
+		h.token("runr", r.ID)
+	}
 }
 
 // normalize replaces IDs, times, and temp paths with fixed values.
@@ -570,6 +580,30 @@ func scenario(t *testing.T) *harness {
 	parse(h.run("worktree_edit", "worktree-edit", 0, "worktree", "edit", loam, "fix-login", "--goal", "Fix the login form on phones"), &edit)
 	h.run("error_stale_worktree", "error", 10, "worktree", "edit", loam, "fix-login", "--goal", "x",
 		"--expect", "worktree:"+edit.Worktree.ID+"=0")
+
+	// Runs, in a plot of their own, so the lists above keep their worktrees.
+	// Claude Code must trust the repo. The setup command of the repo must
+	// pass in the new worktree. The fake claude stands in for claude --bg and
+	// claude stop, so no hook records a session.
+	cfg = fmt.Sprintf(`{"projects":{%q:{"hasTrustDialogAccepted":true},%q:{"hasTrustDialogAccepted":true}}}`,
+		filepath.Join(h.home, "plots"), gitRepo)
+	if err := os.WriteFile(filepath.Join(h.root, "userhome", ".claude.json"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"new", "Runs"}, {"repo", "add", "Runs", gitRepo}, {"repo", "edit", "Runs", gitRepo, "--setup", "true"}} {
+		if _, errOut, code := h.raw(args...); code != 0 {
+			t.Fatalf("%v: exit %d: %s", args, code, errOut)
+		}
+	}
+	var started struct {
+		Run struct{ ID string } `json:"run"`
+	}
+	parse(h.run("run_start", "run-start", 0, "run", "start", "Runs", "--title", "Fix the login form",
+		"--goal", "The login form works on phones.", "--check", "Go tests=go test ./...",
+		"--link", "https://github.com/example/widgets/issues/57"), &started)
+	h.run("run_list", "run-list", 0, "run", "list", "Runs")
+	h.run("run_status", "run-status", 0, "run", "status", started.Run.ID)
+	h.run("run_stop", "run-stop", 0, "run", "stop", started.Run.ID)
 	return h
 }
 

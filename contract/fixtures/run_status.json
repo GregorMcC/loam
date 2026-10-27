@@ -1,0 +1,44 @@
+{
+  "events": [
+    {
+      "at": "2026-01-01T00:00:00Z",
+      "detail": "starting",
+      "id": 1,
+      "kind": "state",
+      "run_id": "runraaaaab"
+    },
+    {
+      "at": "2026-01-01T00:00:00Z",
+      "detail": "running",
+      "id": 2,
+      "kind": "state",
+      "run_id": "runraaaaab"
+    }
+  ],
+  "run": {
+    "created_at": "2026-01-01T00:00:00Z",
+    "done_when": [
+      {
+        "command": "go test ./...",
+        "name": "Go tests"
+      }
+    ],
+    "folder": "/tmp/loam-contract/loamhome/worktrees/plotaaaaae/web-57-fix-the-login-form",
+    "goal": "The login form works on phones.",
+    "id": "runraaaaab",
+    "max_tries": 3,
+    "note": "",
+    "plot_id": "plotaaaaae",
+    "session_id": "",
+    "source": {
+      "key": "#57",
+      "kind": "github",
+      "url": "https://github.com/example/widgets/issues/57"
+    },
+    "state": "running",
+    "title": "Fix the login form",
+    "tries": 0,
+    "updated_at": "2026-01-01T00:00:00Z",
+    "worktree_id": "wtreaaaaas"
+  }
+}

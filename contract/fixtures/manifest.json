@@ -925,5 +925,57 @@
     ],
     "exit_code": 10,
     "schema": "error"
+  },
+  {
+    "name": "run_start",
+    "args": [
+      "run",
+      "start",
+      "Runs",
+      "--title",
+      "Fix the login form",
+      "--goal",
+      "The login form works on phones.",
+      "--check",
+      "Go tests=go test ./...",
+      "--link",
+      "https://github.com/example/widgets/issues/57",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "run-start"
+  },
+  {
+    "name": "run_list",
+    "args": [
+      "run",
+      "list",
+      "Runs",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "run-list"
+  },
+  {
+    "name": "run_status",
+    "args": [
+      "run",
+      "status",
+      "runraaaaab",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "run-status"
+  },
+  {
+    "name": "run_stop",
+    "args": [
+      "run",
+      "stop",
+      "runraaaaab",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "run-stop"
   }
 ]

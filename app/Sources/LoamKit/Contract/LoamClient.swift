@@ -95,6 +95,16 @@ public struct LoamClient: Sendable {
         try await read(["worktree", "list", plot, "--refresh", "--worktree", worktree])
     }
 
+    /// `loam run list [<plot>]`: the runs of a plot, or of every plot, newest first.
+    public func runs(plot: String? = nil) async throws -> [Run] {
+        try await read(["run", "list"] + (plot.map { [$0] } ?? []))
+    }
+
+    /// `loam run status <run>`: a run and its history.
+    public func runStatus(_ id: String) async throws -> RunStatus {
+        try await read(["run", "status"], positionals: [id])
+    }
+
     // MARK: Writes (all with `--actor app`)
 
     public func new(name: String) async throws -> Plot {
@@ -252,6 +262,11 @@ public struct LoamClient: Sendable {
     }
 
     /// `positionals` are the arguments that are not flags. They go after `--`, so none of them can be read as a flag.
+    /// `loam run stop <run>`: stops the background session of a run.
+    public func runStop(_ id: String) async throws -> RunStopResult {
+        try await read(["run", "stop"], positionals: [id])
+    }
+
     private func read<T: Decodable>(_ args: [String], positionals: [String] = []) async throws -> T {
         try decode(await run(args + ["--json"] + Self.afterFlags(positionals), stdin: nil))
     }

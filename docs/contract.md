@@ -509,6 +509,47 @@ When the refresh after the merge fails, or the PR does not show a merge that Git
 
 `update` runs `gh pr update-branch`, so GitHub adds a merge commit of the base branch to the PR. Then it fetches the branch from `origin`, so the local repo has the new PR head, and the stage rule can see that the worktree is in the PR. It does not change the branch of the worktree. `fetched` is false when the fetch failed, and `fetch_note` says why. GitHub still has the update. The PR must be open, else the command exits with code 1.
 
+### Runs
+
+A run is one goal that a background Claude Code session (`claude --bg`) works on in a worktree of a plot, until its Done when checks pass. Runs are not in the change log. Each write of a run rewrites `loam.changed`.
+
+```json
+{
+  "id": "runraaaaab", "plot_id": "k3v9q2mxa7", "worktree_id": "wtreeaaaab", "folder": "/abs/path/of/worktree",
+  "title": "Fix the login form", "goal": "The login form works on phones.",
+  "done_when": [{ "name": "Go tests", "command": "go test ./..." }],
+  "state": "running", "tries": 1, "max_tries": 3,
+  "source": { "kind": "github", "key": "#57", "url": "https://github.com/example/widgets/issues/57" },
+  "session_id": "c57ef956-3136-4e86-bfde-da8facfe0523", "note": "Try 1 failed: Go tests",
+  "created_at": "2026-10-02T09:00:00Z", "updated_at": "2026-10-02T09:04:00Z"
+}
+```
+
+- `state` is one of these:
+  - `shaping`: it waits for you to approve its goal and checks.
+  - `starting`: Loam is starting its session.
+  - `running`: its session works, or the gate sent failures back.
+  - `ready`: every check passed.
+  - `stopped`: it used all its tries, or a failure stopped it.
+  - `limited`: Claude Code hit a usage limit (Stopped by a limit). It counts no try.
+  - `start_unknown`: `claude --bg` did not return in time. The session may exist.
+  - `landed`, `cancelled` (stopped by you), and `skipped` (a recurring run found no work).
+- `shaping`, `stopped`, and `limited` need you.
+- `tries` counts the failed gates. `max_tries` is 1 to 8, because Claude Code lets a session stop after 8 blocked stops in a row.
+- `session_id` is empty until the SessionStart hook of the session records it. `claude --bg` picks its own session ID. `claude attach`, `logs`, and `stop` take its first 8 characters.
+- `source` is the issue of the worktree's link. It is left out when there is none.
+
+The gate is the Stop hook of the session. Each time the session ends a turn, Loam runs each check with `sh -c` in the folder, then checks that `git status --porcelain` is empty ("Work committed"). When all pass, the run is `ready`. When one fails, the try counts. With tries left, the hook exits 2 and the failures go back to the session as its next prompt. With no tries left, the session stops and the run is `stopped`.
+
+| Command | Output |
+| :- | :- |
+| `loam run start <plot> --title <text> [--goal <text>] [--check <name>=<command>]... [--worktree <name>] [--repo <repo>] [--base <branch>] [--link <link-id or URL>] [--max-tries <n>] [--model <model>] [--approve-setup]` | `{ "run": {...}, "worktree": {...} }` |
+| `loam run list [<plot>]` | An array of runs, newest first. It is `[]` when none exists. |
+| `loam run status <run>` | `{ "run": {...}, "events": [{ "id": 1, "run_id": "...", "at": "...", "kind": "state", "detail": "running" }] }` |
+| `loam run stop <run>` | `{ "run": {...} }`. The run is `cancelled`. A run that has ended stays as it is. |
+
+`run start` uses the worktree that `--worktree` names, or makes it. With no `--worktree`, it makes a worktree with a name from the link key and the title. It refuses, with exit code 1, a folder that Claude Code does not trust: a background session cannot show the trust prompt. In git, Claude Code trusts a worktree when it trusts the main checkout of the repo. A setup command that you have not approved gives exit code 2 (`invalid`); `--approve-setup` approves it. When `claude --bg` fails, the run is `stopped` with the output in `note`, and the command exits 0.
+
 ### Sessions
 
 `loam sessions [<plot>] --json` prints an array of session records, newest first. It is `[]` when no record exists.
@@ -615,6 +656,7 @@ Writes the old values back as a new change by the actor (`--actor app` for the a
 | `loam start` | It replaces the process with `claude`. `--repo` takes a repo ID or a path. `--plot-folder` starts in the plot folder of a plot with repos, and every repo is then an added folder; it fails with exit code 2 (`invalid`) with `--repo` or `--worktree`. An unknown repo exits with code 1, as in `loam repo edit`. Each local link adds its folder (or the folder of the file) with `--add-dir`, except the root, the home folder, and a parent of the home folder: a link to one of them adds nothing. |
 | `loam mcp` | It speaks the MCP protocol on stdio. |
 | `loam hook` | It is hidden. It speaks the Claude Code hook protocol. |
+| `loam run hook <run>` | It is hidden. It speaks the Claude Code hook protocol for the session of a run. A failed gate exits 2 with the reason on stderr. |
 | `loam setup` | It is interactive. Use `loam setup --check --json` instead. |
 | `loam resume <session-id> [--plot <plot>]` | It replaces the process with `claude --resume`. |
 
