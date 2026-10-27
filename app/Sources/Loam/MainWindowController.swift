@@ -147,6 +147,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         // Each overlay host goes in this list, so the window refuses the keys to it while it is hidden (ticket 130).
         window.overlays = [switcherHost, actionsHost, popoverHost, landHost, newWorktreeHost]
         window.sheetBlocksWindow = { [weak model] in model?.sheetBlocksWindow ?? false }
+        observeWindowButtons()
         collapseObservation = sidebarItem.observe(\.isCollapsed, options: [.new]) { [weak self] _, _ in
             MainActor.assumeIsolated { self?.syncCollapse() }
         }

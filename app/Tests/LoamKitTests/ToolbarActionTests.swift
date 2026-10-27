@@ -4,7 +4,8 @@ import Testing
 @testable import LoamKit
 
 /// Ticket 126: the scrim of a sheet covers the title bar, so no toolbar item takes a click while a sheet shows or holds the
-/// window. A click would open a tab, move the plot or the panel, or change the sidebar under the sheet.
+/// window. A click would open a tab, move the plot or the panel, or change the sidebar under the sheet. Ticket 133: the close
+/// button of the window follows the same state (`sheetBlocksWindow`).
 @MainActor
 struct ToolbarActionTests {
     /// A model with one active plot, so the plot panel has a plot.
@@ -71,6 +72,29 @@ struct ToolbarActionTests {
         model.landSheet.beginMerging()
         #expect(!model.sheetIsOpen && model.sheetHoldsWindow)
         #expect(allowed(model).isEmpty)
+    }
+
+    /// The window controller turns the close button off, and takes full screen away, from this one value.
+    @Test func theWindowIsBlockedWhileASheetShowsOrHoldsIt() {
+        let model = model()
+        #expect(!model.sheetBlocksWindow)
+        model.landSheet.open("wtreeaaaaa")
+        #expect(model.sheetBlocksWindow)
+        model.landSheet.beginMerging()
+        #expect(model.sheetBlocksWindow)
+        model.landSheet.endMerging()
+        model.landSheet.close()
+        #expect(!model.sheetBlocksWindow)
+        model.newWorktreeSheet.open(plot: "p", link: nil)
+        #expect(model.sheetBlocksWindow)
+        model.newWorktreeSheet.beginStarting()
+        #expect(model.sheetBlocksWindow)
+        model.newWorktreeSheet.startFailed("The branch is taken.")
+        model.newWorktreeSheet.close()
+        #expect(!model.sheetBlocksWindow)
+        // A hold with no open sheet still blocks the window.
+        model.landSheet.beginMerging()
+        #expect(model.sheetBlocksWindow)
     }
 
     @Test func homeHasNoPlotPanel() {

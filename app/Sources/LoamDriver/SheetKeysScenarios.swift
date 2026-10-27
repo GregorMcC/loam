@@ -5,6 +5,7 @@ import LoamTerminal
 /// The check of ticket 128, for the scenarios that open a sheet: the keys and the menu items under an open sheet, a Loam sheet
 /// or a native one. Every menu item that acts on the window is off, and its key does nothing. The items of the app stay on.
 /// The sheet keeps its keys. Ticket 132 adds the items that AppKit adds for a window (Hide Toolbar, Enter Full Screen, Zoom).
+/// Ticket 133 adds the window buttons (`expectWindowButtons`).
 @MainActor
 extension Scenarios {
     /// A menu item that acts on the window, with its key.
@@ -154,6 +155,7 @@ extension Scenarios {
         guard model.sheetIsOpen || host.window.attachedSheet != nil else { throw DriverFailure("no sheet is open") }
         try expectWindowItems(enabled: false)
         try expectAppKitItemsOff(host)
+        try await expectWindowButtons(app, host, sheetShows: true, "under the sheet")
 
         func state() -> String {
             "tabs \(model.workspace.tabs(of: .plot(plot)).count), selected \(String(describing: model.workspace.selectedTab(of: .plot(plot))?.id)), "

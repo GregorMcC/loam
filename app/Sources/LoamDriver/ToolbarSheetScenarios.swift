@@ -3,7 +3,8 @@ import LoamKit
 
 /// Driver scenario for ticket 126: the scrim of a sheet over the title bar. While the New worktree sheet shows, the scrim
 /// covers the title bar and the toolbar, the window buttons stay clear, and no toolbar item takes a press. With the sheet
-/// closed, the scrim is gone and the items act again. It uses a made-up plot in a temp `LOAM_HOME`.
+/// closed, the scrim is gone and the items act again. It uses a made-up plot in a temp `LOAM_HOME`. Ticket 133 adds the window
+/// buttons and the title bar: with no sheet, under the New worktree sheet, under a native sheet and after the sheet.
 @MainActor
 extension Scenarios {
     private static func expectToolbar(_ condition: Bool, _ message: @autoclosure () -> String) throws {
@@ -15,7 +16,7 @@ extension Scenarios {
     }
 
     /// The view with this accessibility ID, in the frame of the window (the content view, the title bar and the overlays).
-    private static func find(_ id: String, in view: NSView) -> NSView? {
+    static func find(_ id: String, in view: NSView) -> NSView? {
         view.accessibilityIdentifier() == id ? view : view.subviews.lazy.compactMap { find(id, in: $0) }.first
     }
 
@@ -84,6 +85,7 @@ extension Scenarios {
             try expectToolbar(AccessibilityProbe.shared.isEnabled(id), "\(id) is off with no sheet")
         }
         try expectToolbar(item(.toggleSidebar)?.isEnabled == true, "the sidebar button is off with no sheet")
+        try await expectWindowButtons(app, host, sheetShows: false, "with no sheet")
 
         // 2. The New worktree sheet shows: the scrim covers the title bar, and every item is off.
         try expectToolbar(model.openNewWorktree(plot: plot), "the New worktree sheet did not open")
@@ -105,6 +107,7 @@ extension Scenarios {
         try expectToolbar(model.sidebarCollapsed == sidebarHidden, "a toolbar press changed the sidebar under the sheet")
         // The items that AppKit adds for a window (ticket 132) are off, as under a native sheet.
         try expectAppKitItemsOff(host, baseline: appKitItems)
+        try await expectWindowButtons(app, host, sheetShows: true, "under the New worktree sheet")
         app.screenshot("toolbar-under-sheet")
         // A resize moves the window buttons, so the scrim follows them, and the bar keeps the height of the title bar.
         host.window.setFrame(NSRect(x: 100, y: 100, width: 1000, height: 640), display: true)
@@ -128,6 +131,7 @@ extension Scenarios {
         try app.click("new-session-button")
         try await app.waitUntil("New session opens a tab") { model.workspace.tabs(of: .plot(plot)).count == tabs + 1 }
         try expectAppKitItemsBack(host, baseline: appKitItems)
+        try await expectWindowButtons(app, host, sheetShows: false, "after the New worktree sheet")
 
         // 4. A native sheet (ticket 128): New Plot… asks for a name in a sheet. The commands that act on the window are off while
         // it shows, as under the sheets of Loam. Cancel closes it, and the commands run again.

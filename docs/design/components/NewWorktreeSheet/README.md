@@ -15,7 +15,7 @@ The New worktree sheet makes one worktree and starts a seeded session in it (tic
 ## The card
 
 - 560pt wide, `horizon-a`, radius `radius-lg`, a hairline edge, and each layer of `shadow-switcher` (`loamFloating`), over a dim scrim: near black at 40% in Night, and the brown of the Day shadow at 28% in Day. It is the card of the [Land sheet](../LandSheet/README.md) (`sheetCard`). A click on the scrim closes the sheet.
-- The scrim covers the title bar and the toolbar, and the toolbar items are off while the sheet shows, as in the Land sheet.
+- The scrim covers the title bar and the toolbar, and the toolbar items are off while the sheet shows, as in the Land sheet. The close button is off too, also while a worktree start runs, and a click on the green button zooms the window (ticket 133).
 - It drops in 24pt from the top with `duration-slow` and `ease-settle`. Under Reduce Motion it fades only.
 - From top to bottom: the title, the link card (only from a link), the fields, and "What the seed adds". Then come a callout, when something went wrong, and the footer.
 - Title: "New worktree" in 15pt semibold.
