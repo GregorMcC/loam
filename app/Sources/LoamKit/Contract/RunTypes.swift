@@ -87,6 +87,9 @@ public struct Run: Codable, Equatable, Sendable, Identifiable {
     public var note: String
     public var createdAt: String
     public var updatedAt: String
+    /// The run waits on GitHub, so a tick can move it: it ships, or it is ready with a PR that GitHub can merge.
+    public var waitsOnGitHub: Bool { state == .shipping || (state == .ready && pr != nil) }
+
     enum CodingKeys: String, CodingKey {
         case id, folder, title, goal, state, tries, source, pr, note
         case plotID = "plot_id", worktreeID = "worktree_id", doneWhen = "done_when", maxTries = "max_tries"
@@ -123,9 +126,65 @@ public struct RunStatus: Codable, Equatable, Sendable {
     public var events: [RunEvent]
 }
 
-/// Output of `loam run stop`.
-public struct RunStopResult: Codable, Equatable, Sendable {
+/// Output of `loam run stop` and `loam run send-back`: the run after the change.
+public struct RunResult: Codable, Equatable, Sendable {
     public var run: Run
+}
+
+/// Output of `loam run land` (ticket 207): the run after the land, and what the land of its worktree did.
+public struct RunLandResult: Codable, Equatable, Sendable {
+    public var run: Run
+    public var land: LandResult
+    public var warnings: [String]
+}
+
+/// Output of `loam run diff` (ticket 207): the work that a run committed, from `base`, where its branch left its
+/// base, to `head`.
+public struct RunDiff: Codable, Equatable, Sendable {
+    public var base: String
+    public var head: String
+    public var files: [File]
+
+    /// The change to one file. `status` is added, modified, deleted, or renamed.
+    public struct File: Codable, Equatable, Sendable, Identifiable {
+        public var path: String
+        /// The path before a rename.
+        public var oldPath: String? = nil
+        public var status: String
+        public var added: Int
+        public var deleted: Int
+        /// A binary file has no hunks.
+        public var binary: Bool? = nil
+        /// The file has more lines than the diff keeps. `added` and `deleted` count every line.
+        public var truncated: Bool? = nil
+        public var hunks: [Hunk]
+        public var id: String { path }
+        enum CodingKeys: String, CodingKey {
+            case path, status, added, deleted, binary, truncated, hunks
+            case oldPath = "old_path"
+        }
+    }
+
+    /// One part of a file that changed, with lines of context.
+    public struct Hunk: Codable, Equatable, Sendable {
+        public var header: String
+        public var oldStart: Int
+        public var newStart: Int
+        public var lines: [Line]
+        enum CodingKeys: String, CodingKey {
+            case header, lines
+            case oldStart = "old_start", newStart = "new_start"
+        }
+    }
+
+    /// One line of a hunk. A line that is only on one side has no number on the other.
+    public struct Line: Codable, Equatable, Sendable {
+        public enum Kind: String, Codable, Sendable { case context, add, del }
+        public var kind: Kind
+        public var old: Int? = nil
+        public var new: Int? = nil
+        public var text: String
+    }
 }
 
 /// Output of `loam run tick` (ticket 206): the runs that the tick moved.

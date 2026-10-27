@@ -548,7 +548,7 @@ The gate is the Stop hook of the session. Each time the session ends a turn, Loa
 | :- | :- |
 | `loam run start <plot> --title <text> [--goal <text>] [--check <name>=<command>]... [--worktree <name>] [--repo <repo>] [--base <branch>] [--link <link-id or URL> \| --ticket <file>] [--max-tries <n>] [--model <model>] [--approve-setup]` | `{ "run": {...}, "worktree": {...} }` |
 | `loam run list [<plot>]` | An array of runs, newest first. It is `[]` when none exists. |
-| `loam run status <run>` | `{ "run": {...}, "events": [{ "id": 1, "run_id": "...", "at": "...", "kind": "state", "detail": "running" }] }`. `kind` is `state`, `try`, `check`, `linear`, `ship`, or `ci`. |
+| `loam run status <run>` | `{ "run": {...}, "events": [{ "id": 1, "run_id": "...", "at": "...", "kind": "state", "detail": "running" }] }`. `kind` is `state`, `try`, `check`, `linear`, `ship`, `ci`, `review`, or `land`. |
 | `loam run stop <run>` | `{ "run": {...} }`. The run is `cancelled`. A run that has ended stays as it is. |
 | `loam run tick` | `{ "runs": [...], "warnings": ["..."] }`. `runs` are the runs that the tick moved. Both are `[]` when none. |
 
@@ -559,9 +559,9 @@ The gate is the Stop hook of the session. Each time the session ends a turn, Loa
 `loam run tick` moves on each run in `shipping`. A tick that waits on GitHub changes nothing, so the app runs it often while a run ships. Only one tick runs at a time: a second one prints the empty result at once. For each run, the tick does the first step that applies:
 
 1. The run's worktree is gone, or the origin is not on GitHub: the run is `ready`, and `note` says why. gh missing or signed out makes it `ready` too, with the error in `note`.
-2. GitHub has the run's PR merged: the run is `landed`. Closed: the run is `stopped`.
+2. GitHub has the run's PR merged: the run is `landed`, with a `land` event, and its Linear issue moves to Done. Closed: the run is `stopped`.
 3. An open PR of the branch that is not the run's PR: it becomes the run's PR (event `ship`, "Found #12, the open PR of the branch").
-4. The head of the worktree is not the PR head: the tick runs `git push -u origin <branch>` when `origin/<branch>` is not the head. A failed push stops the run with the output in `note`. With no PR, it runs `gh pr create` with the title of the run, the base of the worktree, and a body with the goal, the Done when checks, and the issue (`Closes #57` for a GitHub issue, a link for a Linear issue). It names no local path. The events are `ship`: "Opened #12", or "Pushed the fix to #12". For a Linear issue, Loam attaches the PR to it (event `linear`). A failed attach is a warning.
+4. The head of the worktree is not the PR head: the tick runs `git push -u origin <branch>` when `origin/<branch>` is not the head. A failed push stops the run with the output in `note`. With no PR, it runs `gh pr create` with the title of the run, the base of the worktree, and a body with the goal, the Done when checks, and the issue (`Closes #57` for a GitHub issue, the key, such as `Linear: ENG-523`, for a Linear issue). It names no local path and no Linear URL, because the repo can be public and the Linear workspace private. The events are `ship`: "Opened #12", or "Pushed the fix to #12". For a Linear issue, Loam attaches the PR to it (event `linear`). A failed attach is a warning.
 5. CI on the PR head:
    - No checks: the run waits 3 minutes after the push, then is `ready` ("No CI ran on #12").
    - A failed check: the try counts. With tries left, the run is `running` and Loam sends the session a prompt with each failed check and the last 60 lines of its failed log (`gh run view <id> --log-failed`). Loam runs `claude stop` and then `claude --bg --resume <session ID> "<prompt>"` with no other flag, so the session wakes with its own options and hooks. The next gate that passes ships the fix to the same PR. With no tries left, the run is `stopped`.
@@ -569,6 +569,21 @@ The gate is the Stop hook of the session. Each time the session ends a turn, Loa
    - All passed: the run is `ready` ("CI passed on #12: 14 of 14 checks").
 
 Each CI result is a `ci` event.
+
+A tick also watches the PR of each run that is `ready` and has a `pr`. A merge on GitHub lands the run, as in step 2, and a close stops it. A run that cannot reach GitHub waits with no warning.
+
+#### Land
+
+| Command | Output |
+| :- | :- |
+| `loam run diff <run>` | `{ "base": "<commit>", "head": "<commit>", "files": [{ "path": "README.md", "status": "modified", "added": 3, "deleted": 1, "hunks": [{ "header": "@@ -1 +1,3 @@", "old_start": 1, "new_start": 1, "lines": [{ "kind": "del", "old": 1, "text": "hello" }, { "kind": "add", "new": 1, "text": "# Loam" }] }] }] }` |
+| `loam run send-back <run> --note <text>...` | `{ "run": { ... } }` |
+| `loam run land <run> [--head <commit>] [--keep-worktree] [--open-pane <folder>]... [--dry-run]` | `{ "run": { ... }, "land": { ... }, "warnings": [] }` |
+
+- `run diff` is the work that the run committed: from `base`, the commit where its branch left the base of its worktree, to `head`. `status` is `added`, `modified`, `deleted`, or `renamed`, with `old_path` for a rename. A binary file has `binary` and no hunks. A file keeps at most 3000 lines and then has `truncated`; `added` and `deleted` count every line. A line has `old`, `new`, or both: the numbers of the line before and after the change.
+- `run send-back` takes a run that is `ready` or `stopped`, and at least one note. A note is `<file>:<line>: <text>` for a line, or text alone. Loam stops the session and resumes it with the notes as its prompt, as for a CI failure, and the run is `running` ("Sent back with 2 notes", event `review`). A note uses no try. A run with no tries left gets one more (`max_tries` goes up by 1). The next gate that passes ships the change to the same PR.
+- `run land` takes a run that is `ready` and has a `pr`. Loam stops the session, because the land removes the worktree, then lands the worktree as `loam worktree land` does, with the default merge method: `land` is the `worktree land` result. A merge makes the run `landed` ("Merged #25 with squash", event `land`), and its Linear issue moves to the first completed state (event `linear`). With a merge queue, the run stays `ready` ("#25 is in the merge queue of main"), and a tick lands it when GitHub merges. `--dry-run` changes nothing, and `land` is the plan.
+- A run in another state, or with no PR, exits 2. A check that blocks the merge exits 16, and gh missing or signed out exits 17, as for `worktree land`.
 
 ### Intake
 

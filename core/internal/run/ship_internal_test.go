@@ -15,7 +15,7 @@ func TestPRBodyHasTheGoalTheChecksAndTheIssue(t *testing.T) {
 		src  *store.RunSource
 		want string
 	}{
-		"linear":       {&store.RunSource{Kind: "linear", Key: "ENG-523", URL: "https://linear.app/acme/issue/ENG-523/x"}, "Linear: [ENG-523](https://linear.app/acme/issue/ENG-523/x)"},
+		"linear":       {&store.RunSource{Kind: "linear", Key: "ENG-523", URL: "https://linear.app/acme/issue/ENG-523/x"}, "Linear: ENG-523"},
 		"same repo":    {&store.RunSource{Kind: "github", Key: "#57", URL: "https://github.com/example/widgets/issues/57"}, "Closes #57"},
 		"another repo": {&store.RunSource{Kind: "github", Key: "example/docs#9", URL: "https://github.com/example/docs/issues/9"}, "Closes example/docs#9"},
 		"map":          {&store.RunSource{Kind: "map", Key: "map 12", URL: "/Users/me/maps/build/issues/12-plan.md"}, ""},
@@ -30,6 +30,11 @@ func TestPRBodyHasTheGoalTheChecksAndTheIssue(t *testing.T) {
 		}
 		if strings.Contains(body, "/Users/") {
 			t.Errorf("%s: the body has a local path:\n%s", name, body)
+		}
+		// A Linear workspace can be private, and the repo public: the key
+		// only, so its URL does not name the workspace or the issue title.
+		if strings.Contains(body, "linear.app") {
+			t.Errorf("%s: the body has a Linear URL:\n%s", name, body)
 		}
 	}
 }

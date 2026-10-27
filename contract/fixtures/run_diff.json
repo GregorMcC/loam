@@ -1,0 +1,41 @@
+{
+  "base": "abcdefabcdefabcdefabcdefabcdefabcdefabcd",
+  "files": [
+    {
+      "added": 3,
+      "deleted": 1,
+      "hunks": [
+        {
+          "header": "@@ -1 +1,3 @@",
+          "lines": [
+            {
+              "kind": "del",
+              "old": 1,
+              "text": "hello"
+            },
+            {
+              "kind": "add",
+              "new": 1,
+              "text": "# Loam"
+            },
+            {
+              "kind": "add",
+              "new": 2,
+              "text": ""
+            },
+            {
+              "kind": "add",
+              "new": 3,
+              "text": "A terminal for plots."
+            }
+          ],
+          "new_start": 1,
+          "old_start": 1
+        }
+      ],
+      "path": "README.md",
+      "status": "modified"
+    }
+  ],
+  "head": "1234512345123451234512345123451234512345"
+}

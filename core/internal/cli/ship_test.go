@@ -64,7 +64,8 @@ func tick(t *testing.T) tickOut {
 
 // ciState is GitHub with PR #1 of the branch at head, and one check, test,
 // with the conclusion. A failed check is a job of the Actions run 9001,
-// whose failed log ends in FAIL: TestDrag.
+// whose failed log ends in FAIL: TestDrag. The repo squashes by default, and
+// the PR is up to date with main, so a passed PR can merge.
 func ciState(branch, head, conclusion string) string {
 	rollup := map[string]string{"SUCCESS": "SUCCESS", "FAILURE": "FAILURE", "": "PENDING"}[conclusion]
 	status := "COMPLETED"
@@ -76,9 +77,12 @@ func ciState(branch, head, conclusion string) string {
   "pulls": [{"number": 1, "title": "Say hi", "url": "https://github.com/example/widgets/pull/1", "state": "OPEN",
     "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN", "baseRefName": "main", "headRefName": %[1]q, "headRefOid": %[2]q,
     "commits": {"totalCount": 1}}],
-  "details": {"1": {"commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": %[3]q, "contexts": {"totalCount": 1, "nodes": [
+  "details": {"1": {"baseRef": {"compare": {"behindBy": 0}}, "reviewThreads": {"nodes": []},
+    "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": %[3]q, "contexts": {"totalCount": 1, "nodes": [
     {"__typename": "CheckRun", "name": "test", "status": %[4]q, "conclusion": %[5]q, "isRequired": true,
      "checkSuite": {"workflowRun": {"databaseId": 9001, "workflow": {"name": "ci"}}}}]}}}}]}}},
+  "repository": {"mergeCommitAllowed": true, "squashMergeAllowed": true, "rebaseMergeAllowed": false,
+    "viewerDefaultMergeMethod": "SQUASH"},
   "logs": {"9001": "test\tgo test\t--- FAIL: TestDrag (0.00s)\ntest\tgo test\tFAIL\n"}
 }`, branch, head, rollup, status, conclusion)
 }

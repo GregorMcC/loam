@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam run send-back --json",
+  "description": "The run after the send-back: Running, with the notes sent to its session.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run"
+  ],
+  "properties": {
+    "run": {
+      "$ref": "defs.json#/$defs/run"
+    }
+  }
+}

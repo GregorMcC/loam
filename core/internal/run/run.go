@@ -157,8 +157,8 @@ func Start(ctx context.Context, s *store.Store, o StartOptions) (*StartResult, e
 	if err != nil {
 		return nil, err
 	}
-	if r.State != store.RunStopped && r.Source != nil && r.Source.Kind == intake.Linear {
-		if warning := startLinearIssue(parent, s, r); warning != "" {
+	if r.State != store.RunStopped {
+		if warning := moveLinearIssue(parent, s, r, "In Progress", "has started or ended", (*linear.Client).Start); warning != "" {
 			res.Warnings = append(res.Warnings, warning)
 		}
 	}
@@ -166,25 +166,31 @@ func Start(ctx context.Context, s *store.Store, o StartOptions) (*StartResult, e
 	return res, nil
 }
 
-// startLinearIssue moves the Linear issue of the run to In Progress, and
-// records what happened as a "linear" event of the run. A failure does not
-// stop the run: it returns a warning for a person to read.
-func startLinearIssue(ctx context.Context, s *store.Store, r store.Run) string {
+// moveLinearIssue moves the Linear issue of the run with move, such as
+// [linear.Client.Start] to In Progress, and records what happened as a
+// "linear" event of the run. to names the state for a failure, and stays
+// says why an issue that move leaves stays. A failure does not change the
+// run: it returns a warning for a person to read.
+func moveLinearIssue(ctx context.Context, s *store.Store, r store.Run, to, stays string,
+	move func(*linear.Client, context.Context, string) (string, error)) string {
+	if r.Source == nil || r.Source.Kind != intake.Linear {
+		return ""
+	}
 	key := r.Source.Key
 	detail, warning := "", ""
 	c, err := linear.FromKeychain()
 	var moved string
 	if err == nil {
-		moved, err = c.Start(ctx, key)
+		moved, err = move(c, ctx, key)
 	}
 	switch {
 	case err != nil:
-		detail = fmt.Sprintf("Could not move %s to In Progress: %v", key, err)
+		detail = fmt.Sprintf("Could not move %s to %s: %v", key, to, err)
 		warning = detail
 	case moved != "":
 		detail = fmt.Sprintf("Moved %s to %s", key, moved)
 	default:
-		detail = fmt.Sprintf("%s has started or ended, so Loam did not move it", key)
+		detail = fmt.Sprintf("%s %s, so Loam did not move it", key, stays)
 	}
 	if err := s.AddRunEvent(r.ID, "linear", detail); err != nil {
 		return err.Error()
@@ -391,20 +397,29 @@ func Stop(ctx context.Context, s *store.Store, id string) (store.Run, []string, 
 		return r, nil, err
 	}
 	var warnings []string
-	if claude, err := claudebin.Find(); err != nil {
-		warnings = append(warnings, "Could not find claude to stop the session: "+err.Error())
-	} else {
-		ctx, cancel := context.WithTimeout(ctx, startTimeout)
-		defer cancel()
-		if out, err := exec.CommandContext(ctx, claude, "stop", sessionRef(r)).CombinedOutput(); err != nil {
-			warnings = append(warnings, failureNote("claude stop failed", err, string(out)))
-		}
+	if warning := stopSession(ctx, r); warning != "" {
+		warnings = append(warnings, warning)
 	}
 	r, err = s.UpdateRun(id, func(r *store.Run) error {
 		r.State, r.Note = store.RunCancelled, "Stopped by you"
 		return nil
 	})
 	return r, warnings, err
+}
+
+// stopSession stops the background session of the run. It returns a warning
+// when claude stop fails, for example because the session is gone.
+func stopSession(ctx context.Context, r store.Run) string {
+	claude, err := claudebin.Find()
+	if err != nil {
+		return "Could not find claude to stop the session: " + err.Error()
+	}
+	ctx, cancel := context.WithTimeout(ctx, startTimeout)
+	defer cancel()
+	if out, err := exec.CommandContext(ctx, claude, "stop", sessionRef(r)).CombinedOutput(); err != nil {
+		return failureNote("claude stop failed", err, string(out))
+	}
+	return ""
 }
 
 // sessionRef names the background session of a run for claude attach, logs,

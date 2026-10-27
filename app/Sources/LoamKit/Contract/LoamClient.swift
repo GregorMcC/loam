@@ -296,7 +296,7 @@ public struct LoamClient: Sendable {
     }
 
     /// `loam run stop <run>`: stops the background session of a run.
-    public func runStop(_ id: String) async throws -> RunStopResult {
+    public func runStop(_ id: String) async throws -> RunResult {
         try await read(["run", "stop"], positionals: [id])
     }
 

@@ -76,6 +76,28 @@ func TestStartMovesAnIssueThatHasNotStarted(t *testing.T) {
 	}
 }
 
+// Ticket 207: a run that lands moves its issue to the first completed state.
+func TestFinishMovesAnIssueToDone(t *testing.T) {
+	f := testutil.FakeLinear(t)
+	c := linear.NewClient(f.URL, testutil.LinearKey)
+	moved, err := c.Finish(context.Background(), "ENG-523")
+	if err != nil || moved != "Done" {
+		t.Fatalf("%q %v", moved, err)
+	}
+	if v := f.Calls()[1].Variables; v["state"] != "st-done" || v["id"] != "ENG-523" {
+		t.Fatalf("update vars %+v", v)
+	}
+	// An issue that is done stays where it is.
+	moved, err = c.Finish(context.Background(), "ENG-523")
+	if err != nil || moved != "" || len(f.Calls()) != 3 {
+		t.Fatalf("%q %v %d queries", moved, err, len(f.Calls()))
+	}
+	// So does an issue that is done when Start runs.
+	if moved, err := c.Start(context.Background(), "ENG-523"); err != nil || moved != "" {
+		t.Fatalf("start of a done issue: %q %v", moved, err)
+	}
+}
+
 // Ticket 206: Loam attaches the PR of a run to its issue.
 func TestAttachLinksAURLToAnIssue(t *testing.T) {
 	f := testutil.FakeLinear(t)

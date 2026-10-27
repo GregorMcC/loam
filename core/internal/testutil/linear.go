@@ -1,6 +1,7 @@
 package testutil
 
 import (
+	"cmp"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -23,8 +24,8 @@ type LinearCall struct {
 
 // FakeLinearServer stands in for the Linear API. Team ENG has two open
 // issues: ENG-523 (Todo, High, label Feature) and ENG-525 (Backlog, no
-// priority). An update moves ENG-523 to In Progress, and an attachment link
-// succeeds. It is an
+// priority). An update moves ENG-523 to the state that it names, such as In
+// Progress or Done, and an attachment link succeeds. It is an
 // [http.Handler], so the fakelinear command can serve it for the app's
 // driver too.
 type FakeLinearServer struct {
@@ -32,8 +33,29 @@ type FakeLinearServer struct {
 	URL string
 	mu  sync.Mutex
 	// calls are the requests so far, oldest first.
-	calls   []LinearCall
-	started bool
+	calls []LinearCall
+	// stateID is the state that the last update of ENG-523 set. Empty is Todo.
+	stateID string
+}
+
+// fakeStates are the workflow states of the team, by type, out of position
+// order. Each ID is the state's ID in an update.
+var fakeStates = map[string]string{
+	"started":   `[{"id":"st-review","name":"In Review","position":2},{"id":"st-progress","name":"In Progress","position":1}]`,
+	"completed": `[{"id":"st-done","name":"Done","position":1}]`,
+}
+
+// fakeStateOf is the name and type of a state ID.
+func fakeStateOf(id string) (name, stateType string) {
+	switch id {
+	case "st-progress":
+		return "In Progress", "started"
+	case "st-review":
+		return "In Review", "started"
+	case "st-done":
+		return "Done", "completed"
+	}
+	return "Todo", "unstarted"
 }
 
 // Calls returns the requests so far.
@@ -76,21 +98,19 @@ func (f *FakeLinearServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, LinearCall{Query: req.Query, Variables: req.Variables})
-	state, stateType := "Todo", "unstarted"
-	if f.started {
-		state, stateType = "In Progress", "started"
-	}
+	state, stateType := fakeStateOf(f.stateID)
 	switch {
 	case strings.Contains(req.Query, "viewer"):
 		io.WriteString(w, `{"data":{"viewer":{"name":"Ada Example","email":"ada@example.com"},"organization":{"name":"Acme"}}}`)
 	case strings.Contains(req.Query, "attachmentLinkURL"):
 		io.WriteString(w, `{"data":{"attachmentLinkURL":{"success":true}}}`)
 	case strings.Contains(req.Query, "issueUpdate"):
-		f.started = true
+		f.stateID, _ = req.Variables["state"].(string)
 		io.WriteString(w, `{"data":{"issueUpdate":{"success":true}}}`)
 	case strings.Contains(req.Query, "issue(id"):
+		to, _ := req.Variables["type"].(string)
 		io.WriteString(w, `{"data":{"issue":{"state":{"type":"`+stateType+`"},
-			"team":{"states":{"nodes":[{"id":"st-review","name":"In Review","position":2},{"id":"st-progress","name":"In Progress","position":1}]}}}}}`)
+			"team":{"states":{"nodes":`+cmp.Or(fakeStates[to], "[]")+`}}}}}`)
 	case strings.Contains(req.Query, "issues("):
 		io.WriteString(w, `{"data":{"issues":{"nodes":[
 			{"identifier":"ENG-523","title":"Plot panel: drag a link to reorder it","url":"https://linear.app/acme/issue/ENG-523/plot-panel-drag",

@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam run diff --json",
+  "description": "The work that a run committed: the change from base, the commit where its branch left its base, to head.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "base",
+    "head",
+    "files"
+  ],
+  "properties": {
+    "base": {
+      "type": "string",
+      "minLength": 1
+    },
+    "head": {
+      "type": "string",
+      "minLength": 1
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/file"
+      }
+    }
+  },
+  "$defs": {
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "status",
+        "added",
+        "deleted",
+        "hunks"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "old_path": {
+          "description": "The path before a rename.",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "added",
+            "modified",
+            "deleted",
+            "renamed"
+          ]
+        },
+        "added": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deleted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "binary": {
+          "description": "Present and true for a binary file, which has no hunks.",
+          "type": "boolean"
+        },
+        "truncated": {
+          "description": "Present and true when the file has more lines than the diff keeps. added and deleted count every line.",
+          "type": "boolean"
+        },
+        "hunks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/hunk"
+          }
+        }
+      }
+    },
+    "hunk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "header",
+        "old_start",
+        "new_start",
+        "lines"
+      ],
+      "properties": {
+        "header": {
+          "description": "The @@ line of the hunk.",
+          "type": "string"
+        },
+        "old_start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "new_start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/line"
+          }
+        }
+      }
+    },
+    "line": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "text"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "context",
+            "add",
+            "del"
+          ]
+        },
+        "old": {
+          "description": "The number of the line before the change. Left out for an added line.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "new": {
+          "description": "The number of the line after the change. Left out for a deleted line.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "text": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

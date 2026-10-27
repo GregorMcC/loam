@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -656,18 +657,81 @@ func scenario(t *testing.T) *harness {
 		t.Fatalf("run start: exit %d: %s", code, errOut)
 	}
 	var tidy struct {
-		Run struct{ ID string } `json:"run"`
+		Run struct{ ID, Folder string } `json:"run"`
 	}
 	parse([]byte(out), &tidy)
-	for _, event := range []string{"SessionStart", "Stop"} {
+	hook := func(event string) {
+		t.Helper()
 		h.stdin = fmt.Sprintf(`{"hook_event_name":%q,"session_id":"c57ef956-3136-4e86-bfde-da8facfe0523"}`, event)
+		defer func() { h.stdin = "" }()
 		if _, errOut, code := h.raw("run", "hook", tidy.Run.ID); code != 0 {
 			t.Fatalf("run hook %s: exit %d: %s", event, code, errOut)
 		}
 	}
-	h.stdin = ""
+	hook("SessionStart")
+	// The session commits one change, which the diff of ticket 207 shows.
+	if err := os.WriteFile(filepath.Join(tidy.Run.Folder, "README.md"), []byte("# Loam\n\nA terminal for plots.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	testutil.Git(t, tidy.Run.Folder, "commit", "-qam", "Tidy the README")
+	h.tokens[testutil.Git(t, tidy.Run.Folder, "rev-parse", "HEAD")] = runHead
+	hook("Stop")
 	h.run("run_tick", "run-tick", 0, "run", "tick")
+
+	// Land (ticket 207). CI passes on #25, so a tick makes the run Ready. A
+	// send-back takes it round the gate and Ship again, and the land merges
+	// #25.
+	passCI(t, h.ghState, 25, testutil.Git(t, tidy.Run.Folder, "rev-parse", "HEAD"))
+	if _, errOut, code := h.raw("run", "tick"); code != 0 {
+		t.Fatalf("run tick: exit %d: %s", code, errOut)
+	}
+	h.run("run_diff", "run-diff", 0, "run", "diff", tidy.Run.ID)
+	h.run("run_send_back", "run-send-back", 0, "run", "send-back", tidy.Run.ID,
+		"--note", "README.md:3: Say what a plot is.", "--note", "Keep the README short.")
+	hook("Stop")
+	if _, errOut, code := h.raw("run", "tick"); code != 0 {
+		t.Fatalf("run tick: exit %d: %s", code, errOut)
+	}
+	h.run("run_land_dry_run", "run-land", 0, "run", "land", tidy.Run.ID, "--dry-run")
+	h.run("run_land", "run-land", 0, "run", "land", tidy.Run.ID)
+	h.run("error_run_land_not_ready", "error", 2, "run", "land", started.Run.ID)
 	return h
+}
+
+// runHead is the fixed stand-in for the commit of the run that the scenario
+// lands.
+const runHead = "1234512345123451234512345123451234512345"
+
+// passCI gives the PR, at head, a passed check in the state of the fake gh,
+// and makes it ready to merge.
+func passCI(t *testing.T, stateFile string, number int, head string) {
+	t.Helper()
+	data, err := os.ReadFile(stateFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var state map[string]any
+	if err := json.Unmarshal(data, &state); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range state["pulls"].([]any) {
+		if pull := p.(map[string]any); pull["number"] == float64(number) {
+			pull["mergeable"], pull["mergeStateStatus"], pull["headRefOid"] = "MERGEABLE", "CLEAN", head
+		}
+	}
+	var details map[string]any
+	if err := json.Unmarshal([]byte(`{"baseRef": {"compare": {"behindBy": 0}}, "reviewThreads": {"nodes": []},
+  "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "SUCCESS", "contexts": {"totalCount": 1, "nodes": [
+    {"__typename": "CheckRun", "name": "test", "status": "COMPLETED", "conclusion": "SUCCESS", "isRequired": true}]}}}}]}}`), &details); err != nil {
+		t.Fatal(err)
+	}
+	state["details"].(map[string]any)[strconv.Itoa(number)] = details
+	if data, err = json.Marshal(state); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stateFile, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 type changeRec struct {

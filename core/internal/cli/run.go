@@ -3,7 +3,10 @@ package cli
 import (
 	"fmt"
 	"io"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/GregorMcC/loam/core/internal/run"
 	"github.com/GregorMcC/loam/core/internal/store"
@@ -21,12 +24,12 @@ func newRunCmd() *cobra.Command {
 		Long: "A run is one goal that a background Claude Code session (claude --bg) works on in a worktree of a plot.\n" +
 			"Each time the session ends a turn, Loam runs the Done when checks of the run in the worktree. When a check fails, Loam sends the output back to the session as its next try.\n" +
 			"When every check passes in a repo on GitHub, the run ships: loam run tick pushes its branch, opens its PR, and reads CI. A CI failure goes back to the session as a try.\n" +
-			"A run stops when it is ready to land (Ready), when it uses all its tries (Stopped), or when you stop it.\n" +
+			"A run stops when it is ready to land (Ready), when it uses all its tries (Stopped), or when you stop it. loam run land merges the PR of a Ready run, and the run is Landed.\n" +
 			"Runs are not in the change log.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
-	c.AddCommand(newRunStartCmd(), newRunListCmd(), newRunStatusCmd(), newRunStopCmd(), newRunTickCmd(), newRunHookCmd())
+	c.AddCommand(newRunStartCmd(), newRunListCmd(), newRunStatusCmd(), newRunStopCmd(), newRunDiffCmd(), newRunSendBackCmd(), newRunLandCmd(), newRunTickCmd(), newRunHookCmd())
 	return c
 }
 
@@ -206,6 +209,121 @@ func newRunStopCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func newRunDiffCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "diff <run>",
+		Short: "Show the work that a run committed",
+		Long: "Show the work that a run committed on its branch: the change from the commit where the branch left its base to the head of its worktree. Work that is not committed is not in it.\n" +
+			"With --json, each file has its hunks and lines, with the line numbers before and after. A file keeps at most 3000 lines, and is marked truncated.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := openStore()
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+			res, err := run.Diff(cmd.Context(), s, args[0])
+			if err != nil {
+				return err
+			}
+			if JSON(cmd) {
+				return printJSON(cmd, res)
+			}
+			out := cmd.OutOrStdout()
+			for _, f := range res.Files {
+				name := f.Path
+				if f.OldPath != "" {
+					name = f.OldPath + " -> " + f.Path
+				}
+				fmt.Fprintf(out, "%s %s +%d -%d\n", f.Status, name, f.Added, f.Deleted)
+			}
+			return nil
+		},
+	}
+}
+
+func newRunSendBackCmd() *cobra.Command {
+	var texts []string
+	c := &cobra.Command{
+		Use:   "send-back <run> --note <text>...",
+		Short: "Send your notes on the work of a run back to its session",
+		Long: "Resume the session of a run that is Ready to land or Stopped, with your notes as its next prompt. A note is \"<file>:<line>: <text>\" for a line of a file, or text alone for the whole run.\n" +
+			"The run goes back to Running. When the session ends its turn, the Done when checks run again, and a run on GitHub ships the changes to its PR.\n" +
+			"A note is not a failure, so it uses no try. A run that has used all its tries gets one more.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var notes []run.Note
+			for _, text := range texts {
+				n, err := run.ParseNote(text)
+				if err != nil {
+					return err
+				}
+				notes = append(notes, n)
+			}
+			s, err := openStore()
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+			r, err := run.SendBack(cmd.Context(), s, args[0], notes)
+			if err != nil {
+				return err
+			}
+			if JSON(cmd) {
+				return printJSON(cmd, struct {
+					Run store.Run `json:"run"`
+				}{r})
+			}
+			printRun(cmd.OutOrStdout(), r)
+			return nil
+		},
+	}
+	c.Flags().StringArrayVar(&texts, "note", nil, "a note: \"<file>:<line>: <text>\", or text alone (repeatable)")
+	return c
+}
+
+func newRunLandCmd() *cobra.Command {
+	var o run.LandOptions
+	c := &cobra.Command{
+		Use:   "land <run> [--head <commit>] [--keep-worktree] [--dry-run]",
+		Short: "Merge the PR of a run that is ready to land",
+		Long: "Merge the pull request (PR) of a run that is Ready to land, as loam worktree land does: the same checks, with the default merge method of the repo. The run is Landed, and its Linear issue moves to Done.\n" +
+			"Loam stops the session of the run first, because the land removes its worktree. A send-back resumes it.\n" +
+			"When GitHub merges later, as with a merge queue, the run stays Ready. loam run tick lands it when GitHub has merged the PR.\n" +
+			"It exits with code 2 when the run is not Ready or has no PR, with code 16 when a check blocks the merge, and with code 17 when gh is missing or signed out.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := openStore()
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+			// Ctrl-C stops gh. A merge that GitHub has is not undone.
+			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			res, err := run.Land(ctx, s, args[0], o)
+			if err != nil {
+				return err
+			}
+			printWarnings(cmd, res.Warnings)
+			if JSON(cmd) {
+				return printJSON(cmd, res)
+			}
+			if o.DryRun {
+				printLandPlan(cmd.OutOrStdout(), res.Land)
+				return nil
+			}
+			printRun(cmd.OutOrStdout(), res.Run)
+			return nil
+		},
+	}
+	c.Flags().StringVar(&o.Head, "head", "", "the PR head that you looked at. The merge stops with code 16 when the PR has another head")
+	c.Flags().BoolVar(&o.KeepWorktree, "keep-worktree", false, "keep the worktree after the merge")
+	c.Flags().BoolVar(&o.DryRun, "dry-run", false, "change nothing, and print the plan and each check")
+	c.Flags().StringArrayVar(&o.OpenPanes, "open-pane", nil, "the folder of an open pane (repeatable). The app passes its open panes.")
+	return c
 }
 
 func newRunTickCmd() *cobra.Command {

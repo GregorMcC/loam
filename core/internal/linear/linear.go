@@ -181,13 +181,30 @@ type workflowState struct {
 	Position float64 `json:"position"`
 }
 
-// notStarted are the state types of an issue that no one works on yet.
-var notStarted = []string{"triage", "backlog", "unstarted"}
+// notStarted are the state types of an issue that no one works on yet, and
+// ended are the state types of an issue that is closed.
+var (
+	notStarted = []string{"triage", "backlog", "unstarted"}
+	ended      = []string{"completed", "canceled"}
+)
 
 // Start moves the issue, such as ENG-523, to the first started state of its
 // team, such as In Progress, and returns the name of that state. An issue
 // that has started, or has ended, stays where it is, and Start returns "".
 func (c *Client) Start(ctx context.Context, id string) (string, error) {
+	return c.move(ctx, id, "started", func(from string) bool { return slices.Contains(notStarted, from) })
+}
+
+// Finish moves the issue to the first completed state of its team, such as
+// Done, and returns the name of that state. An issue that has ended stays
+// where it is, and Finish returns "".
+func (c *Client) Finish(ctx context.Context, id string) (string, error) {
+	return c.move(ctx, id, "completed", func(from string) bool { return !slices.Contains(ended, from) })
+}
+
+// move moves the issue to the first state of the type, by position, when
+// the type of its state now passes from.
+func (c *Client) move(ctx context.Context, id, to string, from func(string) bool) (string, error) {
 	var out struct {
 		Issue struct {
 			State struct {
@@ -200,13 +217,13 @@ func (c *Client) Start(ctx context.Context, id string) (string, error) {
 			} `json:"team"`
 		} `json:"issue"`
 	}
-	q := `query($id: String!) { issue(id: $id) { state { type }
-  team { states(filter: { type: { eq: "started" } }) { nodes { id name position } } } } }`
-	if err := c.query(ctx, q, map[string]any{"id": id}, &out); err != nil {
+	q := `query($id: String!, $type: String!) { issue(id: $id) { state { type }
+  team { states(filter: { type: { eq: $type } }) { nodes { id name position } } } } }`
+	if err := c.query(ctx, q, map[string]any{"id": id, "type": to}, &out); err != nil {
 		return "", err
 	}
 	states := out.Issue.Team.States.Nodes
-	if !slices.Contains(notStarted, out.Issue.State.Type) || len(states) == 0 {
+	if !from(out.Issue.State.Type) || len(states) == 0 {
 		return "", nil
 	}
 	first := slices.MinFunc(states, func(a, b workflowState) int { return cmp.Compare(a.Position, b.Position) })

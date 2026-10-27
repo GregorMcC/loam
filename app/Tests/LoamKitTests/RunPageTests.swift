@@ -47,6 +47,18 @@ import Testing
         #expect(tick.runs.first?.state.station == .ship)
     }
 
+    /// Ticket 207: a tick watches a run that ships, and a ready run with a PR, which a merge on GitHub lands.
+    @Test func aTickWatchesRunsThatWaitOnGitHub() {
+        var run = TodayContentTests.run("r1", plot: "p1", .shipping)
+        #expect(run.waitsOnGitHub)
+        run.state = .ready
+        #expect(!run.waitsOnGitHub)
+        run.pr = RunPR(number: 25, url: "https://github.com/example/widgets/pull/25")
+        #expect(run.waitsOnGitHub)
+        run.state = .landed
+        #expect(!run.waitsOnGitHub)
+    }
+
     @Test func watchOpensAShellTabThatAttachesToTheSession() async throws {
         let (model, _) = try model([("run_list", 0)])
         await model.reloadRuns()

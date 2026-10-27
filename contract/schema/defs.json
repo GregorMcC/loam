@@ -411,7 +411,7 @@
         "id": { "type": "integer", "minimum": 1 },
         "run_id": { "$ref": "#/$defs/id" },
         "at": { "$ref": "#/$defs/time" },
-        "kind": { "description": "state: the new state. try: a failed gate or CI, with its note. check: the result of one check. linear: what Loam did to the Linear issue of the run. ship: a push or a PR. ci: the result of CI on the PR.", "enum": ["state", "try", "check", "linear", "ship", "ci"] },
+        "kind": { "description": "state: the new state. try: a failed gate or CI, with its note. check: the result of one check. linear: what Loam did to the Linear issue of the run. ship: a push or a PR. ci: the result of CI on the PR. review: your notes went back to the session. land: a merge of the PR, or where it waits.", "enum": ["state", "try", "check", "linear", "ship", "ci", "review", "land"] },
         "detail": { "type": "string" }
       }
     },

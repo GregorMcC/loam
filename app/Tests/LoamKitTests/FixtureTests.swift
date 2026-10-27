@@ -57,7 +57,9 @@ func decodeFixture(schema: String, data: Data) throws {
     case "run-start": _ = try d.decode(RunStartResult.self, from: data)
     case "run-list": _ = try d.decode([Run].self, from: data)
     case "run-status": _ = try d.decode(RunStatus.self, from: data)
-    case "run-stop": _ = try d.decode(RunStopResult.self, from: data)
+    case "run-stop", "run-send-back": _ = try d.decode(RunResult.self, from: data)
+    case "run-land": _ = try d.decode(RunLandResult.self, from: data)
+    case "run-diff": _ = try d.decode(RunDiff.self, from: data)
     case "run-tick": _ = try d.decode(RunTickResult.self, from: data)
     case "intake-list": _ = try d.decode(IntakeList.self, from: data)
     case "linear-status", "linear-key": _ = try d.decode(LinearStatus.self, from: data)
@@ -66,6 +68,16 @@ func decodeFixture(schema: String, data: Data) throws {
 }
 
 @Suite struct FixtureTests {
+    /// Ticket 207: a line on one side of a diff has no number on the other.
+    @Test func aRunDiffDecodesItsLines() throws {
+        let diff = try JSONDecoder().decode(RunDiff.self, from: Fixtures.data("run_diff"))
+        let file = try #require(diff.files.first)
+        #expect(file.path == "README.md" && file.status == "modified" && file.added == 3 && file.oldPath == nil)
+        let lines = try #require(file.hunks.first?.lines)
+        #expect(lines.first == RunDiff.Line(kind: .del, old: 1, new: nil, text: "hello"))
+        #expect(lines[1] == RunDiff.Line(kind: .add, old: nil, new: 1, text: "# Loam"))
+    }
+
     @Test func everyFixtureDecodes() throws {
         let entries = try Fixtures.manifest()
         #expect(entries.count >= 39)

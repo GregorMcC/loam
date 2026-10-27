@@ -29,13 +29,13 @@ extension AppModel {
         await reloadRuns()
     }
 
-    /// Runs a tick every `runTickInterval` while a run ships. Nothing runs before this starts, so a
-    /// model in a unit test never runs `loam`.
+    /// Runs a tick every `runTickInterval` while a run waits on GitHub. Nothing runs before this starts,
+    /// so a model in a unit test never runs `loam`.
     func startRunTicks() {
         guard runTicks == nil else { return }
         runTicks = Task { [weak self] in
             while let self, (try? await Task.sleep(for: self.runTickInterval)) != nil {
-                if runs.contains(where: { $0.state == .shipping }) { await tickRuns() }
+                if runs.contains(where: \.waitsOnGitHub) { await tickRuns() }
             }
         }
     }

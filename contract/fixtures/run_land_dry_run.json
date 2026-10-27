@@ -1,0 +1,132 @@
+{
+  "land": {
+    "auto": false,
+    "branch_deleted": false,
+    "changed": 0,
+    "checks": [
+      {
+        "blocks": false,
+        "name": "checks",
+        "state": "passed"
+      },
+      {
+        "blocks": false,
+        "name": "review",
+        "state": "none"
+      },
+      {
+        "blocks": false,
+        "name": "behind_base",
+        "state": "up_to_date"
+      },
+      {
+        "blocks": false,
+        "name": "conflicts",
+        "state": "none"
+      },
+      {
+        "blocks": false,
+        "name": "github",
+        "state": "clear"
+      },
+      {
+        "blocks": false,
+        "name": "local_changes",
+        "state": "none"
+      },
+      {
+        "blocks": false,
+        "name": "unpushed_commits",
+        "state": "none"
+      }
+    ],
+    "default_method": "squash",
+    "dry_run": true,
+    "merge_later": false,
+    "merge_queue": false,
+    "merged": false,
+    "method": "squash",
+    "methods": [
+      "squash",
+      "rebase"
+    ],
+    "pr": {
+      "approvals": 0,
+      "base": "main",
+      "behind_base": 0,
+      "checks": {
+        "failed": 0,
+        "passed": 1,
+        "required": 1,
+        "required_passed": 1,
+        "running": 0,
+        "state": "SUCCESS",
+        "total": 1,
+        "waiting": 0
+      },
+      "comments": 0,
+      "commits": 0,
+      "draft": false,
+      "failed_checks": [],
+      "head": "tidy-the-readme",
+      "head_oid": "1234512345123451234512345123451234512345",
+      "in_merge_queue": false,
+      "merge_state": "CLEAN",
+      "mergeable": "MERGEABLE",
+      "number": 25,
+      "passed_checks": [
+        {
+          "duration": 0,
+          "name": "test",
+          "required": true,
+          "url": ""
+        }
+      ],
+      "queue_position": 0,
+      "review_decision": "",
+      "state": "OPEN",
+      "title": "Tidy the README",
+      "url": "https://github.com/example/widgets/pull/25"
+    },
+    "ready": true,
+    "remote_branch_deleted": false,
+    "stage": "ready_to_merge",
+    "unpushed": 0,
+    "worktree": {
+      "base": "origin/main",
+      "branch": "tidy-the-readme",
+      "created_at": "2026-01-01T00:00:00Z",
+      "goal": "Tidy the README",
+      "id": "wtreaaaaat",
+      "link": null,
+      "name": "tidy-the-readme",
+      "path": "/tmp/loam-contract/loamhome/worktrees/plotaaaaae/web-tidy-the-readme",
+      "plot_id": "plotaaaaae",
+      "repo": "/tmp/loam-contract/repos/web",
+      "setup_done": true,
+      "version": 0
+    },
+    "worktree_removed": false
+  },
+  "run": {
+    "created_at": "2026-01-01T00:00:00Z",
+    "done_when": [],
+    "folder": "/tmp/loam-contract/loamhome/worktrees/plotaaaaae/web-tidy-the-readme",
+    "goal": "",
+    "id": "runraaaaac",
+    "max_tries": 3,
+    "note": "CI passed on #25: 1 of 1 checks",
+    "plot_id": "plotaaaaae",
+    "pr": {
+      "number": 25,
+      "url": "https://github.com/example/widgets/pull/25"
+    },
+    "session_id": "c57ef956-3136-4e86-bfde-da8facfe0523",
+    "state": "ready",
+    "title": "Tidy the README",
+    "tries": 0,
+    "updated_at": "2026-01-01T00:00:00Z",
+    "worktree_id": "wtreaaaaat"
+  },
+  "warnings": []
+}

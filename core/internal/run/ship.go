@@ -42,9 +42,11 @@ type TickResult struct {
 // Tick moves on each run in Shipping. It pushes the branch of the run and
 // opens its PR, and then reads CI on the PR. When CI passes, the run is
 // Ready. When CI fails, the run goes back to its session with the failed
-// logs, and the failure counts a try. A tick that waits on GitHub changes
-// nothing, so the app and a timer can run one as often as they like. Only
-// one tick runs at a time: a second one returns at once with nothing.
+// logs, and the failure counts a try. Tick also watches the PR of each run
+// that is Ready: a merge on GitHub lands the run, and a close stops it. A
+// tick that waits on GitHub changes nothing, so the app and a timer can run
+// one as often as they like. Only one tick runs at a time: a second one
+// returns at once with nothing.
 func Tick(ctx context.Context, s *store.Store) (TickResult, error) {
 	res := TickResult{Runs: []store.Run{}, Warnings: []string{}}
 	unlock, ok, err := lockTick(s.Home())
@@ -59,14 +61,19 @@ func Tick(ctx context.Context, s *store.Store) (TickResult, error) {
 	var gh *github.Client
 	var ghErr error
 	for _, r := range runs {
-		if r.State != store.RunShipping {
+		watch := r.State == store.RunReady && r.PR != nil
+		if r.State != store.RunShipping && !watch {
 			continue
 		}
 		if gh == nil && ghErr == nil {
 			gh, ghErr = github.NewClient()
 		}
 		sh := shipper{s: s, gh: gh, ghErr: ghErr, r: r}
-		moved, err := sh.ship(ctx)
+		step := sh.ship
+		if watch {
+			step = sh.watch
+		}
+		moved, err := step(ctx)
 		if err != nil {
 			res.Warnings = append(res.Warnings, fmt.Sprintf("%s: %v", r.Title, err))
 		}
@@ -95,7 +102,7 @@ func lockTick(home string) (unlock func(), ok bool, err error) {
 	return func() { f.Close() }, true, nil
 }
 
-// shipper moves one run in Shipping.
+// shipper moves one run in Shipping, or watches the PR of one that is Ready.
 type shipper struct {
 	s        *store.Store
 	gh       *github.Client
@@ -132,13 +139,8 @@ func (sh *shipper) ship(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	pr := branches[w.Branch].PR
-	if r.PR != nil && pr != nil && pr.Number == r.PR.Number {
-		switch pr.State {
-		case "MERGED":
-			return sh.move(store.RunLanded, fmt.Sprintf("#%d was merged on GitHub", pr.Number))
-		case "CLOSED":
-			return sh.move(store.RunStopped, fmt.Sprintf("#%d was closed on GitHub", pr.Number))
-		}
+	if moved, ended, err := sh.ended(ctx, pr); ended {
+		return moved, err
 	}
 	if pr != nil && pr.State != "OPEN" {
 		pr = nil // an old PR of a branch with the same name
@@ -151,6 +153,45 @@ func (sh *shipper) ship(ctx context.Context) (bool, error) {
 		return sh.push(ctx, repo, w, head, pr)
 	}
 	return sh.readCI(ctx, repo, pr)
+}
+
+// watch lands a Ready run when GitHub has merged its PR, and stops it when
+// GitHub has closed its PR. A run that cannot reach GitHub waits with no
+// warning, because it needs nothing from a tick.
+func (sh *shipper) watch(ctx context.Context) (bool, error) {
+	w, err := sh.s.GetWorktree(sh.r.WorktreeID)
+	if err != nil || sh.ghErr != nil {
+		return false, nil
+	}
+	repo, ok := worktree.GitHubRepo(w.Repo)
+	if !ok {
+		return false, nil
+	}
+	branches, err := sh.gh.Fetch(ctx, repo, []string{w.Branch})
+	if err != nil {
+		return false, err
+	}
+	moved, _, err := sh.ended(ctx, branches[w.Branch].PR)
+	return moved, err
+}
+
+// ended lands the run when pr is the run's PR and GitHub has merged it, and
+// stops the run when GitHub has closed it. ended is false when the PR is open
+// or is not the run's PR.
+func (sh *shipper) ended(ctx context.Context, pr *github.PR) (moved, ended bool, err error) {
+	if sh.r.PR == nil || pr == nil || pr.Number != sh.r.PR.Number {
+		return false, false, nil
+	}
+	switch pr.State {
+	case "MERGED":
+		r, moved, warnings, err := landRun(ctx, sh.s, sh.r, fmt.Sprintf("#%d was merged on GitHub", pr.Number))
+		sh.r, sh.warnings = r, append(sh.warnings, warnings...)
+		return moved, true, err
+	case "CLOSED":
+		moved, err := sh.move(store.RunStopped, fmt.Sprintf("#%d was closed on GitHub", pr.Number))
+		return moved, true, err
+	}
+	return false, false, nil
 }
 
 // push puts the head of the run on GitHub, and opens its PR when it has
@@ -346,8 +387,8 @@ func (sh *shipper) attachToLinear(ctx context.Context, pr github.OpenedPR) {
 }
 
 // prBody is the description of the PR of a run: the goal, the Done when
-// checks, and the issue. It names no local path, because the repo can be
-// public.
+// checks, and the issue. It names no local path and no Linear URL, because
+// the repo can be public.
 func prBody(r store.Run, repo github.Repo) string {
 	var b strings.Builder
 	b.WriteString(strings.TrimSpace(cmp.Or(r.Goal, r.Title)) + "\n\n## Done when\n\n")
@@ -358,7 +399,9 @@ func prBody(r store.Run, repo github.Repo) string {
 	if src := r.Source; src != nil {
 		switch src.Kind {
 		case intake.Linear:
-			fmt.Fprintf(&b, "\nLinear: [%s](%s)\n", src.Key, src.URL)
+			// The key only: the workspace can be private, and the repo public.
+			// The attachment links the PR on the Linear side.
+			fmt.Fprintf(&b, "\nLinear: %s\n", src.Key)
 		case intake.GitHub:
 			fmt.Fprintf(&b, "\nCloses %s\n", closesRef(src, repo))
 		}
@@ -391,12 +434,12 @@ func (sh *shipper) moveTry(state store.RunState, note string) (bool, error) {
 	return sh.update(func(r *store.Run) { r.State, r.Note, r.Tries = state, note, r.Tries+1 })
 }
 
-// update changes the run when it is still in Shipping: you may have stopped
-// it while the tick ran.
+// update changes the run when it is still in the state that the tick found:
+// you may have stopped it while the tick ran.
 func (sh *shipper) update(fn func(*store.Run)) (bool, error) {
-	moved := false
+	moved, from := false, sh.r.State
 	r, err := sh.s.UpdateRun(sh.r.ID, func(r *store.Run) error {
-		if r.State != store.RunShipping {
+		if r.State != from {
 			return nil
 		}
 		fn(r)
