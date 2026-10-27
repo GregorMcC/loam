@@ -7,18 +7,23 @@ import LoamKit
 /// so the window has to do the same.
 extension MainWindow {
     /// Sets the close button and full screen from `sheetBlocksWindow`. A native sheet on the window answers off for the close
-    /// button while it shows. The state that this sets comes back when that sheet ends.
+    /// button while it shows, whatever this sets. The state that this sets shows again when that sheet ends. Loam sets no other
+    /// full screen behaviour, so `.fullScreenNone` is the only bit that this changes.
     func syncWindowButtons() {
         let blocked = sheetBlocksWindow()
         standardWindowButton(.closeButton)?.isEnabled = !blocked
         // A window that is full screen keeps its behaviour. The change could leave it with no way out.
-        guard !styleMask.contains(.fullScreen) else { return }
-        if blocked { collectionBehavior.insert(.fullScreenNone) } else { collectionBehavior.remove(.fullScreenNone) }
+        if !blocked {
+            collectionBehavior.remove(.fullScreenNone)
+        } else if !styleMask.contains(.fullScreen) {
+            collectionBehavior.insert(.fullScreenNone)
+        }
     }
 }
 
 extension MainWindowController {
-    /// Sets the window buttons from `AppModel.sheetBlocksWindow`. A sheet that opens or closes calls it (`syncTitleBarScrim`).
+    /// Sets the window buttons from `AppModel.sheetBlocksWindow`. This value changes only when a sheet opens or closes: a
+    /// merge or a start holds a sheet that is open. So `syncTitleBarScrim` calls this at each of them.
     func syncWindowButtons() {
         (window as? MainWindow)?.syncWindowButtons()
     }

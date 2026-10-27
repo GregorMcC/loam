@@ -110,14 +110,13 @@ extension Scenarios {
             await app.sleep(0.3)
         }
 
-        // An Option-click on the zoom button zooms the window, also under a sheet. The first click that the window gets in a run
-        // does not act (seen in every run), so this press tries again. It also shows that a click reaches the buttons, so a
-        // close button that ignores a press is not a click that got lost.
-        var zoomedByOption = false
-        for _ in 1...2 where !zoomedByOption {
-            await postClick(app, host, at: windowCentre(of: zoom), flags: .option)
-            zoomedByOption = window.isZoomed
-        }
+        // The first click that the window gets in a run does not reach the view under it (seen in every run). One click on the title
+        // bar comes first, so the presses below are real: a button that ignores one is not a click that got lost.
+        try await postClick(app, host, at: emptyTitleBarPoint(host))
+
+        // An Option-click on the zoom button zooms the window, also under a sheet.
+        await postClick(app, host, at: windowCentre(of: zoom), flags: .option)
+        let zoomedByOption = window.isZoomed
         check(zoomedByOption, "an Option-click on the zoom button did not zoom the window")
         await putBack()
 
