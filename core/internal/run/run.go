@@ -49,6 +49,9 @@ type StartOptions struct {
 	// exists, and makes it when it does not. Empty means a new worktree with
 	// a name from the link key and the title.
 	Worktree string
+	// Base is the branch that a new worktree's branch starts from. Empty
+	// means the default branch of origin.
+	Base string
 	// Link is the link that the work starts from, as for a new worktree.
 	Link     string
 	MaxTries int
@@ -94,9 +97,9 @@ func Start(ctx context.Context, s *store.Store, o StartOptions) (*StartResult, e
 	res.Warnings = append(res.Warnings, warnings...)
 
 	if !claudebin.Trusted(wt.Path) {
-		root := filepath.Join(s.Home(), "worktrees")
+		// Claude Code trusts a worktree when it trusts the main checkout.
 		return nil, fmt.Errorf("%w %s, and a run cannot answer the trust prompt. Run claude in %s once and choose Yes, then start the run again",
-			ErrUntrusted, wt.Path, root)
+			ErrUntrusted, wt.Path, wt.Repo)
 	}
 	if err := setUp(s, wt, o.ApproveSetup); err != nil {
 		return nil, err
@@ -179,7 +182,7 @@ func findOrMakeWorktree(s *store.Store, plot store.Plot, o StartOptions, title s
 			return store.Worktree{}, nil, err
 		}
 	}
-	res, err := worktree.Create(s, worktree.CreateOptions{PlotID: plot.ID, Repo: repo.ID, Name: name, Goal: title, Link: o.Link})
+	res, err := worktree.Create(s, worktree.CreateOptions{PlotID: plot.ID, Repo: repo.ID, Name: name, Base: o.Base, Goal: title, Link: o.Link})
 	if err != nil {
 		return store.Worktree{}, nil, err
 	}

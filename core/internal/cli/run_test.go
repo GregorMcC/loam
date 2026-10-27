@@ -14,12 +14,12 @@ import (
 )
 
 // runCLI is a plot with one repo, a fake claude, and a Claude Code config
-// that trusts the worktrees folder of the Loam home.
+// that trusts the repo, and so its worktrees.
 func runCLI(t *testing.T) (*store.Store, store.Plot) {
 	t.Helper()
-	s, p, _ := wtCLI(t)
+	s, p, repo := wtCLI(t)
 	testutil.FakeClaude(t)
-	trustFolder(t, filepath.Join(s.Home(), "worktrees"))
+	trustFolder(t, repo)
 	return s, p
 }
 
@@ -130,10 +130,10 @@ func TestRunStartLaunchesABackgroundSessionInANewWorktree(t *testing.T) {
 }
 
 func TestRunStartRefusesAFolderThatClaudeCodeDoesNotTrust(t *testing.T) {
-	s, _ := runCLI(t)
+	s, p := runCLI(t)
 	trustFolder(t, "")
 	_, _, err := lrRun(t, "", "run", "start", "alpha", "--title", "Fix the thing")
-	if err == nil || !strings.Contains(err.Error(), filepath.Join(s.Home(), "worktrees")) {
+	if err == nil || !strings.Contains(err.Error(), "Run claude in "+p.Repos[0].Path+" once") {
 		t.Fatalf("err %v", err)
 	}
 	if runs, _ := s.ListRuns(""); len(runs) != 0 {
