@@ -200,8 +200,9 @@ public final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClien
 
     private var closeSignals: [String] = []
 
-    /// `drain` takes the messages that libghostty has queued first, so `lastActionAt` is up to date when the main thread
-    /// was busy (ticket 135). The first step runs inside `close`, in the caller's code, so it does not drain.
+    /// With `drain`, the step first takes the messages that libghostty has queued. Then `lastActionAt` is up to date, also
+    /// after the main thread was busy (ticket 135). The first step runs inside `close`, in the caller's code, so it does
+    /// not drain.
     private func closeStep(drain: Bool) {
         guard surface != nil, closer != nil else { return }
         if drain { runtime.tick() }
