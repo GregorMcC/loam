@@ -86,10 +86,11 @@ extension Scenarios {
         _ = await app.close(plain)
 
         // A zsh pane: terminfo resolves and the shell integration is on.
+        let folderReports = app.runtime.actionCounts[GHOSTTY_ACTION_PWD.rawValue] ?? 0
         let shell = try app.addPane("B", command: "/bin/zsh")
         // Your zsh startup files set the prompt, so the pane gets the input and answers when it is ready. The shell integration
         // reports the folder before the first prompt.
-        try await app.waitUntil("the shell reports its folder") { (app.runtime.actionCounts[GHOSTTY_ACTION_PWD.rawValue] ?? 0) > 0 }
+        try await app.waitUntil("the shell reports its folder") { (app.runtime.actionCounts[GHOSTTY_ACTION_PWD.rawValue] ?? 0) > folderReports }
         try app.type("echo \"res=${GHOSTTY_RESOURCES_DIR-unset} features=${GHOSTTY_SHELL_FEATURES:+on}\"; infocmp xterm-ghostty >/dev/null && echo terminfo-ok")
         app.press(.returnKey)
         try await app.waitUntil("the zsh output") { app.lines(shell).contains("terminfo-ok") }

@@ -270,15 +270,17 @@ extension Scenarios {
                     && (view.layer?.zPosition ?? 0) == 0
             }
         }
-        /// True when no plot row moved since the last call: the outline has ended the slides of a tree that opened or closed.
-        /// A drag reads the rows at the press, so the press must come after it.
-        var seenRows: [CGPoint?] = []
-        func rowsStand(_ plots: [String]) -> Bool {
-            let now = plots.map { try? center($0) }
-            defer { seenRows = now }
-            return now == seenRows
+        /// Waits until no plot row moves from one check to the next: the outline has ended the slides of a tree that opened
+        /// or closed. A drag reads the rows at the press, so the press must come after it.
+        func waitForRowsToStand(_ what: String, _ plots: [String]) async throws {
+            var seen: [CGPoint]?
+            try await app.waitUntil(what) {
+                let now = plots.compactMap { try? center($0) }
+                defer { seen = now }
+                return now.count == plots.count && now == seen
+            }
         }
-        try await app.waitUntil("the plot rows stand still") { rowsStand([p1, p2, p3, p4, p5]) }
+        try await waitForRowsToStand("the plot rows stand still", [p1, p2, p3, p4, p5])
         let start = model.plots.map(\.id)
         try check(start == [p1, p2, p3, p4, p5], "the start order is \(start)")
         app.screenshot("plot-drag-start")
@@ -339,7 +341,7 @@ extension Scenarios {
         from = try center(p2)
         app.mouse(.leftMouseDown, at: from, on: view)
         await glide(view, from: from, to: downOne)
-        try check(!rowsAtRest(), "the drag of plot 2 did not start")
+        try await app.waitUntil("the drag of plot 2 starts") { !rowsAtRest() }
         app.pressThroughApp(.escape)
         try await app.waitUntil("Escape puts the rows back") { rowsAtRest() }
         app.mouse(.leftMouseUp, at: downOne, on: view)
@@ -375,7 +377,7 @@ extension Scenarios {
         try await app.waitUntil("the tree of plot 1 shows again") {
             tree.allSatisfy { app.exists("pane-row-\($0.uuidString)") } && !p4Tree.contains { app.exists("pane-row-\($0.uuidString)") }
         }
-        try await app.waitUntil("the plot rows stand still again") { rowsStand([p1, p2, p3, p4, p5]) }
+        try await waitForRowsToStand("the plot rows stand still again", [p1, p2, p3, p4, p5])
 
         // 5. Reduce Motion: drag plot 4 to the top. Nothing slides, and the release moves it at once.
         LoamMotion.reduceMotionOverride = true
@@ -404,7 +406,7 @@ extension Scenarios {
         // A taller window, so every plot row shows with no scroll.
         app.window.setFrame(NSRect(x: 80, y: 40, width: 1100, height: 1150), display: true)
         try await app.waitUntil("the last plot row shows") { (try? handle(extra[9])) != nil }
-        try await app.waitUntil("the plot rows stand still in the taller window") { rowsStand([p1, p2, p3, p4, p5] + extra) }
+        try await waitForRowsToStand("the plot rows stand still in the taller window", [p1, p2, p3, p4, p5] + extra)
         view = try handle(p5)
         from = try center(p5)
         let end = try center(extra[9])

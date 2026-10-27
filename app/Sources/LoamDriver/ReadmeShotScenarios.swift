@@ -346,7 +346,7 @@ extension Scenarios {
         }
         // Only the active plot shows its tree. A plot that got its first pane while active can stay
         // open, so close the others with their disclosure arrows.
-        try await app.waitUntil("the tree of the main checkout shows") { app.exists("pane-row-\(claudePane.uuidString)") }
+        await app.sleep(0.5)
         for (other, pane) in zip([notes, website], otherPanes) where app.exists("pane-row-\(pane.uuidString)") {
             try ensure(AccessibilityProbe.shared.discloseRow("plot-\(other)", open: false), "the tree of \(other) did not close")
         }

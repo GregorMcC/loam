@@ -191,13 +191,15 @@ extension Scenarios {
         try await app.waitUntil("the title bar button") {
             needsYouButtonShows(app) && app.text(of: "needs-you-button")?.contains("1 elsewhere needs you") == true
         }
-        // The sidebar has slid out when the item is collapsed and its view keeps its frame from one check to the next.
+        // The sidebar has slid out when the item is collapsed and its view keeps its frame for 3 checks in a row.
         let sidebarItem = (app.window.contentViewController as? NSSplitViewController)?.splitViewItems.first
         var sidebarFrame: CGRect?
+        var framesInARow = 0
         try await app.waitUntil("the sidebar has slid out") {
             let frame = sidebarItem?.viewController.view.frame
-            defer { sidebarFrame = frame }
-            return sidebarItem?.isCollapsed == true && frame == sidebarFrame
+            framesInARow = frame == sidebarFrame ? framesInARow + 1 : 0
+            sidebarFrame = frame
+            return sidebarItem?.isCollapsed == true && framesInARow >= 3
         }
         app.screenshot("title-bar-button")
         // Ticket 63: the window buttons do not cover the first tab. The tab starts after them, or

@@ -256,14 +256,14 @@ extension Scenarios {
         let row = "panel-repo-\(repo)"
         // The accessibility frame has its origin at the top left of the main screen, AppKit at the bottom left.
         let screenHeight = NSScreen.screens.first?.frame.height ?? 0
-        /// The point of the row in the window, from a new accessibility scan: an old scan has the row where the window
-        /// stood. It is nil until the row stands in the window.
+        /// The point of the row in the window. It is nil until the row stands in the window.
         func pointOnRow() -> NSPoint? {
-            AccessibilityProbe.shared.rescan()
             guard let frame = AccessibilityProbe.shared.node(row)?.frame else { return nil }
             let point = host.window.convertPoint(fromScreen: NSPoint(x: frame.minX + 40, y: screenHeight - frame.midY))
             return host.window.contentView?.bounds.contains(point) == true ? point : nil
         }
+        // An old scan has the row where the window stood, so the first scan after the move is a new one.
+        AccessibilityProbe.shared.rescan()
         try await app.waitUntil("the Repos row stands in the moved window") { pointOnRow() != nil }
         guard let point = pointOnRow() else { throw DriverFailure("no Repos row \(repo)") }
         let open = OpenMenus()

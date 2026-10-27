@@ -54,7 +54,7 @@ public struct AppHost {
     public init(window: NSWindow, model: AppModel, owner: AnyObject,
                 paneView: @escaping @MainActor (PaneID) -> NSView? = { _ in nil },
                 quit: @escaping @MainActor (@escaping @MainActor (Bool) -> Void) -> Void = { $0(true) },
-                panelIsSliding: @escaping @MainActor () -> Bool = { false }) {
+                panelIsSliding: @escaping @MainActor () -> Bool) {
         self.window = window
         self.model = model
         self.owner = owner
