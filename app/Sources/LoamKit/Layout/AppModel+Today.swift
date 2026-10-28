@@ -47,8 +47,8 @@ extension AppModel {
                             repoNames: repos, recurring: todayData.recurring)
     }
 
-    /// The open intake items of every plot that the app has read.
-    public var intakeCount: Int { todayData.intake.values.reduce(0) { $0 + $1.list.items.count } }
+    /// The open intake items of every plot that the app has read. A plot that is gone or archived does not count.
+    public var intakeCount: Int { plots.reduce(0) { $0 + (todayData.intake[$1.id]?.list.items.count ?? 0) } }
 
     /// The plot whose Intake page Start a run opens: the active plot, else the first plot with an intake source, else
     /// the first plot.

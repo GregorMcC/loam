@@ -132,6 +132,9 @@ import Testing
         clock.addTimeInterval(4 * 60)
         await model.readToday()
         #expect(fake.args().count == 7 && !fake.args()[4...].contains { $0.hasPrefix("intake") })
+        // A plot that is gone does not count.
+        model.apply([])
+        #expect(model.intakeCount == 0)
     }
 
     @Test func leavingTodayMovesTheTimeOfAway() async throws {
