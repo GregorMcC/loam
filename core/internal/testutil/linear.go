@@ -29,6 +29,12 @@ type LinearCall struct {
 // ENG-523 has a description. It is an
 // [http.Handler], so the fakelinear command can serve it for the app's
 // driver too.
+//
+// With LOAM_FAKE_LINEAR_ISSUES set to a JSON file, the issues are the issue
+// nodes of that file instead, in the shape that Linear gives them. A query
+// for a team gets the nodes whose identifier starts with the team key, and
+// the text of an issue comes from its node. Each issue of the file reads as
+// not started, so a run moves it to In Progress.
 type FakeLinearServer struct {
 	// URL is the address of the server that [FakeLinear] started.
 	URL string
@@ -101,6 +107,24 @@ func (f *FakeLinearServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.calls = append(f.calls, LinearCall{Query: req.Query, Variables: req.Variables})
 	state, stateType := fakeStateOf(f.stateID)
 	switch {
+	case strings.Contains(req.Query, "issues(") && os.Getenv("LOAM_FAKE_LINEAR_ISSUES") != "":
+		// The key of a team filter: {"team": {"key": {"eq": "SHOP"}}}. A project filter gets every node.
+		var team string
+		if b, err := json.Marshal(req.Variables["filter"]); err == nil {
+			var f struct {
+				Team struct{ Key struct{ Eq string } }
+			}
+			json.Unmarshal(b, &f)
+			team = f.Team.Key.Eq
+		}
+		nodes := []map[string]any{}
+		for _, n := range fileIssues() {
+			if id, _ := n["identifier"].(string); team == "" || strings.HasPrefix(id, team+"-") {
+				nodes = append(nodes, n)
+			}
+		}
+		json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"viewer": map[string]any{"id": "user-ada"},
+			"issues": map[string]any{"nodes": nodes}}})
 	case strings.Contains(req.Query, "issues("):
 		io.WriteString(w, `{"data":{"viewer":{"id":"user-ada"},"issues":{"nodes":[
 			{"identifier":"ENG-523","title":"Plot panel: drag a link to reorder it","url":"https://linear.app/acme/issue/ENG-523/plot-panel-drag",
@@ -121,10 +145,22 @@ func (f *FakeLinearServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case strings.Contains(req.Query, "issueUpdate"):
 		f.stateID, _ = req.Variables["state"].(string)
 		io.WriteString(w, `{"data":{"issueUpdate":{"success":true}}}`)
+	case strings.Contains(req.Query, "description") && os.Getenv("LOAM_FAKE_LINEAR_ISSUES") != "":
+		issue := map[string]any{}
+		for _, n := range fileIssues() {
+			if n["identifier"] == req.Variables["id"] {
+				issue = map[string]any{"title": n["title"], "description": n["description"]}
+			}
+		}
+		json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"issue": issue}})
 	case strings.Contains(req.Query, "description"):
 		io.WriteString(w, `{"data":{"issue":{"title":"Plot panel: drag a link to reorder it",
 			"description":"A link in the plot panel moves to a new place when you drag it."}}}`)
 	case strings.Contains(req.Query, "issue(id"):
+		if os.Getenv("LOAM_FAKE_LINEAR_ISSUES") != "" {
+			// An issue of the file has not started, so a run moves it.
+			stateType = "unstarted"
+		}
 		to, _ := req.Variables["type"].(string)
 		io.WriteString(w, `{"data":{"issue":{"state":{"type":"`+stateType+`"},
 			"team":{"states":{"nodes":`+cmp.Or(fakeStates[to], "[]")+`}}}}}`)
@@ -132,4 +168,14 @@ func (f *FakeLinearServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		io.WriteString(w, `{"errors":[{"message":"fake Linear: unknown query"}]}`)
 	}
+}
+
+// fileIssues reads the issue nodes of the file in LOAM_FAKE_LINEAR_ISSUES.
+// A file that is missing or not JSON gives no issues.
+func fileIssues() []map[string]any {
+	var nodes []map[string]any
+	if b, err := os.ReadFile(os.Getenv("LOAM_FAKE_LINEAR_ISSUES")); err == nil {
+		json.Unmarshal(b, &nodes)
+	}
+	return nodes
 }
