@@ -113,7 +113,7 @@ func TestRunShapeSplitMakesALinkedRunInEachRepo(t *testing.T) {
 		t.Fatalf("stored %+v", stored)
 	}
 	for _, r := range got.Runs {
-		if e := events(t, s, r.ID, "shape"); !slices.Equal(e, []string{"Claude drafted the goal and 1 checks"}) {
+		if e := events(t, s, r.ID, "shape"); !slices.Equal(e, []string{"Claude drafted the goal and 1 check"}) {
 			t.Errorf("run %s: shape events %q", r.ID, e)
 		}
 	}

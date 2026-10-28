@@ -392,7 +392,7 @@ func shapeDetail(r store.Run, failure string) string {
 	if failure != "" {
 		return r.Note
 	}
-	return fmt.Sprintf("Claude drafted the goal and %d checks", len(r.DoneWhen))
+	return "Claude drafted the goal and " + count(len(r.DoneWhen), "check")
 }
 
 // askForDraft has Claude draft one run in the folder of the run. others
