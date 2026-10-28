@@ -413,6 +413,24 @@ public struct LoamClient: Sendable {
         try await read(["linear", "key", "rm"])
     }
 
+    /// `loam linear updates`: the switches for the updates that Loam makes to Linear.
+    public func linearUpdates() async throws -> LinearUpdates {
+        let one: LinearUpdatesOne = try await read(["linear", "updates"])
+        return one.updates
+    }
+
+    /// `loam linear updates --<switch> on|off`: sets each switch that is not nil, and leaves the others.
+    public func setLinearUpdates(inProgress: Bool? = nil, attachPR: Bool? = nil, done: Bool? = nil,
+                                 walkthroughComment: Bool? = nil) async throws -> LinearUpdates {
+        var args = ["linear", "updates"]
+        for (flag, value) in [("--in-progress", inProgress), ("--attach-pr", attachPR), ("--done", done),
+                              ("--walkthrough", walkthroughComment)] {
+            if let value { args += [flag, value ? "on" : "off"] }
+        }
+        let one: LinearUpdatesOne = try await read(args)
+        return one.updates
+    }
+
     /// `loam run stop <run>`: stops the background session of a run.
     public func runStop(_ id: String) async throws -> RunResult {
         try await read(["run", "stop"], positionals: [id])
@@ -430,13 +448,17 @@ public struct LoamClient: Sendable {
     }
 
     /// `loam run land`: merges the PR of a run that is ready to land. `head` is the PR head that you read: the
-    /// merge throws `.notReady` when GitHub has another head.
-    public func runLand(_ id: String, head: String? = nil, keepWorktree: Bool = false,
-                        openPanes: [String] = []) async throws -> RunLandResult {
+    /// merge throws `.notReady` when GitHub has another head. `linearDone` false leaves the Linear issue where it is.
+    /// `whereItStands` sets Where it stands of the plot to the text of the ship notes, as a change by you in the app.
+    public func runLand(_ id: String, head: String? = nil, keepWorktree: Bool = false, linearDone: Bool = true,
+                        whereItStands: Bool = false, openPanes: [String] = []) async throws -> RunLandResult {
         var args = ["run", "land"]
         if let head { args += ["--head", head] }
         if keepWorktree { args.append("--keep-worktree") }
-        return try await read(args + openPanes.flatMap { ["--open-pane", $0] }, positionals: [id])
+        if !linearDone { args.append("--no-linear-done") }
+        args += openPanes.flatMap { ["--open-pane", $0] }
+        if whereItStands { return try await write(args + ["--where-it-stands"], positionals: [id]) }
+        return try await read(args, positionals: [id])
     }
 
     /// `loam run tick`: ships the runs whose checks passed. It pushes, opens the PR, and reads CI.

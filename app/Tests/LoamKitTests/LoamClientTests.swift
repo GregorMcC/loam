@@ -194,6 +194,34 @@ struct FakeLoam {
         }
     }
 
+    /// A land can leave the Linear issue where it is, and can set Where it stands from the ship notes. That write is
+    /// a change by you in the app.
+    @Test func runLandPassesItsFlags() async throws {
+        let fake = try FakeLoam([("run_land", 0), ("run_land", 0)])
+        let client = fake.client()
+        let land = try await client.runLand("runraaaaab", linearDone: false, whereItStands: true, openPanes: ["/p"])
+        #expect(land.run.state == .landed && land.run.notes != nil)
+        _ = try await client.runLand("runraaaaab", head: "abc", keepWorktree: true)
+        #expect(fake.args() == [
+            "run land --no-linear-done --open-pane /p --where-it-stands --json --actor app -- runraaaaab",
+            "run land --head abc --keep-worktree --json -- runraaaaab",
+        ])
+    }
+
+    /// The switches for the updates to Linear: a read, and a set that names only the switches it changes.
+    @Test func linearUpdatesReadAndSetTheSwitches() async throws {
+        let fake = try FakeLoam([("linear_updates", 0), ("linear_updates_set", 0)])
+        let client = fake.client()
+        let read = try await client.linearUpdates()
+        #expect(read == LinearUpdates(inProgress: true, attachPR: true, done: true, walkthroughComment: false))
+        let set = try await client.setLinearUpdates(done: false, walkthroughComment: true)
+        #expect(!set.done && set.walkthroughComment && set.inProgress && set.attachPR)
+        #expect(fake.args() == [
+            "linear updates --json",
+            "linear updates --done off --walkthrough on --json",
+        ])
+    }
+
     @Test func worktreeLandRerunAndUpdatePassTheirFlags() async throws {
         let fake = try FakeLoam([("worktree_land_auto", 0), ("worktree_rerun", 0), ("worktree_update", 0)])
         let client = fake.client()
