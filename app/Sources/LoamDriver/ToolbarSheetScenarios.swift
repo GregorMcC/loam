@@ -108,6 +108,13 @@ extension Scenarios {
         // The items that AppKit adds for a window (ticket 132) are off, as under a native sheet.
         try expectAppKitItemsOff(host, baseline: appKitItems)
         try await expectWindowButtons(app, host, sheetShows: true, "under the New worktree sheet")
+        // TAS-35: a footer that wraps has lines of about the same length, so no line holds one word on its own. Two even
+        // lines are half as wide as the text on one line, and a word more at most.
+        guard let footer = AccessibilityProbe.shared.node("new-worktree-footer")?.frame else { throw DriverFailure("no footer frame") }
+        let oneLine = (NewWorktreeContent.footer as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 12)]).width
+        Log.line("RESULT footer \(footer), one line \(oneLine) pt")
+        try expectToolbar(footer.height < 20 || footer.width < oneLine * 0.6,
+                          "the footer wraps unevenly: \(footer.width) pt wide for \(oneLine) pt of text")
         app.screenshot("toolbar-under-sheet")
         // A resize moves the window buttons, so the scrim follows them, and the bar keeps the height of the title bar.
         host.window.setFrame(NSRect(x: 100, y: 100, width: 1000, height: 640), display: true)

@@ -426,12 +426,14 @@ struct NewWorktreeSheetView: View {
 
     private func footer(_ sheet: NewWorktreeModel, _ content: NewWorktreeContent) -> some View {
         HStack(spacing: 8) {
-            Text(NewWorktreeContent.footer)
-                .font(.system(size: 12))
-                .foregroundStyle(LoamColor.inkMuted)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityIdentifier("new-worktree-footer")
+            BalancedLines {
+                Text(NewWorktreeContent.footer)
+                    .font(.system(size: 12))
+                    .foregroundStyle(LoamColor.inkMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("new-worktree-footer")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
             // A native button at the size of the primary button, so the two share one shape (ticket 120).
             Button("Cancel") { app.closeNewWorktree() }
                 .loamSecondaryButton()

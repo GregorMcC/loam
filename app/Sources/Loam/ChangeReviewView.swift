@@ -129,8 +129,11 @@ struct ChangeRow: View {
                         .lineLimit(1)
                 }
                 .opacity(undone ? 0.55 : 1)
-                Spacer(minLength: LoamTheme.space1)
-                trailing
+                // The words take all the room the trailing marks leave. A spacer beside them took half of it, and the
+                // hidden Undo held room too, so a narrow panel wrapped and cut them early (TAS-35).
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .overlay(alignment: .topTrailing) { undo }
+                undoneNote
                 if !diffOpen { disclosure }
             }
             if showDiff {
@@ -208,16 +211,23 @@ struct ChangeRow: View {
         }
     }
 
-    @ViewBuilder private var trailing: some View {
+    @ViewBuilder private var undoneNote: some View {
         if let note = review.undoneNote(change) {
             Text(note).font(.system(size: 11.5)).foregroundStyle(LoamColor.inkFaint).monospacedDigit()
                 .fixedSize()
                 .accessibilityIdentifier("change-undone-\(change.id)")
-        } else if ChangeRules.canUndo(change) {
+        }
+    }
+
+    /// Undo sits over the end of the headline on a `chrome` fill, which hides the words under it, so it takes no room from them.
+    @ViewBuilder private var undo: some View {
+        if review.undoneNote(change) == nil, ChangeRules.canUndo(change) {
             Button("Undo") { Task { await review.undo(change) } }
                 .buttonStyle(.plain)
                 .font(.system(size: 11.5, weight: .medium))
                 .foregroundStyle(LoamColor.ink)
+                .padding(.leading, LoamTheme.space2)
+                .background(LoamColor.chrome)
                 .focused($undoFocused)
                 // Hidden until the pointer or the keyboard is on the row. It stays in the accessibility tree.
                 .opacity(hovering || undoFocused ? 1 : 0.001)

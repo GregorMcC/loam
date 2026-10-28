@@ -89,6 +89,33 @@ extension View {
     }
 }
 
+/// One text that wraps to lines of about the same length, so no line holds one word on its own (TAS-35). The text gets
+/// the narrowest width that keeps the count of lines it has at the full width. A text that fits on one line keeps it.
+struct BalancedLines: Layout {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let text = subviews.first else { return .zero }
+        return text.sizeThatFits(ProposedViewSize(width: width(text, proposal), height: proposal.height))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let text = subviews.first else { return }
+        text.place(at: bounds.origin, proposal: ProposedViewSize(width: width(text, proposal), height: bounds.height))
+    }
+
+    private func width(_ text: LayoutSubview, _ proposal: ProposedViewSize) -> CGFloat? {
+        guard let full = proposal.width, full.isFinite else { return proposal.width }
+        func height(_ width: CGFloat) -> CGFloat { text.sizeThatFits(ProposedViewSize(width: width, height: nil)).height }
+        let lines = height(full)
+        // The narrowest width with the same height, to the nearest point.
+        var narrow: CGFloat = 0, wide = full
+        while wide - narrow > 1 {
+            let middle = (narrow + wide) / 2
+            if height(middle) > lines { narrow = middle } else { wide = middle }
+        }
+        return wide
+    }
+}
+
 // MARK: Motion
 
 /// Animations from the duration and easing tokens. Under Reduce Motion each one is a short

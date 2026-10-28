@@ -16,6 +16,27 @@ extension Scenarios {
         return try JSONDecoder().decode(PaneEvent.self, from: Data(json.utf8))
     }
 
+    /// TAS-35: each disclosure arrow of the sidebar sits in the middle of its row. The list puts an arrow on the first
+    /// baseline of its row, so a row whose baseline is too high, as with an AppKit mark, has its arrow too high.
+    private static func expectArrowsCentred(_ window: NSWindow, _ when: String) throws {
+        func outline(in view: NSView) -> NSOutlineView? {
+            (view as? NSOutlineView) ?? view.subviews.lazy.compactMap { outline(in: $0) }.first
+        }
+        guard let list = window.contentView.flatMap({ outline(in: $0) }) else { throw DriverFailure("no sidebar list") }
+        var arrows = 0
+        for row in 0..<list.numberOfRows {
+            guard let rowView = list.rowView(atRow: row, makeIfNecessary: false) else { continue }
+            for case let button as NSButton in rowView.subviews where button.identifier == NSOutlineView.disclosureButtonIdentifier {
+                guard let arrow = button.subviews.first else { continue }
+                let offset = arrow.frame.midY - button.bounds.midY
+                try want(abs(offset) <= 1.5, "\(when), the arrow of row \(row) is \(offset) pt from the middle of its row")
+                arrows += 1
+            }
+        }
+        Log.line("RESULT \(when): \(arrows) arrows in the middle of their rows")
+        try want(arrows >= 3, "\(when), the sidebar shows \(arrows) arrows, not 3 or more")
+    }
+
     static func sidebarShot(_ app: DriverApp) async throws {
         do { try await sidebarShotSteps(app) } catch { app.dumpAccessibility(); throw error }
     }
@@ -95,6 +116,7 @@ extension Scenarios {
         await appearance(.darkAqua)
         app.screenshot("night")
         await appearance(.aqua)
+        try expectArrowsCentred(host.window, "in Day")
         app.screenshot("day")
 
         // Clicks cycle through the panes in a state, across plots.
@@ -122,6 +144,7 @@ extension Scenarios {
             ChromePalette.shared.current?.bedrock == 0x1e1e2e
         }
         await app.sleep(1.2)
+        try expectArrowsCentred(host.window, "in Catppuccin Mocha")
         app.screenshot("catppuccin")
         // Translucent.
         try app.writeConfig(config + "\nbackground = #1e1e2e\nforeground = #cdd6f4\nbackground-opacity = 0.8\nbackground-blur = 20\n")
