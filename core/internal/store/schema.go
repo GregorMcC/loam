@@ -261,10 +261,12 @@ CREATE TABLE linear_updates (
 	// 18: when Loam last tried a probe of the usage, whether it worked or
 	// not, so separate processes probe at most once in a while. A usage row
 	// with read_at 0 has no report yet. turn_base is the turns of a run when
-	// Loam last resumed its session, for the turn limit.
+	// Loam last resumed its session, for the turn limit. pr_draft is the PR
+	// text that Loam made before it opened the PR of a run, as JSON, or ''.
 	`
 ALTER TABLE usage ADD COLUMN tried_at INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE runs ADD COLUMN turn_base INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE runs ADD COLUMN pr_draft TEXT NOT NULL DEFAULT '';
 `,
 }
 

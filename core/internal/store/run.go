@@ -200,6 +200,27 @@ type NoteRisk struct {
 	Reasons []string `json:"reasons"`
 }
 
+// RunPRDraft is the PR text that Loam made for a run before it opened the
+// PR: the title, the body, and the ship notes. A tick that could not open
+// the PR uses it again, so Claude does not write the text twice. It holds
+// for the commit Head only.
+type RunPRDraft struct {
+	Head  string    `json:"head"`
+	Title string    `json:"title"`
+	Body  string    `json:"body"`
+	Notes *RunNotes `json:"notes"`
+}
+
+// clone copies the draft and its notes.
+func (d *RunPRDraft) clone() *RunPRDraft {
+	if d == nil {
+		return nil
+	}
+	c := *d
+	c.Notes = d.Notes.clone()
+	return &c
+}
+
 // clone copies the notes, with empty lists where they have none, so the
 // JSON has arrays.
 func (n *RunNotes) clone() *RunNotes {
@@ -252,9 +273,12 @@ type Run struct {
 	Note string `json:"note"`
 	// Notes are the ship notes that Claude wrote when Loam opened the PR, or
 	// nil.
-	Notes     *RunNotes `json:"notes"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Notes *RunNotes `json:"notes"`
+	// PRDraft is the PR text that waits for the PR to open, or nil. It is
+	// not in the JSON.
+	PRDraft   *RunPRDraft `json:"-"`
+	CreatedAt time.Time   `json:"created_at"`
+	UpdatedAt time.Time   `json:"updated_at"`
 }
 
 // RunEvent is one line of a run's history: a state, a try, or a note.
@@ -342,10 +366,10 @@ func (s *Store) AddRun(r Run) (Run, error) {
 	now := time.Now().UnixMilli()
 	r.Tries, r.Turns, r.TurnBase = 0, 0, 0
 	r.CreatedAt, r.UpdatedAt = tm(now), tm(now)
-	checks, src, pr, shape, queue, notes := encodeRun(r)
-	if err := tx.exec(`INSERT INTO runs(`+runCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?)`,
+	checks, src, pr, shape, queue, notes, draft := encodeRun(r)
+	if err := tx.exec(`INSERT INTO runs(`+runCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?)`,
 		r.ID, r.PlotID, r.WorktreeID, r.Folder, r.Title, r.Goal, checks, r.State, r.MaxTries, r.SessionID, r.Note,
-		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, r.GroupID, queue, notes, now, now); err != nil {
+		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, r.GroupID, queue, notes, draft, now, now); err != nil {
 		return Run{}, err
 	}
 	if err := addRunEvent(tx, r.ID, now, "state", string(r.State)); err != nil {
@@ -445,6 +469,7 @@ func updateRun(tx *writeTx, id string, fn func(*Run) error, tryNote *string) (Ru
 		r.Queue = &q
 	}
 	r.Notes = old.Notes.clone()
+	r.PRDraft = old.PRDraft.clone()
 	if err := fn(&r); err != nil {
 		return Run{}, err
 	}
@@ -456,12 +481,13 @@ func updateRun(tx *writeTx, id string, fn func(*Run) error, tryNote *string) (Ru
 	}
 	now := time.Now().UnixMilli()
 	r.UpdatedAt = tm(now)
-	checks, src, pr, shape, queue, notes := encodeRun(r)
+	checks, src, pr, shape, queue, notes, draft := encodeRun(r)
 	if err := tx.exec(`UPDATE runs SET worktree_id = ?, folder = ?, title = ?, goal = ?, done_when = ?, state = ?, tries = ?,
   max_tries = ?, session_id = ?, note = ?, source_kind = ?, source_key = ?, source_url = ?, pr_number = ?, pr_url = ?,
-  shape = ?, group_id = ?, turns = ?, turn_base = ?, queue = ?, notes = ?, updated_at = ? WHERE id = ?`,
+  shape = ?, group_id = ?, turns = ?, turn_base = ?, queue = ?, notes = ?, pr_draft = ?,
+  updated_at = ? WHERE id = ?`,
 		r.WorktreeID, r.Folder, r.Title, r.Goal, checks, r.State, r.Tries, r.MaxTries, r.SessionID, r.Note,
-		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, r.GroupID, r.Turns, r.TurnBase, queue, notes, now, r.ID); err != nil {
+		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, r.GroupID, r.Turns, r.TurnBase, queue, notes, draft, now, r.ID); err != nil {
 		return Run{}, err
 	}
 	if r.Tries != old.Tries {
@@ -555,11 +581,12 @@ func (s *Store) RunFeed(plotID string, since time.Time) ([]FeedEvent, error) {
 
 // runCols are the columns of a run record.
 const runCols = `id, plot_id, worktree_id, folder, title, goal, done_when, state, tries, max_tries, session_id, note,
-  source_kind, source_key, source_url, pr_number, pr_url, shape, group_id, turns, turn_base, queue, notes, created_at, updated_at`
+  source_kind, source_key, source_url, pr_number, pr_url, shape, group_id, turns, turn_base, queue, notes, pr_draft,
+  created_at, updated_at`
 
 // encodeRun returns the columns of a run that are not plain values. notes is
-// NULL when the run has none.
-func encodeRun(r Run) (checks string, src RunSource, pr RunPR, shape, queue string, notes sql.NullString) {
+// NULL when the run has none, and draft is "" when it has none.
+func encodeRun(r Run) (checks string, src RunSource, pr RunPR, shape, queue string, notes sql.NullString, draft string) {
 	b, err := json.Marshal(append([]Check{}, r.DoneWhen...))
 	if err != nil { // a slice of string pairs always encodes
 		panic(err)
@@ -591,7 +618,14 @@ func encodeRun(r Run) (checks string, src RunSource, pr RunPR, shape, queue stri
 		}
 		notes = sql.NullString{String: string(nb), Valid: true}
 	}
-	return string(b), src, pr, shape, queue, notes
+	if d := r.PRDraft.clone(); d != nil {
+		db, err := json.Marshal(d)
+		if err != nil { // strings and notes always encode
+			panic(err)
+		}
+		draft = string(db)
+	}
+	return string(b), src, pr, shape, queue, notes, draft
 }
 
 // clone copies the shape, with empty lists where it has none, so the JSON
@@ -615,12 +649,12 @@ func scanRun(sc interface{ Scan(...any) error }) (Run, error) {
 	var checks string
 	var src RunSource
 	var pr RunPR
-	var shape, queue string
+	var shape, queue, draft string
 	var notes sql.NullString
 	var created, updated int64
 	err := sc.Scan(&r.ID, &r.PlotID, &r.WorktreeID, &r.Folder, &r.Title, &r.Goal, &checks, &r.State, &r.Tries,
 		&r.MaxTries, &r.SessionID, &r.Note, &src.Kind, &src.Key, &src.URL, &pr.Number, &pr.URL, &shape, &r.GroupID,
-		&r.Turns, &r.TurnBase, &queue, &notes, &created, &updated)
+		&r.Turns, &r.TurnBase, &queue, &notes, &draft, &created, &updated)
 	if err != nil {
 		return Run{}, err
 	}
@@ -653,6 +687,13 @@ func scanRun(sc interface{ Scan(...any) error }) (Run, error) {
 			return Run{}, fmt.Errorf("run %s: bad notes: %w", r.ID, err)
 		}
 		r.Notes = n.clone()
+	}
+	if draft != "" {
+		var d RunPRDraft
+		if err := json.Unmarshal([]byte(draft), &d); err != nil {
+			return Run{}, fmt.Errorf("run %s: bad PR draft: %w", r.ID, err)
+		}
+		r.PRDraft = &d
 	}
 	r.CreatedAt, r.UpdatedAt = tm(created), tm(updated)
 	return r, nil

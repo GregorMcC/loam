@@ -119,6 +119,37 @@ func TestRunTickWritesShipNotesWithNoTemplate(t *testing.T) {
 	}
 }
 
+// A PR that GitHub does not open keeps the text that Claude wrote, and the
+// next tick opens the PR with it and calls no claude -p.
+func TestRunTickOpensThePRWithTheSavedTextAfterAFailedCreate(t *testing.T) {
+	s, r, w := shipRun(t, "3")
+	trustFolder(t, r.Folder, w.Repo)
+	testutil.FakeClaudePrint(t, notesAnswer)
+	setGitHub(t, `{"create_refusal": "Something went wrong"}`)
+	got := tick(t)
+	if len(got.Warnings) != 1 || !strings.Contains(got.Warnings[0], "Something went wrong") || len(printCalls(t)) != 1 {
+		t.Fatalf("first tick %+v, %d claude -p calls", got, len(printCalls(t)))
+	}
+	if r, _ := s.GetRun(r.ID); r.PR != nil || r.Notes != nil || r.State != store.RunShipping {
+		t.Fatalf("run %+v", r)
+	}
+	setGitHub(t, `{}`)
+	got = tick(t)
+	if len(got.Runs) != 1 || got.Runs[0].PR == nil || len(printCalls(t)) != 1 {
+		t.Fatalf("second tick %+v, %d claude -p calls", got, len(printCalls(t)))
+	}
+	n := got.Runs[0].Notes
+	if n == nil || n.Walkthrough != "Adds hello.txt, which greets the user." {
+		t.Fatalf("notes %+v", n)
+	}
+	if title, _ := openedPR(t); title != "Say hi" {
+		t.Fatalf("title %q", title)
+	}
+	if r, _ := s.GetRun(r.ID); r.PRDraft != nil {
+		t.Fatalf("draft %+v", r.PRDraft)
+	}
+}
+
 func TestRunTickWithNoNotesSaysWhy(t *testing.T) {
 	s, r, w := shipRun(t, "3")
 	trustFolder(t, r.Folder, w.Repo)

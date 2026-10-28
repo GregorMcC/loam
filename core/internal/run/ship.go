@@ -253,7 +253,10 @@ func (sh *shipper) ended(ctx context.Context, pr *github.PR) (moved, ended bool,
 }
 
 // push puts the head of the run on GitHub, and opens its PR when it has
-// none. With a PR, the push is a fix after a failed CI.
+// none. With a PR, the push is a fix after a failed CI. Loam saves the PR
+// text on the run before it opens the PR, and a later try for the same head
+// uses it again, so a PR that GitHub did not open costs no second call to
+// Claude.
 func (sh *shipper) push(ctx context.Context, repo github.Repo, w store.Worktree, head string, pr *github.PR) (bool, error) {
 	r := sh.r
 	pushed, err := gitOut(ctx, r.Folder, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+w.Branch)
@@ -271,22 +274,18 @@ func (sh *shipper) push(ctx context.Context, repo github.Repo, w store.Worktree,
 	if pr != nil {
 		return false, nil // GitHub does not show the new head yet
 	}
-	var others []string
-	where := ""
-	if plot, err := sh.s.GetPlot(r.PlotID); err == nil {
-		// A body that names no other repo is still a good body.
-		others, _ = groupRepos(sh.s, plot, r)
-		where = plot.Where
+	d, err := sh.prDraft(ctx, repo, w, head)
+	if d == nil || err != nil {
+		return false, err
 	}
-	title, body, notes := sh.prText(ctx, w, repo, others, where)
 	opened, err := sh.gh.CreatePR(ctx, repo, github.NewPR{
-		Head: w.Branch, Base: worktree.CompareBase(w), Title: title, Body: body,
+		Head: w.Branch, Base: worktree.CompareBase(w), Title: d.Title, Body: d.Body,
 	})
 	if err != nil {
 		return false, err
 	}
 	moved, err := sh.update(func(r *store.Run) {
-		r.PR, r.Notes = &store.RunPR{Number: opened.Number, URL: opened.URL}, notes
+		r.PR, r.Notes, r.PRDraft = &store.RunPR{Number: opened.Number, URL: opened.URL}, d.Notes, nil
 	})
 	if err != nil {
 		return moved, err
@@ -298,9 +297,32 @@ func (sh *shipper) push(ctx context.Context, repo github.Repo, w store.Worktree,
 	return moved, nil
 }
 
+// prDraft returns the PR text of the run for the commit head: the draft that
+// the run saved, or a new one that it saves now. It returns nil when the run
+// moved on while Claude wrote the text.
+func (sh *shipper) prDraft(ctx context.Context, repo github.Repo, w store.Worktree, head string) (*store.RunPRDraft, error) {
+	if d := sh.r.PRDraft; d != nil && d.Head == head {
+		return d, nil
+	}
+	var others []string
+	where := ""
+	if plot, err := sh.s.GetPlot(sh.r.PlotID); err == nil {
+		// A body that names no other repo is still a good body.
+		others, _ = groupRepos(sh.s, plot, sh.r)
+		where = plot.Where
+	}
+	title, body, notes := sh.prText(ctx, w, repo, others, where)
+	d := &store.RunPRDraft{Head: head, Title: title, Body: body, Notes: notes}
+	moved, err := sh.update(func(r *store.Run) { r.PRDraft = d })
+	if !moved || err != nil {
+		return nil, err
+	}
+	return d, nil
+}
+
 // adopt makes an open PR of the branch the PR of the run.
 func (sh *shipper) adopt(pr *github.PR) (bool, error) {
-	moved, err := sh.update(func(r *store.Run) { r.PR = &store.RunPR{Number: pr.Number, URL: pr.URL} })
+	moved, err := sh.update(func(r *store.Run) { r.PR, r.PRDraft = &store.RunPR{Number: pr.Number, URL: pr.URL}, nil })
 	if err != nil {
 		return moved, err
 	}

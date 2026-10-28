@@ -29,6 +29,8 @@
 //     "merge_refusal" merges again, so a test can fail a merge and then retry it.
 //   - "logs": the log of the failed jobs of a run, as gh run view --log-failed
 //     prints it, by run ID.
+//   - "create_refusal": the message of GitHub for a gh pr create that it
+//     refuses. No PR opens.
 //
 // The fake answers these commands:
 //
@@ -88,6 +90,7 @@ type state struct {
 	DeleteRefusals map[string]string          `json:"delete_refusals,omitempty"`
 	RerunRefusals  map[string]string          `json:"rerun_refusals,omitempty"`
 	MergeRefusal   string                     `json:"merge_refusal,omitempty"`
+	CreateRefusal  string                     `json:"create_refusal,omitempty"`
 	Issues         []map[string]any           `json:"issues,omitempty"`
 	Login          string                     `json:"login,omitempty"`
 	Logs           map[string]string          `json:"logs,omitempty"`
@@ -356,6 +359,9 @@ func create(st *state, args []string) {
 	}
 	if head == "" {
 		fail(1, "fakegh: pr create needs --head")
+	}
+	if st.CreateRefusal != "" {
+		fail(1, "pull request create failed: GraphQL: "+st.CreateRefusal+" (createPullRequest)")
 	}
 	number := 1
 	for _, p := range st.Pulls {
