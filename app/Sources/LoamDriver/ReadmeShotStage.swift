@@ -51,10 +51,13 @@ struct ReadmeShotStage {
         let out = Pipe()
         linear.standardOutput = out
         try linear.run()
+        // A step below that throws ends the fake: only the stage that this returns stops it later.
+        var handedOver = false
+        defer { if !handedOver { linear.terminate() } }
         var line = Data()
         while let byte = try out.fileHandleForReading.read(upToCount: 1), !byte.isEmpty, byte != Data("\n".utf8) { line.append(byte) }
         let apiURL = String(decoding: line, as: UTF8.self)
-        guard apiURL.hasPrefix("http://127.0.0.1:") else { linear.terminate(); throw DriverFailure("the fake Linear printed \(apiURL)") }
+        guard apiURL.hasPrefix("http://127.0.0.1:") else { throw DriverFailure("the fake Linear printed \(apiURL)") }
         let secrets = root.appendingPathComponent("secrets.json")
         try #"{"linear-api-key":"lin_api_good"}"#.write(to: secrets, atomically: true, encoding: .utf8)
 
@@ -347,6 +350,7 @@ struct ReadmeShotStage {
 
         let noteLine = (deliverRetry.split(separator: "\n", omittingEmptySubsequences: false)
             .firstIndex { $0.contains("const maxAttempts") } ?? 0) + 1
+        handedOver = true
         return ReadmeShotStage(checkout: checkout, mobile: mobile, storefront: storefront, runs: runs,
                                noteLine: noteLine, linear: linear)
     }
