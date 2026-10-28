@@ -605,6 +605,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     /// Every menu item that carries a `MenuCommand`.
     @objc func performCommand(_ sender: NSMenuItem) {
         guard let item = sender.representedObject as? MenuCommand else { return }
+        // Close acts on the window in front. In Settings, ⌘W closes Settings and leaves the panes alone (TAS-52).
+        if item.command == .closePane, let front = NSApp.keyWindow, front !== window, front.sheetParent == nil {
+            front.performClose(sender)
+            return
+        }
         perform(item.command)
     }
 

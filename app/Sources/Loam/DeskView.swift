@@ -513,8 +513,8 @@ private struct DeskDiff: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(LoamColor.bedrock)
-        .onChange(of: model.desk.file) { editing = nil }
-        .onChange(of: model.desk.runID) { editing = nil }
+        .onChange(of: model.desk.file) { closeEditor() }
+        .onChange(of: model.desk.runID) { closeEditor() }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("desk-diff")
     }
@@ -591,9 +591,10 @@ private struct DeskDiff: View {
                 .accessibilityIdentifier("desk-note-field")
             HStack(spacing: LoamTheme.space2) {
                 Spacer()
-                Button("Cancel") { editing = nil }
+                Button("Cancel") { closeEditor() }
                     .keyboardShortcut(.cancelAction)
                     .loamSecondaryButton()
+                    .accessibilityIdentifier("desk-note-cancel")
                 Button { save(path, number) } label: { DeskKeyLabel(title: "Save note", key: "\u{21A9}", primary: true) }
                     .loamPrimaryButton()
                     .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -627,7 +628,18 @@ private struct DeskDiff: View {
     private func save(_ path: String, _ number: Int) {
         model.addDeskNote(file: path, line: number, text: draft)
         draft = ""
-        editing = nil
+        closeEditor()
+    }
+
+    /// Closes the note field. The focus leaves the field first, and the field goes on the next turn: when SwiftUI
+    /// removes a field that has the focus, no key of the desk works until the page draws again (TAS-52). A save does
+    /// not need this, as Return ends the edit first, but it takes the same path.
+    private func closeEditor() {
+        guard let closing = editing else { return }
+        if field.wrappedValue == .line { field.wrappedValue = nil }
+        Task { @MainActor in
+            if editing == closing { editing = nil }
+        }
     }
 }
 
