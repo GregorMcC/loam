@@ -163,6 +163,48 @@ func TestRunStartIsHeldByTheWeeksUsageUntilAProbeSaysOtherwise(t *testing.T) {
 	}
 }
 
+// A probe that fails does not run again on the next tick: Loam waits 30
+// minutes after each probe that it tries.
+func TestRunTickTriesOneUsageProbeIn30Minutes(t *testing.T) {
+	s, _ := runCLI(t)
+	setLimits(t, "--at-a-time", "1")
+	first := startRun(t, "Say hi")
+	read := time.Now().Add(-time.Hour)
+	if _, err := s.RecordUsage(store.Usage{SevenDay: &store.UsageWindow{Utilization: 0.82, ResetsAt: read.Add(48 * time.Hour)}}, read); err != nil {
+		t.Fatal(err)
+	}
+	queued := startRun(t, "Say bye")
+	if queued.State != store.RunQueued {
+		t.Fatalf("%+v", queued)
+	}
+	if _, _, err := lrRun(t, "", "run", "stop", first.ID); err != nil {
+		t.Fatal(err)
+	}
+	probes := func() int {
+		n := 0
+		for _, c := range printCalls(t) {
+			if slices.Contains(c, "Reply with ok") {
+				n++
+			}
+		}
+		return n
+	}
+	before := probes()
+	// Claude Code reports no usage, so the probe fails.
+	testutil.FakeClaudePrint(t, `{"type":"result","subtype":"success","is_error":false,"result":"ok"}`)
+	got := tick(t)
+	if probes() != before+1 || len(got.Warnings) != 1 || !strings.Contains(got.Warnings[0], "reported no usage") {
+		t.Fatalf("first tick: %d probes, %+v", probes()-before, got)
+	}
+	got = tick(t)
+	if probes() != before+1 || len(got.Warnings) != 0 || len(got.Runs) != 0 {
+		t.Fatalf("second tick: %d probes, %+v", probes()-before, got)
+	}
+	if r, _ := s.GetRun(queued.ID); r.State != store.RunQueued {
+		t.Fatalf("%+v", r)
+	}
+}
+
 func jsonInt(n int64) string {
 	b, _ := json.Marshal(n)
 	return string(b)

@@ -148,8 +148,39 @@ func loadUsage(q queryer) (Usage, error) {
 		}
 		return &UsageWindow{Utilization: v.Float64, ResetsAt: tm(at.Int64)}
 	}
-	read := tm(readAt)
-	return Usage{FiveHour: window(five, fiveAt), SevenDay: window(seven, sevenAt), ReadAt: &read}, nil
+	u := Usage{FiveHour: window(five, fiveAt), SevenDay: window(seven, sevenAt)}
+	if readAt > 0 { // 0 is a row that a probe made before the first report
+		read := tm(readAt)
+		u.ReadAt = &read
+	}
+	return u, nil
+}
+
+// ClaimUsageProbe records now as the time of a probe of the usage and
+// returns true, when no probe was tried in the span before now. Else it
+// writes nothing and returns false. The caller probes only on true, so
+// separate processes probe at most once in each span, whether the probes
+// work or not. A time after now, from a clock that went back, does not
+// count.
+func (s *Store) ClaimUsageProbe(now time.Time, span time.Duration) (bool, error) {
+	tx, err := s.beginWrite()
+	if err != nil {
+		return false, err
+	}
+	defer tx.rollback()
+	var tried int64
+	err = tx.conn.QueryRowContext(context.Background(), `SELECT tried_at FROM usage WHERE id = 1`).Scan(&tried)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return false, err
+	}
+	if at := tm(tried); tried > 0 && now.Sub(at) < span && !at.After(now) {
+		return false, nil
+	}
+	if err := tx.exec(`INSERT INTO usage(id, read_at, tried_at) VALUES (1, 0, ?)
+ON CONFLICT(id) DO UPDATE SET tried_at = excluded.tried_at`, now.UnixMilli()); err != nil {
+		return false, err
+	}
+	return true, tx.commit()
 }
 
 // RecordUsage records what Claude Code reported at now. A window that u has

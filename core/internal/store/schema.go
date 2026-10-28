@@ -258,6 +258,10 @@ CREATE TABLE linear_updates (
   updated_at INTEGER NOT NULL
 );
 `,
+	// 18: when Loam last tried a probe of the usage, whether it worked or
+	// not, so separate processes probe at most once in a while. A usage row
+	// with read_at 0 has no report yet.
+	`ALTER TABLE usage ADD COLUMN tried_at INTEGER NOT NULL DEFAULT 0;`,
 }
 
 // SchemaVersion is the schema version of this binary.

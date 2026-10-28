@@ -14,8 +14,9 @@ import (
 	"github.com/GregorMcC/loam/core/internal/store"
 )
 
-// UsageMaxAge is how old the usage can be before a tick that needs it for
-// the hold reads it again with a probe.
+// UsageMaxAge is how old the usage can be before Loam reads it again with a
+// probe, when the hold needs it. It is also how long Loam waits after a
+// probe, whether it worked or not, before it tries another.
 const UsageMaxAge = 30 * time.Minute
 
 // probeTimeout limits the usage probe.
@@ -114,4 +115,28 @@ func ProbeUsage(ctx context.Context, s *store.Store) (store.Usage, error) {
 // was never read.
 func usageStale(u store.Usage, now time.Time) bool {
 	return u.ReadAt == nil || now.Sub(*u.ReadAt) > UsageMaxAge
+}
+
+// probeStale probes the usage when Loam read it more than [UsageMaxAge] ago,
+// and no probe was tried in that time. It returns a warning when it cannot
+// read the usage.
+func probeStale(ctx context.Context, s *store.Store) string {
+	u, err := s.GetUsage()
+	if err != nil {
+		return err.Error()
+	}
+	now := time.Now()
+	if !usageStale(u, now) {
+		return ""
+	}
+	if ok, err := s.ClaimUsageProbe(now, UsageMaxAge); err != nil || !ok {
+		if err != nil {
+			return err.Error()
+		}
+		return ""
+	}
+	if _, err := ProbeUsage(ctx, s); err != nil {
+		return "Loam could not read the usage of Claude Code: " + err.Error()
+	}
+	return ""
 }

@@ -58,6 +58,42 @@ func TestUsageKeepsTheLastReportOfEachWindow(t *testing.T) {
 	}
 }
 
+// A probe of the usage claims its time, whether it works or not, and the
+// next claim in the span gets false. The claim does not count as a report.
+func TestClaimUsageProbeAllowsOneProbeInEachSpan(t *testing.T) {
+	s := openStore(t)
+	now := time.Now().Truncate(time.Millisecond)
+	for _, c := range []struct {
+		at   time.Time
+		want bool
+	}{
+		{now, true},
+		{now.Add(29 * time.Minute), false},
+		{now.Add(31 * time.Minute), true},
+		{now.Add(-time.Hour), true}, // the clock went back
+	} {
+		if got, err := s.ClaimUsageProbe(c.at, 30*time.Minute); err != nil || got != c.want {
+			t.Fatalf("claim at %v: %v %v, want %v", c.at.Sub(now), got, err, c.want)
+		}
+	}
+	if u, err := s.GetUsage(); err != nil || u.ReadAt != nil || u.SevenDay != nil {
+		t.Fatalf("a claim is a report: %+v %v", u, err)
+	}
+	// A report keeps the claim, and a claim keeps the report.
+	if _, err := s.RecordUsage(store.Usage{SevenDay: &store.UsageWindow{Utilization: 0.5, ResetsAt: now.Add(time.Hour)}}, now); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.ClaimUsageProbe(now.Add(-59*time.Minute), 30*time.Minute); got {
+		t.Fatal("a report cleared the claim")
+	}
+	if got, _ := s.ClaimUsageProbe(now.Add(time.Hour), 30*time.Minute); !got {
+		t.Fatal("no claim after the span")
+	}
+	if u, _ := s.GetUsage(); u.ReadAt == nil || !u.ReadAt.Equal(now) || u.SevenDay == nil || u.SevenDay.Utilization != 0.5 {
+		t.Fatalf("a claim changed the report: %+v", u)
+	}
+}
+
 func setState(t *testing.T, s *store.Store, id string, st store.RunState) {
 	t.Helper()
 	if _, err := s.UpdateRun(id, func(r *store.Run) error { r.State = st; return nil }); err != nil {

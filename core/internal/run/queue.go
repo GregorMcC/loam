@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"time"
 
 	"github.com/GregorMcC/loam/core/internal/store"
 )
@@ -67,8 +66,10 @@ func startQueued(ctx context.Context, s *store.Store, loam string) ([]store.Run,
 }
 
 // freshUsage probes the usage when the hold needs it: the hold is on, a slot
-// is free, and Loam read the usage more than [UsageMaxAge] ago. holding is
-// how many runs hold a slot. It returns a warning when the probe fails.
+// is free, and Loam read the usage more than [UsageMaxAge] ago. Loam tries
+// at most one probe in that time, so a probe that fails does not run again
+// on each tick (see [probeStale]). holding is how many runs hold a slot. It
+// returns a warning when the probe fails.
 func freshUsage(ctx context.Context, s *store.Store, holding int) string {
 	l, err := s.GetRunLimits()
 	if err != nil {
@@ -77,17 +78,7 @@ func freshUsage(ctx context.Context, s *store.Store, holding int) string {
 	if l.HoldAt == 0 || holding >= l.AtATime {
 		return ""
 	}
-	u, err := s.GetUsage()
-	if err != nil {
-		return err.Error()
-	}
-	if !usageStale(u, time.Now()) {
-		return ""
-	}
-	if _, err := ProbeUsage(ctx, s); err != nil {
-		return "Loam could not read the usage of Claude Code: " + err.Error()
-	}
-	return ""
+	return probeStale(ctx, s)
 }
 
 // renote gives a Queued run the note that says why it waits now. A run that
