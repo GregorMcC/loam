@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam run limits --json",
+  "description": "The run limits, after the command applied any flag. A store with none has the defaults.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "limits"
+  ],
+  "properties": {
+    "limits": {
+      "$ref": "defs.json#/$defs/runLimits"
+    }
+  }
+}

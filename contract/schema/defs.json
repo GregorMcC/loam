@@ -347,8 +347,8 @@
       }
     },
     "runState": {
-      "description": "Where a run is. shaping, stopped, and limited need you. shipping passed its gate and waits for its PR and CI. ready waits for you to land it.",
-      "enum": ["shaping", "starting", "running", "shipping", "ready", "stopped", "limited", "start_unknown", "landed", "cancelled", "skipped"]
+      "description": "Where a run is. shaping, stopped, and limited need you. queued waits for a slot. shipping passed its gate and waits for its PR and CI. ready waits for you to land it.",
+      "enum": ["shaping", "queued", "starting", "running", "shipping", "ready", "stopped", "limited", "start_unknown", "landed", "cancelled", "skipped"]
     },
     "runCheck": {
       "description": "A Done when check: a shell command that passes when it exits 0 in the folder of the run.",
@@ -383,7 +383,7 @@
     "run": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "plot_id", "worktree_id", "folder", "title", "goal", "done_when", "state", "tries", "max_tries", "session_id", "note", "group_id", "created_at", "updated_at"],
+      "required": ["id", "plot_id", "worktree_id", "folder", "title", "goal", "done_when", "state", "tries", "max_tries", "turns", "session_id", "note", "group_id", "created_at", "updated_at"],
       "properties": {
         "id": { "$ref": "#/$defs/id" },
         "plot_id": { "$ref": "#/$defs/id" },
@@ -395,6 +395,7 @@
         "state": { "$ref": "#/$defs/runState" },
         "tries": { "description": "How many times the gate or CI failed.", "type": "integer", "minimum": 0 },
         "max_tries": { "type": "integer", "minimum": 1, "maximum": 8 },
+        "turns": { "description": "How many turns the session ended: one for each Stop.", "type": "integer", "minimum": 0 },
         "source": { "description": "It is left out when the run has no issue.", "$ref": "#/$defs/runSource" },
         "pr": { "description": "The PR that Loam opened for the run. It is left out before the run ships.", "$ref": "#/$defs/runPR" },
         "shape": { "description": "The draft of a run that started in Shaping (loam run shape). It is left out for a run that loam run start started.", "$ref": "#/$defs/runShape" },
@@ -418,6 +419,43 @@
         "plot_id": { "$ref": "#/$defs/id" },
         "model": { "description": "The Claude model, or empty for the Claude Code setting.", "type": "string" },
         "effort": { "$ref": "#/$defs/effort" }
+      }
+    },
+    "runLimits": {
+      "description": "The limits of every run (loam run limits).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at_a_time", "max_turns", "hold_at"],
+      "properties": {
+        "at_a_time": { "description": "How many runs can hold a slot at once.", "type": "integer", "minimum": 1, "maximum": 20 },
+        "max_turns": { "description": "How many turns a run can take. 0 means no limit.", "type": "integer", "minimum": 0 },
+        "hold_at": { "description": "The percent of the 7-day usage at which new runs wait. 0 means no hold.", "type": "integer", "minimum": 0, "maximum": 100 }
+      }
+    },
+    "usageWindow": {
+      "description": "The usage of one window of Claude Code's limits, or null until Claude Code reports it.",
+      "anyOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["utilization", "resets_at"],
+          "properties": {
+            "utilization": { "description": "The share of the window that is used, from 0 to 1.", "type": "number", "minimum": 0 },
+            "resets_at": { "description": "When the window starts again.", "$ref": "#/$defs/time" }
+          }
+        }
+      ]
+    },
+    "usage": {
+      "description": "The last usage that Claude Code reported (loam usage).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["five_hour", "seven_day", "read_at"],
+      "properties": {
+        "five_hour": { "$ref": "#/$defs/usageWindow" },
+        "seven_day": { "$ref": "#/$defs/usageWindow" },
+        "read_at": { "description": "When Loam read the usage, or null before the first report.", "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/time" }] }
       }
     },
     "runShape": {

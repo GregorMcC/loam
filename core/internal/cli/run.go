@@ -27,11 +27,12 @@ func newRunCmd() *cobra.Command {
 			"Each time the session ends a turn, Loam runs the Done when checks of the run in the worktree. When a check fails, Loam sends the output back to the session as its next try.\n" +
 			"When every check passes in a repo on GitHub, the run ships: loam run tick pushes its branch, opens its PR, and reads CI. A CI failure goes back to the session as a try.\n" +
 			"A run stops when it is ready to land (Ready), when it uses all its tries (Stopped), or when you stop it. loam run land merges the PR of a Ready run, and the run is Landed.\n" +
+			"loam run limits sets how many runs work at a time. A run that finds no free slot waits in Queued, and loam run tick starts it when a slot is free.\n" +
 			"Runs are not in the change log.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
-	c.AddCommand(newRunStartCmd(), newRunShapeCmd(), newRunRedraftCmd(), newRunApproveCmd(), newRunListCmd(), newRunStatusCmd(), newRunStopCmd(), newRunDiffCmd(), newRunSendBackCmd(), newRunLandCmd(), newRunTickCmd(), newRunHookCmd(), newRunDefaultsCmd())
+	c.AddCommand(newRunStartCmd(), newRunShapeCmd(), newRunRedraftCmd(), newRunApproveCmd(), newRunListCmd(), newRunStatusCmd(), newRunStopCmd(), newRunDiffCmd(), newRunSendBackCmd(), newRunLandCmd(), newRunTickCmd(), newRunHookCmd(), newRunDefaultsCmd(), newRunLimitsCmd())
 	return c
 }
 
@@ -508,10 +509,11 @@ func newRunLandCmd() *cobra.Command {
 func newRunTickCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "tick",
-		Short: "Ship the runs whose checks passed: push, open the PR, and read CI",
+		Short: "Ship the runs whose checks passed, and start the queued runs",
 		Long: "Move on each run in Shipping. Loam pushes the branch of the run and opens its PR. When CI passes on the PR, the run is Ready.\n" +
 			"When CI fails, Loam sends the end of each failed log back to the session, and the failure counts a try. On the last try, the run stops.\n" +
-			"A tick that waits on GitHub changes nothing, so it is safe to run often. The app runs it while a run ships.",
+			"Then start the Queued runs, oldest first, while a slot is free and the week's usage is under the hold of loam run limits.\n" +
+			"A tick that waits on GitHub or for a slot changes nothing, so it is safe to run often. The app runs it while a run ships.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			s, err := openStore()
@@ -519,7 +521,11 @@ func newRunTickCmd() *cobra.Command {
 				return err
 			}
 			defer s.Close()
-			res, err := run.Tick(cmd.Context(), s)
+			loam, err := loamBinary()
+			if err != nil {
+				return err
+			}
+			res, err := run.Tick(cmd.Context(), s, loam)
 			if err != nil {
 				return err
 			}
@@ -558,7 +564,11 @@ func newRunHookCmd() *cobra.Command {
 // printRun prints the first lines of a run for a person.
 func printRun(out io.Writer, r store.Run) {
 	fmt.Fprintf(out, "Run %s: %s\n", r.ID, oneLine(r.Title))
-	fmt.Fprintf(out, "State: %s, try %d of %d\n", r.State, r.Tries, r.MaxTries)
+	turns := fmt.Sprintf("%d turns", r.Turns)
+	if r.Turns == 1 {
+		turns = "1 turn"
+	}
+	fmt.Fprintf(out, "State: %s, try %d of %d, %s\n", r.State, r.Tries, r.MaxTries, turns)
 	fmt.Fprintf(out, "Folder: %s\n", r.Folder)
 	if r.GroupID != "" {
 		fmt.Fprintf(out, "Group: %s\n", r.GroupID)
@@ -618,5 +628,66 @@ func newRunDefaultsCmd() *cobra.Command {
 	f := c.Flags()
 	f.StringVar(&model, "model", "", "set the default model; empty clears it")
 	f.StringVar(&effort, "effort", "", "set the default effort level ("+strings.Join(store.Efforts, ", ")+"); empty clears it")
+	return c
+}
+
+func newRunLimitsCmd() *cobra.Command {
+	var l store.RunLimits
+	c := &cobra.Command{
+		Use:   "limits [--at-a-time <n>] [--max-turns <n>] [--hold-at <percent>]",
+		Short: "Show or set the limits of every run: runs at a time, turns, and the usage hold",
+		Long: "The run limits hold for every run of every plot.\n" +
+			"--at-a-time is how many runs can work at once, 1 to " + strconv.Itoa(store.AtATimeLimit) + ". A run that starts with no free slot waits in Queued, and loam run tick starts it when a slot is free.\n" +
+			"--max-turns is how many turns a run can take. A run whose checks still fail at the limit stops, and no try counts. 0 means no limit.\n" +
+			"--hold-at is a percent of the 7-day usage of Claude Code. At or over it, a run that starts waits in Queued. 0 turns the hold off. loam usage shows the usage.\n" +
+			"With no flag, this shows the limits. Run limits are not in the change log.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			s, err := openStore()
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+			cur, err := s.GetRunLimits()
+			if err != nil {
+				return err
+			}
+			f := cmd.Flags()
+			if f.Changed("at-a-time") || f.Changed("max-turns") || f.Changed("hold-at") {
+				if !f.Changed("at-a-time") {
+					l.AtATime = cur.AtATime
+				}
+				if !f.Changed("max-turns") {
+					l.MaxTurns = cur.MaxTurns
+				}
+				if !f.Changed("hold-at") {
+					l.HoldAt = cur.HoldAt
+				}
+				if cur, err = s.SetRunLimits(l); err != nil {
+					return err
+				}
+			}
+			if JSON(cmd) {
+				return printJSON(cmd, map[string]any{"limits": cur})
+			}
+			out := cmd.OutOrStdout()
+			fmt.Fprintf(out, "At a time: %d runs\n", cur.AtATime)
+			if cur.MaxTurns == 0 {
+				fmt.Fprintln(out, "Each run: no turn limit")
+			} else {
+				fmt.Fprintf(out, "Each run: %d turns\n", cur.MaxTurns)
+			}
+			if cur.HoldAt == 0 {
+				fmt.Fprintln(out, "Hold new runs: off")
+			} else {
+				fmt.Fprintf(out, "Hold new runs at: %d%% of the week\n", cur.HoldAt)
+			}
+			return nil
+		},
+	}
+	f := c.Flags()
+	f.IntVar(&l.AtATime, "at-a-time", 0, "how many runs can work at once")
+	f.IntVar(&l.MaxTurns, "max-turns", 0, "how many turns a run can take; 0 means no limit")
+	f.IntVar(&l.HoldAt, "hold-at", 0, "the percent of the 7-day usage at which new runs wait; 0 turns the hold off")
 	return c
 }

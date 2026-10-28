@@ -1,0 +1,7 @@
+{
+  "limits": {
+    "at_a_time": 2,
+    "hold_at": 90,
+    "max_turns": 30
+  }
+}

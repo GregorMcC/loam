@@ -11,13 +11,18 @@ import (
 )
 
 // RunState is where a run is. A run moves from Starting to Running, then to
-// Shipping when its gate passes, and to Ready when CI passes on its PR.
-// Shaping, Stopped, and Limited need you.
+// Shipping when its gate passes, and to Ready when CI passes on its PR. A run
+// that has no slot for its session waits in Queued. Shaping, Stopped, and
+// Limited need you.
 type RunState string
 
 const (
 	// RunShaping waits for you to approve its goal and its checks.
 	RunShaping RunState = "shaping"
+	// RunQueued waits for a slot: the run limits or the week's usage hold
+	// its session. A tick starts it when a slot is free. Its note says why
+	// it waits.
+	RunQueued RunState = "queued"
 	// RunStarting is a run that Loam is starting. A run that stays here after
 	// its start command ended is Start unknown.
 	RunStarting RunState = "starting"
@@ -47,7 +52,7 @@ const (
 	RunSkipped RunState = "skipped"
 )
 
-var runStates = []RunState{RunShaping, RunStarting, RunRunning, RunShipping, RunReady, RunStopped, RunLimited,
+var runStates = []RunState{RunShaping, RunQueued, RunStarting, RunRunning, RunShipping, RunReady, RunStopped, RunLimited,
 	RunStartUnknown, RunLanded, RunCancelled, RunSkipped}
 
 // NeedsYou reports whether the state waits for you: Shaping, Stopped, and
@@ -59,6 +64,13 @@ func (st RunState) NeedsYou() bool {
 // Ended reports whether the run has no session to work any more.
 func (st RunState) Ended() bool {
 	return st == RunLanded || st == RunCancelled || st == RunSkipped
+}
+
+// HoldsSlot reports whether a run in the state holds one of the slots that
+// the run limits allow: Loam starts its session, or the session works.
+// Starting, Running, and Start unknown hold a slot.
+func (st RunState) HoldsSlot() bool {
+	return st == RunStarting || st == RunRunning || st == RunStartUnknown
 }
 
 func (st RunState) valid() bool {
@@ -141,6 +153,16 @@ type RunPR struct {
 	URL    string `json:"url"`
 }
 
+// RunQueue is how a Queued run starts its session when a slot is free.
+type RunQueue struct {
+	// Model and Effort are those of a new session.
+	Model  string `json:"model"`
+	Effort string `json:"effort"`
+	// Resume is the prompt that resumes the session of the run, such as your
+	// notes or a CI failure. Empty means a new session.
+	Resume string `json:"resume"`
+}
+
 // Run is one goal that a background Claude Code session works on in a
 // folder, until its Done when checks pass. A run is not in the change log.
 type Run struct {
@@ -165,6 +187,11 @@ type Run struct {
 	// GroupID links the runs that one shape made for one issue, one in each
 	// repo. It is the ID of the first run, or empty for a run alone.
 	GroupID string `json:"group_id"`
+	// Turns counts the turns that the session ended: one for each Stop.
+	Turns int `json:"turns"`
+	// Queue says how a Queued run starts its session, or nil. It is not in
+	// the JSON.
+	Queue *RunQueue `json:"-"`
 	// SessionID is the Claude Code session ID, from its SessionStart hook.
 	// It is empty until the session starts.
 	SessionID string `json:"session_id"`
@@ -244,12 +271,12 @@ func (s *Store) AddRun(r Run) (Run, error) {
 		return Run{}, err
 	}
 	now := time.Now().UnixMilli()
-	r.Tries = 0
+	r.Tries, r.Turns = 0, 0
 	r.CreatedAt, r.UpdatedAt = tm(now), tm(now)
-	checks, src, pr, shape := encodeRun(r)
-	if err := tx.exec(`INSERT INTO runs(`+runCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	checks, src, pr, shape, queue := encodeRun(r)
+	if err := tx.exec(`INSERT INTO runs(`+runCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
 		r.ID, r.PlotID, r.WorktreeID, r.Folder, r.Title, r.Goal, checks, r.State, r.MaxTries, r.SessionID, r.Note,
-		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, r.GroupID, now, now); err != nil {
+		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, r.GroupID, queue, now, now); err != nil {
 		return Run{}, err
 	}
 	if err := addRunEvent(tx, r.ID, now, "state", string(r.State)); err != nil {
@@ -318,6 +345,17 @@ func (s *Store) UpdateRun(id string, fn func(*Run) error) (Run, error) {
 		return Run{}, err
 	}
 	defer tx.rollback()
+	r, err := updateRun(tx, id, fn, nil)
+	if err != nil {
+		return Run{}, err
+	}
+	return r, tx.commit()
+}
+
+// updateRun is [Store.UpdateRun] in the write transaction tx. It does not
+// commit. A try event has the note of the run, or tryNote when it is not nil
+// and not empty after fn.
+func updateRun(tx *writeTx, id string, fn func(*Run) error, tryNote *string) (Run, error) {
 	old, err := loadRun(tx.conn, `id = ?`, id)
 	if err != nil {
 		return Run{}, err
@@ -333,6 +371,10 @@ func (s *Store) UpdateRun(id string, fn func(*Run) error) (Run, error) {
 		r.PR = &pr
 	}
 	r.Shape = old.Shape.clone()
+	if old.Queue != nil {
+		q := *old.Queue
+		r.Queue = &q
+	}
 	if err := fn(&r); err != nil {
 		return Run{}, err
 	}
@@ -344,16 +386,20 @@ func (s *Store) UpdateRun(id string, fn func(*Run) error) (Run, error) {
 	}
 	now := time.Now().UnixMilli()
 	r.UpdatedAt = tm(now)
-	checks, src, pr, shape := encodeRun(r)
+	checks, src, pr, shape, queue := encodeRun(r)
 	if err := tx.exec(`UPDATE runs SET worktree_id = ?, folder = ?, title = ?, goal = ?, done_when = ?, state = ?, tries = ?,
   max_tries = ?, session_id = ?, note = ?, source_kind = ?, source_key = ?, source_url = ?, pr_number = ?, pr_url = ?,
-  shape = ?, group_id = ?, updated_at = ? WHERE id = ?`,
+  shape = ?, group_id = ?, turns = ?, queue = ?, updated_at = ? WHERE id = ?`,
 		r.WorktreeID, r.Folder, r.Title, r.Goal, checks, r.State, r.Tries, r.MaxTries, r.SessionID, r.Note,
-		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, r.GroupID, now, r.ID); err != nil {
+		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, r.GroupID, r.Turns, queue, now, r.ID); err != nil {
 		return Run{}, err
 	}
 	if r.Tries != old.Tries {
-		if err := addRunEvent(tx, r.ID, now, "try", r.Note); err != nil {
+		note := r.Note
+		if tryNote != nil && *tryNote != "" {
+			note = *tryNote
+		}
+		if err := addRunEvent(tx, r.ID, now, "try", note); err != nil {
 			return Run{}, err
 		}
 	}
@@ -362,7 +408,7 @@ func (s *Store) UpdateRun(id string, fn func(*Run) error) (Run, error) {
 			return Run{}, err
 		}
 	}
-	return r, tx.commit()
+	return r, nil
 }
 
 // AddRunEvent adds a line to the history of a run, such as the result of
@@ -406,9 +452,9 @@ func (s *Store) RunEvents(runID string) ([]RunEvent, error) {
 
 // runCols are the columns of a run record.
 const runCols = `id, plot_id, worktree_id, folder, title, goal, done_when, state, tries, max_tries, session_id, note,
-  source_kind, source_key, source_url, pr_number, pr_url, shape, group_id, created_at, updated_at`
+  source_kind, source_key, source_url, pr_number, pr_url, shape, group_id, turns, queue, created_at, updated_at`
 
-func encodeRun(r Run) (checks string, src RunSource, pr RunPR, shape string) {
+func encodeRun(r Run) (checks string, src RunSource, pr RunPR, shape, queue string) {
 	b, err := json.Marshal(append([]Check{}, r.DoneWhen...))
 	if err != nil { // a slice of string pairs always encodes
 		panic(err)
@@ -426,7 +472,14 @@ func encodeRun(r Run) (checks string, src RunSource, pr RunPR, shape string) {
 		}
 		shape = string(sb)
 	}
-	return string(b), src, pr, shape
+	if r.Queue != nil {
+		qb, err := json.Marshal(r.Queue)
+		if err != nil { // strings always encode
+			panic(err)
+		}
+		queue = string(qb)
+	}
+	return string(b), src, pr, shape, queue
 }
 
 // clone copies the shape, with empty lists where it has none, so the JSON
@@ -450,10 +503,11 @@ func scanRun(sc interface{ Scan(...any) error }) (Run, error) {
 	var checks string
 	var src RunSource
 	var pr RunPR
-	var shape string
+	var shape, queue string
 	var created, updated int64
 	err := sc.Scan(&r.ID, &r.PlotID, &r.WorktreeID, &r.Folder, &r.Title, &r.Goal, &checks, &r.State, &r.Tries,
-		&r.MaxTries, &r.SessionID, &r.Note, &src.Kind, &src.Key, &src.URL, &pr.Number, &pr.URL, &shape, &r.GroupID, &created, &updated)
+		&r.MaxTries, &r.SessionID, &r.Note, &src.Kind, &src.Key, &src.URL, &pr.Number, &pr.URL, &shape, &r.GroupID,
+		&r.Turns, &queue, &created, &updated)
 	if err != nil {
 		return Run{}, err
 	}
@@ -472,6 +526,13 @@ func scanRun(sc interface{ Scan(...any) error }) (Run, error) {
 			return Run{}, fmt.Errorf("run %s: bad shape: %w", r.ID, err)
 		}
 		r.Shape = sh.clone()
+	}
+	if queue != "" {
+		var q RunQueue
+		if err := json.Unmarshal([]byte(queue), &q); err != nil {
+			return Run{}, fmt.Errorf("run %s: bad queue: %w", r.ID, err)
+		}
+		r.Queue = &q
 	}
 	r.CreatedAt, r.UpdatedAt = tm(created), tm(updated)
 	return r, nil

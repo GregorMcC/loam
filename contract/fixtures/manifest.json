@@ -1376,6 +1376,76 @@
     "schema": "run-defaults"
   },
   {
+    "name": "run_limits_get",
+    "args": [
+      "run",
+      "limits",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "run-limits"
+  },
+  {
+    "name": "run_limits_set",
+    "args": [
+      "run",
+      "limits",
+      "--at-a-time",
+      "2",
+      "--max-turns",
+      "30",
+      "--hold-at",
+      "90",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "run-limits"
+  },
+  {
+    "name": "error_run_limits_bad",
+    "args": [
+      "run",
+      "limits",
+      "--at-a-time",
+      "21",
+      "--json"
+    ],
+    "exit_code": 2,
+    "schema": "error"
+  },
+  {
+    "name": "run_start_queued",
+    "args": [
+      "run",
+      "start",
+      "Runs",
+      "--title",
+      "Sort the plot list",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "run-start"
+  },
+  {
+    "name": "usage_none",
+    "args": [
+      "usage",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "usage"
+  },
+  {
+    "name": "usage_refresh",
+    "args": [
+      "usage",
+      "--refresh",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "usage"
+  },
+  {
     "name": "run_shape_split",
     "args": [
       "run",

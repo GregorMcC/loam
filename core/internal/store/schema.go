@@ -221,6 +221,29 @@ CREATE TABLE run_defaults (
 	// 15: linked runs: the runs that one shape made for one issue, one in
 	// each repo, share a group.
 	`ALTER TABLE runs ADD COLUMN group_id TEXT NOT NULL DEFAULT '';`,
+	// 16: run limits and the queue. turns counts the turns that the session
+	// of a run ended. queue says how a Queued run starts its session when a
+	// slot is free, as JSON. run_limits has one row, and usage has one row:
+	// the last usage that Claude Code reported. Neither is in the change log.
+	`
+ALTER TABLE runs ADD COLUMN turns INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE runs ADD COLUMN queue TEXT NOT NULL DEFAULT '';
+CREATE TABLE run_limits (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  at_a_time INTEGER NOT NULL,
+  max_turns INTEGER NOT NULL,
+  hold_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE usage (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  five_hour REAL,
+  five_hour_resets_at INTEGER,
+  seven_day REAL,
+  seven_day_resets_at INTEGER,
+  read_at INTEGER NOT NULL
+);
+`,
 }
 
 // SchemaVersion is the schema version of this binary.

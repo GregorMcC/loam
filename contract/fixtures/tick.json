@@ -60,6 +60,7 @@
         "state": "skipped",
         "title": "Bump Go dependencies",
         "tries": 0,
+        "turns": 0,
         "updated_at": "2026-01-01T00:00:00Z",
         "worktree_id": ""
       }

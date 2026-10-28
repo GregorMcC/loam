@@ -103,7 +103,7 @@ func tickAll(cmd *cobra.Command, s *store.Store, now time.Time) (tickResult, err
 	if err != nil {
 		return tickResult{}, err
 	}
-	shipped, err := run.Tick(cmd.Context(), s)
+	shipped, err := run.Tick(cmd.Context(), s, loam)
 	if err != nil {
 		return tickResult{}, err
 	}
