@@ -150,15 +150,19 @@ jobs:
           key: ${{ steps.ghosttykit.outputs.cache-primary-key }}
       - name: swift test
         working-directory: app
-        env:
-          # Each driver scenario writes its log and screenshots to a folder here.
-          TMPDIR: ${{ runner.temp }}
         run: swift test --manifest-cache none
+      # Each driver scenario writes its log and screenshots to a folder in the
+      # temporary folder of the user, which TMPDIR does not change.
+      - name: Collect the driver output
+        if: failure()
+        run: |
+          mkdir -p "$RUNNER_TEMP/driver-output"
+          cp -R "$(getconf DARWIN_USER_TEMP_DIR)"loam-driver-* "$RUNNER_TEMP/driver-output/" || true
       - if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: driver-output
-          path: ${{ runner.temp }}/loam-driver-*
+          path: ${{ runner.temp }}/driver-output
           retention-days: 7
 
   lint:
