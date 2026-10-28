@@ -222,6 +222,10 @@ extension Scenarios {
         try await app.waitUntil("the intake shows") { model.page == .intake(plot) && app.exists("intake-row-map 135") }
         try confirm(app.exists("intake-row-#52") && app.exists("intake-row-#48") && app.exists("intake-row-map 136")
                     && !app.exists("intake-row-map 99"), "the rows are not the open issues and tickets")
+        // The bar names the page and the plot, and the sidebar card says when the app read each source.
+        try confirm(app.text(of: "action-bar-plot") == "Intake" && app.text(of: "action-bar-pane") == "Loam v1 build",
+                    "the bar does not name the Intake page")
+        try await app.waitUntil("the sources card") { app.text(of: "sidebar-sources-card")?.contains("Read just now") == true }
         try app.click("intake-filter-map")
         try await app.waitUntil("the map filter") { !app.exists("intake-row-#52") && app.exists("intake-row-map 136") }
         try app.click("intake-filter-all")

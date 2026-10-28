@@ -742,11 +742,14 @@ private struct SidebarCard: View {
     @ViewBuilder
     private func sources(_ plot: String) -> some View {
         if let read = model.todayData.intake[plot], !read.list.sources.isEmpty {
-            let rows = TodayWords.sourcesCard(read.list, reads: model.todayData.sourceReads[plot] ?? [:], now: model.now())
-            box {
-                ForEach(rows, id: \.label) { row($0.label, $0.value) }
+            // Each minute, so "Read 2 min ago" moves on.
+            TimelineView(.everyMinute) { _ in
+                let rows = TodayWords.sourcesCard(read.list, reads: model.todayData.sourceReads[plot] ?? [:], now: model.now())
+                box {
+                    ForEach(rows, id: \.label) { row($0.label, $0.value) }
+                }
+                .accessibilityIdentifier("sidebar-sources-card")
             }
-            .accessibilityIdentifier("sidebar-sources-card")
         }
     }
 
