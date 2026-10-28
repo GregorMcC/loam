@@ -227,6 +227,8 @@ extension AppModel {
     /// Shows the run at the desk, and reads its work and its history.
     private func showDeskItem(_ id: String?) async {
         desk.runID = id
+        // The desk place of the history keeps the run that the desk shows.
+        recordPlace()
         desk.diff = nil
         desk.file = nil
         desk.error = nil

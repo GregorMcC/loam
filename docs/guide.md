@@ -310,6 +310,8 @@ A Linear issue link or a GitHub issue link starts interactive work in one step. 
 
 The quick switcher (⌘P) finds plots, panes, links, and commands, and shows a preview of the selected one. The actions menu (⌘J) lists the commands for the pane and the plot, with their keys. ⌃1 to ⌃9 go straight to a plot.
 
+Back and Forward work as in a browser. Loam keeps the places that you visit: Today, Intake, the desk, a run page, the Recurring and rules page, and each plot or Home. Back goes to the place before, and Forward to the place after. A place that is gone, such as an archived plot, is skipped. The list starts empty each time you open Loam.
+
 <p align="center">
   <img src="images/switcher.png" width="100%" alt="The quick switcher over the Loam window, with a preview of the selected item on the right.">
 </p>
@@ -330,6 +332,7 @@ Quit and reopen, and your tabs and splits come back. Each session resumes when y
 | J, K | At the desk: next item, previous item |
 | ] | At the desk: next file |
 | esc | Leave the desk |
+| ⌘[, ⌘] | On a page: back, forward |
 | ⌘T | New Claude Code session in the active plot |
 | ⌥⌘T | New shell tab |
 | ⌘D, ⇧⌘D | Split right, split down |
@@ -346,6 +349,8 @@ Quit and reopen, and your tabs and splits come back. Each session resumes when y
 | ⌘, | Settings |
 
 The tab and split keys are Ghostty's. If your Ghostty config binds them to other keys, Loam uses yours. The other keys belong to Loam.
+
+⌘[ and ⌘] go back and forward only while a page shows, such as Today, Intake, the desk, or a run page. In a terminal pane they stay Ghostty's keys for the previous and next split. There, Back and Forward are in the Go menu and the actions menu (⌘J). Over a page, the back and forward buttons of a mouse also go back and forward.
 
 ## Install and update
 

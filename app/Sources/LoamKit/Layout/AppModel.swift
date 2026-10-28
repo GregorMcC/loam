@@ -39,6 +39,7 @@ public final class AppModel {
             if storedWorkspace.focusedPane != oldValue.focusedPane || storedWorkspace.activeSpace != oldValue.activeSpace {
                 endWorktreeSelection()
             }
+            if storedWorkspace.activeSpace != oldValue.activeSpace { recordPlace() }
             if let pane = storedWorkspace.focusedPane, pane != oldValue.focusedPane {
                 focusCount += 1
                 lastFocus[pane] = focusCount
@@ -163,9 +164,14 @@ public final class AppModel {
             guard page != oldValue else { return }
             // The desk and a run page open from Today, so you leave Today only when you leave all three.
             if Self.isTodayGroup(oldValue), !Self.isTodayGroup(page) { leftToday() }
+            recordPlace()
             onWorkspaceChange?()
         }
     }
+    /// The places that Back and Forward go to (TAS-46), in memory only.
+    public internal(set) var history = PageHistory()
+    /// True while a move that changes the page and the space at once runs, so the history records one step.
+    var holdsPlace = false
     /// What Today reads besides the runs.
     public internal(set) var todayData = TodayData()
     /// The run that the run page shows, with its history, as the core last read it.
@@ -693,11 +699,13 @@ public final class AppModel {
 
     private func activate(_ space: Space) {
         endWorktreeSelection()
-        page = nil
         let opens = space != workspace.activeSpace
-        // A switch with the panel open marks the plot that you leave as seen.
-        if panel.visible, opens { review.markSeen(plot: workspace.activePlotID) }
-        workspace.activate(space)
+        asOneStep {
+            page = nil
+            // A switch with the panel open marks the plot that you leave as seen.
+            if panel.visible, opens { review.markSeen(plot: workspace.activePlotID) }
+            workspace.activate(space)
+        }
         useTimes?.record(SwitcherItem.key(of: space))
         if panel.visible { Task { await reloadPanel() } }
         if opens, let plot = space.plotID { Task { await shipRefresh.refresh(plot) } }

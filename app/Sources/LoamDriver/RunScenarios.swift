@@ -193,6 +193,120 @@ extension Scenarios {
         NSApp.appearance = nil
     }
 
+    static func historyShot(_ app: DriverApp) async throws {
+        do { try await historyShotSteps(app) } catch { app.dumpAccessibility(); throw error }
+    }
+
+    /// TAS-46: Back and Forward between pages. Today, Intake, the desk and a run page are 4 steps. ⌘[ goes back through
+    /// them and ⌘] forward, and the back and forward mouse buttons do the same over a page. In a split tab of a plot,
+    /// ⌘[ stays Ghostty's goto_split:previous: it moves the focus to the other pane and leaves the history alone.
+    private static func historyShotSteps(_ app: DriverApp) async throws {
+        let fm = FileManager.default
+        let (rig, environment, _) = try shotRig(app)
+        let repo = rig.root.appendingPathComponent("widgets")
+        try fm.createDirectory(at: repo, withIntermediateDirectories: true)
+        try git(repo, ["init", "-q", "-b", "main"])
+        try "hello\n".write(to: repo.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+        try git(repo, ["add", "."])
+        try git(repo, ["commit", "-q", "-m", "first"])
+        try rig.trust([rig.loamHome.appendingPathComponent("plots").path, repo.path])
+        let plot = try rig.newPlot("Loam v1 build")
+        try rig.loam(["repo", "add", plot, repo.path])
+        let extra = ["PATH": environment["PATH"] ?? "/usr/bin:/bin"]
+
+        // One run that is ready, so the desk shows it.
+        let text = try rig.loam(["run", "start", plot, "--title", "Fix the login form", "--goal", "Fix the login form.",
+                                 "--base", "main", "--check", "Tests=true", "--json"], extra: extra)
+        let object = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any]
+        guard let ready = (object?["run"] as? [String: Any])?["id"] as? String else {
+            throw DriverFailure("run start printed no run: \(text)")
+        }
+        let session = "00000001-3136-4e86-bfde-da8facfe0523"
+        for fields: [String: Any] in [["hook_event_name": "SessionStart", "session_id": session, "source": "startup"],
+                                      ["hook_event_name": "Stop", "session_id": session]] {
+            let input = String(decoding: try JSONSerialization.data(withJSONObject: fields), as: UTF8.self)
+            try rig.loam(["run", "hook", ready], extra: extra, input: input)
+        }
+
+        let host = try await app.launchApp(
+            client: LoamClient(binary: rig.binary, environment: environment), state: rig.stateFile, terminals: true)
+        let model = host.model
+        try await app.waitUntil("the run is ready") { model.runs.first { $0.id == ready }?.state == .ready }
+
+        // Today, Intake, the desk and the run page.
+        try app.click("sidebar-today")
+        try await app.waitUntil("Today shows") { model.page == .today && app.exists("today") }
+        try app.click("sidebar-intake")
+        try await app.waitUntil("Intake shows") { model.page == .intake(plot) && app.exists("intake") }
+        await model.openDesk(ready)
+        try await app.waitUntil("the desk shows the run") { model.page == .desk && model.desk.runID == ready && app.exists("desk") }
+        await model.openRun(ready)
+        try await app.waitUntil("the run page shows") { model.page == .run(ready) && app.exists("run-page") }
+        let steps = model.history.places.count
+
+        func press(_ key: Character, _ expected: AppPage, _ name: String) async throws {
+            app.press(letter: key, flags: .command)
+            try await app.waitUntil("\(name) shows \(expected)") { model.page == expected }
+        }
+        try await press("[", .desk, "⌘[ on the run page")
+        try confirm(model.desk.runID == ready, "Back put the desk on \(model.desk.runID ?? "no run")")
+        try await press("[", .intake(plot), "⌘[ at the desk")
+        try await press("[", .today, "⌘[ on Intake")
+        try await press("]", .intake(plot), "⌘] on Today")
+        try await press("]", .desk, "⌘] on Intake")
+        try await press("]", .run(ready), "⌘] at the desk")
+        try confirm(model.history.places.count == steps, "Back and Forward added steps: \(model.history.places)")
+        try confirm(!model.canGoForward, "the run page has a place after it")
+
+        // The back and forward mouse buttons over the page.
+        try await app.waitUntil("the run page stands in the window") { app.windowPoint(of: "run-page") != nil }
+        let overPage = try app.windowPoint(of: "run-page") ?? { throw DriverFailure("no run page") }()
+        app.otherMouseDown(button: 3, at: overPage)
+        try await app.waitUntil("mouse button 3 shows the desk") { model.page == .desk }
+        try await app.waitUntil("the desk stands in the window") { app.windowPoint(of: "desk") != nil }
+        app.otherMouseDown(button: 4, at: app.windowPoint(of: "desk") ?? overPage)
+        try await app.waitUntil("mouse button 4 shows the run page") { model.page == .run(ready) }
+
+        // A split tab in the plot: ⌘[ moves the focus between the panes, as Ghostty's goto_split:previous does.
+        model.activate(plot: plot)
+        model.openTab(.shell)
+        model.split(.sideBySide, .shell)
+        let panes = model.workspace.activeTab?.tree.paneIDs ?? []
+        try confirm(panes.count == 2, "the split tab has \(panes.count) panes")
+        try await app.waitUntil("the second pane has the focus") { model.page == nil && model.workspace.focusedPane == panes[1] }
+        try await app.waitUntil("the pane has the keys") {
+            (app.window.firstResponder as? NSView).map { $0 is TerminalSurfaceView } == true
+        }
+        // The menu of a driver run behind your windows takes a key but sends no action, so the presses go without it. A
+        // Ghostty binding then goes to libghostty, which sends goto_split back to the window as it does in the app.
+        let history = model.history
+        let menu = NSApp.mainMenu
+        NSApp.mainMenu = nil
+        defer { NSApp.mainMenu = menu }
+        app.press(letter: "[", flags: .command)
+        try await app.waitUntil("⌘[ moves the focus to the first pane") { model.workspace.focusedPane == panes[0] }
+        app.press(letter: "]", flags: .command)
+        try await app.waitUntil("⌘] moves the focus to the second pane") { model.workspace.focusedPane == panes[1] }
+        // Mouse button 3 over a pane goes to the pane.
+        guard let view = host.paneView(panes[0]) else { throw DriverFailure("the first pane has no view") }
+        app.otherMouseDown(button: 3, at: view.convert(NSPoint(x: view.bounds.midX, y: view.bounds.midY), to: nil))
+        await app.sleep(0.2)  // A negative check: a page would show by now.
+        try confirm(model.page == nil && model.history == history, "a key or a button in a pane moved the history: \(model.history.places)")
+
+        NSApp.mainMenu = menu
+
+        // In a pane, Back and Forward come from the Go menu, whose items show no key.
+        for title in ["Back", "Forward"] {
+            guard let item = menuItem(titled: title) else { throw DriverFailure("the Go menu has no item \(title)") }
+            try confirm(item.keyEquivalent.isEmpty, "\(title) shows the key \(item.keyEquivalent)")
+        }
+        guard let back = menuItem(titled: "Back"), let go = back.menu else { throw DriverFailure("no Back item") }
+        go.update()
+        try confirm(back.isEnabled, "Back is off in a pane")
+        go.performActionForItem(at: go.index(of: back))
+        try await app.waitUntil("Back from the pane shows the run page") { model.page == .run(ready) }
+    }
+
     static func intakeShot(_ app: DriverApp) async throws {
         do { try await intakeShotSteps(app) } catch { app.dumpAccessibility(); throw error }
     }

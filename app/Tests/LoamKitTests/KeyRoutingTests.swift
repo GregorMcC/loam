@@ -65,6 +65,30 @@ import Testing
         }
     }
 
+    /// TAS-46: while a page shows, ⌘[ and ⌘] go back and forward. In a terminal pane they stay Ghostty's goto_split keys,
+    /// and the Back and Forward menu items show no key.
+    @Test func thePageRouteTakesTheBracketKeysAndThePaneRouteKeepsThem() {
+        #expect(LoamKeys.pageRoute(KeyChord(.command, "[")) == .goBack)
+        #expect(LoamKeys.pageRoute(KeyChord(.command, "]")) == .goForward)
+        // ⌘⇧[ and ⌘⇧] stay the tab keys, also on a page.
+        #expect(LoamKeys.pageRoute(KeyChord([.command, .shift], "[")) == nil)
+        #expect(LoamKeys.pageRoute(KeyChord([.control, .command], "arrow_left")) == nil)
+        #expect(LoamKeys.route(KeyChord(.command, "["), isGhosttyBinding: true) == .menuThenTerminal)
+        #expect(LoamKeys.route(KeyChord(.command, "]"), isGhosttyBinding: true) == .menuThenTerminal)
+        #expect(LoamKeys.fixedKey(for: KeyChord(.command, "[")) == nil)
+        #expect(LoamKeys.chord(for: .goBack) == nil && LoamKeys.chord(for: .goForward) == nil)
+        #expect(LoamKeys.defaultChord(forGhosttyAction: "goto_split:previous") == KeyChord(.command, "["))
+        #expect(LoamKeys.menuChord(forGhosttyBinding: KeyChord(.command, "]")) == KeyChord(.command, "]"))
+    }
+
+    /// TAS-46: over a page, mouse button 3 goes back and button 4 goes forward.
+    @Test func theMouseBackAndForwardButtonsGoBackAndForwardOnAPage() {
+        #expect(LoamKeys.pageMouseRoute(3) == .goBack)
+        #expect(LoamKeys.pageMouseRoute(4) == .goForward)
+        #expect(LoamKeys.pageMouseRoute(2) == nil)
+        #expect(LoamKeys.pageMouseRoute(0) == nil)
+    }
+
     @Test func otherKeysGoToTheTerminal() {
         #expect(LoamKeys.route(KeyChord(.control, "c"), isGhosttyBinding: false) == .terminal)
         #expect(LoamKeys.route(KeyChord([], "a"), isGhosttyBinding: false) == .terminal)
