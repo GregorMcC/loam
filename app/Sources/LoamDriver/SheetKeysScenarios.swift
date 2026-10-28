@@ -34,7 +34,7 @@ extension Scenarios {
     /// The items of the app: Settings, the Ghostty config and Quit.
     private static let appItems = ["Settings\u{2026}", "Open Ghostty Config", "Reload Ghostty Config", "Quit Loam"]
 
-    private static func menuItem(titled title: String) -> NSMenuItem? {
+    static func menuItem(titled title: String) -> NSMenuItem? {
         func find(_ menu: NSMenu) -> NSMenuItem? {
             for item in menu.items {
                 if item.title == title, item.action != nil { return item }

@@ -215,6 +215,19 @@ extension DriverApp {
         }
     }
 
+    /// Presses a mouse button other than the left and the right one at a point of the window, through the window's
+    /// `sendEvent` as AppKit sends it. Button 3 is back and button 4 is forward (TAS-46). An event made from a CGEvent has
+    /// no window, so its location is in screen coordinates.
+    func otherMouseDown(button: Int, at point: NSPoint) {
+        let screen = window.convertPoint(toScreen: point)
+        let height = NSScreen.screens.first?.frame.height ?? 0
+        guard let cg = CGEvent(mouseEventSource: nil, mouseType: .otherMouseDown,
+                               mouseCursorPosition: CGPoint(x: screen.x, y: height - screen.y), mouseButton: .center) else { return }
+        cg.setIntegerValueField(.mouseEventButtonNumber, value: Int64(button))
+        guard let event = NSEvent(cgEvent: cg) else { return }
+        window.sendEvent(event)
+    }
+
     /// Where the window server has the window, in the coordinates of AppKit. It follows `window.frame` a moment after a
     /// change of the frame.
     private func windowServerFrame() -> NSRect? {

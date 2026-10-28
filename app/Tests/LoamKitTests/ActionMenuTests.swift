@@ -15,9 +15,9 @@ import Testing
         ActionMenu.sections(paneTitle: pane, plotName: plot, chord: menuChord, isEnabled: enabled)
     }
 
-    @Test func listsThePaneThenThePlotThenHome() {
+    @Test func listsThePaneThenThePlotThenHomeThenGo() {
         let all = sections()
-        #expect(all.map(\.title) == ["claude", "Loam v1 build", "Home"])
+        #expect(all.map(\.title) == ["claude", "Loam v1 build", "Home", "Go"])
         #expect(all[0].items.map(\.title) == ["New session", "Split right", "Split down", "Split right with shell", "Split down with shell", "Close pane"])
         #expect(all[1].items.map(\.title) == ["New session in plot", "Edit brief", "Add link", "Add repo", "Archive plot"])
         #expect(all[0].items.map(\.command) == [.newTab, .newSplit(.sideBySide), .newSplit(.stacked),
@@ -25,6 +25,10 @@ import Testing
         #expect(all[1].items.map(\.command) == [.newPlotSession, .editBrief, .addLink, .addRepo, .archivePlot])
         #expect(all[2].items.map(\.title) == ["New session in Home", "New shell in Home"])
         #expect(all[2].items.map(\.command) == [.newHomeSession, .newHomeShell])
+        // TAS-46: Back and Forward, which have no key in a terminal pane.
+        #expect(all[3].items.map(\.title) == ["Back", "Forward"])
+        #expect(all[3].items.map(\.command) == [.goBack, .goForward])
+        #expect(all[3].items.allSatisfy { $0.keys.isEmpty })
         #expect(all.flatMap(\.items).allSatisfy { !$0.symbol.isEmpty })
     }
 
@@ -69,12 +73,12 @@ import Testing
 
     @Test func aPaneAndAPlotWithOneNameKeepTwoSections() {
         let all = sections(pane: "loam", plot: "loam")
-        #expect(all.map(\.id) == ["pane", "plot", "home"])
+        #expect(all.map(\.id) == ["pane", "plot", "home", "go"])
         #expect(ActionMenu.filter(all, query: "e").map(\.id) == ["pane", "plot", "home"])
     }
 
     @Test func noPaneAndNoPlotNameUseTheirKind() {
-        #expect(sections(pane: nil, plot: nil).map(\.title) == ["Pane", "Plot", "Home"])
+        #expect(sections(pane: nil, plot: nil).map(\.title) == ["Pane", "Plot", "Home", "Go"])
     }
 
     /// The menu and the list agree on what can run: tab commands need an active space (Home or a
@@ -93,11 +97,16 @@ import Testing
         #expect(!ActionMenu.isAvailable(.archivePlot, hasSpace: true, hasPlot: false, hasPane: false))
         #expect(ActionMenu.isAvailable(.archivePlot, hasSpace: true, hasPlot: true, hasPane: false))
         #expect(ActionMenu.isAvailable(.toggleSidebar, hasSpace: true, hasPlot: false, hasPane: false))
+        // TAS-46: Back and Forward need a place to go to.
+        #expect(!ActionMenu.isAvailable(.goBack, hasSpace: true, hasPlot: true, hasPane: true))
+        #expect(ActionMenu.isAvailable(.goBack, hasSpace: false, hasPlot: false, hasPane: false, canGoBack: true))
+        #expect(!ActionMenu.isAvailable(.goForward, hasSpace: true, hasPlot: true, hasPane: true, canGoBack: true))
+        #expect(ActionMenu.isAvailable(.goForward, hasSpace: false, hasPlot: false, hasPane: false, canGoForward: true))
     }
 
     @Test func theFilterMatchesEachWordOfTheTitle() {
         let all = sections()
-        #expect(ActionMenu.filter(all, query: "").flatMap(\.items).count == 13)
+        #expect(ActionMenu.filter(all, query: "").flatMap(\.items).count == 15)
         #expect(ActionMenu.filter(all, query: "split").flatMap(\.items).map(\.title) == [
             "Split right", "Split down", "Split right with shell", "Split down with shell"])
         #expect(ActionMenu.filter(all, query: "  DOWN sp ").flatMap(\.items).map(\.title) == ["Split down", "Split down with shell"])
@@ -221,7 +230,7 @@ import Testing
         menu.move(1)
         #expect(menu.selected?.title == "Split down")
         for _ in 0..<20 { menu.move(1) }
-        #expect(menu.selected?.title == "New shell in Home")
+        #expect(menu.selected?.title == "Forward")
     }
 
     @Test func typingFiltersAndSelectsTheFirstMatch() {

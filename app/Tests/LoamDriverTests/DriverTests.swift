@@ -306,6 +306,14 @@ struct DriverTests {
         ])
     }
 
+    /// TAS-46: ⌘[ and ⌘] and the mouse back and forward buttons go back and forward through Today, Intake, the desk and
+    /// a run page. In a split tab, ⌘[ and ⌘] still move the focus between the panes and leave the history alone.
+    @Test func goesBackAndForwardBetweenPages() async throws {
+        try await expectPass("history-shot", environment: [
+            "LOAM_DRIVER_LOAM": Self.loamBinary, "LOAM_DRIVER_FAKE_CLAUDE": Self.fakeClaude,
+        ])
+    }
+
     /// Ticket 204: the Intake page lists two GitHub issues and two open map tickets, filters them, and starts a run
     /// from a ticket through the core. The new run shows its page, and the ticket shows its run.
     @Test func listsTheIntakeAndStartsARunFromATicket() async throws {
