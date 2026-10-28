@@ -133,7 +133,8 @@ extension MainWindowController: NSMenuItemValidation {
                                       hasPane: workspace.focusedPane != nil, hasWorktree: worktree != nil,
                                       hasPullRequest: worktree?.pr != nil,
                                       checksFailed: worktree.map { model.canSendFailures($0.worktree.id) } ?? false,
-                                      readyToMerge: worktree?.stage == .readyToMerge)
+                                      readyToMerge: worktree?.stage == .readyToMerge,
+                                      canGoBack: model.canGoBack, canGoForward: model.canGoForward)
     }
 
     /// The menu bar and the actions menu agree on what can run (`ActionMenu.isAvailable`).

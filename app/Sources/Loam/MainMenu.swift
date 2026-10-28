@@ -78,6 +78,10 @@ func makeMainMenu(target: MainWindowController) -> NSMenu {
     go.addItem(.separator())
     item(go, "Next Pane That Needs You", .nextPaneThatNeedsYou)
     item(go, "Next Worktree Ready to Merge", .nextReadyWorktree)
+    go.addItem(.separator())
+    // No key: ⌘[ and ⌘] go back and forward only while a page shows, and the Previous Split and Next Split items show them.
+    item(go, "Back", .goBack)
+    item(go, "Forward", .goForward)
 
     let plots = submenu("Plot")
     // The plot's own actions (ticket 89). The actions menu (⌘J) lists them from here.

@@ -475,8 +475,9 @@ struct RunPageView: View {
         let run = model.runStatus?.run.id == id ? model.runStatus?.run : model.runs.first { $0.id == id }
         ScrollView {
             VStack(alignment: .leading, spacing: LoamTheme.space6) {
-                Button { model.showToday() } label: {
-                    Label("Today", systemImage: "chevron.left").loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+                // One step back (TAS-46). With no place before, it goes to Today.
+                Button { Task { await model.runPageBack() } } label: {
+                    Label("Back", systemImage: "chevron.left").loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("run-page-back")

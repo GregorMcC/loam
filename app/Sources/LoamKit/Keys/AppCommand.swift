@@ -23,6 +23,10 @@ public enum AppCommand: Hashable, Sendable {
     /// A shell split has no key: macOS keeps ⌃⌘D for Look Up (ticket 97). It comes from the menu,
     /// the switcher, or the ⌘J actions menu.
     case newShellSplit(SplitAxis)
+    /// Back and Forward between pages (TAS-46). ⌘[ and ⌘] run them while a page shows (`LoamKeys.pageRoute`). Their menu
+    /// items show no key, since the Ghostty split items show ⌘[ and ⌘].
+    case goBack
+    case goForward
 
     // Ghostty's tab and split actions, on the active space.
     case newTab
@@ -88,7 +92,7 @@ public enum AppCommand: Hashable, Sendable {
         case .openSettings, .openConfig, .reloadConfig, .quit:
             false
         case .quickSwitcher, .quickSwitcherActions, .actionsMenu, .nextPaneThatNeedsYou, .nextReadyWorktree, .selectPlot,
-             .selectHome, .newPlot, .toggleSidebar, .togglePlotPanel, .newShellTab, .newShellSplit,
+             .selectHome, .newPlot, .toggleSidebar, .togglePlotPanel, .newShellTab, .newShellSplit, .goBack, .goForward,
              .newTab, .newSplit, .focusPane, .selectTab, .previousTab, .nextTab, .lastTab, .closePane, .closeTab,
              .equalizeSplits, .resizeSplit, .undo, .redo,
              .newHomeSession, .newHomeShell, .moveTabToPlot, .moveTabToNewPlot,
@@ -146,6 +150,26 @@ public enum LoamKeys {
     /// The chord of a fixed command, for its menu item.
     public static func chord(for command: AppCommand) -> KeyChord? {
         fixed.first { $0.command == command }?.chord
+    }
+
+    /// The keys of a page (TAS-46): ⌘[ goes back and ⌘] goes forward. They count only while a page shows. In a terminal
+    /// pane they stay Ghostty's goto_split keys, and Back and Forward come from the Go menu and the actions menu.
+    public static let pageKeys: [KeyChord: AppCommand] = [
+        KeyChord(.command, "["): .goBack,
+        KeyChord(.command, "]"): .goForward,
+    ]
+
+    /// The command of a key while a page shows, or nil for a key that takes its normal path.
+    public static func pageRoute(_ chord: KeyChord) -> AppCommand? { pageKeys[chord] }
+
+    /// The command of a mouse button over a page: button 3 is back and button 4 is forward, as `NSEvent.buttonNumber`
+    /// counts them. Nil for the other buttons, and over a terminal pane each button goes to Ghostty.
+    public static func pageMouseRoute(_ button: Int) -> AppCommand? {
+        switch button {
+        case 3: .goBack
+        case 4: .goForward
+        default: nil
+        }
     }
 
     /// Where a key that reaches a focused pane goes.

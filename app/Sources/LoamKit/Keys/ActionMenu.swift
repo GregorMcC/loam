@@ -63,6 +63,12 @@ public enum ActionMenu {
         Entry(command: .newHomeShell, title: "New shell in Home", symbol: "apple.terminal"),
     ]
 
+    /// Back and Forward between pages (TAS-46). They have no key in a terminal pane, so the menu offers them there.
+    static let goEntries = [
+        Entry(command: .goBack, title: "Back", symbol: "chevron.left"),
+        Entry(command: .goForward, title: "Forward", symbol: "chevron.right"),
+    ]
+
     /// A row for each plot, then "Move to New Plot…".
     static func moveEntries(_ targets: [PlotSummary]) -> [Entry] {
         targets.map { Entry(command: .moveTabToPlot($0.id), title: "Move to \($0.name)", symbol: "arrow.right.square") }
@@ -79,7 +85,7 @@ public enum ActionMenu {
         }
     }
 
-    /// The sections for the focused pane, its worktree, a move to a plot, the active plot, and Home.
+    /// The sections for the focused pane, its worktree, a move to a plot, the active plot, Home, and Back and Forward.
     /// `worktree` is nil for a pane that runs in no worktree, and then the menu has no worktree section.
     /// `chord` gives the key of a command as the menu bar shows it, `isEnabled` whether its menu item is
     /// enabled. `inHome` leaves out the Home section, because its rows would repeat "New session" and ⌘⌥T,
@@ -98,6 +104,7 @@ public enum ActionMenu {
             ActionSection(id: "move", title: "Move to Plot", items: inHome ? items(moveEntries(moveTargets)) : []),
             ActionSection(id: "plot", title: plotName.flatMap { $0.isEmpty ? nil : $0 } ?? "Plot", items: items(plotEntries)),
             ActionSection(id: "home", title: Space.homeName, items: inHome ? [] : items(homeEntries)),
+            ActionSection(id: "go", title: "Go", items: items(goEntries)),
         ].filter { !$0.items.isEmpty }
     }
 
@@ -106,11 +113,13 @@ public enum ActionMenu {
     /// focused pane, and plot commands an active plot. A move to a plot needs a tab in Home. The worktree
     /// commands need a focused pane in a worktree (ticket 109), and Show pull request needs a PR as well.
     /// Send failures to session needs a PR whose checks failed (ticket 110), and Land… a PR that is ready to merge
-    /// (ticket 112).
+    /// (ticket 112). Back and Forward need a place to go to (TAS-46).
     public static func isAvailable(_ command: AppCommand, hasSpace: Bool, hasPlot: Bool, hasPane: Bool,
                                    hasWorktree: Bool = false, hasPullRequest: Bool = false, checksFailed: Bool = false,
-                                   readyToMerge: Bool = false) -> Bool {
+                                   readyToMerge: Bool = false, canGoBack: Bool = false, canGoForward: Bool = false) -> Bool {
         switch command {
+        case .goBack: canGoBack
+        case .goForward: canGoForward
         case .newTab, .newShellTab: hasSpace
         case .newPlotSession, .editBrief, .addLink, .addRepo, .archivePlot, .togglePlotPanel: hasPlot
         case .newSplit, .newShellSplit, .closePane: hasSpace && hasPane

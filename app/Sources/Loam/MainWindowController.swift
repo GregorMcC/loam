@@ -152,6 +152,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         // Each overlay host goes in this list, so the window refuses the keys to it while it is hidden (ticket 130).
         window.overlays = [switcherHost, actionsHost, popoverHost, landHost, newWorktreeHost]
         window.sheetBlocksWindow = { [weak model] in model?.sheetBlocksWindow ?? false }
+        window.shownPage = { [weak self] in self?.pageShown == true ? self?.pageHost : nil }
+        window.performPageCommand = { [weak self] in self?.perform($0) }
         collapseObservation = sidebarItem.observe(\.isCollapsed, options: [.new]) { [weak self] _, _ in
             MainActor.assumeIsolated { self?.syncCollapse() }
         }
@@ -640,6 +642,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         case .openSettings: showSettings()
         case .newSplit(let axis): model.split(axis, .session)
         case .newShellSplit(let axis): Task { await model.splitShell(axis) }
+        case .goBack:
+            guard model.canGoBack else { return false }
+            Task { await model.goBack() }
+        case .goForward:
+            guard model.canGoForward else { return false }
+            Task { await model.goForward() }
         case .focusPane(let step): model.focusPane(step)
         case .selectTab(let number): model.selectTab(number: number)
         case .previousTab: model.previousTab()
@@ -778,6 +786,36 @@ final class MainWindow: NSWindow {
     override func makeFirstResponder(_ responder: NSResponder?) -> Bool {
         if let view = responder as? NSView, overlays.contains(where: { $0.isHidden && view.isDescendant(of: $0) }) { return false }
         return super.makeFirstResponder(responder)
+    }
+
+    /// The page in the well while one shows, else nil (TAS-46). The controller sets it.
+    var shownPage: () -> NSView? = { nil }
+    /// Runs Back or Forward. The controller sets it.
+    var performPageCommand: (AppCommand) -> Void = { _ in }
+
+    /// While a page shows, ⌘[ and ⌘] go back and forward (TAS-46). They come before the menu, whose Previous Split and
+    /// Next Split items have the same keys. In a terminal pane, no page shows, so the keys stay Ghostty's goto_split. The
+    /// page keeps the keys even when there is no place to go, so they never move the focus in the hidden panes.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.type == .keyDown, shownPage() != nil, let chord = KeyChord(event: event),
+           let command = LoamKeys.pageRoute(chord) {
+            performPageCommand(command)
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    /// The back and forward mouse buttons go back and forward over a page (TAS-46). Over a terminal pane they go on to the
+    /// pane, which sends them to Ghostty. An event with no window has its location in screen coordinates.
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .otherMouseDown, let command = LoamKeys.pageMouseRoute(event.buttonNumber), let page = shownPage() {
+            let point = event.window == nil ? convertPoint(fromScreen: event.locationInWindow) : event.locationInWindow
+            if page.bounds.contains(page.convert(point, from: nil)) {
+                performPageCommand(command)
+                return
+            }
+        }
+        super.sendEvent(event)
     }
 }
 
