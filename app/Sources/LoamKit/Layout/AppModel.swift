@@ -161,7 +161,8 @@ public final class AppModel {
     public internal(set) var page: AppPage? {
         didSet {
             guard page != oldValue else { return }
-            if oldValue == .today { leftToday() }
+            // The desk and a run page open from Today, so you leave Today only when you leave all three.
+            if Self.isTodayGroup(oldValue), !Self.isTodayGroup(page) { leftToday() }
             onWorkspaceChange?()
         }
     }

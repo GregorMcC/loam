@@ -107,6 +107,14 @@ extension AppModel {
         todayData.awayEvents = feed.events
     }
 
+    /// True for Today and the pages that open from it: the desk and a run page. The sidebar marks Today for all three.
+    static func isTodayGroup(_ page: AppPage?) -> Bool {
+        switch page {
+        case .today, .desk, .run: true
+        default: false
+        }
+    }
+
     /// You left Today: the next visit shows the events from now on.
     func leftToday() {
         let at = now()

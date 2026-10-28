@@ -137,6 +137,20 @@ import Testing
         #expect(model.intakeCount == 0)
     }
 
+    /// The desk and a run page open from Today. A move to them keeps the time of away, and a move out of all three
+    /// moves it.
+    @Test func theDeskAndARunPageDoNotLeaveToday() throws {
+        let (model, _) = try model([])
+        let clock = ChangeRules.date("2026-10-28T18:00:00Z")!
+        model.now = { clock }
+        model.page = .today
+        model.page = .desk
+        model.page = .run("runraaaaab")
+        #expect(model.todayData.leftAt == nil)
+        model.page = .intake("plotaaaaae")
+        #expect(model.todayData.leftAt == clock)
+    }
+
     @Test func leavingTodayMovesTheTimeOfAway() async throws {
         let (model, fake) = try model([("run_list", 0), ("run_list", 0), ("run_events", 0)])
         let clock = ChangeRules.date("2026-10-28T18:00:00Z")!

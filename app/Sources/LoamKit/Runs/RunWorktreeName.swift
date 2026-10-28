@@ -9,7 +9,7 @@ public enum RunWorktreeName {
 
     /// The name from the key and the title. `taken` are the names of the worktrees of the plot.
     public static func name(title: String, key: String, taken: Set<String>) -> String {
-        var base = slug((key + " " + title).trimmingCharacters(in: .whitespaces))
+        var base = slug((key + " " + title).trimmingCharacters(in: .whitespacesAndNewlines))
         if base.isEmpty { base = "run" }
         var name = base
         var n = 2

@@ -492,7 +492,7 @@ private struct IntakeDetail: View {
     /// What a shape of the item makes: the worktree and its branch, the base, the kind, and the Linear update.
     private var whenYouShapeIt: some View {
         let taken = Set((model.worktrees[plotID] ?? []).map(\.worktree.name))
-        let name = IntakeContent.worktreeName(key: item.key, title: item.title, taken: taken)
+        let name = RunWorktreeName.name(title: item.title, key: item.key, taken: taken)
         let bases = model.runBases?.plot == plotID ? model.runBases : nil
         return section("When you shape it") {
             Grid(alignment: .topLeading, horizontalSpacing: 10, verticalSpacing: 7) {

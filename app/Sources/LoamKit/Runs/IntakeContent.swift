@@ -165,36 +165,6 @@ public enum IntakeContent {
         }
     }
 
-    /// The longest worktree name from a slug. A name cut short ends at a whole word. It is `slugMax` in the core.
-    static let slugMax = 48
-
-    /// The name that the core gives the worktree of a run from the item, such as eng-523-plot-panel-drag-a-link-to,
-    /// with a number added when the plot has a worktree of that name (`freeName` in core/internal/run).
-    public static func worktreeName(key: String, title: String, taken: Set<String>) -> String {
-        var base = slug((key + " " + title).trimmingCharacters(in: .whitespacesAndNewlines))
-        if base.isEmpty { base = "run" }
-        var name = base
-        var n = 2
-        while taken.contains(name) {
-            name = "\(base)-\(n)"
-            n += 1
-        }
-        return name
-    }
-
-    /// Lowercase words of ASCII letters and digits, joined by "-", as `slug` in the core makes them.
-    static func slug(_ text: String) -> String {
-        let words = text.lowercased().unicodeScalars
-            .split { !($0.isASCII && (CharacterSet.letters.contains($0) || CharacterSet.decimalDigits.contains($0))) }
-            .map { String(String.UnicodeScalarView($0)) }
-        var kept: [String] = []
-        for word in words {
-            if (kept + [word]).joined(separator: "-").count > slugMax, !kept.isEmpty { break }
-            kept.append(word)
-        }
-        return String(kept.joined(separator: "-").prefix(slugMax))
-    }
-
     // MARK: The bar of the checked rows
 
     /// How the bar acts on the checked rows.

@@ -115,23 +115,23 @@ import Testing
 
     /// The cases of the core: a run with no key, a map ticket, and a name that a worktree of the plot has.
     @Test func theWorktreeNameIsTheNameThatTheCoreGives() {
-        #expect(IntakeContent.worktreeName(key: "", title: "Drag a link to reorder", taken: []) == "drag-a-link-to-reorder")
-        #expect(IntakeContent.worktreeName(key: "", title: "Fix the thing", taken: []) == "fix-the-thing")
-        #expect(IntakeContent.worktreeName(key: "map 135", title: "Quit during a merge", taken: [])
+        #expect(RunWorktreeName.name(title: "Drag a link to reorder", key: "", taken: []) == "drag-a-link-to-reorder")
+        #expect(RunWorktreeName.name(title: "Fix the thing", key: "", taken: []) == "fix-the-thing")
+        #expect(RunWorktreeName.name(title: "Quit during a merge", key: "map 135", taken: [])
             == "map-135-quit-during-a-merge")
-        #expect(IntakeContent.worktreeName(key: "ENG-523", title: "Plot panel: drag a link to reorder it", taken: [])
+        #expect(RunWorktreeName.name(title: "Plot panel: drag a link to reorder it", key: "ENG-523", taken: [])
             == "eng-523-plot-panel-drag-a-link-to-reorder-it")
-        #expect(IntakeContent.worktreeName(key: "#48", title: "Fix x", taken: ["48-fix-x", "48-fix-x-2"]) == "48-fix-x-3")
-        #expect(IntakeContent.worktreeName(key: "", title: "Ünïcode — only?", taken: []) == "n-code-only")
-        #expect(IntakeContent.worktreeName(key: "", title: "—", taken: []) == "run")
+        #expect(RunWorktreeName.name(title: "Fix x", key: "#48", taken: ["48-fix-x", "48-fix-x-2"]) == "48-fix-x-3")
+        #expect(RunWorktreeName.name(title: "Ünïcode — only?", key: "", taken: []) == "n-code-only")
+        #expect(RunWorktreeName.name(title: "—", key: "", taken: []) == "run")
     }
 
     @Test func aLongNameEndsAtAWholeWord() {
-        let name = IntakeContent.worktreeName(key: "ENG-1", title: "Settings: choose the folder that each worktree goes into",
-                                              taken: [])
+        let name = RunWorktreeName.name(title: "Settings: choose the folder that each worktree goes into", key: "ENG-1",
+                                        taken: [])
         #expect(name == "eng-1-settings-choose-the-folder-that-each")
         #expect(name.count <= 48)
-        #expect(IntakeContent.slug(String(repeating: "a", count: 60)) == String(repeating: "a", count: 48))
+        #expect(RunWorktreeName.slug(String(repeating: "a", count: 60)) == String(repeating: "a", count: 48))
     }
 
     @Test func theDetailSaysWhereTheItemComesFrom() {
