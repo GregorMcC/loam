@@ -80,7 +80,10 @@ struct IntakeView: View {
                 Button("") { toggle(current().focused) }
                     .keyboardShortcut("x", modifiers: [])
                 ForEach([(KeyEquivalent.downArrow, 1), ("j", 1), (.upArrow, -1), ("k", -1)], id: \.0.character) { key, step in
-                    Button("") { selected = IntakeContent.move(from: current().focused?.id, in: current().rows, by: step) }
+                    Button("") {
+                        let (_, rows, focused) = current()
+                        selected = IntakeContent.move(from: focused?.id, in: rows, by: step)
+                    }
                         .keyboardShortcut(key, modifiers: [])
                 }
             }
@@ -100,7 +103,7 @@ struct IntakeView: View {
 
     private func empty(_ list: IntakeList) -> String {
         if list.sources.isEmpty { return "This plot has no Linear link, no GitHub repo, and no map link, so it has no intake." }
-        return list.items.isEmpty ? "No open issues or tickets." : "No item matches."
+        return list.items.isEmpty ? "No open issues or tickets." : IntakeContent.noMatchWords(list, filter: filter)
     }
 
     private func toggle(_ item: IntakeItem?) {
@@ -212,10 +215,10 @@ struct IntakeView: View {
             }
             chip("Assigned to me", on: $filter.assignedToMe, id: "intake-assigned")
             chip("Hide items with a run", on: $filter.hideWithRun, id: "intake-hide-with-run")
-            chip("Hide taken", on: $filter.hideTaken, id: "intake-hide-taken")
+            chip(IntakeContent.hideTakenWords(list), on: $filter.hideTaken, id: "intake-hide-taken")
                 .help("Hide the items that someone else has, or that are in progress")
             let milestones = IntakeContent.milestoneChoices(list)
-            if !milestones.isEmpty { milestoneMenu(milestones) }
+            if !milestones.isEmpty { milestoneMenu(list, milestones) }
             Spacer(minLength: LoamTheme.space2)
             Text(IntakeContent.sortWords).font(.system(size: 11)).foregroundStyle(LoamColor.inkMuted).lineLimit(1)
                 .help(IntakeContent.sortHelp)
@@ -224,17 +227,18 @@ struct IntakeView: View {
     }
 
     /// The Milestone menu (TAS-51), drawn as a chip that is on while it keeps one milestone.
-    private func milestoneMenu(_ choices: [IntakeContent.MilestoneChoice]) -> some View {
-        let on = filter.milestone != nil
+    private func milestoneMenu(_ list: IntakeList, _ choices: [IntakeContent.MilestoneChoice]) -> some View {
+        let milestone = IntakeContent.activeMilestone(list, filter: filter)
+        let on = milestone != nil
         return Menu {
-            Picker("Milestone", selection: $filter.milestone) {
+            Picker("Milestone", selection: Binding(get: { milestone }, set: { filter.milestone = $0 })) {
                 ForEach(choices, id: \.milestone) { Text($0.words).tag($0.milestone) }
             }
             .pickerStyle(.inline)
             .labelsHidden()
         } label: {
             HStack(spacing: 4) {
-                Text(IntakeContent.milestoneWords(filter.milestone)).lineLimit(1)
+                Text(IntakeContent.milestoneWords(milestone)).lineLimit(1)
                 Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold))
             }
             .font(.system(size: 12))
@@ -250,7 +254,7 @@ struct IntakeView: View {
         .fixedSize()
         .help("Show only the issues of one milestone")
         .accessibilityLabel("Milestone")
-        .accessibilityValue(IntakeContent.milestoneWords(filter.milestone))
+        .accessibilityValue(IntakeContent.milestoneWords(milestone))
         .accessibilityIdentifier("intake-milestone")
     }
 

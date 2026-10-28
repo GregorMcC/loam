@@ -106,7 +106,7 @@ import Testing
     }
 
     /// TAS-50: Hide taken is on by default. It hides an item that someone else has or that is in progress, but not an
-    /// item with a run.
+    /// item that is yours or that has a run.
     @Test func hideTakenHidesTheItemsOfOthersAndTheItemsInProgress() {
         var others = Self.item("linear", key: "ENG-1")
         others.assignee = "Bob Example"
@@ -120,10 +120,22 @@ import Testing
         mine.assignee = "ada, bob"
         let list = Self.list([others, started, ran, mine, Self.item("map", key: "map 5")])
         #expect(IntakeContent.Filter().hideTaken)
-        #expect(IntakeContent.rows(list, filter: .init()).map(\.key) == ["#4", "map 5", "ENG-3"])
+        #expect(!IntakeContent.isTaken(started), "an issue of yours in progress is yours")
+        #expect(IntakeContent.rows(list, filter: .init()).map(\.key) == ["ENG-2", "#4", "map 5", "ENG-3"])
+        #expect(IntakeContent.hideTakenWords(list) == "Hide taken 1")
+        // An issue in progress that no one has is taken too.
+        var unassigned = Self.item("linear", key: "ENG-6")
+        unassigned.inProgress = true
+        #expect(IntakeContent.isTaken(unassigned))
+        // A list that only Hide taken empties says so.
+        var onlyTaken = Self.list([others])
+        #expect(IntakeContent.noMatchWords(onlyTaken, filter: .init()).hasPrefix("No item matches. Hide taken hides"))
+        onlyTaken.items = []
+        #expect(IntakeContent.hideTakenWords(onlyTaken) == "Hide taken")
         var all = IntakeContent.Filter()
         all.hideTaken = false
         #expect(IntakeContent.rows(list, filter: all).map(\.key) == ["ENG-1", "ENG-2", "#4", "map 5", "ENG-3"])
+        #expect(IntakeContent.noMatchWords(list, filter: all) == "No item matches.")
     }
 
     /// TAS-51: the Milestone menu has All, the milestones in the order of the project, then No milestone, and a choice
@@ -148,6 +160,14 @@ import Testing
         #expect(keys(nil) == ["ENG-1", "ENG-2", "ENG-3", "ENG-4", "ENG-5"])
         #expect(keys("Beta") == ["ENG-1", "ENG-4"])
         #expect(keys("") == ["ENG-3"])
+        // A choice that the list no longer has keeps every item, and the menu says All.
+        #expect(keys("Gamma") == ["ENG-1", "ENG-2", "ENG-3", "ENG-4", "ENG-5"])
+        var gone = IntakeContent.Filter()
+        gone.milestone = "Gamma"
+        #expect(IntakeContent.activeMilestone(list, filter: gone) == nil)
+        // A name in two projects takes its first place.
+        let twice = Self.list([item("ENG-6", "Beta", 7), item("ENG-7", "Beta", 0.5), item("ENG-8", "Alpha", 1)])
+        #expect(IntakeContent.milestoneChoices(twice).map(\.words) == ["All milestones", "Beta", "Alpha", "No milestone"])
         #expect(IntakeContent.milestoneWords(nil) == "Milestone")
         #expect(IntakeContent.milestoneWords("") == "No milestone")
         #expect(IntakeContent.milestoneWords("Beta") == "Beta")

@@ -32,10 +32,31 @@ public enum IntakeContent {
         public init() {}
     }
 
-    /// An item is taken when someone else is its assignee, or when it is in progress. An item with a run is yours,
-    /// so it is never taken: the run moves its Linear issue to In Progress.
+    /// An item is taken when someone else is its assignee, or when it is in progress. An item that is assigned to you
+    /// or that has a run is yours, so it is never taken: a run moves its Linear issue to In Progress.
     public static func isTaken(_ item: IntakeItem) -> Bool {
-        item.runID.isEmpty && ((!item.assignee.isEmpty && !item.assignedToMe) || item.inProgress)
+        item.runID.isEmpty && !item.assignedToMe && (!item.assignee.isEmpty || item.inProgress)
+    }
+
+    /// The Hide taken chip, with the count of the taken items when there are any, such as "Hide taken 9".
+    public static func hideTakenWords(_ list: IntakeList) -> String {
+        let taken = list.items.filter(isTaken).count
+        return taken == 0 ? "Hide taken" : "Hide taken \(taken)"
+    }
+
+    /// The text of a list that the filter empties. It names Hide taken when that chip alone hides the items.
+    public static func noMatchWords(_ list: IntakeList, filter: Filter) -> String {
+        var all = filter
+        all.hideTaken = false
+        guard filter.hideTaken, !rows(list, filter: all).isEmpty else { return "No item matches." }
+        return "No item matches. Hide taken hides the items that someone else has or that are in progress."
+    }
+
+    /// The milestone that the filter keeps: nil when the choice is All, or when the list has no such choice any more,
+    /// such as after a reload.
+    public static func activeMilestone(_ list: IntakeList, filter: Filter) -> String? {
+        guard let milestone = filter.milestone else { return nil }
+        return milestoneChoices(list).contains { $0.milestone == milestone } ? milestone : nil
     }
 
     /// One choice of the Milestone menu. A nil milestone is All, and "" is No milestone.
@@ -45,11 +66,13 @@ public enum IntakeContent {
     }
 
     /// The choices of the Milestone menu (TAS-51): All, each milestone in the order of its project, then No milestone.
-    /// Milestones with the same place sort by name. Empty when no item of the list has a milestone, so the page shows
+    /// Milestones with the same place sort by name, and a name in two projects takes its first place. Empty when no item of the list has a milestone, so the page shows
     /// no menu.
     public static func milestoneChoices(_ list: IntakeList) -> [MilestoneChoice] {
         var order: [String: Double] = [:]
-        for item in list.items where !item.milestone.isEmpty { order[item.milestone] = item.milestoneOrder }
+        for item in list.items where !item.milestone.isEmpty {
+            order[item.milestone] = min(order[item.milestone] ?? item.milestoneOrder, item.milestoneOrder)
+        }
         guard !order.isEmpty else { return [] }
         let names = order.keys.sorted { a, b in order[a] != order[b] ? order[a]! < order[b]! : a < b }
         return [MilestoneChoice(milestone: nil, words: "All milestones")]
@@ -119,13 +142,14 @@ public enum IntakeContent {
     /// The rows that the filter keeps, in the order of the page: the items with no run first, then by Linear
     /// priority, then the oldest first. Items that tie keep the order of the core.
     public static func rows(_ list: IntakeList, filter: Filter) -> [IntakeItem] {
+        let milestone = activeMilestone(list, filter: filter)
         let kept = list.items.enumerated().filter { _, item in
             (filter.source == .all || item.source == filter.source.rawValue)
                 && (!filter.thisCycle || item.inCycle)
                 && (!filter.assignedToMe || item.assignedToMe)
                 && !(filter.hideWithRun && !item.runID.isEmpty)
                 && !(filter.hideTaken && isTaken(item))
-                && (filter.milestone == nil || item.milestone == filter.milestone)
+                && (milestone == nil || item.milestone == milestone)
         }
         return kept.sorted { a, b in
             let (i, x) = a
