@@ -99,6 +99,11 @@ import Testing
         plain.tries = 1
         #expect(DeskContent.stations(plain, events: [Self.event(1, "ci", "CI failed on #3: test")], timeZone: Self.utc)
             == ["Run: 1 turn, 1 try", "Ship: CI failed"])
+
+        // A PR with no CI is not a failure (TAS-53).
+        let noCI = Self.run("r3", .ready)
+        #expect(DeskContent.stations(noCI, events: [Self.event(1, "ci", "No CI ran on #51")], timeZone: Self.utc)
+            == ["Run: 0 turns, 1 try", "Ship: no CI"])
     }
 
     // MARK: Evidence

@@ -128,14 +128,20 @@ func (e *NotReadyError) ErrorDetails() any {
 	}{e.Checks}
 }
 
-// headChangedError is the error of a land whose PR has a commit that the caller did not look at. It is a land that
-// is not ready, with no check that blocks: the checks that the caller saw belong to another commit.
+// headChangedError is the error of a land whose PR head is not the commit that the caller looked at. It is a land
+// that is not ready, with no check that blocks: the checks that the caller saw belong to another commit. Most often
+// the PR has a commit that the caller did not look at. When the caller looked at a local commit after the PR head
+// (ahead), GitHub does not have that commit yet.
 type headChangedError struct {
 	number int
 	folder string
+	ahead  bool
 }
 
 func (e *headChangedError) Error() string {
+	if e.ahead {
+		return fmt.Sprintf("%s is not ready to land: PR #%d does not have the commit that you looked at. Look again when GitHub has it, before you merge", e.folder, e.number)
+	}
 	return fmt.Sprintf("%s is not ready to land: PR #%d has new commits since you looked at it. Look again before you merge", e.folder, e.number)
 }
 
@@ -284,7 +290,8 @@ func Land(ctx context.Context, s *store.Store, plotID, arg string, o LandOptions
 	}
 	// First of all, so a land that stops here changes nothing, not even a stale land that it would clear.
 	if !o.DryRun && t.pr.State == "OPEN" && o.Head != "" && o.Head != t.pr.HeadOID {
-		return nil, &headChangedError{number: t.pr.Number, folder: filepath.Base(w.Path)}
+		ahead := gitOK(w.Repo, "merge-base", "--is-ancestor", t.pr.HeadOID, o.Head)
+		return nil, &headChangedError{number: t.pr.Number, folder: filepath.Base(w.Path), ahead: ahead}
 	}
 	res := &LandResult{Worktree: w, PR: t.pr, Stage: t.stage, Methods: []github.MergeMethod{}, Checks: []LandCheck{},
 		Auto: o.Auto, DryRun: o.DryRun, LandedRuns: []store.Run{}, RunWarnings: []string{}}

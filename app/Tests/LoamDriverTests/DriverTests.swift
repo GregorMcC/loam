@@ -346,6 +346,14 @@ struct DriverTests {
         ])
     }
 
+    /// TAS-53: a run whose PR has no CI is ready, and the desk says "no CI". A commit after Ready ships the run
+    /// again, and the desk shows the diff of the PR with the commit.
+    @Test func shipsACommitAfterReadyAndTheDeskSaysNoCI() async throws {
+        try await expectPass("desk-no-ci-shot", environment: [
+            "LOAM_DRIVER_LOAM": Self.loamBinary, "LOAM_DRIVER_FAKE_GH": Self.fakeGH,
+        ])
+    }
+
     /// Ticket 207: Claude drafts a run from a ticket. The Shape tile opens the desk on the draft, a changed
     /// assumption is typed, and A approves the run, which starts with the change.
     @Test func shapesARunAtTheDeskChangesAnAssumptionAndApprovesIt() async throws {

@@ -149,7 +149,7 @@ func (sh *shipper) ship(ctx context.Context) (bool, error) {
 	if sh.ghErr != nil {
 		return false, sh.ghErr
 	}
-	head, err := gitOut(ctx, r.Folder, "rev-parse", "HEAD")
+	head, err := branchHead(ctx, r.Folder, w.Branch)
 	if err != nil {
 		return false, err
 	}
@@ -175,9 +175,14 @@ func (sh *shipper) ship(ctx context.Context) (bool, error) {
 }
 
 // watch lands a Ready run when GitHub has merged its PR, and stops it when
-// GitHub has closed its PR. A run that cannot reach GitHub waits with no
-// warning, because it needs nothing from a tick. A store that cannot read
-// the worktree is an error, not a worktree that is gone.
+// GitHub has closed its PR. The run goes back to Shipping when the branch has
+// commits after the head of the open PR (see [shipper.shipAgain]), or when
+// the checks of the PR run or fail again, such as after a push by hand. Then
+// a later tick reads CI. A land that waits for GitHub, with an auto merge or
+// a merge queue, merges the PR as it is, so watch changes nothing while one
+// waits. A run that cannot reach GitHub waits with no warning, because it
+// needs nothing from a tick. A store that cannot read the worktree is an
+// error, not a worktree that is gone.
 func (sh *shipper) watch(ctx context.Context) (bool, error) {
 	w, err := sh.s.GetWorktree(sh.r.WorktreeID)
 	switch {
@@ -197,8 +202,60 @@ func (sh *shipper) watch(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	moved, _, err := sh.ended(ctx, branches[w.Branch].PR)
-	return moved, err
+	pr := branches[w.Branch].PR
+	if moved, ended, err := sh.ended(ctx, pr); ended || err != nil {
+		return moved, err
+	}
+	if pr == nil || pr.Number != sh.r.PR.Number || w.Land != nil || pr.InMergeQueue {
+		return false, nil
+	}
+	if sh.commitsAfter(ctx, w.Branch, pr.HeadOID) {
+		return sh.shipAgain(ctx, w, pr)
+	}
+	if !ciNotPassed(pr.Checks) {
+		return false, nil
+	}
+	note := fmt.Sprintf("The checks of #%d run or failed after it was ready. Loam reads CI again", pr.Number)
+	moved, err := sh.move(store.RunShipping, note)
+	if !moved || err != nil {
+		return moved, err
+	}
+	return moved, sh.s.AddRunEvent(sh.r.ID, "ship", note)
+}
+
+// shipAgain pushes the commits of the branch after the head of the run's PR,
+// and the run is Shipping again, so a later tick reads CI on the new head.
+// It pushes even when origin/<branch> is the branch head already, because
+// GitHub can have an older head, such as after a force push.
+func (sh *shipper) shipAgain(ctx context.Context, w store.Worktree, pr *github.PR) (bool, error) {
+	note := fmt.Sprintf("The branch has commits after the head of #%d. Loam pushes them, and CI runs again", pr.Number)
+	moved, err := sh.move(store.RunShipping, note)
+	if !moved || err != nil {
+		return moved, err
+	}
+	if out, err := gitPush(ctx, sh.r.Folder, w.Branch); err != nil {
+		return sh.move(store.RunStopped, failureNote("git push failed", err, out))
+	}
+	return moved, sh.s.AddRunEvent(sh.r.ID, "ship", fmt.Sprintf("Pushed the new commits to #%d", pr.Number))
+}
+
+// commitsAfter reports whether the branch of the run's worktree has commits
+// after head. It reads the branch and not HEAD, because HEAD can be on
+// another branch. A head that the worktree does not have, such as a push from
+// another machine, is not before the branch: Loam does not push over it.
+func (sh *shipper) commitsAfter(ctx context.Context, branch, head string) bool {
+	local, err := branchHead(ctx, sh.r.Folder, branch)
+	if err != nil || local == head {
+		return false
+	}
+	_, err = gitOut(ctx, sh.r.Folder, "merge-base", "--is-ancestor", head, local)
+	return err == nil
+}
+
+// ciNotPassed reports whether checks run, wait, or failed, as [shipper.readCI]
+// reads them. The checks of a Ready run passed, or it had none.
+func ciNotPassed(c github.Checks) bool {
+	return c.Failed > 0 || c.Running > 0 || c.Waiting > 0 || c.State == "PENDING" || c.State == "EXPECTED"
 }
 
 // watchGone does the step for a run with a PR whose worktree is gone, such as
@@ -260,19 +317,16 @@ func (sh *shipper) ended(ctx context.Context, pr *github.PR) (moved, ended bool,
 }
 
 // push puts the head of the run on GitHub, and opens its PR when it has
-// none. With a PR, the push is a fix after a failed CI. Loam saves the PR
-// text on the run before it opens the PR, and a later try for the same head
-// uses it again, so a PR that GitHub did not open costs no second call to
-// Claude.
+// none. With a PR, the push is a fix after a failed CI or a send-back. Loam
+// saves the PR text on the run before it opens the PR, and a later try for
+// the same head uses it again, so a PR that GitHub did not open costs no
+// second call to Claude.
 func (sh *shipper) push(ctx context.Context, repo github.Repo, w store.Worktree, head string, pr *github.PR) (bool, error) {
 	r := sh.r
-	pushed, err := gitOut(ctx, r.Folder, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+w.Branch)
+	pushed, err := pushedHead(ctx, r.Folder, w.Branch)
 	if err != nil || pushed != head {
-		pctx, cancel := context.WithTimeout(ctx, pushTimeout)
-		defer cancel()
-		out, err := exec.CommandContext(pctx, "git", "-C", r.Folder, "push", "-u", "origin", w.Branch).CombinedOutput()
-		if err != nil {
-			return sh.move(store.RunStopped, failureNote("git push failed", err, string(out)))
+		if out, err := gitPush(ctx, r.Folder, w.Branch); err != nil {
+			return sh.move(store.RunStopped, failureNote("git push failed", err, out))
 		}
 		if pr != nil {
 			return false, sh.s.AddRunEvent(r.ID, "ship", fmt.Sprintf("Pushed the fix to #%d", pr.Number))
@@ -587,6 +641,26 @@ func (sh *shipper) update(fn func(*store.Run)) (bool, error) {
 	}
 	sh.r = r
 	return moved, nil
+}
+
+// gitPush pushes the branch of the worktree in dir to origin, and returns
+// the output of git.
+func gitPush(ctx context.Context, dir, branch string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, pushTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "git", "-C", dir, "push", "-u", "origin", branch).CombinedOutput()
+	return string(out), err
+}
+
+// branchHead is the last commit of the branch in the worktree in dir.
+func branchHead(ctx context.Context, dir, branch string) (string, error) {
+	return gitOut(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch)
+}
+
+// pushedHead is the last commit of the branch that the worktree in dir
+// pushed to origin, as git knows it: the ref origin/<branch>.
+func pushedHead(ctx context.Context, dir, branch string) (string, error) {
+	return gitOut(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+branch)
 }
 
 // gitOut runs git in dir and returns its output with no space at the ends.

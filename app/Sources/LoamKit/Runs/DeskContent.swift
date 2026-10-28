@@ -96,6 +96,8 @@ public enum DeskContent {
         if let ci = events.last(where: { $0.kind == "ci" }) {
             if let passed = ciPassed(ci.detail) {
                 out.append("Ship: CI \(passed.passed) of \(passed.total)")
+            } else if noCI(ci.detail) {
+                out.append("Ship: no CI")
             } else {
                 out.append("Ship: CI failed")
             }
@@ -116,6 +118,11 @@ public enum DeskContent {
     /// took one more.
     static func attempts(_ run: Run) -> Int {
         run.state == .ready ? run.tries + 1 : max(run.tries, 1)
+    }
+
+    /// Whether a CI event says that no CI ran on the PR, such as "No CI ran on #12". The run is ready with no checks.
+    static func noCI(_ detail: String) -> Bool {
+        detail.hasPrefix("No CI ran on #")
     }
 
     /// The counts of a CI event such as "CI passed on #1: 14 of 14 checks", or nil for one that did not pass.

@@ -46,13 +46,47 @@ struct GitHubRun {
 
     /// Writes a file in the worktree and commits it, as the session does, and ends the turn. The gate passes.
     func commitAndStop(_ name: String, text: String? = nil) throws {
+        try commit(name, text: text)
+        try rig.loam(["run", "hook", id], extra: environment,
+                     input: #"{"hook_event_name": "Stop", "session_id": "\#(Self.session)"}"#)
+    }
+
+    /// Writes a file in the worktree and commits it, with no end of a turn, as a person in a pane of the worktree does.
+    func commit(_ name: String, text: String? = nil) throws {
         let file = folder.appendingPathComponent(name)
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         try (text ?? "\(name)\n").write(to: file, atomically: true, encoding: .utf8)
         try Scenarios.git(folder, ["add", name])
         try Scenarios.git(folder, ["commit", "-q", "-m", "Change \(name)"])
-        try rig.loam(["run", "hook", id], extra: environment,
-                     input: #"{"hook_event_name": "Stop", "session_id": "\#(Self.session)"}"#)
+    }
+
+    /// GitHub with PR #1 at the head of the worktree, with the count of its commits, and no checks: GitHub gives no
+    /// check rollup to a commit with no checks.
+    func setNoCI(commits: Int) throws {
+        let head = try Scenarios.git(folder, ["rev-parse", "HEAD"])
+        let branch = try Scenarios.git(folder, ["branch", "--show-current"])
+        try """
+        {"refs": ["\(branch)"],
+         "pulls": [{"number": 1, "title": "Plot search matches link labels", "url": "https://github.com/example/widgets/pull/1",
+           "state": "OPEN", "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN", "baseRefName": "main",
+           "headRefName": "\(branch)", "headRefOid": "\(head)", "commits": {"totalCount": \(commits)}}],
+         "details": {"1": {"baseRef": {"compare": {"behindBy": 0}}, "reviewThreads": {"nodes": []},
+           "commits": {"nodes": [{"commit": {"statusCheckRollup": null}}]}}},
+         "repository": {"mergeCommitAllowed": false, "squashMergeAllowed": true, "rebaseMergeAllowed": false,
+           "viewerDefaultMergeMethod": "SQUASH"}}
+        """.write(to: ghState, atomically: true, encoding: .utf8)
+    }
+
+    /// Moves the pushes of the run an hour back, past the wait of the core for CI to start (`NoCIWait`), so the next
+    /// tick finds that no CI ran.
+    func agePushes() throws {
+        let sqlite = Process()
+        sqlite.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
+        sqlite.arguments = [rig.loamHome.appendingPathComponent("loam.db").path, ".timeout 5000",
+                            "UPDATE run_events SET at = at - 3600000 WHERE run_id = '\(id)' AND kind = 'ship';"]
+        try sqlite.run()
+        sqlite.waitUntilExit()
+        if sqlite.terminationStatus != 0 { throw DriverFailure("sqlite3 exited \(sqlite.terminationStatus)") }
     }
 
     /// GitHub with PR #1 at the head of the worktree, and one check, ci / test, with the conclusion. The repo
@@ -224,6 +258,54 @@ extension Scenarios {
         try await app.waitUntil("the run lands") { model.runs.first?.state == .landed && app.exists("desk-empty") }
         try confirmDesk(model.runs.first?.note == "Merged #1 with squash", "the note is \(model.runs.first?.note ?? "")")
         app.screenshot("desk-empty-night")
+        NSApp.appearance = nil
+    }
+
+    static func deskNoCIShot(_ app: DriverApp) async throws {
+        do { try await deskNoCIShotSteps(app) } catch { app.dumpAccessibility(); throw error }
+    }
+
+    /// TAS-53: a run whose PR has no CI is ready, and the desk says "no CI", not "CI failed". A commit in the
+    /// worktree after the run is ready sends it back to Shipping: the tick pushes the commit to #1, and the desk
+    /// shows the diff of the PR with it.
+    private static func deskNoCIShotSteps(_ app: DriverApp) async throws {
+        let gh = try GitHubRun(app, title: "Plot search matches link labels", goal: "A search for a link label finds its plot.")
+        try gh.commitAndStop("search/match.go", text: "package search\n\n// Match returns the items whose title or label matches q.\n")
+        let host = try await app.launchApp(
+            client: LoamClient(binary: gh.rig.binary, environment: gh.environment), state: gh.rig.stateFile, terminals: true)
+        app.runtime.applyWindowAppearance(to: host.window)
+        frameLikeTheDesign(host.window)
+        NSApp.appearance = NSAppearance(named: .darkAqua)
+        let model = host.model
+        try await app.waitUntil("the run ships") { model.runs.first?.state == .shipping }
+        await model.tickRuns()
+        try gh.setNoCI(commits: 1)
+        try gh.agePushes()
+        await model.tickRuns()
+        try await app.waitUntil("the run is ready with no CI") {
+            model.runs.first?.state == .ready && model.runs.first?.note == "No CI ran on #1"
+        }
+
+        // A commit after Ready: the tick pushes it, and the run is Shipping again.
+        try gh.commit("search/match_test.go", text: "package search\n\nfunc TestMatchLabels(t *testing.T) {}\n")
+        await model.tickRuns()
+        try await app.waitUntil("the commit ships the run again") {
+            model.runs.first?.state == .shipping
+                && model.runs.first?.note == "The branch has commits after the head of #1. Loam pushes them, and CI runs again"
+        }
+        try gh.setNoCI(commits: 2)
+        try gh.agePushes()
+        await model.tickRuns()
+        try await app.waitUntil("the run is ready again") { model.runs.first?.state == .ready }
+
+        await model.openDesk()
+        try await app.waitUntil("the desk shows the PR with the new commit") {
+            model.page == .desk && model.desk.diff?.files.count == 2 && app.exists("desk-merge")
+        }
+        try await app.waitUntil("the stations say no CI") { app.text(of: "desk-stations")?.contains("Ship: no CI") == true }
+        try confirmDesk(app.text(of: "desk-stations")?.contains("CI failed") == false, "the desk says CI failed")
+        await app.sleep(0.5)
+        app.screenshot("desk-no-ci-night")
         NSApp.appearance = nil
     }
 
