@@ -23,13 +23,13 @@ struct RecurringView: View {
                     }
                 }
                 Divider()
+                RecurringForm(model: model, plotID: plotID)
+                    .id(plotID)
+                Divider()
                 RunDefaultsSection(model: model, plotID: plotID)
                     .id(plotID)
                 Divider()
                 RulesSection(model: model)
-                    .id(plotID)
-                Divider()
-                RecurringForm(model: model, plotID: plotID)
                     .id(plotID)
             }
             .padding(LoamTheme.space8)
@@ -41,8 +41,8 @@ struct RecurringView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Recurring runs").loamText(LoamTheme.plotNameStyle)
-            Text(model.plots.first { $0.id == plotID }?.name ?? "").loamText(LoamTheme.bodyStyle, LoamColor.inkMuted)
+            Text(RecurringWords.pageTitle(plot: model.plots.first { $0.id == plotID }?.name ?? ""))
+                .loamText(LoamTheme.rowStyle)
             Text("A recurring run starts on a timetable when its precheck finds work. It never merges, and it never "
                  + "starts while its last run has not ended. Every result comes to your desk.")
                 .loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
@@ -194,23 +194,25 @@ private struct RecurringForm: View {
                     .padding(.horizontal, 9).frame(height: 28).loamFieldBox()
                     .accessibilityIdentifier("recurring-precheck")
             }
-            ModelEffortPickers(model: $draft.model, effort: $draft.effort,
-                               defaults: model.runDefaults?.plotID == plotID ? model.runDefaults : nil, id: "recurring")
             HStack(spacing: LoamTheme.space2) {
-                kind(.shape, "Shape only", "Claude drafts a run. You approve each one.")
+                kind(.shape, "Shape only", "Claude drafts runs. You approve each one.")
                 kind(.chore, "Chore", "Runs to the gate, then waits for you to land it.")
             }
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Kind")
+            ModelEffortPickers(model: $draft.model, effort: $draft.effort,
+                               defaults: model.runDefaults?.plotID == plotID ? model.runDefaults : nil, id: "recurring")
             if let error = model.recurringError {
                 Text(error).loamText(LoamTheme.captionStyle, LoamColor.rust).textSelection(.enabled)
                     .accessibilityIdentifier("recurring-error")
             }
+            Divider()
             HStack(spacing: LoamTheme.space2) {
-                Text("Recurring runs are not in the change log. Remove one here at any time.")
-                    .loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
                 Spacer()
                 if busy { ProgressView().controlSize(.small) }
+                Button("Cancel") { draft = RecurringDraft(); model.clearRecurringError() }
+                    .loamSecondaryButton()
+                    .accessibilityIdentifier("recurring-cancel")
                 Button("Add recurring run") { add() }
                     .loamPrimaryButton()
                     .disabled(busy || draft.title.trimmingCharacters(in: .whitespaces).isEmpty
@@ -242,6 +244,7 @@ private struct RecurringForm: View {
             .padding(.horizontal, 10).padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(draft.kind == kind ? LoamColor.inkSelected : .clear, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(LoamColor.rule))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

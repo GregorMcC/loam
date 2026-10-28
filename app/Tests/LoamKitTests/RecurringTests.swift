@@ -14,6 +14,11 @@ import Testing
         return (model, fake)
     }
 
+    @Test func thePageTitleNamesThePlot() {
+        #expect(RecurringWords.pageTitle(plot: "Loam redesign") == "Recurring runs \u{00B7} Loam redesign")
+        #expect(RecurringWords.pageTitle(plot: "") == "Recurring runs")
+    }
+
     @Test func thePageReadsTheRecurringRunsAndTheAgent() async throws {
         let (model, fake) = try model([("recurring_list", 0), ("tick_status", 0), ("rule_list", 0)])
         await model.showRecurring(plot: "plotaaaaae")

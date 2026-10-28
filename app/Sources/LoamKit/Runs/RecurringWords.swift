@@ -12,6 +12,11 @@ public enum RecurringWords {
         ("Mondays", ["mon"]),
     ]
 
+    /// "Recurring runs · Loam redesign", or "Recurring runs" when the plot has no name.
+    public static func pageTitle(plot: String) -> String {
+        plot.isEmpty ? "Recurring runs" : "Recurring runs \u{00B7} \(plot)"
+    }
+
     /// "Weekdays 06:30", "Every day 02:00", or "Mon, Wed 07:00".
     public static func timetable(days: [String], at: String) -> String {
         let sorted = week.filter(days.contains)

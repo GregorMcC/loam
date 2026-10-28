@@ -31,6 +31,9 @@ extension AppModel {
         }
     }
 
+    /// Clears the error of the form, for Cancel.
+    public func clearRecurringError() { recurringError = nil }
+
     /// `loam recurring add` for the plot of the page. On a failure, `recurringError` says why, and it returns false.
     public func addRecurring(_ draft: RecurringDraft) async -> Bool {
         guard case .recurring(let plot) = page else { return false }
