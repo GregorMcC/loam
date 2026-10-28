@@ -24,6 +24,7 @@ func TestResumeArgsAndEnv(t *testing.T) {
 		t.Fatalf("%v: %s", err, out)
 	}
 	os.Remove(os.Getenv("LOAM_FAKE_CLAUDE_OUT"))
+	conversation(t, fixedID)
 	// The plot changes after the start: resume must use the current plot.
 	if _, err := e.store.Apply(store.Change{PlotID: p.ID, Actor: store.Actor{Kind: store.ActorCLI},
 		Edits: []store.Edit{{Op: store.OpAddRepo, Path: store.S(other)}, {Op: store.OpSet, Item: "what", Value: "new what"}}}); err != nil {
@@ -61,6 +62,38 @@ func TestResumeArgsAndEnv(t *testing.T) {
 	}
 	if recs, _ := e.store.ListSessions(p.ID); len(recs) != 1 {
 		t.Errorf("resume added a record: %v", recs)
+	}
+}
+
+// Ticket 103: Claude Code writes the conversation file at the first prompt. A session with no
+// file starts again with the same ID, in its start folder, and its record does not change.
+func TestResumeWithNoConversationStartsTheSession(t *testing.T) {
+	e := setup(t)
+	main := t.TempDir()
+	p := e.plot(t, store.PlotInput{Name: "Alpha", Repos: []store.RepoInput{{Path: main}}})
+	if out, err := e.run(t, "start", p.ID, "--session-id", fixedID); err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	before, err := e.store.GetSession(fixedID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Remove(os.Getenv("LOAM_FAKE_CLAUDE_OUT"))
+	if out, err := e.run(t, "resume", fixedID); err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	inv := testutil.FakeClaudeInvocation(t)
+	if got := argValues(inv.Args, "--session-id"); !slices.Equal(got, []string{fixedID}) || slices.Contains(inv.Args, "--resume") {
+		t.Errorf("args %v, want --session-id %s and no --resume", inv.Args, fixedID)
+	}
+	if realpath(t, inv.Cwd) != realpath(t, main) {
+		t.Errorf("cwd %q, want %q", inv.Cwd, main)
+	}
+	if inv.Env["LOAM_PLOT"] != p.ID {
+		t.Errorf("LOAM_PLOT %q, want %q", inv.Env["LOAM_PLOT"], p.ID)
+	}
+	if recs, _ := e.store.ListSessions(p.ID); len(recs) != 1 || recs[0] != before {
+		t.Errorf("records %+v, want only %+v", recs, before)
 	}
 }
 

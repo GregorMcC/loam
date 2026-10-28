@@ -130,12 +130,16 @@ extension Scenarios {
                   "the bar has no room: bar \(bar?.frame ?? .zero), terminal \(seededView.frame)")
         app.screenshot("session-ended")
 
-        // 6. Return resumes the last session ID in the same pane: same ID and place, a new terminal.
+        // 6. Return resumes the last session ID in the same pane: same ID and place, a new terminal. The ID
+        // after /clear never had a prompt, so Claude Code has no conversation file for it, and `loam resume`
+        // starts it again with --session-id (ticket 103).
         app.press(.returnKey)
         try await app.waitUntil("the pane restarted") { model.workspace.launch(of: seeded) == 1 }
         try check(focused() == seeded && model.workspace.selectedTab(of: .plot(plot))?.tree == .leaf(seeded),
                   "the resumed pane is not in the old place")
-        try await app.waitUntil("the fake claude resumed") { invocation()?.args.starts(with: ["--resume", second]) == true }
+        try await app.waitUntil("the fake claude started the same ID again") {
+            invocation()?.args.starts(with: ["--session-id", second]) == true
+        }
         try await app.waitUntil("SessionStart of the resume") { session(seeded)?.started == true }
         try check(session(seeded)?.sessionID == second, "the resumed pane runs \(session(seeded)?.sessionID ?? "none")")
         try check(!app.exists("pane-ended-\(seeded.uuidString)"), "the Session ended bar still shows")

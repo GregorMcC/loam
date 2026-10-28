@@ -55,7 +55,6 @@ extension Scenarios {
                 "LOAM_FAKE_CLAUDE_OUT": rig.root.appendingPathComponent(Self.invocationName).path,
                 "LOAM_FAKE_CLAUDE_HOOKS": "1",
                 "LOAM_FAKE_CLAUDE_TURN": turn,
-                "CLAUDE_CONFIG_DIR": rig.root.appendingPathComponent("claude-config").path,
             ]) { $1 }
         }
 

@@ -209,6 +209,51 @@ func TestFakeClaudeHookModeResumesWithTheGivenID(t *testing.T) {
 	}
 }
 
+// Claude Code writes the conversation file of a session at its first prompt. After /clear, the
+// new ID has no file until its own first prompt.
+func TestFakeClaudeHookModeWritesTheConversationAtTheFirstPrompt(t *testing.T) {
+	testutil.FakeClaude(t)
+	work := t.TempDir()
+	log := filepath.Join(t.TempDir(), "hooks.log")
+	files := func() []string {
+		found, _ := filepath.Glob(filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), "projects", "*", "*.jsonl"))
+		var ids []string
+		for _, f := range found {
+			ids = append(ids, strings.TrimSuffix(filepath.Base(f), ".jsonl"))
+		}
+		return ids
+	}
+	session := func(input string) {
+		t.Helper()
+		cmd := exec.Command("claude", "--session-id", "s1", "--settings", hookSettings(t, log))
+		cmd.Dir = work
+		cmd.Env = append(os.Environ(), "LOAM_FAKE_CLAUDE_HOOKS=1", "LOAM_FAKE_CLAUDE_TURN=10ms")
+		cmd.Stdin = strings.NewReader(input)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%v: %s", err, out)
+		}
+	}
+
+	session("/exit\n")
+	if got := files(); len(got) != 0 {
+		t.Fatalf("conversation files %v before a prompt", got)
+	}
+	session("/clear\nhello\n/exit\n")
+	var cleared string
+	for _, c := range readHookCalls(t, log) {
+		if c.Event == "SessionStart" && c.Source == "clear" {
+			cleared = c.SessionID
+		}
+	}
+	if got := files(); !slices.Equal(got, []string{cleared}) {
+		t.Fatalf("conversation files %v, want only the ID after /clear %q", got, cleared)
+	}
+	session("/question\nblue\n/exit\n")
+	if got := files(); len(got) != 2 || !slices.Contains(got, "s1") {
+		t.Fatalf("conversation files %v, want s1 after a question", got)
+	}
+}
+
 func TestFakeClaudeHupWaitDelaysTheExit(t *testing.T) {
 	testutil.FakeClaude(t)
 	cmd := exec.Command("claude", "--session-id", "h1")
