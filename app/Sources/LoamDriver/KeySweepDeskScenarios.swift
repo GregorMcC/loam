@@ -21,14 +21,9 @@ extension Scenarios {
             client: LoamClient(binary: gh.rig.binary, environment: gh.environment), state: gh.rig.stateFile, terminals: true)
         app.runtime.applyWindowAppearance(to: host.window)
         frameLikeTheDesign(host.window)
-        for _ in 0..<40 where !host.window.isKeyWindow {
-            NSApp.activate(ignoringOtherApps: true)
-            host.window.makeKeyAndOrderFront(nil)
-            await app.sleep(0.25)
-        }
-        try await app.waitUntil("the window is key", timeout: 5) { host.window.isKeyWindow }
         let model = host.model
         let sweep = try KeySweep(app)
+        try await sweep.makeKey(host.window, "the main window")
         try await app.waitUntil("the run ships") { model.runs.first?.state == .shipping }
         await model.tickRuns()
         try gh.setCI("SUCCESS")
@@ -88,6 +83,13 @@ extension Scenarios {
         let saved = model.desk.file
         await sweep.check(d, "] after ↩ saves a note", "]") { model.desk.file != saved }
         if model.desk.file != saved { await sweep.check(d, "] back", "]") { model.desk.file == saved } }
+        // A click on another file while a note field has the keys closes the note.
+        try await sweep.click("desk-line-6")
+        try? await app.waitUntil("the note field on line 6 has the keys", timeout: 3) { app.fieldWithTheKeys() == "Note on line 6" }
+        try await sweep.click("desk-file-search/match_test.go")
+        try? await app.waitUntil("the other file shows", timeout: 3) { model.desk.file == "search/match_test.go" }
+        let f3 = model.desk.file
+        await sweep.check(d, "] after a click on another file with a note open", "]") { model.desk.file != f3 }
         try await sweep.click("desk-file-search/match.go")
         await app.sleep(0.3)
         let clickedFile = model.desk.file

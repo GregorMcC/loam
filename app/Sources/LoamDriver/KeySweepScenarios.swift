@@ -107,6 +107,17 @@ final class KeySweep {
         return false
     }
 
+    /// Brings the window to the front with the keys, and throws when it does not get them: a key sent to the wrong
+    /// window says nothing of the key. A sheet comes with its window, so only the app comes to the front for it.
+    func makeKey(_ window: NSWindow, _ name: String) async throws {
+        for _ in 0..<40 where !window.isKeyWindow {
+            NSApp.activate(ignoringOtherApps: true)
+            if window.sheetParent == nil { window.makeKeyAndOrderFront(nil) }
+            await app.sleep(0.15)
+        }
+        guard window.isKeyWindow else { throw DriverFailure("\(name) did not get the keys") }
+    }
+
     /// Logs a check that needs no key: the effect holds or it does not.
     func expect(_ surface: String, _ name: String, _ holds: Bool) {
         if holds {
@@ -172,12 +183,7 @@ extension Scenarios {
         let model = host.model
         let sweep = try KeySweep(app)
         try await app.waitUntil("the plot loads") { model.plots.count == 1 && model.workspace.activePlotID == plot }
-        for _ in 0..<40 where !host.window.isKeyWindow {
-            NSApp.activate(ignoringOtherApps: true)
-            host.window.makeKeyAndOrderFront(nil)
-            await app.sleep(0.25)
-        }
-        try await app.waitUntil("the window is key", timeout: 5) { host.window.isKeyWindow }
+        try await sweep.makeKey(host.window, "the main window")
         let space = Space.plot(plot)
         func panes() -> Int { model.workspace.paneCount(of: space) }
         func tabs() -> Int { model.workspace.tabs(of: space).count }
@@ -245,12 +251,7 @@ extension Scenarios {
         }
         await sweep.check(s, "⌘, Settings", ",", .command) { settingsWindow() != nil }
         if let settings = settingsWindow() {
-            for _ in 0..<20 where !settings.isKeyWindow {
-                NSApp.activate(ignoringOtherApps: true)
-                settings.makeKeyAndOrderFront(nil)
-                await app.sleep(0.15)
-            }
-            sweep.note("Settings: key \(settings.isKeyWindow), keys \(sweep.holder)")
+            try await sweep.makeKey(settings, "Settings")
             let count = panes()
             await sweep.check("Settings window", "⌘W closes Settings and no pane", "w", .command, timeout: 3) {
                 settingsWindow() == nil && panes() == count
@@ -267,24 +268,17 @@ extension Scenarios {
             alert.messageText = "A sheet over Settings"
             alert.addButton(withTitle: "OK")
             alert.beginSheetModal(for: settings) { _ in }
-            for _ in 0..<20 where !(alert.window.isKeyWindow) {
-                NSApp.activate(ignoringOtherApps: true)
-                await app.sleep(0.15)
-            }
+            try await sweep.makeKey(alert.window, "the sheet over Settings")
             let count = panes()
             sweep.post("w", .command)
             await app.sleep(1)
             sweep.expect("Sheet over Settings", "⌘W closes no pane and leaves Settings open",
-                         alert.window.isKeyWindow && panes() == count && settingsWindow() != nil)
+                         panes() == count && settingsWindow() != nil)
             settings.endSheet(alert.window)
             // A sheet of Loam on the main window does not turn Close off in Settings.
             _ = model.openNewWorktree(plot: plot)
             try await app.waitUntil("the New worktree sheet shows") { app.exists("new-worktree-sheet") }
-            for _ in 0..<20 where !settings.isKeyWindow {
-                NSApp.activate(ignoringOtherApps: true)
-                settings.makeKeyAndOrderFront(nil)
-                await app.sleep(0.15)
-            }
+            try await sweep.makeKey(settings, "Settings")
             await sweep.check("Settings over a Loam sheet", "⌘W closes Settings", "w", .command, timeout: 3) {
                 settingsWindow() == nil && panes() == count
             }

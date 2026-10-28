@@ -465,6 +465,8 @@ private struct DeskDiff: View {
     @State private var editing: NoteLine?
     /// The line whose note field is closing: its focus loop stops.
     @State private var closing: NoteLine?
+    /// The line to open once the field has closed, if any.
+    @State private var reopening: NoteLine?
     let field: FocusState<DeskField?>.Binding
     @State private var draft = ""
 
@@ -648,15 +650,19 @@ private struct DeskDiff: View {
     /// Closes the note field, and opens it on `next` when you give one. The focus leaves the field first, and the
     /// field goes on the next turn: when SwiftUI removes a field that has the focus, no key of the desk works until the
     /// page draws again (TAS-52). A save does not need this, as Return ends the edit first, but it takes the same path.
+    /// A second call in the same turn changes where the field opens, and the one close does it.
     private func closeEditor(then next: NoteLine? = nil) {
         guard let line = editing else { return }
+        reopening = next
+        guard closing == nil else { return }
         closing = line
         if field.wrappedValue == .line { field.wrappedValue = nil }
         Task { @MainActor in
             closing = nil
             guard editing == line else { return }
-            if next != nil { draft = "" }
-            editing = next
+            if reopening != nil { draft = "" }
+            editing = reopening
+            reopening = nil
         }
     }
 }
