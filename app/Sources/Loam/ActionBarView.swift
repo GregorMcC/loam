@@ -22,18 +22,28 @@ struct ActionBarView: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            // The toast and the PR chip share the place after the pane label, and the toast wins while it
-            // shows. A narrow bar drops the toast, then the words of the chip. A bar that still has no room
-            // cuts the pane label short, so the chip stays and the buttons stay in view.
-            ViewThatFits(in: .horizontal) {
-                context(bar.trailing, words: true)
-                context(chipOnly, words: true)
-                context(chipOnly, words: false)
-                context(chipOnly, words: false, cutsLabel: true)
+            if let page = PageBar(page: app.page, plotName: intakePlotName) {
+                // Today and the Intake page name the page, and show their own keys before Actions.
+                pageContext(page)
+                ForEach(Array(page.items.enumerated()), id: \.offset) { _, item in
+                    BarButton(title: item.title, keys: item.keys, id: "action-bar-page-\(item.title)", isOn: false,
+                              action: item.action.map { action in { run(action) } })
+                    divider
+                }
+            } else {
+                // The toast and the PR chip share the place after the pane label, and the toast wins while it
+                // shows. A narrow bar drops the toast, then the words of the chip. A bar that still has no room
+                // cuts the pane label short, so the chip stays and the buttons stay in view.
+                ViewThatFits(in: .horizontal) {
+                    context(bar.trailing, words: true)
+                    context(chipOnly, words: true)
+                    context(chipOnly, words: false)
+                    context(chipOnly, words: false, cutsLabel: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                BarButton(title: "New session", keys: newSessionKeys(), id: "action-bar-new-session", isOn: false, action: newSession)
+                divider
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            BarButton(title: "New session", keys: newSessionKeys(), id: "action-bar-new-session", isOn: false, action: newSession)
-            LoamColor.ink.opacity(0.13).frame(width: 1, height: 16)
             BarButton(title: "Actions", keys: actionsKeys(), id: "action-bar-actions", isOn: bar.menu.isOpen, action: toggleActions)
         }
         .padding(.leading, Self.leadingInset)
@@ -57,6 +67,43 @@ struct ActionBarView: View {
 
     private var chipOnly: ActionBarModel.Trailing { bar.chip.map { .chip($0) } ?? .nothing }
 
+    private var divider: some View { LoamColor.ink.opacity(0.13).frame(width: 1, height: 16) }
+
+    /// The name of the plot that the Intake page shows.
+    private var intakePlotName: String {
+        guard case .intake(let plot) = app.page else { return "" }
+        return app.plots.first { $0.id == plot }?.name ?? ""
+    }
+
+    private func run(_ action: PageBar.Item.Action) {
+        switch action {
+        case .openDesk: TodayActions.openDesk(app)
+        case .startRun: TodayActions.startRun(app)
+        }
+    }
+
+    /// The page and what it shows, such as "Today / All plots", then the toast while it shows.
+    private func pageContext(_ page: PageBar) -> some View {
+        HStack(spacing: 6) {
+            Text(page.title)
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundStyle(LoamColor.ink)
+                .accessibilityIdentifier("action-bar-plot")
+            Text("/").font(.system(size: 12.5)).foregroundStyle(LoamColor.inkFaint)
+            Text(page.detail)
+                .font(.system(size: 12.5))
+                .foregroundStyle(LoamColor.inkMuted)
+                .layoutPriority(-1)
+                .accessibilityIdentifier("action-bar-pane")
+            if case .toast(let toast) = bar.trailing {
+                ToastView(text: toast, kind: bar.toastKind)
+            }
+        }
+        .lineLimit(1)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(LoamAnimation.fast, value: bar.trailing)
+    }
+
     /// `cutsLabel` lets the pane label end in an ellipsis. The other variants keep their full size, so
     /// `ViewThatFits` can tell whether they fit.
     private func context(_ trailing: ActionBarModel.Trailing, words: Bool, cutsLabel: Bool = false) -> some View {
@@ -77,17 +124,7 @@ struct ActionBarView: View {
             }
             switch trailing {
             case .toast(let toast):
-                HStack(spacing: 6) {
-                    let notice = bar.toastKind == .notice
-                    Image(systemName: notice ? "exclamationmark.circle" : "checkmark")
-                        .font(.system(size: notice ? 11 : 10, weight: .semibold))
-                        .foregroundStyle(notice ? LoamColor.inkMuted : LoamColor.moss)
-                    Text(toast).font(.system(size: 12.5)).foregroundStyle(LoamColor.inkFaint)
-                }
-                .padding(.leading, 14)
-                .transition(.opacity)
-                .accessibilityElement(children: .combine)
-                .accessibilityIdentifier("action-bar-toast")
+                ToastView(text: toast, kind: bar.toastKind)
             case .chip(let mark):
                 // The popover finds the chip through `chipProbe`, as for a key. A toast that hides the chip
                 // for a while does not close it.
@@ -104,6 +141,26 @@ struct ActionBarView: View {
         .lineLimit(1)
         .fixedSize(horizontal: !cutsLabel, vertical: true)
         .animation(LoamAnimation.fast, value: bar.trailing)
+    }
+}
+
+/// The last change of the active plot, or a line from the app, after the label of the bar.
+private struct ToastView: View {
+    let text: String
+    let kind: ActionBarModel.ToastKind
+
+    var body: some View {
+        HStack(spacing: 6) {
+            let notice = kind == .notice
+            Image(systemName: notice ? "exclamationmark.circle" : "checkmark")
+                .font(.system(size: notice ? 11 : 10, weight: .semibold))
+                .foregroundStyle(notice ? LoamColor.inkMuted : LoamColor.moss)
+            Text(text).font(.system(size: 12.5)).foregroundStyle(LoamColor.inkFaint)
+        }
+        .padding(.leading, 14)
+        .transition(.opacity)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("action-bar-toast")
     }
 }
 
@@ -141,34 +198,43 @@ private struct PullRequestChip: View {
 }
 
 /// A text button of the bar with its keycaps: `ink` text, the ink at 9% on hover and while its
-/// menu is open.
+/// menu is open. With no action it only names a key that the page handles.
 private struct BarButton: View {
     let title: String
     let keys: [String]
     let id: String
     let isOn: Bool
-    let action: () -> Void
+    let action: (() -> Void)?
     @State private var hovering = false
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 4) {
-                Text(title)
-                    .font(.system(size: 12.5, weight: .medium))
-                    .foregroundStyle(LoamColor.ink)
-                    .padding(.trailing, 4)
-                ForEach(Array(keys.enumerated()), id: \.offset) { Keycap(text: $1) }
-            }
-            .padding(.leading, 10)
-            .padding(.trailing, 6)
-            .frame(height: 28)
-            .background(LoamColor.inkSelected.opacity(hovering || isOn ? 1 : 0), in: RoundedRectangle(cornerRadius: 7))
-            .contentShape(RoundedRectangle(cornerRadius: 7))
+        if let action {
+            Button(action: action) { label }
+                .buttonStyle(.plain)
+                .onHover { hovering = $0 }
+                .accessibilityLabel(title)
+                .accessibilityIdentifier(id)
+        } else {
+            label
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(title)
+                .accessibilityIdentifier(id)
         }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .accessibilityLabel(title)
-        .accessibilityIdentifier(id)
+    }
+
+    private var label: some View {
+        HStack(spacing: 4) {
+            Text(title)
+                .font(.system(size: 12.5, weight: .medium))
+                .foregroundStyle(LoamColor.ink)
+                .padding(.trailing, 4)
+            ForEach(Array(keys.enumerated()), id: \.offset) { Keycap(text: $1) }
+        }
+        .padding(.leading, 10)
+        .padding(.trailing, 6)
+        .frame(height: 28)
+        .background(LoamColor.inkSelected.opacity(hovering || isOn ? 1 : 0), in: RoundedRectangle(cornerRadius: 7))
+        .contentShape(RoundedRectangle(cornerRadius: 7))
     }
 }
 
