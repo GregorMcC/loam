@@ -316,12 +316,9 @@ extension Scenarios {
         if let split = host.window.contentViewController as? NSSplitViewController {
             split.splitView.setPosition(265, ofDividerAt: 0)
         }
-        // Only the active plot shows its tree. A plot that got its first pane while active can stay
-        // open, so close the others with their disclosure arrows.
+        // Only the active plot shows its tree, also a plot that got its first pane while active (map 74).
+        // The list writes the state of a new plot row a turn after it adds the row, so wait past that.
         await app.sleep(0.5)
-        for (other, pane) in zip([mobile], otherPanes) where app.exists("pane-row-\(pane.uuidString)") {
-            try ensure(AccessibilityProbe.shared.discloseRow("plot-\(other)", open: false), "the tree of \(other) did not close")
-        }
         try await app.waitUntil("the other trees close") { !otherPanes.contains { app.exists("pane-row-\($0.uuidString)") } }
 
         // The shells.

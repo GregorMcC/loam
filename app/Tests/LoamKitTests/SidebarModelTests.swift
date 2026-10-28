@@ -574,6 +574,28 @@ struct AttentionCycleTests {
         #expect(disclosure.openSpaces == ["a", "b"])
     }
 
+    /// The list writes `true` when the active plot gets its first pane. That is not your choice.
+    @Test func anOpenWriteToTheOpenActivePlotStillClosesWhenYouLeave() {
+        var disclosure = SidebarDisclosure()
+        disclosure.activeSpaceChanged(to: "a")
+        disclosure.setSpace("a", open: true)
+        disclosure.activeSpaceChanged(to: "b")
+        #expect(disclosure.openSpaces == ["b"])
+    }
+
+    /// The view renders a new active plot before `activeSpaceChanged` runs. It reads the state as of
+    /// that plot, so the plot you leave reads as closed and the new one as open.
+    @Test func theViewReadsTheStateAsOfTheLiveActivePlot() {
+        var disclosure = SidebarDisclosure()
+        disclosure.activeSpaceChanged(to: "a")
+        disclosure.setSpace("c", open: true)
+        #expect(disclosure.isOpen("a"))
+        #expect(!disclosure.isOpen("a", active: "b"))
+        #expect(disclosure.isOpen("b", active: "b") && disclosure.isOpen("c", active: "b"))
+        disclosure.setSpace("a", open: false)
+        #expect(!disclosure.isOpen("a", active: "a"))
+    }
+
     @Test func aCheckoutIsOpenUntilYouCloseIt() {
         var disclosure = SidebarDisclosure()
         #expect(disclosure.isOpen(checkout: "wt-fix"))

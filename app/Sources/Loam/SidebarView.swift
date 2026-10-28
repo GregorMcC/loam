@@ -253,7 +253,8 @@ struct SidebarView: View {
     }
 
     private func spaceOpen(_ space: Space) -> Binding<Bool> {
-        Binding(get: { disclosure.isOpen(space) }, set: { disclosure.setSpace(space, open: $0) })
+        Binding(get: { disclosure.isOpen(space, active: model.workspace.activeSpace) },
+                set: { disclosure.setSpace(space, open: $0) })
     }
 
     private func checkoutOpen(_ checkout: String) -> Binding<Bool> {
