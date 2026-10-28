@@ -241,7 +241,7 @@ struct IntakeView: View {
             Text("\(items.count) selected").font(.system(size: 13, weight: .semibold)).fixedSize()
             LoamColor.inkHairline.frame(width: 1, height: 18)
             HStack(spacing: 6) {
-                Text("Kind").font(.system(size: 12.5)).foregroundStyle(LoamColor.inkMuted)
+                Text("Kind").font(.system(size: 12.5)).foregroundStyle(LoamColor.inkMuted).fixedSize()
                 Picker("Kind", selection: $kind) {
                     ForEach(IntakeContent.BatchKind.allCases, id: \.self) { Text($0.words).tag($0) }
                 }
@@ -251,7 +251,7 @@ struct IntakeView: View {
             }
             if kind == .feature {
                 HStack(spacing: 6) {
-                    Text("Shape").font(.system(size: 12.5)).foregroundStyle(LoamColor.inkMuted)
+                    Text("Shape").font(.system(size: 12.5)).foregroundStyle(LoamColor.inkMuted).fixedSize()
                     Picker("Shape", selection: $split) {
                         ForEach(shapes, id: \.split) { Text($0.words).tag($0.split) }
                     }
@@ -274,7 +274,9 @@ struct IntakeView: View {
                         .accessibilityIdentifier("intake-batch-error")
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            // The caption gives way first in a narrow bar, so the labels and pickers keep their words.
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(-1)
             if model.isStartingRun { ProgressView().controlSize(.small) }
             Button(kind == .chore && model.runStartNeedsSetupApproval
                    ? "Approve the setup and start" : IntakeContent.batchButton(count: items.count, kind: kind)) {
