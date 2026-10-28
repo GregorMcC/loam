@@ -141,6 +141,55 @@ type RunPR struct {
 	URL    string `json:"url"`
 }
 
+// RunNotes are the ship notes of a run: what Claude wrote about the change
+// when Loam opened its PR. The Land screen shows them.
+type RunNotes struct {
+	// Walkthrough says what changed and why, in 2 to 4 plain sentences.
+	Walkthrough string `json:"walkthrough"`
+	// Files are the changed files, in the order that a reviewer should read
+	// them.
+	Files []NoteFile `json:"files"`
+	Risk  NoteRisk   `json:"risk"`
+	// WhereItStands is a new Where it stands for the plot: the text that the
+	// plot had, moved on by this change.
+	WhereItStands string    `json:"where_it_stands"`
+	WrittenAt     time.Time `json:"written_at"`
+}
+
+// NoteFile is one changed file of the ship notes, with its role in the
+// change in 1 to 4 words, such as "Tests".
+type NoteFile struct {
+	Path string `json:"path"`
+	Role string `json:"role"`
+}
+
+// Risk levels of the ship notes.
+const (
+	RiskLow    = "low"
+	RiskMedium = "medium"
+	RiskHigh   = "high"
+)
+
+// NoteRisk is how risky the change is, and why. Loam adds facts of its own
+// to the reasons of Claude.
+type NoteRisk struct {
+	// Level is low, medium, or high.
+	Level   string   `json:"level"`
+	Reasons []string `json:"reasons"`
+}
+
+// clone copies the notes, with empty lists where they have none, so the
+// JSON has arrays.
+func (n *RunNotes) clone() *RunNotes {
+	if n == nil {
+		return nil
+	}
+	c := *n
+	c.Files = append([]NoteFile{}, n.Files...)
+	c.Risk.Reasons = append([]string{}, n.Risk.Reasons...)
+	return &c
+}
+
 // Run is one goal that a background Claude Code session works on in a
 // folder, until its Done when checks pass. A run is not in the change log.
 type Run struct {
@@ -169,7 +218,10 @@ type Run struct {
 	// It is empty until the session starts.
 	SessionID string `json:"session_id"`
 	// Note says why the run is in its state, such as the failed checks.
-	Note      string    `json:"note"`
+	Note string `json:"note"`
+	// Notes are the ship notes that Claude wrote when Loam opened the PR, or
+	// nil.
+	Notes     *RunNotes `json:"notes"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -246,10 +298,10 @@ func (s *Store) AddRun(r Run) (Run, error) {
 	now := time.Now().UnixMilli()
 	r.Tries = 0
 	r.CreatedAt, r.UpdatedAt = tm(now), tm(now)
-	checks, src, pr, shape := encodeRun(r)
-	if err := tx.exec(`INSERT INTO runs(`+runCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	checks, src, pr, shape, notes := encodeRun(r)
+	if err := tx.exec(`INSERT INTO runs(`+runCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.ID, r.PlotID, r.WorktreeID, r.Folder, r.Title, r.Goal, checks, r.State, r.MaxTries, r.SessionID, r.Note,
-		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, r.GroupID, now, now); err != nil {
+		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, r.GroupID, notes, now, now); err != nil {
 		return Run{}, err
 	}
 	if err := addRunEvent(tx, r.ID, now, "state", string(r.State)); err != nil {
@@ -333,6 +385,7 @@ func (s *Store) UpdateRun(id string, fn func(*Run) error) (Run, error) {
 		r.PR = &pr
 	}
 	r.Shape = old.Shape.clone()
+	r.Notes = old.Notes.clone()
 	if err := fn(&r); err != nil {
 		return Run{}, err
 	}
@@ -344,12 +397,12 @@ func (s *Store) UpdateRun(id string, fn func(*Run) error) (Run, error) {
 	}
 	now := time.Now().UnixMilli()
 	r.UpdatedAt = tm(now)
-	checks, src, pr, shape := encodeRun(r)
+	checks, src, pr, shape, notes := encodeRun(r)
 	if err := tx.exec(`UPDATE runs SET worktree_id = ?, folder = ?, title = ?, goal = ?, done_when = ?, state = ?, tries = ?,
   max_tries = ?, session_id = ?, note = ?, source_kind = ?, source_key = ?, source_url = ?, pr_number = ?, pr_url = ?,
-  shape = ?, group_id = ?, updated_at = ? WHERE id = ?`,
+  shape = ?, group_id = ?, notes = ?, updated_at = ? WHERE id = ?`,
 		r.WorktreeID, r.Folder, r.Title, r.Goal, checks, r.State, r.Tries, r.MaxTries, r.SessionID, r.Note,
-		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, r.GroupID, now, r.ID); err != nil {
+		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, r.GroupID, notes, now, r.ID); err != nil {
 		return Run{}, err
 	}
 	if r.Tries != old.Tries {
@@ -406,9 +459,11 @@ func (s *Store) RunEvents(runID string) ([]RunEvent, error) {
 
 // runCols are the columns of a run record.
 const runCols = `id, plot_id, worktree_id, folder, title, goal, done_when, state, tries, max_tries, session_id, note,
-  source_kind, source_key, source_url, pr_number, pr_url, shape, group_id, created_at, updated_at`
+  source_kind, source_key, source_url, pr_number, pr_url, shape, group_id, notes, created_at, updated_at`
 
-func encodeRun(r Run) (checks string, src RunSource, pr RunPR, shape string) {
+// encodeRun returns the columns of a run that are not plain values. notes is
+// NULL when the run has none.
+func encodeRun(r Run) (checks string, src RunSource, pr RunPR, shape string, notes sql.NullString) {
 	b, err := json.Marshal(append([]Check{}, r.DoneWhen...))
 	if err != nil { // a slice of string pairs always encodes
 		panic(err)
@@ -426,7 +481,14 @@ func encodeRun(r Run) (checks string, src RunSource, pr RunPR, shape string) {
 		}
 		shape = string(sb)
 	}
-	return string(b), src, pr, shape
+	if n := r.Notes.clone(); n != nil {
+		nb, err := json.Marshal(n)
+		if err != nil { // strings, string slices, and a time always encode
+			panic(err)
+		}
+		notes = sql.NullString{String: string(nb), Valid: true}
+	}
+	return string(b), src, pr, shape, notes
 }
 
 // clone copies the shape, with empty lists where it has none, so the JSON
@@ -451,9 +513,11 @@ func scanRun(sc interface{ Scan(...any) error }) (Run, error) {
 	var src RunSource
 	var pr RunPR
 	var shape string
+	var notes sql.NullString
 	var created, updated int64
 	err := sc.Scan(&r.ID, &r.PlotID, &r.WorktreeID, &r.Folder, &r.Title, &r.Goal, &checks, &r.State, &r.Tries,
-		&r.MaxTries, &r.SessionID, &r.Note, &src.Kind, &src.Key, &src.URL, &pr.Number, &pr.URL, &shape, &r.GroupID, &created, &updated)
+		&r.MaxTries, &r.SessionID, &r.Note, &src.Kind, &src.Key, &src.URL, &pr.Number, &pr.URL, &shape, &r.GroupID, &notes,
+		&created, &updated)
 	if err != nil {
 		return Run{}, err
 	}
@@ -472,6 +536,13 @@ func scanRun(sc interface{ Scan(...any) error }) (Run, error) {
 			return Run{}, fmt.Errorf("run %s: bad shape: %w", r.ID, err)
 		}
 		r.Shape = sh.clone()
+	}
+	if notes.Valid {
+		var n RunNotes
+		if err := json.Unmarshal([]byte(notes.String), &n); err != nil {
+			return Run{}, fmt.Errorf("run %s: bad notes: %w", r.ID, err)
+		}
+		r.Notes = n.clone()
 	}
 	r.CreatedAt, r.UpdatedAt = tm(created), tm(updated)
 	return r, nil

@@ -465,13 +465,15 @@ func newRunSendBackCmd() *cobra.Command {
 
 func newRunLandCmd() *cobra.Command {
 	var o run.LandOptions
+	var where bool
 	c := &cobra.Command{
-		Use:   "land <run> [--head <commit>] [--keep-worktree] [--dry-run]",
+		Use:   "land <run> [--head <commit>] [--keep-worktree] [--no-linear-done] [--where-it-stands] [--dry-run]",
 		Short: "Merge the PR of a run that is ready to land",
 		Long: "Merge the pull request (PR) of a run that is Ready to land, as loam worktree land does: the same checks, with the default merge method of the repo. The run is Landed, and its Linear issue moves to Done.\n" +
 			"Loam stops the session of the run first, because the land removes its worktree. A send-back resumes it.\n" +
 			"When GitHub merges later, as with a merge queue, the run stays Ready. loam run tick lands it when GitHub has merged the PR.\n" +
-			"It exits with code 2 when the run is not Ready or has no PR, with code 16 when a check blocks the merge, and with code 17 when gh is missing or signed out.",
+			"--where-it-stands sets Where it stands of the plot to the text of the ship notes of the run, as loam set does, when the run lands.\n" +
+			"It exits with code 2 when the run is not Ready or has no PR, or with --where-it-stands when the run has no ship notes, with code 16 when a check blocks the merge, and with code 17 when gh is missing or signed out.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := openStore()
@@ -479,12 +481,24 @@ func newRunLandCmd() *cobra.Command {
 				return err
 			}
 			defer s.Close()
+			if where {
+				r, err := s.GetRun(args[0])
+				if err != nil {
+					return err
+				}
+				if r.Notes == nil || strings.TrimSpace(r.Notes.WhereItStands) == "" {
+					return fmt.Errorf("the run has no ship notes with a Where it stands to set: %w", store.ErrInvalid)
+				}
+			}
 			// Ctrl-C stops gh. A merge that GitHub has is not undone.
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 			res, err := run.Land(ctx, s, args[0], o)
 			if err != nil {
 				return err
+			}
+			if where && !o.DryRun {
+				res.Warnings = append(res.Warnings, setWhereFromNotes(cmd, s, res.Run)...)
 			}
 			printWarnings(cmd, res.Warnings)
 			if JSON(cmd) {
@@ -500,9 +514,28 @@ func newRunLandCmd() *cobra.Command {
 	}
 	c.Flags().StringVar(&o.Head, "head", "", "the PR head that you looked at. The merge stops with code 16 when the PR has another head")
 	c.Flags().BoolVar(&o.KeepWorktree, "keep-worktree", false, "keep the worktree after the merge")
+	c.Flags().BoolVar(&o.NoLinearDone, "no-linear-done", false, "leave the Linear issue where it is: this land does not move it to Done")
+	c.Flags().BoolVar(&where, "where-it-stands", false, "set Where it stands of the plot to the text of the ship notes of the run")
 	c.Flags().BoolVar(&o.DryRun, "dry-run", false, "change nothing, and print the plan and each check")
 	c.Flags().StringArrayVar(&o.OpenPanes, "open-pane", nil, "the folder of an open pane (repeatable). The app passes its open panes.")
 	return c
+}
+
+// setWhereFromNotes sets Where it stands of the plot of a landed run to the
+// text of its ship notes, as loam set does: one change in the change log. A
+// run that has not landed changes nothing. It returns the warnings.
+func setWhereFromNotes(cmd *cobra.Command, s *store.Store, r store.Run) []string {
+	if r.State != store.RunLanded {
+		return []string{"The run has not landed yet, so Where it stands stays as it is"}
+	}
+	res, err := commit(s, store.Change{
+		PlotID: r.PlotID, Actor: cliActor(cmd),
+		Edits: []store.Edit{{Op: store.OpSet, Item: store.ItemWhere, Value: r.Notes.WhereItStands}},
+	})
+	if err != nil {
+		return []string{"Could not set Where it stands: " + err.Error()}
+	}
+	return res.Warnings
 }
 
 func newRunTickCmd() *cobra.Command {

@@ -111,6 +111,20 @@ func TestAttachLinksAURLToAnIssue(t *testing.T) {
 	}
 }
 
+// A land adds the walkthrough of the run to its issue as a comment.
+func TestCommentAddsABodyToAnIssue(t *testing.T) {
+	f := testutil.FakeLinear(t)
+	c := linear.NewClient(f.URL, testutil.LinearKey)
+	if err := c.Comment(context.Background(), "ENG-523", "Landed in #147 by a Loam run."); err != nil {
+		t.Fatal(err)
+	}
+	call := f.Calls()[0]
+	if !strings.Contains(call.Query, "commentCreate") || call.Variables["id"] != "ENG-523" ||
+		call.Variables["body"] != "Landed in #147 by a Loam run." {
+		t.Fatalf("call %+v", call)
+	}
+}
+
 // Ticket 207: Shape gives Claude the text of the issue.
 func TestIssueTextIsTheTitleAndTheDescription(t *testing.T) {
 	f := testutil.FakeLinear(t)

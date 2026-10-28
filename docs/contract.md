@@ -521,7 +521,7 @@ A run is one goal that a background Claude Code session (`claude --bg`) works on
   "state": "running", "tries": 1, "max_tries": 3,
   "source": { "kind": "github", "key": "#57", "url": "https://github.com/example/widgets/issues/57" },
   "pr": { "number": 147, "url": "https://github.com/example/widgets/pull/147" },
-  "session_id": "c57ef956-3136-4e86-bfde-da8facfe0523", "note": "Try 1 failed: Go tests", "group_id": "",
+  "session_id": "c57ef956-3136-4e86-bfde-da8facfe0523", "note": "Try 1 failed: Go tests", "group_id": "", "notes": null,
   "created_at": "2026-10-02T09:00:00Z", "updated_at": "2026-10-02T09:04:00Z"
 }
 ```
@@ -542,6 +542,22 @@ A run is one goal that a background Claude Code session (`claude --bg`) works on
 - `pr` is the PR that Loam opened for the run, or the open PR of its branch that Loam found. It is left out before the run ships.
 - `source` is the issue of the worktree's link, or the map ticket that `--ticket` names (`kind` `map`, `key` such as `map 135`, `url` the path of the ticket file). It is left out when there is none.
 - `group_id` links the runs that one split shape made for one issue, one in each repo (see Shape). It is the ID of the first run of the group. It is always there, and it is empty for a run alone. `run list` and `run status` show it.
+- `notes` are the ship notes that Claude wrote when Loam opened the PR of the run (see Ship). It is always there. It is null before Loam opens the PR, and when Claude wrote no notes.
+
+```json
+{
+  "walkthrough": "The plot panel moves a link by drag. The order goes through the change log, so undo puts it back.",
+  "files": [{ "path": "core/internal/store/order.go", "role": "The rule" }, { "path": "core/internal/store/order_test.go", "role": "Tests" }],
+  "risk": { "level": "low", "reasons": ["Two files, both in the plan.", "No store change."] },
+  "where_it_stands": "Links move by drag. Next: drag a repo.",
+  "written_at": "2026-10-02T09:04:00Z"
+}
+```
+
+- `walkthrough` says what changed and why, in 2 to 4 plain sentences.
+- `files` holds each changed file once, in the order that a reviewer should read them. `role` is 1 to 4 words.
+- `risk.level` is `low`, `medium`, or `high`. `reasons` are short sentences: Claude's first, then the facts that Loam adds.
+- `where_it_stands` is a new text for the Where it stands of the plot: the text that the plot had, moved on by this change. `run land --where-it-stands` sets it.
 
 The gate is the Stop hook of the session. Each time the session ends a turn, Loam runs each check with `sh -c` in the folder, then checks that `git status --porcelain` is empty ("Work committed"). When all pass, the run is `shipping` when the origin of its repo is on GitHub, else `ready`. When one fails, the try counts. With tries left, the hook exits 2 and the failures go back to the session as its next prompt. With no tries left, the session stops and the run is `stopped`.
 
@@ -562,14 +578,24 @@ The gate is the Stop hook of the session. Each time the session ends a turn, Loa
 1. The run's worktree is gone, and the run has no `pr`, or the origin is not on GitHub: the run is `ready`, and `note` says why. A run that has a `pr` and has lost its worktree (for example after `loam worktree land` removed it) reads its PR by number with `gh pr view <number> --repo <owner/name> --json state,number`. Merged: the run is `landed`, as in step 2. Closed: the run is `stopped`. Open: the run is `ready`, and `note` says "The worktree is gone. Merge #12 on GitHub, or cancel the run". gh missing or signed out makes it `ready` too, with the error in `note`.
 2. GitHub has the run's PR merged: the run is `landed`, with a `land` event, and its Linear issue moves to Done. Closed: the run is `stopped`.
 3. An open PR of the branch that is not the run's PR: it becomes the run's PR (event `ship`, "Found #12, the open PR of the branch").
-4. The head of the worktree is not the PR head: the tick runs `git push -u origin <branch>` when `origin/<branch>` is not the head. A failed push stops the run with the output in `note`. With no PR, it runs `gh pr create` with the title of the run, the base of the worktree, and a body with the goal, the Done when checks, and the issue (`Closes #57` for a GitHub issue, the key, such as `Linear: ENG-523`, for a Linear issue). With a PR template in the worktree, the body comes from the template instead (see below). For a run of a group, the body has one more line with the repos of the other runs of the issue, such as "The issue also has runs in example/docs." A repo on GitHub is `owner/name`, and another repo is its folder name. A cancelled run does not count. It names no local path and no Linear URL, because the repo can be public and the Linear workspace private. The events are `ship`: "Opened #12", or "Pushed the fix to #12". For a Linear issue, Loam attaches the PR to it (event `linear`). A failed attach is a warning.
+4. The head of the worktree is not the PR head: the tick runs `git push -u origin <branch>` when `origin/<branch>` is not the head. A failed push stops the run with the output in `note`. With no PR, it runs `gh pr create` with the title of the run, the base of the worktree, and a body with the goal, the Done when checks, and the issue (`Closes #57` for a GitHub issue, the key, such as `Linear: ENG-523`, for a Linear issue). With a PR template in the worktree, the body comes from the template instead (see below). For a run of a group, the body has one more line with the repos of the other runs of the issue, such as "The issue also has runs in example/docs." A repo on GitHub is `owner/name`, and another repo is its folder name. A cancelled run does not count. It names no local path and no Linear URL, because the repo can be public and the Linear workspace private. The events are `ship`: "Opened #12", or "Pushed the fix to #12". For a Linear issue, Loam attaches the PR to it (event `linear`), when that update to Linear is on (see Linear). A failed attach is a warning. The run gets its `notes` in the same write as its `pr`.
 5. CI on the PR head:
    - No checks: the run waits 3 minutes after the push, then is `ready` ("No CI ran on #12").
    - A failed check: the try counts. With tries left, the run is `running` and Loam sends the session a prompt with each failed check and the last 60 lines of its failed log (`gh run view <id> --log-failed`). Loam runs `claude stop` and then `claude --bg --resume <session ID> "<prompt>"` with no other flag, so the session wakes with its own options and hooks. The next gate that passes ships the fix to the same PR. With no tries left, the run is `stopped`.
    - Checks that run or wait: nothing changes.
    - All passed: the run is `ready` ("CI passed on #12: 14 of 14 checks").
 
-**PR template.** Before `gh pr create`, Loam looks for a PR template in the worktree as GitHub does: `pull_request_template.md` (or `.txt`, any case) in `.github/`, in the root, or in `docs/`, else the first file, by name, of a `PULL_REQUEST_TEMPLATE/` folder in one of them. With a template, Loam runs `claude -p` in the worktree with the tools Read, Grep, and Glob only, `--output-format json`, a `--json-schema` for `{ "title": string, "body": string }`, `--no-session-persistence`, and the model and effort of the run when it has them. The call stops after 3 minutes, and it needs a folder that Claude Code trusts. The prompt holds the template, the goal, the Done when checks (all passed), the commit messages of the branch, and `git diff --stat` of the branch. It asks Claude to fill each section, to follow the comments of the template, to tick a checkbox only when a check proves it, to write plainly, and to use no em dashes. The PR title is the title that Claude gives, else the title of the run. The body is the body that Claude gives, a blank line, and the footer: the issue line (`Closes #57` or `Linear: ENG-523`), the line about the other runs of a group, and "Loam opened this PR for a run whose checks passed." With no template, or when `claude -p` fails, times out, or gives no body, the PR has the title and the body described in step 4. With a template, that failure is a `ship` event: "Loam used no PR template: <why>". The PR text is not part of the JSON contract.
+**Ship notes and PR template.** Before `gh pr create`, Loam runs `claude -p` in the worktree with the tools Read, Grep, and Glob only, `--output-format json`, a `--json-schema`, `--no-session-persistence`, and the model and effort of the run when it has them. The call stops after 3 minutes, and it needs a folder that Claude Code trusts. The answer has the ship notes: `walkthrough`, `files` (each `{ "path", "role" }`), `risk` (`{ "level", "reasons" }`), and `where_it_stands`. The prompt holds the Where it stands of the plot, the goal, the Done when checks (all passed), the plan of the shape when there is one, the commit messages of the branch, `git diff --stat` of the branch, and the list of changed files. It asks Claude to write plainly and to use no em dashes.
+
+Loam then checks the notes against the diff. It drops a file that the branch did not change, and adds each changed file that Claude left out, with the role "Also changed". A level that is not `low`, `medium`, or `high` is `medium`. Loam adds its own facts to the end of `risk.reasons`, not Claude:
+
+- the changed files that the plan of the shape does not name, such as "1 changed file is not in the plan: go.mod." A run with no plan gets no such fact;
+- a store migration in the diff: a path with a folder or file named for migrations, or a schema code file such as `schema.sql` or `schema.go`;
+- changed dependency files: `go.mod`, `go.sum`, `Package.swift`, `Package.resolved`, `package.json`, and lock files such as `yarn.lock` or `package-lock.json`.
+
+Loam also looks for a PR template in the worktree as GitHub does: `pull_request_template.md` (or `.txt`, any case) in `.github/`, in the root, or in `docs/`, else the first file, by name, of a `PULL_REQUEST_TEMPLATE/` folder in one of them. With a template, the same call also asks for `{ "title", "body" }`, and the prompt holds the template. It asks Claude to fill each section, to follow the comments of the template, and to tick a checkbox only when a check proves it. The PR title is the title that Claude gives, else the title of the run. The body is the body that Claude gives, a blank line, and the footer: the issue line (`Closes #57` or `Linear: ENG-523`), the line about the other runs of a group, and "Loam opened this PR for a run whose checks passed." With no template, the PR has the title and the body described in step 4.
+
+When `claude -p` fails, times out, or gives no walkthrough, the run has no `notes`, and a `ship` event says why: "Loam wrote no ship notes: <why>", or with a template "Loam used no PR template and wrote no ship notes: <why>". A template answer with no body keeps the body of step 4, with the event "Loam used no PR template: claude -p gave an empty body". The PR text is not part of the JSON contract. A fix that Loam pushes after a CI failure or a send-back keeps the notes of the first push.
 
 Each CI result is a `ci` event.
 
@@ -581,7 +607,7 @@ A tick also watches the PR of each run that is `ready` and has a `pr`. A merge o
 | :- | :- |
 | `loam run diff <run>` | `{ "base": "<commit>", "head": "<commit>", "files": [{ "path": "README.md", "status": "modified", "added": 3, "deleted": 1, "hunks": [{ "header": "@@ -1 +1,3 @@", "old_start": 1, "new_start": 1, "lines": [{ "kind": "del", "old": 1, "text": "hello" }, { "kind": "add", "new": 1, "text": "# Loam" }] }] }] }` |
 | `loam run send-back <run> --note <text>...` | `{ "run": { ... }, "rule_offer": { "note": "...", "earlier": "...", "earlier_run_id": "...", "earlier_title": "..." } }` |
-| `loam run land <run> [--head <commit>] [--keep-worktree] [--open-pane <folder>]... [--dry-run]` | `{ "run": { ... }, "land": { ... }, "warnings": [] }` |
+| `loam run land <run> [--head <commit>] [--keep-worktree] [--no-linear-done] [--where-it-stands] [--open-pane <folder>]... [--dry-run]` | `{ "run": { ... }, "land": { ... }, "warnings": [] }` |
 
 - `run diff` is the work that the run committed: from `base`, the commit where its branch left the base of its worktree, to `head`. `status` is `added`, `modified`, `deleted`, or `renamed`, with `old_path` for a rename. A binary file has `binary` and no hunks. A file keeps at most 3000 lines and then has `truncated`; `added` and `deleted` count every line. A line has `old`, `new`, or both: the numbers of the line before and after the change.
 - `run send-back` takes a run that is `ready` or `stopped`, and at least one note. A note is `<file>:<line>: <text>` for a line, or text alone. Loam stops the session and resumes it with the notes as its prompt, as for a CI failure, and the run is `running` ("Sent back with 2 notes", event `review`). A note uses no try. A run with no tries left gets one more (`max_tries` goes up by 1, to at most 8). The next gate that passes ships the change to the same PR. Each note is an event `note`: `<file> line <n>: <text>`, or the text alone.
@@ -590,6 +616,9 @@ A tick also watches the PR of each run that is `ready` and has a `pr`. A merge o
 - A run whose worktree is gone reads its PR by number (see Ship, step 1) and calls no land. A merged PR makes the run `landed` ("#25 was merged on GitHub") and a closed PR makes it `stopped`. In both cases `land` is `null`. With `--dry-run`, `land` is `null` and `warnings` says what a land records. An open PR exits 2: Loam cannot merge a PR with no worktree.
 - `loam worktree land` also lands each run that works in the worktree and has not ended (`shipping` or `ready`), when the land merged the PR, so a land from the sidebar ends the run at once. The note is the one of `run land`. A run with a `pr` other than the merged one stays as it is. The text output adds the line "Landed the run <title>." The JSON output does not change.
 - A run in another state, or with no PR, exits 2. A check that blocks the merge exits 16, and gh missing or signed out exits 17, as for `worktree land`.
+- `--keep-worktree` keeps the worktree after the merge.
+- `--no-linear-done` leaves the Linear issue where it is: this land does not move it to Done, and the `linear` event is "This land leaves ENG-523 where it is". It holds only for a land that merges now. When GitHub merges later, a run with a Linear issue gets a warning that the tick that lands the run follows the `done` switch.
+- `--where-it-stands` sets the Where it stands of the plot to `notes.where_it_stands` when the run lands, through the same store path and change log as `loam set <plot> where-it-stands` and the MCP tool `set_where_it_stands`. The actor is that of the command. A run with no `notes`, or with an empty `where_it_stands`, exits 2 before Loam merges anything. A land that does not land the run now, such as one that waits for a merge queue, sets nothing, and a warning says so. A failed write is a warning, because the merge has happened.
 
 #### Shape
 
@@ -723,6 +752,24 @@ Loam keeps a personal Linear API key in the login Keychain of macOS (service `Lo
 - `connected` is true when a key is stored. `viewer` is null when there is no key, or when Linear did not answer, and then `error` says why.
 - When a run starts from a Linear issue, Loam moves the issue to the first started state of its team, such as In Progress, unless the issue has started or ended. A `linear` event of the run says what happened. A failure is a warning: the run still starts. The second run of a group finds the issue started, which is not a warning.
 - When a run lands, its issue moves to the first completed state, such as Done. For a run of a group, this happens only when every other run of the group has ended as `landed` or `cancelled`. Until then, the `linear` event says why the issue stays, such as "ENG-523 stays In Progress: 1 more run of the issue has not landed". The rule is the same for `run land` and for a tick that lands a run after a merge queue. When you stop the last run of a group, and another run of the group landed, the issue moves to Done too.
+- When a run lands with `notes` and a `pr`, and the `walkthrough_comment` switch is on, Loam adds a comment to its issue: "Landed in #25 by a Loam run. <walkthrough> 3 of 3 checks passed." The checks are those of the last gate of the run. Each run of a group adds its own comment. The `linear` event is "Added the walkthrough to ENG-523 as a comment". A failure is a warning.
+
+**Updates to Linear.** Four switches turn each update that Loam makes to the Linear issue of a run on or off. They hold for every plot. They are not in the change log.
+
+```json
+{ "updates": { "in_progress": true, "attach_pr": true, "done": true, "walkthrough_comment": false } }
+```
+
+| Command | Output |
+| :- | :- |
+| `loam linear updates [--in-progress on\|off] [--attach-pr on\|off] [--done on\|off] [--walkthrough on\|off]` | `{ "updates": {...} }` |
+
+- `in_progress`: when a run starts, move the issue to In Progress. On by default.
+- `attach_pr`: when Loam opens the PR, attach it to the issue. On by default.
+- `done`: when a run lands, move the issue to Done, with the rule for a group above. On by default.
+- `walkthrough_comment`: when a run lands, add its walkthrough as a comment. Off by default.
+- With no flag, the command prints the switches. A flag sets that switch and leaves the others. A value that is not `on` or `off` exits 2.
+- An update that is off makes no call to Linear. For `in_progress`, `attach_pr`, and `done`, the `linear` event says so, such as "Loam did not move ENG-523 to Done: that update to Linear is off".
 
 ### Sessions
 

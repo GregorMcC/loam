@@ -215,12 +215,25 @@ func launch(ctx context.Context, s *store.Store, r store.Run, o StartOptions, re
 		return nil, err
 	}
 	if r.State != store.RunStopped {
-		if warning := moveLinearIssue(parent, s, r, "In Progress", "has started or ended", (*linear.Client).Start); warning != "" {
+		if warning := startLinearIssue(parent, s, r); warning != "" {
 			res.Warnings = append(res.Warnings, warning)
 		}
 	}
 	res.Run = r
 	return res, nil
+}
+
+// startLinearIssue moves the Linear issue of a run that started to In
+// Progress, when that update to Linear is on.
+func startLinearIssue(ctx context.Context, s *store.Store, r store.Run) string {
+	if r.Source == nil || r.Source.Kind != intake.Linear {
+		return ""
+	}
+	if off, warning := linearUpdateOff(s, r, "move "+r.Source.Key+" to In Progress",
+		func(u store.LinearUpdates) bool { return u.InProgress }); off {
+		return warning
+	}
+	return moveLinearIssue(ctx, s, r, "In Progress", "has started or ended", (*linear.Client).Start)
 }
 
 // moveLinearIssue moves the Linear issue of the run with move, such as

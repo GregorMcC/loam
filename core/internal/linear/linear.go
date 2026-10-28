@@ -1,6 +1,7 @@
 // Package linear reads issues from Linear, moves an issue to In Progress
-// when a run starts from it, and attaches the PR of the run to the issue. It
-// talks to the Linear GraphQL API with a personal API key.
+// when a run starts from it, attaches the PR of the run to the issue, and
+// adds a comment to it. It talks to the Linear GraphQL API with a personal
+// API key.
 package linear
 
 import (
@@ -272,6 +273,24 @@ func (c *Client) Attach(ctx context.Context, id, url, title string) error {
 	}
 	if !out.AttachmentLinkURL.Success {
 		return fmt.Errorf("Linear did not attach %s to %s", url, id)
+	}
+	return nil
+}
+
+// Comment adds a comment with the Markdown body to the issue, such as
+// ENG-523.
+func (c *Client) Comment(ctx context.Context, id, body string) error {
+	var out struct {
+		CommentCreate struct {
+			Success bool `json:"success"`
+		} `json:"commentCreate"`
+	}
+	m := `mutation($id: String!, $body: String!) { commentCreate(input: { issueId: $id, body: $body }) { success } }`
+	if err := c.query(ctx, m, map[string]any{"id": id, "body": body}, &out); err != nil {
+		return err
+	}
+	if !out.CommentCreate.Success {
+		return fmt.Errorf("Linear did not add the comment to %s", id)
 	}
 	return nil
 }

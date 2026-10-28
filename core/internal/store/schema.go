@@ -221,6 +221,22 @@ CREATE TABLE run_defaults (
 	// 15: linked runs: the runs that one shape made for one issue, one in
 	// each repo, share a group.
 	`ALTER TABLE runs ADD COLUMN group_id TEXT NOT NULL DEFAULT '';`,
+	// 16: held for a step of another branch. The merge puts that step here.
+	`SELECT 1;`,
+	// 17: the ship notes of a run, as JSON, or NULL when it has none. And the
+	// switches for the updates that Loam makes to Linear: one row, for every
+	// plot. Neither is in the change log.
+	`
+ALTER TABLE runs ADD COLUMN notes TEXT;
+CREATE TABLE linear_updates (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  in_progress INTEGER NOT NULL,
+  attach_pr INTEGER NOT NULL,
+  done INTEGER NOT NULL,
+  walkthrough_comment INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+`,
 }
 
 // SchemaVersion is the schema version of this binary.

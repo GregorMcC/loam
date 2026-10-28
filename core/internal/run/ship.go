@@ -115,6 +115,8 @@ type shipper struct {
 	ghErr    error
 	r        store.Run
 	warnings []string
+	// noLinearDone keeps the Linear issue where it is when the run lands.
+	noLinearDone bool
 }
 
 // ship does the next step of the run. It returns true when the run record
@@ -235,7 +237,7 @@ func (sh *shipper) ended(ctx context.Context, pr *github.PR) (moved, ended bool,
 	}
 	switch pr.State {
 	case "MERGED":
-		r, moved, warnings, err := landRun(ctx, sh.s, sh.r, fmt.Sprintf("#%d was merged on GitHub", pr.Number))
+		r, moved, warnings, err := landRun(ctx, sh.s, sh.r, fmt.Sprintf("#%d was merged on GitHub", pr.Number), !sh.noLinearDone)
 		sh.r, sh.warnings = r, append(sh.warnings, warnings...)
 		return moved, true, err
 	case "CLOSED":
@@ -265,18 +267,22 @@ func (sh *shipper) push(ctx context.Context, repo github.Repo, w store.Worktree,
 		return false, nil // GitHub does not show the new head yet
 	}
 	var others []string
+	where := ""
 	if plot, err := sh.s.GetPlot(r.PlotID); err == nil {
 		// A body that names no other repo is still a good body.
 		others, _ = groupRepos(sh.s, plot, r)
+		where = plot.Where
 	}
-	title, body := sh.prText(ctx, w, repo, others)
+	title, body, notes := sh.prText(ctx, w, repo, others, where)
 	opened, err := sh.gh.CreatePR(ctx, repo, github.NewPR{
 		Head: w.Branch, Base: worktree.CompareBase(w), Title: title, Body: body,
 	})
 	if err != nil {
 		return false, err
 	}
-	moved, err := sh.update(func(r *store.Run) { r.PR = &store.RunPR{Number: opened.Number, URL: opened.URL} })
+	moved, err := sh.update(func(r *store.Run) {
+		r.PR, r.Notes = &store.RunPR{Number: opened.Number, URL: opened.URL}, notes
+	})
 	if err != nil {
 		return moved, err
 	}
@@ -424,11 +430,19 @@ func send(ctx context.Context, r store.Run, prompt string) error {
 	return nil
 }
 
-// attachToLinear attaches the new PR to the Linear issue of the run, and
-// records what happened as a "linear" event.
+// attachToLinear attaches the new PR to the Linear issue of the run, when
+// that update to Linear is on, and records what happened as a "linear"
+// event.
 func (sh *shipper) attachToLinear(ctx context.Context, pr github.OpenedPR) {
 	src := sh.r.Source
 	if src == nil || src.Kind != intake.Linear {
+		return
+	}
+	if off, warning := linearUpdateOff(sh.s, sh.r, fmt.Sprintf("attach #%d to %s", pr.Number, src.Key),
+		func(u store.LinearUpdates) bool { return u.AttachPR }); off {
+		if warning != "" {
+			sh.warnings = append(sh.warnings, warning)
+		}
 		return
 	}
 	detail := fmt.Sprintf("Attached #%d to %s", pr.Number, src.Key)

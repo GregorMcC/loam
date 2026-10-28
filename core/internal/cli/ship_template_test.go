@@ -16,10 +16,12 @@ import (
 
 const prTemplateText = "## Summary\n\n<!-- What changed, and why. -->\n\n## Testing\n\n- [ ] Tests pass\n- [ ] Checked by hand\n"
 
-// templateAnswer is what claude -p prints for a PR text: the result message of
-// --output-format json.
+// templateAnswer is what claude -p prints for a PR text and the ship notes:
+// the result message of --output-format json.
 const templateAnswer = `{"type": "result", "subtype": "success", "is_error": false, "result": "",
- "structured_output": {"title": "Greet the user", "body": "## Summary\n\nAdds hello.txt.\n\n## Testing\n\n- [x] Tests pass\n- [ ] Checked by hand"}}`
+ "structured_output": {"title": "Greet the user", "body": "## Summary\n\nAdds hello.txt.\n\n## Testing\n\n- [x] Tests pass\n- [ ] Checked by hand",
+  "walkthrough": "Adds hello.txt, which greets the user.", "files": [{"path": "hello.txt", "role": "The greeting"}],
+  "risk": {"level": "low", "reasons": ["One new file."]}, "where_it_stands": "The greeting is in."}}`
 
 // openedPR returns the PR that the fake gh got from pr create.
 func openedPR(t *testing.T) (title, body string) {
@@ -88,6 +90,10 @@ func TestRunTickOpensThePRWithTheBodyThatClaudeFilledIn(t *testing.T) {
 	if realPath(t, inv.Cwd) != realPath(t, r.Folder) {
 		t.Fatalf("cwd %s", inv.Cwd)
 	}
+	// The same call wrote the ship notes.
+	if got, _ := s.GetRun(r.ID); got.Notes == nil || got.Notes.Walkthrough != "Adds hello.txt, which greets the user." {
+		t.Fatalf("notes %+v", got.Notes)
+	}
 }
 
 func TestRunTickKeepsTheOldBodyWhenClaudeFailsOnATemplate(t *testing.T) {
@@ -124,25 +130,5 @@ func TestRunTickKeepsTheOldBodyWhenTheFolderIsNotTrusted(t *testing.T) {
 	}
 	if e := events(t, s, r.ID, "ship"); !slices.ContainsFunc(e, func(d string) bool { return strings.HasPrefix(d, "Loam used no PR template") }) {
 		t.Fatalf("ship events %q", e)
-	}
-}
-
-func TestRunTickWithNoTemplateKeepsTheOldBodyAndRunsNoClaude(t *testing.T) {
-	s, r, w := shipRun(t, "3")
-	trustFolder(t, r.Folder, w.Repo)
-	testutil.FakeClaudePrint(t, templateAnswer)
-	tick(t)
-	title, body := openedPR(t)
-	want := "Say hi\n\n## Done when\n\n- Hello: `grep -qx 'hi there' hello.txt`\n- Work committed\n\nLoam opened this PR for a run whose checks passed.\n"
-	if title != "Say hi" || body != want {
-		t.Fatalf("title %q body %q", title, body)
-	}
-	if len(printCalls(t)) != 0 {
-		t.Fatalf("claude -p calls %q", printCalls(t))
-	}
-	for _, d := range events(t, s, r.ID, "ship") {
-		if strings.Contains(d, "template") {
-			t.Fatalf("event %q", d)
-		}
 	}
 }
