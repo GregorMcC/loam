@@ -48,7 +48,7 @@ The Land sheet lands one worktree: it shows what GitHub checks, merges the PR, r
 - Behind base does not block unless the base branch needs the PR up to date. The Update branch button runs `loam worktree update` and reads the plan again.
 - For a merge that waits (`--auto` or a queue), Loam does not close any pane and does not save Where it stands. The third box is off and cannot be turned on. The fourth box does not show. A note under "After the merge" says "Loam does this when GitHub has merged the pull request."
   - The land records the first two boxes. When a refresh finds that GitHub merged the PR (ticket 113), Loam finishes the land as the boxes said. It deletes the branch on GitHub, closes the panes of the worktree, and removes the worktree. A box that was off skips its step.
-  - Loam removes the worktree with no question only when that is safe. Else it asks in a callout at the top of the plot panel. A toast says what happened. See [After a merge on GitHub](../../../../README.md#after-a-merge-on-github).
+  - Loam removes the worktree with no question only when that is safe. Else it asks in a callout at the top of the plot panel. A toast says what happened. See [After a merge on GitHub](../../../guide.md#after-a-merge-on-github).
   - Loam does not save Where it stands or remove the plot link at that time.
 
 ## Merge
