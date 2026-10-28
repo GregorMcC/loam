@@ -14,6 +14,10 @@ public struct RunDraft: Equatable, Sendable {
     public var base: String?
     /// True when you saw the setup command of the repo and start the run with it.
     public var approveSetup = false
+    /// The model for `--model`, or "" for the plot default.
+    public var model = ""
+    /// The level for `--effort`, or "" for the plot default.
+    public var effort = ""
 
     /// A draft that starts from the item: an issue gives `--link`, a map ticket gives `--ticket`.
     public init(item: IntakeItem) {

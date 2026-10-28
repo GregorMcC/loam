@@ -32,6 +32,8 @@ public struct Recurring: Codable, Equatable, Sendable, Identifiable {
     public var doneWhen: [RunCheck]
     public var maxTries: Int
     public var model: String
+    /// The effort level of its runs, or "" for the default.
+    public var effort: String = ""
     public var nextAt: String
     /// When a tick last took it, or nil before the first time.
     public var lastAt: String?
@@ -41,7 +43,7 @@ public struct Recurring: Codable, Equatable, Sendable, Identifiable {
     public var createdAt: String
 
     enum CodingKeys: String, CodingKey {
-        case id, title, prompt, kind, days, at, precheck, repo, model
+        case id, title, prompt, kind, days, at, precheck, repo, model, effort
         case plotID = "plot_id", ifAsleep = "if_asleep", doneWhen = "done_when", maxTries = "max_tries"
         case nextAt = "next_at", lastAt = "last_at", lastNote = "last_note", lastRunID = "last_run_id"
         case createdAt = "created_at"

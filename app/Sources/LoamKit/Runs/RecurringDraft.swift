@@ -13,6 +13,10 @@ public struct RecurringDraft: Equatable, Sendable {
     public var ifAsleep = Recurring.IfAsleep.once
     /// True when you saw the setup command of the repo, for a chore.
     public var approveSetup = false
+    /// The model for `--model`, or "" for the plot default.
+    public var model = ""
+    /// The level for `--effort`, or "" for the plot default.
+    public var effort = ""
 
     public init() {}
 }

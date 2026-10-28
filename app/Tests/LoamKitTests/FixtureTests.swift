@@ -66,6 +66,7 @@ func decodeFixture(schema: String, data: Data) throws {
     case "recurring-run": _ = try d.decode(RecurringResult.self, from: data)
     case "rule": _ = try d.decode(RuleOne.self, from: data)
     case "rule-list": _ = try d.decode(RuleList.self, from: data)
+    case "run-defaults": _ = try d.decode(RunDefaultsOne.self, from: data)
     case "tick": _ = try d.decode(TickResult.self, from: data)
     case "tick-status": _ = try d.decode(TickStatus.self, from: data)
     case "intake-list": _ = try d.decode(IntakeList.self, from: data)

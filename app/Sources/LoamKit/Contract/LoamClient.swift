@@ -271,8 +271,14 @@ public struct LoamClient: Sendable {
         if let base = draft.base { args += ["--base", base] }
         if let link = draft.link { args += ["--link", link] }
         if let ticket = draft.ticket { args += ["--ticket", ticket] }
+        args += Self.modelArgs(model: draft.model, effort: draft.effort)
         if draft.approveSetup { args.append("--approve-setup") }
         return try await read(args, positionals: [plot])
+    }
+
+    /// `--model` and `--effort` for the ones that are set. An empty one leaves the choice to the plot default.
+    static func modelArgs(model: String, effort: String) -> [String] {
+        (model.isEmpty ? [] : ["--model", model]) + (effort.isEmpty ? [] : ["--effort", effort])
     }
 
     /// `loam run shape <plot>`: records a run in Shaping, and Claude drafts its goal, checks, assumptions and plan
@@ -282,6 +288,7 @@ public struct LoamClient: Sendable {
         if let base = draft.base { args += ["--base", base] }
         if let link = draft.link { args += ["--link", link] }
         if let ticket = draft.ticket { args += ["--ticket", ticket] }
+        args += Self.modelArgs(model: draft.model, effort: draft.effort)
         return try await read(args, positionals: [plot])
     }
 
@@ -315,6 +322,7 @@ public struct LoamClient: Sendable {
                     "--days", draft.days.joined(separator: ","), "--at", draft.at, "--if-asleep", draft.ifAsleep.rawValue]
         let precheck = draft.precheck.trimmingCharacters(in: .whitespacesAndNewlines)
         if !precheck.isEmpty { args += ["--precheck", precheck] }
+        args += Self.modelArgs(model: draft.model, effort: draft.effort)
         if draft.approveSetup { args.append("--approve-setup") }
         let one: RecurringOne = try await read(args, positionals: [plot])
         return one.recurring
@@ -329,6 +337,18 @@ public struct LoamClient: Sendable {
     /// `loam recurring run <recurring>`: starts it now, with its precheck, as a tick does.
     public func recurringRun(_ id: String) async throws -> RecurringResult {
         try await read(["recurring", "run"], positionals: [id])
+    }
+
+    /// `loam run defaults <plot>`: the model and the effort that a run of the plot gets when it names none.
+    public func runDefaults(plot: String) async throws -> RunDefaults {
+        let one: RunDefaultsOne = try await read(["run", "defaults"], positionals: [plot])
+        return one.defaults
+    }
+
+    /// `loam run defaults <plot> --model <model> --effort <level>`. An empty value clears it.
+    public func setRunDefaults(plot: String, model: String, effort: String) async throws -> RunDefaults {
+        let one: RunDefaultsOne = try await read(["run", "defaults", "--model", model, "--effort", effort], positionals: [plot])
+        return one.defaults
     }
 
     /// `loam rule list [<plot>]`: the rules of the plot, or of every plot, oldest first.

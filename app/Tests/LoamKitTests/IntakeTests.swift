@@ -113,4 +113,33 @@ import Testing
         _ = await model.shapeRun(plot: "plotaaaaae", draft: draft)
         #expect(fake.args().contains { $0.hasPrefix("run shape --title Fix the login form --max-tries 3 --base trunk --ticket") })
     }
+
+    /// The model and the effort that you pick go to the core. Default sends neither, so the plot default applies.
+    @Test func aModelAndAnEffortGoToTheCore() async throws {
+        let (model, fake) = try model([("run_start", 0), ("run_list", 0), ("run_status", 0), ("run_shape", 0)])
+        var draft = RunDraft(item: Self.item("map", url: "/maps/12.md"))
+        draft.model = "opus"
+        draft.effort = "high"
+        #expect(await model.startRun(plot: "plotaaaaae", draft: draft))
+        #expect(fake.args().first?.contains("--ticket /maps/12.md --model opus --effort high --json") == true)
+        draft.model = ""
+        _ = await model.shapeRun(plot: "plotaaaaae", draft: draft)
+        #expect(fake.args().contains { $0.contains("--ticket /maps/12.md --effort high --json") && $0.hasPrefix("run shape") })
+    }
+
+    /// The plot defaults: read, then set. "" clears one.
+    @Test func thePlotDefaultsAreReadAndSet() async throws {
+        let (model, fake) = try model([("run_defaults_get", 0), ("run_defaults_set", 0)])
+        await model.readRunDefaults(plot: "plotaaaaae")
+        #expect(model.runDefaults == RunDefaults(plotID: "plotaaaaae", model: "", effort: ""))
+        await model.setRunDefaults(plot: "plotaaaaae", model: "opus", effort: "high")
+        #expect(fake.args().last == "run defaults --model opus --effort high --json -- plotaaaaae")
+        #expect(model.runDefaults?.model == "opus" && model.runDefaults?.effort == "high" && model.runDefaultsError == nil)
+    }
+
+    @Test func theDefaultChoiceSaysWhatTheDefaultIs() {
+        #expect(RunChoices.defaultTitle("opus", in: RunChoices.models) == "Default (Opus)")
+        #expect(RunChoices.defaultTitle("", in: RunChoices.efforts) == "Default")
+        #expect(RunChoices.defaultTitle("xhigh", in: RunChoices.efforts) == "Default (Extra high)")
+    }
 }

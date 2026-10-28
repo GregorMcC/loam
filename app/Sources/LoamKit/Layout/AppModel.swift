@@ -163,6 +163,10 @@ public final class AppModel {
     /// A shape that the start form started and that has not ended. The desk opens on its run when the run shows
     /// up, so you see Claude draft it.
     var pendingShape: PendingShape?
+    /// The run defaults of the plot of the start form or the Recurring page, as the core last read them.
+    public internal(set) var runDefaults: RunDefaults?
+    /// Why the run defaults could not be saved, for the Recurring page.
+    public internal(set) var runDefaultsError: String?
     /// The intake that the Intake page shows, as the core last read it (ticket 204).
     public internal(set) var intake: IntakeList?
     /// Why the last run did not start, for the Intake page.

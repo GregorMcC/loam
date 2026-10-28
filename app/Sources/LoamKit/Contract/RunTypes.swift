@@ -92,6 +92,8 @@ public struct RunShape: Codable, Equatable, Sendable {
     public var base: String
     public var link: String
     public var model: String
+    /// The effort level of the draft and of the session, or "" for the default of Claude Code.
+    public var effort: String = ""
     /// What Claude drafts from when the run has no issue, such as the prompt of a recurring run.
     public var brief: String? = nil
 
@@ -99,7 +101,7 @@ public struct RunShape: Codable, Equatable, Sendable {
     public var isDrafted: Bool { draftedAt != nil }
 
     enum CodingKeys: String, CodingKey {
-        case assumptions, plan, size, repo, base, link, model, brief
+        case assumptions, plan, size, repo, base, link, model, effort, brief
         case draftedAt = "drafted_at"
     }
 }

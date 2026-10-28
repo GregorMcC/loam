@@ -316,11 +316,14 @@ private struct IntakeDetail: View {
                     .accessibilityIdentifier("intake-base")
                 }
             }
+            ModelEffortPickers(model: $draft.model, effort: $draft.effort,
+                               defaults: model.runDefaults?.plotID == plotID ? model.runDefaults : nil, id: "intake")
             Stepper(value: $draft.maxTries, in: 1...8) {
                 Text("\(draft.maxTries) \(draft.maxTries == 1 ? "try" : "tries")").loamText(LoamTheme.bodyStyle)
             }
             .accessibilityIdentifier("intake-tries")
             .task(id: plotID) {
+                await model.readRunDefaults(plot: plotID)
                 await model.readRunBases(plot: plotID)
                 if draft.base == nil, let first = model.runBases?.first { draft.base = first }
             }

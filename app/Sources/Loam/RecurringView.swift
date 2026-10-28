@@ -23,10 +23,13 @@ struct RecurringView: View {
                     }
                 }
                 Divider()
+                RunDefaultsSection(model: model, plotID: plotID)
+                    .id(plotID)
+                Divider()
                 RulesSection(model: model)
                     .id(plotID)
                 Divider()
-                RecurringForm(model: model)
+                RecurringForm(model: model, plotID: plotID)
                     .id(plotID)
             }
             .padding(LoamTheme.space8)
@@ -141,6 +144,7 @@ private struct RecurringCard: View {
 /// The form for a new recurring run.
 private struct RecurringForm: View {
     let model: AppModel
+    let plotID: String
     @State private var draft = RecurringDraft()
     @State private var busy = false
 
@@ -190,6 +194,8 @@ private struct RecurringForm: View {
                     .padding(.horizontal, 9).frame(height: 28).loamFieldBox()
                     .accessibilityIdentifier("recurring-precheck")
             }
+            ModelEffortPickers(model: $draft.model, effort: $draft.effort,
+                               defaults: model.runDefaults?.plotID == plotID ? model.runDefaults : nil, id: "recurring")
             HStack(spacing: LoamTheme.space2) {
                 kind(.shape, "Shape only", "Claude drafts a run. You approve each one.")
                 kind(.chore, "Chore", "Runs to the gate, then waits for you to land it.")
@@ -253,6 +259,41 @@ private struct RecurringForm: View {
 }
 
 /// The rules of the plot (ticket 209): checks that every run must pass, with a form that adds one.
+/// The model and the effort that a run of the plot gets when it names none: a run from Intake, a recurring run,
+/// or `loam run start`. Default leaves the choice to Claude Code. A change saves at once.
+private struct RunDefaultsSection: View {
+    let model: AppModel
+    let plotID: String
+    @State private var chosenModel = ""
+    @State private var chosenEffort = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: LoamTheme.space3) {
+            Text("Model and effort").loamText(LoamTheme.rowStyle)
+            Text("Each run of this plot uses these, unless its form picks others. Default is the default of Claude Code.")
+                .loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+            ModelEffortPickers(model: $chosenModel, effort: $chosenEffort, defaults: nil, id: "run-defaults",
+                               help: "The model and the effort that a run of this plot gets when it names none")
+                .frame(maxWidth: 420, alignment: .leading)
+            if let error = model.runDefaultsError {
+                Text(error).loamText(LoamTheme.captionStyle, LoamColor.rust).textSelection(.enabled)
+                    .accessibilityIdentifier("run-defaults-error")
+            }
+        }
+        .task {
+            await model.readRunDefaults(plot: plotID)
+            chosenModel = model.runDefaults?.model ?? ""
+            chosenEffort = model.runDefaults?.effort ?? ""
+        }
+        .onChange(of: [chosenModel, chosenEffort]) { _, now in
+            guard let saved = model.runDefaults, saved.plotID == plotID, [saved.model, saved.effort] != now else { return }
+            Task { await model.setRunDefaults(plot: plotID, model: now[0], effort: now[1]) }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("run-defaults")
+    }
+}
+
 private struct RulesSection: View {
     let model: AppModel
     @State private var name = ""

@@ -53,6 +53,21 @@ extension AppModel {
         }
     }
 
+    /// Reads the model and the effort that a run of the plot gets when it names none. A failed read leaves none.
+    public func readRunDefaults(plot: String) async {
+        runDefaults = try? await client.runDefaults(plot: plot)
+    }
+
+    /// Sets the model and the effort that a run of the plot gets when it names none. "" clears one.
+    public func setRunDefaults(plot: String, model: String, effort: String) async {
+        do {
+            runDefaults = try await client.setRunDefaults(plot: plot, model: model, effort: effort)
+            runDefaultsError = nil
+        } catch {
+            runDefaultsError = Self.message(for: error)
+        }
+    }
+
     /// A shape in progress: its plot, and the runs that were there before it.
     struct PendingShape: Equatable {
         var plot: String
