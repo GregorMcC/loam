@@ -997,13 +997,8 @@ extension Scenarios {
         try await shot("hero-day")
         await appearance(.darkAqua)
 
-        // Intake of Checkout: Linear and GitHub issues, one selected, with its detail. The sidebar takes its usual
-        // width here: at the wider sidebar of the other shots, the labels of the bar wrap a letter to a line. The tree
-        // of Checkout closes, so its rows do not show cut names.
-        let split = host.window.contentViewController as? NSSplitViewController
-        let sidebar = split?.splitViewItems.first?.viewController.view.frame.width ?? 265
-        split?.splitView.setPosition(190, ofDividerAt: 0)
-        _ = AccessibilityProbe.shared.discloseRow("plot-\(stage.checkout)", open: false)
+        // Intake of Checkout: Linear and GitHub issues, one selected, with its detail, and the bar of the checked row
+        // at the sidebar width of the other shots.
         await model.showIntake(plot: stage.checkout)
         let key = stage.intakeKey
         try await app.waitUntil("the intake lists Linear and GitHub issues", timeout: 60) {
@@ -1020,8 +1015,6 @@ extension Scenarios {
         await appearance(.darkAqua)
         try app.click("intake-check-\(key)")
         try await app.waitUntil("the bar goes") { !app.exists("intake-batch") }
-        split?.splitView.setPosition(sidebar, ofDividerAt: 0)
-        _ = AccessibilityProbe.shared.discloseRow("plot-\(stage.checkout)", open: true)
 
         // A Shape draft at the desk.
         let draft = try run("savedBasket")
