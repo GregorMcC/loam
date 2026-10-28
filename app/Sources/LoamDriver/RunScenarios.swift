@@ -30,9 +30,7 @@ extension Scenarios {
         try git(repo, ["commit", "-q", "-m", "first"])
         // Claude Code trusts a worktree when it trusts the main checkout, so the runs need the repo trusted.
         let plots = rig.loamHome.appendingPathComponent("plots").path
-        let trusted = [plots, repo.path].map { "\"\($0)\": {\"hasTrustDialogAccepted\": true}" }.joined(separator: ", ")
-        try "{\"projects\": {\(trusted)}}".write(to: rig.fakeHome.appendingPathComponent(".claude.json"),
-                                                  atomically: true, encoding: .utf8)
+        try rig.trust([plots, repo.path])
 
         let plot = try rig.newPlot("Loam v1 build")
         let other = try rig.newPlot("Reporting")
@@ -466,10 +464,7 @@ extension Scenarios {
                 .write(to: ssh, atomically: true, encoding: .utf8)
             try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: ssh.path)
         }
-        let trusted = [rig.loamHome.appendingPathComponent("plots").path, repo.path]
-            .map { "\"\($0)\": {\"hasTrustDialogAccepted\": true}" }.joined(separator: ", ")
-        try "{\"projects\": {\(trusted)}}".write(to: rig.fakeHome.appendingPathComponent(".claude.json"),
-                                                  atomically: true, encoding: .utf8)
+        try rig.trust([rig.loamHome.appendingPathComponent("plots").path, repo.path])
         return (repo, ssh.path)
     }
 

@@ -18,7 +18,20 @@ struct PanelRig {
     let openLog: URL
     let stateFile: AppStateFile
     let binary: URL
-    let environment: [String: String]
+    var environment: [String: String]
+
+    /// The `.claude.json` that Claude Code and the core's trust check read: in CLAUDE_CONFIG_DIR when
+    /// the rig sets it, else in the fake HOME.
+    var claudeJSON: URL {
+        URL(fileURLWithPath: environment["CLAUDE_CONFIG_DIR"] ?? fakeHome.path).appendingPathComponent(".claude.json")
+    }
+
+    /// Writes `.claude.json` with trust for each folder in `trusted`.
+    func trust(_ trusted: [String]) throws {
+        let projects = trusted.map { "\"\($0)\": {\"hasTrustDialogAccepted\": true}" }.joined(separator: ", ")
+        try FileManager.default.createDirectory(at: claudeJSON.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "{\"projects\": {\(projects)}}".write(to: claudeJSON, atomically: true, encoding: .utf8)
+    }
 
     init(outFolder: String) throws {
         try self.init(root: URL(fileURLWithPath: outFolder).appendingPathComponent("rig"), fresh: true)

@@ -103,7 +103,10 @@ extension Scenarios {
         let fm = FileManager.default
         let launch = ProcessInfo.processInfo.environment
         let realHome = NSHomeDirectory()
-        let rig = try PanelRig(outFolder: app.outFolder)
+        var rig = try PanelRig(outFolder: app.outFolder)
+        // The real Claude Code of this scenario keeps its login and its state in its default places,
+        // so it does not get the rig's CLAUDE_CONFIG_DIR. Its `.claude.json` is in the fake HOME.
+        rig.environment["CLAUDE_CONFIG_DIR"] = nil
         let home = rig.fakeHome
         let bin = rig.root.appendingPathComponent("bin")
         try fm.createDirectory(at: bin, withIntermediateDirectories: true)
