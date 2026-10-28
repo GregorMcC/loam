@@ -254,7 +254,7 @@ struct ConnectionsSettingsView: View {
             toggle("When the PR opens, attach it to the issue", \.attachPR, id: "attach-pr")
             toggle("When you land a run, move the issue to Done", \.done, id: "done")
             toggle("When you land a run, add its walkthrough as a comment", \.walkthroughComment, id: "walkthrough")
-            Text("A sample comment: the walkthrough of the run, as the run wrote it.")
+            Text("Landed in #<PR> by a Loam run. <The walkthrough that Claude wrote at Ship.> <n> of <n> checks passed.")
                 .loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
