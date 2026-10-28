@@ -109,7 +109,7 @@ func startOne(ctx context.Context, s *store.Store, id, loam string) (*store.Run,
 		}
 		r.State, r.Note = store.RunStarting, ""
 		if q.Resume != "" {
-			r.State = store.RunRunning
+			r.State, r.TurnBase = store.RunRunning, r.Turns // the turn limit counts from the resume
 		}
 		return nil
 	})

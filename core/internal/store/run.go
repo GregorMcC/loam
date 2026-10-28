@@ -238,6 +238,10 @@ type Run struct {
 	GroupID string `json:"group_id"`
 	// Turns counts the turns that the session ended: one for each Stop.
 	Turns int `json:"turns"`
+	// TurnBase is Turns when Loam last resumed the session, such as with
+	// your notes or a CI failure. The turn limit counts the turns after it.
+	// It is not in the JSON.
+	TurnBase int `json:"-"`
 	// Queue says how a Queued run starts its session, or nil. It is not in
 	// the JSON.
 	Queue *RunQueue `json:"-"`
@@ -336,10 +340,10 @@ func (s *Store) AddRun(r Run) (Run, error) {
 		return Run{}, err
 	}
 	now := time.Now().UnixMilli()
-	r.Tries, r.Turns = 0, 0
+	r.Tries, r.Turns, r.TurnBase = 0, 0, 0
 	r.CreatedAt, r.UpdatedAt = tm(now), tm(now)
 	checks, src, pr, shape, queue, notes := encodeRun(r)
-	if err := tx.exec(`INSERT INTO runs(`+runCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
+	if err := tx.exec(`INSERT INTO runs(`+runCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?)`,
 		r.ID, r.PlotID, r.WorktreeID, r.Folder, r.Title, r.Goal, checks, r.State, r.MaxTries, r.SessionID, r.Note,
 		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, r.GroupID, queue, notes, now, now); err != nil {
 		return Run{}, err
@@ -455,9 +459,9 @@ func updateRun(tx *writeTx, id string, fn func(*Run) error, tryNote *string) (Ru
 	checks, src, pr, shape, queue, notes := encodeRun(r)
 	if err := tx.exec(`UPDATE runs SET worktree_id = ?, folder = ?, title = ?, goal = ?, done_when = ?, state = ?, tries = ?,
   max_tries = ?, session_id = ?, note = ?, source_kind = ?, source_key = ?, source_url = ?, pr_number = ?, pr_url = ?,
-  shape = ?, group_id = ?, turns = ?, queue = ?, notes = ?, updated_at = ? WHERE id = ?`,
+  shape = ?, group_id = ?, turns = ?, turn_base = ?, queue = ?, notes = ?, updated_at = ? WHERE id = ?`,
 		r.WorktreeID, r.Folder, r.Title, r.Goal, checks, r.State, r.Tries, r.MaxTries, r.SessionID, r.Note,
-		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, r.GroupID, r.Turns, queue, notes, now, r.ID); err != nil {
+		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, r.GroupID, r.Turns, r.TurnBase, queue, notes, now, r.ID); err != nil {
 		return Run{}, err
 	}
 	if r.Tries != old.Tries {
@@ -551,7 +555,7 @@ func (s *Store) RunFeed(plotID string, since time.Time) ([]FeedEvent, error) {
 
 // runCols are the columns of a run record.
 const runCols = `id, plot_id, worktree_id, folder, title, goal, done_when, state, tries, max_tries, session_id, note,
-  source_kind, source_key, source_url, pr_number, pr_url, shape, group_id, turns, queue, notes, created_at, updated_at`
+  source_kind, source_key, source_url, pr_number, pr_url, shape, group_id, turns, turn_base, queue, notes, created_at, updated_at`
 
 // encodeRun returns the columns of a run that are not plain values. notes is
 // NULL when the run has none.
@@ -616,7 +620,7 @@ func scanRun(sc interface{ Scan(...any) error }) (Run, error) {
 	var created, updated int64
 	err := sc.Scan(&r.ID, &r.PlotID, &r.WorktreeID, &r.Folder, &r.Title, &r.Goal, &checks, &r.State, &r.Tries,
 		&r.MaxTries, &r.SessionID, &r.Note, &src.Kind, &src.Key, &src.URL, &pr.Number, &pr.URL, &shape, &r.GroupID,
-		&r.Turns, &queue, &notes, &created, &updated)
+		&r.Turns, &r.TurnBase, &queue, &notes, &created, &updated)
 	if err != nil {
 		return Run{}, err
 	}

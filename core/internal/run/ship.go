@@ -366,6 +366,7 @@ func (sh *shipper) failCI(ctx context.Context, repo github.Repo, pr *github.PR) 
 	r, err := sh.s.TakeSlot(r.ID, &store.RunQueue{Resume: prompt}, func(r *store.Run) error {
 		if r.State == from { // you may have changed the run during the tick
 			r.State, r.Note, r.Tries, moved = store.RunRunning, failed+": "+strings.Join(names, ", "), r.Tries+1, true
+			r.TurnBase = r.Turns // the turn limit counts from the resume
 		}
 		return nil
 	})

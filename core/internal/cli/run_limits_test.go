@@ -314,6 +314,39 @@ func TestRunGateStopsTheRunAtTheTurnLimit(t *testing.T) {
 	}
 }
 
+// A send-back resumes the session, and the turn limit counts the turns
+// after it. turns stays the total.
+func TestRunSendBackStartsTheTurnLimitAgain(t *testing.T) {
+	s, r := gateRun(t, "8")
+	stopHook(t, r, "SessionStart")
+	setLimits(t, "--max-turns", "2")
+	stopHook(t, r, "Stop")
+	if code, _ := stopHook(t, r, "Stop"); code != 0 {
+		t.Fatalf("turn 2: %d", code)
+	}
+	if got, _ := s.GetRun(r.ID); got.State != store.RunStopped || got.Turns != 2 {
+		t.Fatalf("%+v", got)
+	}
+	if _, code, out := sendBack(t, r.ID, "--note", "Try again."); code != 0 {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+	// The first turn after the resume fails the checks: a try, not a stop.
+	if code, _ := stopHook(t, r, "Stop"); code != 2 {
+		t.Fatalf("turn 3: %d", code)
+	}
+	if code, _ := stopHook(t, r, "Stop"); code != 0 {
+		t.Fatalf("turn 4: %d", code)
+	}
+	got, _ := s.GetRun(r.ID)
+	if got.State != store.RunStopped || got.Turns != 4 || got.Note != "Stopped after 2 turns, the limit for each run" {
+		t.Fatalf("%+v", got)
+	}
+	out, code := loam(t, "run", "status", r.ID, "--json")
+	if code != 0 || !strings.Contains(out, `"turns": 4`) || strings.Contains(out, "turn_base") {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+}
+
 func TestRunSendBackWaitsForASlotWithYourNotes(t *testing.T) {
 	s, r, _ := readyRun(t)
 	setLimits(t, "--at-a-time", "1")
@@ -355,7 +388,8 @@ func TestRunTickQueuesACIFailureWhenNoSlotIsFree(t *testing.T) {
 		t.Fatal(err)
 	}
 	tick(t)
-	if got, _ := s.GetRun(r.ID); got.State != store.RunRunning {
+	// The resume starts the turn limit again after the one turn of the gate.
+	if got, _ := s.GetRun(r.ID); got.State != store.RunRunning || got.Turns != 1 || got.TurnBase != 1 {
 		t.Fatalf("after the tick: %+v", got)
 	}
 	if prompt := lastPrompt(t); !strings.Contains(prompt, "--- FAIL: TestDrag") {

@@ -96,6 +96,7 @@ func sendBack(ctx context.Context, s *store.Store, id string, notes []Note) (sto
 			return nil
 		}
 		r.State, r.Note, sent = store.RunRunning, note, true
+		r.TurnBase = r.Turns // the turn limit counts from the resume
 		r.MaxTries = min(max(r.MaxTries, r.Tries+1), store.MaxTriesLimit)
 		return nil
 	})
