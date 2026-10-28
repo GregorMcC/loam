@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -33,19 +34,31 @@ const issueTextMax = 20000
 // draftingNote is the note of a run while Claude drafts it.
 const draftingNote = "Claude is drafting the run"
 
-// draftSchema is the JSON Schema of a draft, for claude -p --json-schema.
-const draftSchema = `{"type": "object", "additionalProperties": false,
- "required": ["goal", "checks", "assumptions", "plan", "size"],
- "properties": {
+// draftFields are the JSON Schema properties of one draft.
+const draftFields = `
   "goal": {"type": "string"},
   "checks": {"type": "array", "items": {"type": "object", "additionalProperties": false,
    "required": ["name", "command"], "properties": {"name": {"type": "string"}, "command": {"type": "string"}}}},
   "assumptions": {"type": "array", "items": {"type": "string"}},
   "plan": {"type": "array", "items": {"type": "string"}},
-  "size": {"type": "string"}}}`
+  "size": {"type": "string"}`
 
-// draft is what Claude answers, in the shape of draftSchema.
+// draftSchema is the JSON Schema of a draft, for claude -p --json-schema.
+const draftSchema = `{"type": "object", "additionalProperties": false,
+ "required": ["goal", "checks", "assumptions", "plan", "size"],
+ "properties": {` + draftFields + `}}`
+
+// splitSchema is the JSON Schema of a split draft: one draft for each repo
+// that the issue needs changes in.
+const splitSchema = `{"type": "object", "additionalProperties": false, "required": ["runs"],
+ "properties": {"runs": {"type": "array", "minItems": 1, "items": {"type": "object", "additionalProperties": false,
+ "required": ["repo", "goal", "checks", "assumptions", "plan", "size"],
+ "properties": {"repo": {"type": "string"},` + draftFields + `}}}}}`
+
+// draft is what Claude answers, in the shape of draftSchema. Repo is the
+// repo of one run of a split draft.
 type draft struct {
+	Repo        string        `json:"repo,omitempty"`
 	Goal        string        `json:"goal"`
 	Checks      []store.Check `json:"checks"`
 	Assumptions []string      `json:"assumptions"`
@@ -69,6 +82,9 @@ type ShapeOptions struct {
 	// the prompt of a recurring run. Source is then the source of the run.
 	Brief  string
 	Source *store.RunSource
+	// Split has Claude read every repo of the plot and draft one run for each
+	// repo that the issue needs changes in. It takes no Repo.
+	Split bool
 }
 
 // Shape records a run in Shaping, in the folder of its repo, and has Claude
@@ -76,28 +92,41 @@ type ShapeOptions struct {
 // 207). Claude reads the repo and the issue, and changes nothing. A draft
 // that fails keeps the run, with the reason as its note. Nothing starts
 // until you approve the run.
-func Shape(ctx context.Context, s *store.Store, o ShapeOptions) (store.Run, error) {
+//
+// With Split, Claude drafts one run for each repo that the issue needs
+// changes in, and the runs share a group. Shape returns each run that it
+// made, the first one first.
+func Shape(ctx context.Context, s *store.Store, o ShapeOptions) ([]store.Run, error) {
 	plot, err := s.GetPlot(o.PlotID)
 	if err != nil {
-		return store.Run{}, err
+		return nil, err
 	}
 	if plot.Archived {
-		return store.Run{}, fmt.Errorf("%w: unarchive first with \"loam unarchive %s\"", store.ErrArchived, plot.ID)
+		return nil, fmt.Errorf("%w: unarchive first with \"loam unarchive %s\"", store.ErrArchived, plot.ID)
 	}
 	title := strings.TrimSpace(o.Title)
 	if title == "" {
-		return store.Run{}, fmt.Errorf("a run needs a title: %w", store.ErrInvalid)
+		return nil, fmt.Errorf("a run needs a title: %w", store.ErrInvalid)
+	}
+	if o.Split && o.Repo != "" {
+		return nil, fmt.Errorf("--split drafts a run for each repo that the issue needs, so it takes no --repo: %w", store.ErrInvalid)
 	}
 	if o.Model, o.Effort, err = withDefaults(s, plot.ID, o.Model, o.Effort); err != nil {
-		return store.Run{}, err
+		return nil, err
 	}
 	source, err := ticketSource(o.Ticket, o.Link)
 	if err != nil {
-		return store.Run{}, err
+		return nil, err
 	}
-	repo, err := runRepo(plot, o.Repo)
+	// A split starts in the main repo, and Claude says which repos it needs.
+	split := o.Split && len(plot.Repos) > 1
+	link := o.Link
+	if split {
+		link = ""
+	}
+	repo, err := runRepo(plot, o.Repo, link)
 	if err != nil {
-		return store.Run{}, err
+		return nil, err
 	}
 	if source == nil {
 		source = o.Source
@@ -105,25 +134,27 @@ func Shape(ctx context.Context, s *store.Store, o ShapeOptions) (store.Run, erro
 	if source == nil {
 		l, err := worktree.ResolveLink(plot, repo.Path, o.Link)
 		if err != nil {
-			return store.Run{}, err
+			return nil, err
 		}
 		source = sourceOf(l)
 	}
 	r, err := s.AddRun(store.Run{
 		PlotID: plot.ID, Folder: repo.Path, Title: title, State: store.RunShaping, MaxTries: o.MaxTries,
 		Source: source, Note: draftingNote,
-		Shape: &store.RunShape{Repo: repo.ID, Base: o.Base, Link: o.Link, Model: o.Model, Effort: o.Effort, Brief: strings.TrimSpace(o.Brief)},
+		Shape: &store.RunShape{Repo: repo.ID, Base: o.Base, Link: o.Link, Model: o.Model, Effort: o.Effort,
+			Brief: strings.TrimSpace(o.Brief), Split: split},
 	})
 	if err != nil {
-		return store.Run{}, err
+		return nil, err
 	}
 	return draftRun(ctx, s, r, "")
 }
 
 // Redraft has Claude draft a Shaping run again, with the change that you
 // ask for, such as "Add a check for two screens". Claude sees its last
-// draft.
-func Redraft(ctx context.Context, s *store.Store, id, change string) (store.Run, error) {
+// draft. A run of a group is drafted alone, for its own repo. A split whose
+// draft failed splits again, so Redraft can return more than one run.
+func Redraft(ctx context.Context, s *store.Store, id, change string) ([]store.Run, error) {
 	r, err := s.UpdateRun(id, func(r *store.Run) error {
 		if r.State != store.RunShaping || r.Shape == nil {
 			return fmt.Errorf("run %s is not Shaping, so it has no draft: %w", r.ID, store.ErrInvalid)
@@ -132,7 +163,7 @@ func Redraft(ctx context.Context, s *store.Store, id, change string) (store.Run,
 		return nil
 	})
 	if err != nil {
-		return store.Run{}, err
+		return nil, err
 	}
 	return draftRun(ctx, s, r, strings.TrimSpace(change))
 }
@@ -210,15 +241,62 @@ func Approve(ctx context.Context, s *store.Store, id string, o ApproveOptions) (
 
 // draftRun has Claude draft the run in print mode, and records the draft, or
 // the reason that there is none. A run that left Shaping meanwhile, such as
-// one that you stopped, stays as it is.
-func draftRun(ctx context.Context, s *store.Store, r store.Run, change string) (store.Run, error) {
-	steps := 0
-	d, failure := askForDraft(ctx, r, change, func(step string) {
-		// A step that Loam cannot record is lost, and the draft goes on.
-		if steps < draftStepsMax && s.AddRunEvent(r.ID, "draft", step) == nil {
-			steps++
+// one that you stopped, stays as it is. A run whose shape is a split gets a
+// split draft (see [splitRun]).
+func draftRun(ctx context.Context, s *store.Store, r store.Run, change string) ([]store.Run, error) {
+	plot, err := s.GetPlot(r.PlotID)
+	if err != nil {
+		return nil, err
+	}
+	if r.Shape.Split {
+		return splitRun(ctx, s, plot, r, change)
+	}
+	others, err := groupRepos(s, plot, r)
+	if err != nil {
+		return nil, err
+	}
+	d, failure := askForDraft(ctx, r, change, others, draftSteps(s, r.ID))
+	r, err = s.UpdateRun(r.ID, func(r *store.Run) error {
+		if r.State != store.RunShaping || r.Shape == nil {
+			return nil
 		}
+		if failure != "" {
+			r.Note = "Claude could not draft the run: " + failure
+			return nil
+		}
+		applyDraft(r, d)
+		return nil
 	})
+	if err != nil || r.State != store.RunShaping {
+		return []store.Run{r}, err
+	}
+	return []store.Run{r}, s.AddRunEvent(r.ID, "shape", shapeDetail(r, failure))
+}
+
+// splitRun has Claude read every repo of the plot and draft one run for each
+// repo that the issue needs changes in. The run r becomes the run of the
+// first repo of the draft, and each other repo gets a new Shaping run with
+// the same title, source, and options. Two or more runs share a group: the
+// ID of r. A draft with a repo that the plot does not have, or with a repo
+// twice, fails as a whole, with the reason as the note of r.
+func splitRun(ctx context.Context, s *store.Store, plot store.Plot, r store.Run, change string) ([]store.Run, error) {
+	ds, failure := askForSplit(ctx, plot, r, change, draftSteps(s, r.ID))
+	var repos []store.Repo
+	if failure == "" {
+		repos, failure = splitRepos(plot, ds)
+	}
+	group := ""
+	if len(ds) > 1 {
+		group = r.ID
+	}
+	mainBase := r.Shape.Base
+	base := func(repo store.Repo) string {
+		// The base of a shape is a branch of the main repo.
+		if m := plot.MainRepo(); m != nil && m.ID == repo.ID {
+			return mainBase
+		}
+		return ""
+	}
 	r, err := s.UpdateRun(r.ID, func(r *store.Run) error {
 		if r.State != store.RunShaping || r.Shape == nil {
 			return nil
@@ -227,43 +305,169 @@ func draftRun(ctx context.Context, s *store.Store, r store.Run, change string) (
 			r.Note = "Claude could not draft the run: " + failure
 			return nil
 		}
-		r.Goal, r.DoneWhen, r.Note = strings.TrimSpace(d.Goal), d.Checks, ""
-		r.Shape.Assumptions = make([]store.Assumption, len(d.Assumptions))
-		for i, a := range d.Assumptions {
-			r.Shape.Assumptions[i] = store.Assumption{Text: a}
-		}
-		r.Shape.Plan, r.Shape.Size = d.Plan, strings.TrimSpace(d.Size)
-		now := time.Now()
-		r.Shape.DraftedAt = &now
+		applyDraft(r, ds[0])
+		r.Folder, r.GroupID = repos[0].Path, group
+		r.Shape.Repo, r.Shape.Base, r.Shape.Split = repos[0].ID, base(repos[0]), false
 		return nil
 	})
+	runs := []store.Run{r}
 	if err != nil || r.State != store.RunShaping {
-		return r, err
+		return runs, err
 	}
-	detail := r.Note
-	if failure == "" {
-		detail = fmt.Sprintf("Claude drafted the goal and %d checks", len(r.DoneWhen))
+	if err := s.AddRunEvent(r.ID, "shape", shapeDetail(r, failure)); err != nil || failure != "" {
+		return runs, err
 	}
-	return r, s.AddRunEvent(r.ID, "shape", detail)
+	for i, d := range ds[1:] {
+		repo := repos[i+1]
+		n := store.Run{PlotID: r.PlotID, Folder: repo.Path, Title: r.Title, State: store.RunShaping, MaxTries: r.MaxTries,
+			Source: r.Source, GroupID: group,
+			Shape: &store.RunShape{Repo: repo.ID, Base: base(repo), Link: r.Shape.Link, Model: r.Shape.Model,
+				Effort: r.Shape.Effort, Brief: r.Shape.Brief}}
+		applyDraft(&n, d)
+		if n, err = s.AddRun(n); err != nil {
+			return runs, err
+		}
+		runs = append(runs, n)
+		if err := s.AddRunEvent(n.ID, "shape", shapeDetail(n, "")); err != nil {
+			return runs, err
+		}
+	}
+	return runs, nil
 }
 
-// askForDraft runs claude -p in the folder of the run, with read-only tools,
-// and returns the draft, or why there is none. claude -p asks no trust
-// question, so as for a run, the folder must be one that Claude Code trusts.
-// It streams its output, and step gets each step that Claude takes, such as
+// splitRepos returns the repo of each run of a split draft, or why the draft
+// cannot be used: a repo that the plot does not have, or a repo twice.
+func splitRepos(plot store.Plot, ds []draft) ([]store.Repo, string) {
+	if len(ds) == 0 {
+		return nil, "the draft has no run"
+	}
+	var out []store.Repo
+	for _, d := range ds {
+		i := slices.IndexFunc(plot.Repos, func(r store.Repo) bool { return r.ID == d.Repo })
+		if i < 0 {
+			return nil, fmt.Sprintf("the draft has a run for %q, which is not a repo of the plot", d.Repo)
+		}
+		if slices.ContainsFunc(out, func(r store.Repo) bool { return r.ID == d.Repo }) {
+			return nil, "the draft has more than one run for the repo " + d.Repo
+		}
+		out = append(out, plot.Repos[i])
+	}
+	return out, ""
+}
+
+// draftSteps records each step of a draft as a draft event of the run, up to
+// draftStepsMax.
+func draftSteps(s *store.Store, id string) func(string) {
+	steps := 0
+	return func(step string) {
+		// A step that Loam cannot record is lost, and the draft goes on.
+		if steps < draftStepsMax && s.AddRunEvent(id, "draft", step) == nil {
+			steps++
+		}
+	}
+}
+
+// applyDraft puts the draft in the run.
+func applyDraft(r *store.Run, d draft) {
+	r.Goal, r.DoneWhen, r.Note = strings.TrimSpace(d.Goal), d.Checks, ""
+	r.Shape.Assumptions = make([]store.Assumption, len(d.Assumptions))
+	for i, a := range d.Assumptions {
+		r.Shape.Assumptions[i] = store.Assumption{Text: a}
+	}
+	r.Shape.Plan, r.Shape.Size = d.Plan, strings.TrimSpace(d.Size)
+	now := time.Now()
+	r.Shape.DraftedAt = &now
+}
+
+// shapeDetail is the "shape" event of a run after a draft: what Claude
+// drafted, or the note that says why there is no draft.
+func shapeDetail(r store.Run, failure string) string {
+	if failure != "" {
+		return r.Note
+	}
+	return fmt.Sprintf("Claude drafted the goal and %d checks", len(r.DoneWhen))
+}
+
+// askForDraft has Claude draft one run in the folder of the run. others
+// name the repos of the other runs of its group.
+func askForDraft(ctx context.Context, r store.Run, change string, others []string, step func(string)) (draft, string) {
+	prompt := func(ctx context.Context) string { return shapePrompt(ctx, r, change, others) }
+	out, failure := askClaude(ctx, r, nil, prompt, draftSchema, step)
+	if failure != "" {
+		return draft{}, failure
+	}
+	var d draft
+	if err := json.Unmarshal(out, &d); err != nil {
+		return draft{}, "claude -p gave a draft that Loam cannot read: " + err.Error()
+	}
+	return cleanDraft(d), ""
+}
+
+// askForSplit has Claude draft one run for each repo of the plot that the
+// issue needs changes in. Claude runs in the folder of r, the main repo, and
+// reads the other repos too.
+func askForSplit(ctx context.Context, plot store.Plot, r store.Run, change string, step func(string)) ([]draft, string) {
+	var dirs []string
+	for _, repo := range plot.Repos {
+		if repo.Path != r.Folder {
+			dirs = append(dirs, repo.Path)
+		}
+	}
+	prompt := func(ctx context.Context) string { return splitPrompt(ctx, plot, r, change) }
+	out, failure := askClaude(ctx, r, dirs, prompt, splitSchema, step)
+	if failure != "" {
+		return nil, failure
+	}
+	var split struct {
+		Runs []draft `json:"runs"`
+	}
+	if err := json.Unmarshal(out, &split); err != nil {
+		return nil, "claude -p gave a draft that Loam cannot read: " + err.Error()
+	}
+	for i, d := range split.Runs {
+		split.Runs[i] = cleanDraft(d)
+	}
+	return split.Runs, ""
+}
+
+// cleanDraft leaves out each check with no name or no command, because it
+// cannot run.
+func cleanDraft(d draft) draft {
+	checks := []store.Check{}
+	for _, c := range d.Checks {
+		c.Name, c.Command = strings.TrimSpace(c.Name), strings.TrimSpace(c.Command)
+		if c.Name != "" && c.Command != "" {
+			checks = append(checks, c)
+		}
+	}
+	d.Checks = checks
+	d.Repo = strings.TrimSpace(d.Repo)
+	return d
+}
+
+// askClaude runs claude -p in the folder of the run, with read-only tools and
+// with --add-dir for each of dirs, and returns its structured output in the
+// shape of schema, or why there is none. claude -p asks no trust question,
+// so as for a run, each folder must be one that Claude Code trusts. It
+// streams its output, and step gets each step that Claude takes, such as
 // "Read window/frame.go", as it takes it.
-func askForDraft(ctx context.Context, r store.Run, change string, step func(string)) (draft, string) {
-	if !claudebin.Trusted(r.Folder) {
-		return draft{}, fmt.Sprintf("%v %s. Run claude in it once and choose Yes, then draft the run again", ErrUntrusted, r.Folder)
+func askClaude(ctx context.Context, r store.Run, dirs []string, prompt func(context.Context) string, schema string, step func(string)) (json.RawMessage, string) {
+	for _, dir := range append([]string{r.Folder}, dirs...) {
+		if !claudebin.Trusted(dir) {
+			return nil, fmt.Sprintf("%v %s. Run claude in it once and choose Yes, then draft the run again", ErrUntrusted, dir)
+		}
 	}
 	claude, err := claudebin.Find()
 	if err != nil {
-		return draft{}, err.Error()
+		return nil, err.Error()
 	}
 	ctx, cancel := context.WithTimeout(ctx, shapeTimeout)
 	defer cancel()
-	args := []string{"-p", shapePrompt(ctx, r, change), "--output-format", "stream-json", "--verbose", "--json-schema", draftSchema,
+	args := []string{"-p", prompt(ctx), "--output-format", "stream-json", "--verbose", "--json-schema", schema,
 		"--no-session-persistence", "--tools", "Read,Grep,Glob"}
+	for _, dir := range dirs {
+		args = append(args, "--add-dir", dir)
+	}
 	if r.Shape.Model != "" {
 		args = append(args, "--model", r.Shape.Model)
 	}
@@ -277,45 +481,35 @@ func askForDraft(ctx context.Context, r store.Run, change string, step func(stri
 	cmd.Stderr = &errOut
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return draft{}, err.Error()
+		return nil, err.Error()
 	}
 	if err := cmd.Start(); err != nil {
-		return draft{}, failureNote("claude -p failed", err, errOut.String())
+		return nil, failureNote("claude -p failed", err, errOut.String())
 	}
 	res, readErr := readDraftStream(stdout, r.Folder, step)
 	if err := cmd.Wait(); err != nil && !errors.Is(err, exec.ErrWaitDelay) {
 		if ctx.Err() != nil {
-			return draft{}, "claude -p did not answer in time"
+			return nil, "claude -p did not answer in time"
 		}
-		return draft{}, failureNote("claude -p failed", err, errOut.String())
+		return nil, failureNote("claude -p failed", err, errOut.String())
 	}
 	switch {
 	case readErr != nil:
-		return draft{}, "claude -p gave an answer that Loam cannot read: " + readErr.Error()
+		return nil, "claude -p gave an answer that Loam cannot read: " + readErr.Error()
 	case res == nil:
-		return draft{}, "claude -p ended with no result"
-	case res.IsError || res.StructuredOutput == nil:
-		return draft{}, strings.TrimSpace(fmt.Sprintf("%s %s", res.Subtype, tail(res.Result, noteTail)))
+		return nil, "claude -p ended with no result"
+	case res.IsError || len(res.StructuredOutput) == 0 || string(res.StructuredOutput) == "null":
+		return nil, strings.TrimSpace(fmt.Sprintf("%s %s", res.Subtype, tail(res.Result, noteTail)))
 	}
-	d := *res.StructuredOutput
-	// A check with no name or no command cannot run, so it does not go in.
-	checks := []store.Check{}
-	for _, c := range d.Checks {
-		c.Name, c.Command = strings.TrimSpace(c.Name), strings.TrimSpace(c.Command)
-		if c.Name != "" && c.Command != "" {
-			checks = append(checks, c)
-		}
-	}
-	d.Checks = checks
-	return d, ""
+	return res.StructuredOutput, ""
 }
 
 // draftResult is the last message of claude -p: the draft, or why there is none.
 type draftResult struct {
-	IsError          bool   `json:"is_error"`
-	Subtype          string `json:"subtype"`
-	Result           string `json:"result"`
-	StructuredOutput *draft `json:"structured_output"`
+	IsError          bool            `json:"is_error"`
+	Subtype          string          `json:"subtype"`
+	Result           string          `json:"result"`
+	StructuredOutput json.RawMessage `json:"structured_output"`
 }
 
 // readDraftStream reads the stream-json messages of claude -p. It gives each
@@ -401,38 +595,86 @@ func resolved(path string) string {
 	return path
 }
 
+// draftHow says what each field of a draft holds.
+const draftHow = "- goal: what the run must do, in 2 to 4 plain sentences. Say what is true when the work is done.\n" +
+	"- checks: 1 to 4 Done when checks. Each has a short name and a shell command that exits 0 in the repo when the work is done, " +
+	"such as the tests of the area. Use the commands that the repo already has. The run can run the checks, but it cannot change them.\n" +
+	"- assumptions: each choice that you made and the issue does not settle, in one sentence each. Give an empty list when there is none.\n" +
+	"- plan: 2 to 6 short steps.\n" +
+	"- size: one sentence about the size of the change, such as the lines and the areas that it changes.\n"
+
 // shapePrompt asks Claude for a draft of the run, from its title and the
 // text of its issue. With a change, it gives Claude the last draft and the
-// change that you ask for.
-func shapePrompt(ctx context.Context, r store.Run, change string) string {
+// change that you ask for. others name the repos of the other runs of its
+// group.
+func shapePrompt(ctx context.Context, r store.Run, change string, others []string) string {
 	var b strings.Builder
 	b.WriteString("You draft a run for Loam. A run is one goal that a Claude Code session works on alone, in a worktree of this repo, until its checks pass. " +
 		"The session commits its work on its branch, and Loam then pushes the branch and opens the PR, so the plan needs no step for those. " +
 		"Read the repo in this folder to learn how it is built and tested. Do not change any file.\n")
-	fmt.Fprintf(&b, "\nTitle: %s\n", r.Title)
-	if r.Shape != nil && r.Shape.Brief != "" {
-		fmt.Fprintf(&b, "\nThe brief:\n%s\n", r.Shape.Brief)
+	if len(others) > 0 {
+		fmt.Fprintf(&b, "\nThe issue needs changes in more than one repo, so it has one run in each. The other runs work in %s. "+
+			"Draft this run alone, for the repo in this folder. The runs may land in any order, so this run must be correct alone, "+
+			"or say in an assumption what it needs from another run.\n", joinAnd(others))
 	}
-	if r.Source != nil && r.Source.Kind != store.SourceRecurring {
-		fmt.Fprintf(&b, "Issue: %s (%s)\n", r.Source.Key, r.Source.URL)
-		if text, err := issueText(ctx, *r.Source); err != nil {
-			fmt.Fprintf(&b, "Loam could not read the text of the issue: %v\n", err)
-		} else if text != "" {
-			fmt.Fprintf(&b, "\nThe text of the issue:\n%s\n", text)
-		}
-	}
-	b.WriteString("\nDraft the run:\n" +
-		"- goal: what the run must do, in 2 to 4 plain sentences. Say what is true when the work is done.\n" +
-		"- checks: 1 to 4 Done when checks. Each has a short name and a shell command that exits 0 in the repo when the work is done, " +
-		"such as the tests of the area. Use the commands that the repo already has. The run can run the checks, but it cannot change them.\n" +
-		"- assumptions: each choice that you made and the issue does not settle, in one sentence each. Give an empty list when there is none.\n" +
-		"- plan: 2 to 6 short steps.\n" +
-		"- size: one sentence about the size of the change, such as the lines and the areas that it changes.\n")
+	writeIssue(ctx, &b, r)
+	b.WriteString("\nDraft the run:\n" + draftHow)
 	if change != "" {
 		last, _ := json.MarshalIndent(lastDraft(r), "", "  ")
 		fmt.Fprintf(&b, "\nYour last draft:\n%s\n\nThe person asks for this change:\n%s\n\nDraft the run again with the change.\n", last, change)
 	}
 	return b.String()
+}
+
+// splitPrompt asks Claude for one draft for each repo of the plot that the
+// issue of the run needs changes in.
+func splitPrompt(ctx context.Context, plot store.Plot, r store.Run, change string) string {
+	var b strings.Builder
+	b.WriteString("You draft runs for Loam. A run is one goal that a Claude Code session works on alone, in a worktree of one repo, until its checks pass. " +
+		"The session commits its work on its branch, and Loam then pushes the branch and opens the PR, so the plan needs no step for those.\n" +
+		"\nThe issue can need changes in more than one repo of the plot. Draft one run for each repo that needs changes, and no run for a repo that needs none. " +
+		"Each run works alone in a worktree of its repo, and its checks run there. The runs may land in any order, " +
+		"so each run must be correct alone, or say in an assumption what it needs from another run.\n" +
+		"\nRead the repos to learn how each one is built and tested. Do not change any file. The repos of the plot:\n")
+	for _, repo := range plot.Repos {
+		fmt.Fprintf(&b, "- %s: %s, at %s", repo.ID, repoLabel(repo), repo.Path)
+		if repo.Path == r.Folder {
+			b.WriteString(" (the main repo, in this folder)")
+		}
+		b.WriteString("\n")
+	}
+	writeIssue(ctx, &b, r)
+	b.WriteString("\nDraft the runs. For each run:\n- repo: the ID of its repo, from the list. Give each repo at most once.\n" + draftHow)
+	if change != "" {
+		fmt.Fprintf(&b, "\nThe person asks for this change:\n%s\n", change)
+	}
+	return b.String()
+}
+
+// repoLabel names a repo for a person: its folder name, and its note.
+func repoLabel(repo store.Repo) string {
+	label := filepath.Base(repo.Path)
+	if note := strings.TrimSpace(repo.Note); note != "" {
+		label += " (" + note + ")"
+	}
+	return label
+}
+
+// writeIssue writes the title of the run, its brief, and the text of its
+// issue.
+func writeIssue(ctx context.Context, b *strings.Builder, r store.Run) {
+	fmt.Fprintf(b, "\nTitle: %s\n", r.Title)
+	if r.Shape != nil && r.Shape.Brief != "" {
+		fmt.Fprintf(b, "\nThe brief:\n%s\n", r.Shape.Brief)
+	}
+	if r.Source != nil && r.Source.Kind != store.SourceRecurring {
+		fmt.Fprintf(b, "Issue: %s (%s)\n", r.Source.Key, r.Source.URL)
+		if text, err := issueText(ctx, *r.Source); err != nil {
+			fmt.Fprintf(b, "Loam could not read the text of the issue: %v\n", err)
+		} else if text != "" {
+			fmt.Fprintf(b, "\nThe text of the issue:\n%s\n", text)
+		}
+	}
 }
 
 // lastDraft is the draft of the run as Claude gave it.

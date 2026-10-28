@@ -87,7 +87,7 @@ func newRunStartCmd() *cobra.Command {
 	f.StringVar(&o.Goal, "goal", "", "what the run must do")
 	f.StringArrayVar(&checks, "check", nil, "a Done when check, as <name>=<command> (repeatable)")
 	f.StringVar(&o.Worktree, "worktree", "", "the worktree to work in: Loam makes it when it does not exist")
-	f.StringVar(&o.Repo, "repo", "", "the repo of a new worktree (default: the main repo)")
+	f.StringVar(&o.Repo, "repo", "", "the repo of a new worktree (default: the repo of a GitHub issue link, else the main repo)")
 	f.StringVar(&o.Base, "base", "", "start a new worktree's branch from this branch, not from the default branch of origin")
 	f.StringVar(&o.Link, "link", "", "the link that the work starts from: a link ID of the plot, or the URL of an issue")
 	f.StringVar(&o.Ticket, "ticket", "", "the ticket of a wayfinder map that the work starts from: the path of its file, as loam intake list gives it")
@@ -102,11 +102,12 @@ func newRunStartCmd() *cobra.Command {
 func newRunShapeCmd() *cobra.Command {
 	var o run.ShapeOptions
 	c := &cobra.Command{
-		Use:   "shape <plot> --title <text> [--repo <repo>] [--base <branch>] [--link <link-id or URL> | --ticket <file>] [--max-tries <n>] [--model <model>] [--effort <level>]",
+		Use:   "shape <plot> --title <text> [--repo <repo> | --split] [--base <branch>] [--link <link-id or URL> | --ticket <file>] [--max-tries <n>] [--model <model>] [--effort <level>]",
 		Short: "Have Claude draft a run, for you to approve",
 		Long: "Record a run in Shaping and have Claude draft it: the goal, the Done when checks, the assumptions that the issue does not settle, a plan, and a size. " +
 			"Claude reads the repo and the issue in print mode (claude -p) with read-only tools, and changes nothing.\n" +
 			"Nothing starts until you approve the run with loam run approve. A draft that fails keeps the run, with the reason as its note: draft it again with loam run redraft.\n" +
+			"With --split, Claude reads every repo of the plot and drafts one run for each repo that the issue needs changes in. The runs share a group, and you approve each one.\n" +
 			"The flags are as for loam run start, and they apply when you approve the run.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -120,16 +121,17 @@ func newRunShapeCmd() *cobra.Command {
 				return err
 			}
 			o.PlotID = p.ID
-			r, err := run.Shape(cmd.Context(), s, o)
+			runs, err := run.Shape(cmd.Context(), s, o)
 			if err != nil {
 				return err
 			}
-			return printRunResult(cmd, r)
+			return printShapeResult(cmd, runs)
 		},
 	}
 	f := c.Flags()
 	f.StringVar(&o.Title, "title", "", "the title of the run (required)")
-	f.StringVar(&o.Repo, "repo", "", "the repo of the run (default: the main repo)")
+	f.StringVar(&o.Repo, "repo", "", "the repo of the run (default: the repo of a GitHub issue link, else the main repo)")
+	f.BoolVar(&o.Split, "split", false, "draft one run for each repo of the plot that the issue needs changes in")
 	f.StringVar(&o.Base, "base", "", "start the worktree's branch from this branch, not from the default branch of origin")
 	f.StringVar(&o.Link, "link", "", "the link that the work starts from: a link ID of the plot, or the URL of an issue")
 	f.StringVar(&o.Ticket, "ticket", "", "the ticket of a wayfinder map that the work starts from: the path of its file, as loam intake list gives it")
@@ -153,11 +155,11 @@ func newRunRedraftCmd() *cobra.Command {
 				return err
 			}
 			defer s.Close()
-			r, err := run.Redraft(cmd.Context(), s, args[0], change)
+			runs, err := run.Redraft(cmd.Context(), s, args[0], change)
 			if err != nil {
 				return err
 			}
-			return printRunResult(cmd, r)
+			return printShapeResult(cmd, runs)
 		},
 	}
 	c.Flags().StringVar(&change, "change", "", "what you want changed in the draft")
@@ -245,14 +247,21 @@ func parseAnswers(vals []string) (map[int]string, error) {
 	return out, nil
 }
 
-// printRunResult prints a run: as {"run": ...} with --json.
-func printRunResult(cmd *cobra.Command, r store.Run) error {
+// printShapeResult prints the runs that a shape made: as {"run": ..., "runs":
+// [...]} with --json, where run is the first run.
+func printShapeResult(cmd *cobra.Command, runs []store.Run) error {
 	if JSON(cmd) {
 		return printJSON(cmd, struct {
-			Run store.Run `json:"run"`
-		}{r})
+			Run  store.Run   `json:"run"`
+			Runs []store.Run `json:"runs"`
+		}{runs[0], runs})
 	}
-	printRun(cmd.OutOrStdout(), r)
+	for i, r := range runs {
+		if i > 0 {
+			fmt.Fprintln(cmd.OutOrStdout())
+		}
+		printRun(cmd.OutOrStdout(), r)
+	}
 	return nil
 }
 
@@ -301,7 +310,11 @@ func newRunListCmd() *cobra.Command {
 				fmt.Fprintln(out, "No runs.")
 			}
 			for _, r := range runs {
-				fmt.Fprintf(out, "%s  %-13s %d/%d  %s\n", r.ID, r.State, r.Tries, r.MaxTries, oneLine(r.Title))
+				group := ""
+				if r.GroupID != "" {
+					group = "  group " + r.GroupID
+				}
+				fmt.Fprintf(out, "%s  %-13s %d/%d  %s%s\n", r.ID, r.State, r.Tries, r.MaxTries, oneLine(r.Title), group)
 			}
 			return nil
 		},
@@ -547,6 +560,9 @@ func printRun(out io.Writer, r store.Run) {
 	fmt.Fprintf(out, "Run %s: %s\n", r.ID, oneLine(r.Title))
 	fmt.Fprintf(out, "State: %s, try %d of %d\n", r.State, r.Tries, r.MaxTries)
 	fmt.Fprintf(out, "Folder: %s\n", r.Folder)
+	if r.GroupID != "" {
+		fmt.Fprintf(out, "Group: %s\n", r.GroupID)
+	}
 	if n := oneLine(r.Note); n != "" {
 		fmt.Fprintf(out, "Note: %s\n", n)
 	}

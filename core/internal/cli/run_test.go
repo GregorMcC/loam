@@ -23,15 +23,17 @@ func runCLI(t *testing.T) (*store.Store, store.Plot) {
 	return s, p
 }
 
-// trustFolder points CLAUDE_CONFIG_DIR at a config that trusts dir, or that
-// trusts nothing when dir is empty.
-func trustFolder(t *testing.T, dir string) {
+// trustFolder points CLAUDE_CONFIG_DIR at a config that trusts each dir, or
+// that trusts nothing when dir is empty.
+func trustFolder(t *testing.T, dirs ...string) {
 	t.Helper()
 	cfg := t.TempDir()
 	t.Setenv("CLAUDE_CONFIG_DIR", cfg)
 	projects := map[string]any{}
-	if dir != "" {
-		projects[dir] = map[string]bool{"hasTrustDialogAccepted": true}
+	for _, dir := range dirs {
+		if dir != "" {
+			projects[dir] = map[string]bool{"hasTrustDialogAccepted": true}
+		}
 	}
 	b, _ := json.Marshal(map[string]any{"projects": projects})
 	if err := os.WriteFile(filepath.Join(cfg, ".claude.json"), b, 0o600); err != nil {

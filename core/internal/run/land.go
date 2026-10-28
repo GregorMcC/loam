@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/GregorMcC/loam/core/internal/linear"
 	"github.com/GregorMcC/loam/core/internal/store"
 	"github.com/GregorMcC/loam/core/internal/worktree"
 )
@@ -90,7 +89,8 @@ func Land(ctx context.Context, s *store.Store, id string, o LandOptions) (*LandR
 
 // landRun marks the run Landed with the note while it is still in the state
 // that r has, and records the note as a "land" event. Its Linear issue moves
-// to Done. It returns false when the run had moved on.
+// to Done, for a run of a group when no other run of the group is left (see
+// [finishLinearIssue]). It returns false when the run had moved on.
 func landRun(ctx context.Context, s *store.Store, r store.Run, note string) (store.Run, bool, []string, error) {
 	from, moved := r.State, false
 	r, err := s.UpdateRun(r.ID, func(cur *store.Run) error {
@@ -106,7 +106,7 @@ func landRun(ctx context.Context, s *store.Store, r store.Run, note string) (sto
 	if err := s.AddRunEvent(r.ID, "land", note); err != nil {
 		warnings = append(warnings, err.Error())
 	}
-	if warning := moveLinearIssue(ctx, s, r, "Done", "has ended", (*linear.Client).Finish); warning != "" {
+	if warning := finishLinearIssue(ctx, s, r); warning != "" {
 		warnings = append(warnings, warning)
 	}
 	return r, true, warnings, nil

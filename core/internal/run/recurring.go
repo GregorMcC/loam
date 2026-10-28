@@ -96,7 +96,7 @@ func fire(ctx context.Context, s *store.Store, rec store.Recurring, now time.Tim
 			res.Note = fmt.Sprintf("Not started, because the last run, %s, is %s", open.ID, open.State)
 			break
 		}
-		repo, err := runRepo(plot, rec.Repo)
+		repo, err := runRepo(plot, rec.Repo, "")
 		if err != nil {
 			res.Note = fmt.Sprintf("Not started: %v", err)
 			break
@@ -202,11 +202,12 @@ func startRecurring(ctx context.Context, s *store.Store, rec store.Recurring, ou
 		brief += "\n\nThe precheck printed:\n" + output
 	}
 	if rec.Kind == store.RecurringShape {
-		r, err := Shape(ctx, s, ShapeOptions{PlotID: rec.PlotID, Title: rec.Title, Repo: rec.Repo, MaxTries: rec.MaxTries,
+		runs, err := Shape(ctx, s, ShapeOptions{PlotID: rec.PlotID, Title: rec.Title, Repo: rec.Repo, MaxTries: rec.MaxTries,
 			Model: rec.Model, Effort: rec.Effort, Brief: brief, Source: recurringSource(rec)})
 		if err != nil {
 			return nil, fmt.Sprintf("Claude could not shape a run: %v", err)
 		}
+		r := runs[0]
 		if r.Shape == nil || r.Shape.DraftedAt == nil {
 			return &r, "Claude could not draft the run. It waits at the desk with the reason"
 		}
@@ -235,7 +236,7 @@ func ApproveRepoSetup(s *store.Store, plotID, repoArg string) error {
 	if err != nil {
 		return err
 	}
-	repo, err := runRepo(plot, repoArg)
+	repo, err := runRepo(plot, repoArg, "")
 	if err != nil {
 		return err
 	}

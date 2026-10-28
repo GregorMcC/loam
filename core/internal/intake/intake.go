@@ -49,6 +49,9 @@ type Item struct {
 	UpdatedAt string `json:"updated_at"`
 	// RunID is the newest run that started from the item, or "".
 	RunID string `json:"run_id"`
+	// Repo is the ID of the repo of the plot that a GitHub issue belongs
+	// to, or "" for a Linear issue and a ticket.
+	Repo string `json:"repo"`
 }
 
 // Result is the intake of a plot.
@@ -124,7 +127,7 @@ func List(ctx context.Context, s *store.Store, plotID string) (*Result, error) {
 		for _, i := range list {
 			res.Items = append(res.Items, Item{
 				Source: GitHub, Key: linkkind.IssueKey(i.URL, web), Title: i.Title, Status: "Open",
-				Labels: i.Labels, URL: i.URL, UpdatedAt: i.UpdatedAt,
+				Labels: i.Labels, URL: i.URL, UpdatedAt: i.UpdatedAt, Repo: r.ID,
 			})
 		}
 	}

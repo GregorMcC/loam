@@ -46,6 +46,7 @@
         ],
         "folder": "/tmp/loam-contract/repos/web",
         "goal": "Bump the Go modules that have updates.",
+        "group_id": "",
         "id": "runraaaaaf",
         "max_tries": 3,
         "note": "Skipped, because the precheck found no work (exit 1)",

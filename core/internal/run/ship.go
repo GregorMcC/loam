@@ -219,8 +219,13 @@ func (sh *shipper) push(ctx context.Context, repo github.Repo, w store.Worktree,
 	if pr != nil {
 		return false, nil // GitHub does not show the new head yet
 	}
+	var others []string
+	if plot, err := sh.s.GetPlot(r.PlotID); err == nil {
+		// A body that names no other repo is still a good body.
+		others, _ = groupRepos(sh.s, plot, r)
+	}
 	opened, err := sh.gh.CreatePR(ctx, repo, github.NewPR{
-		Head: w.Branch, Base: worktree.CompareBase(w), Title: r.Title, Body: prBody(r, repo),
+		Head: w.Branch, Base: worktree.CompareBase(w), Title: r.Title, Body: prBody(r, repo, others),
 	})
 	if err != nil {
 		return false, err
@@ -395,9 +400,10 @@ func (sh *shipper) attachToLinear(ctx context.Context, pr github.OpenedPR) {
 }
 
 // prBody is the description of the PR of a run: the goal, the Done when
-// checks, and the issue. It names no local path and no Linear URL, because
-// the repo can be public.
-func prBody(r store.Run, repo github.Repo) string {
+// checks, and the issue. others are the repos of the other runs of its
+// group. It names no local path and no Linear URL, because the repo can be
+// public.
+func prBody(r store.Run, repo github.Repo, others []string) string {
 	var b strings.Builder
 	b.WriteString(strings.TrimSpace(cmp.Or(r.Goal, r.Title)) + "\n\n## Done when\n\n")
 	for _, c := range r.DoneWhen {
@@ -413,6 +419,9 @@ func prBody(r store.Run, repo github.Repo) string {
 		case intake.GitHub:
 			fmt.Fprintf(&b, "\nCloses %s\n", closesRef(src, repo))
 		}
+	}
+	if len(others) > 0 {
+		fmt.Fprintf(&b, "\nThe issue also has runs in %s.\n", joinAnd(others))
 	}
 	b.WriteString("\nLoam opened this PR for a run whose checks passed.\n")
 	return b.String()

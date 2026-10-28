@@ -122,6 +122,9 @@ type RunShape struct {
 	// Brief is what Claude drafts from when the run has no issue, such as
 	// the prompt of a recurring run.
 	Brief string `json:"brief,omitempty"`
+	// Split is true while a shape with --split has no draft yet, so a
+	// redraft splits the issue across the repos again.
+	Split bool `json:"split,omitempty"`
 }
 
 // Assumption is one choice of a draft that the issue does not settle.
@@ -159,6 +162,9 @@ type Run struct {
 	PR *RunPR `json:"pr,omitempty"`
 	// Shape is the draft of a run that started in Shaping, or nil.
 	Shape *RunShape `json:"shape,omitempty"`
+	// GroupID links the runs that one shape made for one issue, one in each
+	// repo. It is the ID of the first run, or empty for a run alone.
+	GroupID string `json:"group_id"`
 	// SessionID is the Claude Code session ID, from its SessionStart hook.
 	// It is empty until the session starts.
 	SessionID string `json:"session_id"`
@@ -241,9 +247,9 @@ func (s *Store) AddRun(r Run) (Run, error) {
 	r.Tries = 0
 	r.CreatedAt, r.UpdatedAt = tm(now), tm(now)
 	checks, src, pr, shape := encodeRun(r)
-	if err := tx.exec(`INSERT INTO runs(`+runCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	if err := tx.exec(`INSERT INTO runs(`+runCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.ID, r.PlotID, r.WorktreeID, r.Folder, r.Title, r.Goal, checks, r.State, r.MaxTries, r.SessionID, r.Note,
-		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, now, now); err != nil {
+		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, r.GroupID, now, now); err != nil {
 		return Run{}, err
 	}
 	if err := addRunEvent(tx, r.ID, now, "state", string(r.State)); err != nil {
@@ -341,9 +347,9 @@ func (s *Store) UpdateRun(id string, fn func(*Run) error) (Run, error) {
 	checks, src, pr, shape := encodeRun(r)
 	if err := tx.exec(`UPDATE runs SET worktree_id = ?, folder = ?, title = ?, goal = ?, done_when = ?, state = ?, tries = ?,
   max_tries = ?, session_id = ?, note = ?, source_kind = ?, source_key = ?, source_url = ?, pr_number = ?, pr_url = ?,
-  shape = ?, updated_at = ? WHERE id = ?`,
+  shape = ?, group_id = ?, updated_at = ? WHERE id = ?`,
 		r.WorktreeID, r.Folder, r.Title, r.Goal, checks, r.State, r.Tries, r.MaxTries, r.SessionID, r.Note,
-		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, now, r.ID); err != nil {
+		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, r.GroupID, now, r.ID); err != nil {
 		return Run{}, err
 	}
 	if r.Tries != old.Tries {
@@ -400,7 +406,7 @@ func (s *Store) RunEvents(runID string) ([]RunEvent, error) {
 
 // runCols are the columns of a run record.
 const runCols = `id, plot_id, worktree_id, folder, title, goal, done_when, state, tries, max_tries, session_id, note,
-  source_kind, source_key, source_url, pr_number, pr_url, shape, created_at, updated_at`
+  source_kind, source_key, source_url, pr_number, pr_url, shape, group_id, created_at, updated_at`
 
 func encodeRun(r Run) (checks string, src RunSource, pr RunPR, shape string) {
 	b, err := json.Marshal(append([]Check{}, r.DoneWhen...))
@@ -447,7 +453,7 @@ func scanRun(sc interface{ Scan(...any) error }) (Run, error) {
 	var shape string
 	var created, updated int64
 	err := sc.Scan(&r.ID, &r.PlotID, &r.WorktreeID, &r.Folder, &r.Title, &r.Goal, &checks, &r.State, &r.Tries,
-		&r.MaxTries, &r.SessionID, &r.Note, &src.Kind, &src.Key, &src.URL, &pr.Number, &pr.URL, &shape, &created, &updated)
+		&r.MaxTries, &r.SessionID, &r.Note, &src.Kind, &src.Key, &src.URL, &pr.Number, &pr.URL, &shape, &r.GroupID, &created, &updated)
 	if err != nil {
 		return Run{}, err
 	}

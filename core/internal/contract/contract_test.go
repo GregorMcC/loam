@@ -790,6 +790,48 @@ func scenario(t *testing.T) *harness {
 	h.run("run_defaults_set", "run-defaults", 0, "run", "defaults", "Runs", "--model", "opus", "--effort", "high")
 	h.run("error_run_defaults_bad_effort", "error", 2, "run", "defaults", "Runs", "--effort", "extreme")
 	h.run("run_defaults_clear", "run-defaults", 0, "run", "defaults", "Runs", "--model", "", "--effort", "")
+
+	// Linked runs. A second repo joins the plot, and Claude splits one issue
+	// into a run in each repo. The two runs share a group.
+	docs, _ := testutil.GitRepoAt(t, filepath.Join(h.root, "docs.git"), filepath.Join(h.root, "repos", "docs"))
+	cfg = fmt.Sprintf(`{"projects":{%q:{"hasTrustDialogAccepted":true},%q:{"hasTrustDialogAccepted":true},%q:{"hasTrustDialogAccepted":true}}}`,
+		filepath.Join(h.home, "plots"), gitRepo, docs)
+	if err := os.WriteFile(filepath.Join(h.root, "userhome", ".claude.json"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, errOut, code := h.raw("repo", "add", "Runs", docs); code != 0 {
+		t.Fatalf("repo add: exit %d: %s", code, errOut)
+	}
+	out, errOut, code = h.raw("show", "Runs", "--json")
+	if code != 0 {
+		t.Fatalf("show: exit %d: %s", code, errOut)
+	}
+	var runsPlot struct {
+		Repos []struct{ ID, Path string } `json:"repos"`
+	}
+	parse([]byte(out), &runsPlot)
+	repoIDs := map[string]string{}
+	for _, r := range runsPlot.Repos {
+		repoIDs[r.Path] = r.ID
+	}
+	testutil.FakeClaudePrint(t, fmt.Sprintf(`{"type": "result", "subtype": "success", "is_error": false, "result": "",
+ "structured_output": {"runs": [
+  {"repo": %q, "goal": "The app names the setting Plan view.", "checks": [{"name": "Go tests", "command": "go test ./..."}],
+   "assumptions": ["The docs can say the new name before the app ships it."], "plan": ["Rename the setting."], "size": "About 20 lines."},
+  {"repo": %q, "goal": "The docs name the setting Plan view.", "checks": [{"name": "Docs", "command": "grep -q 'Plan view' README.md"}],
+   "assumptions": [], "plan": ["Rename the setting in the README."], "size": "One line."}]}}`, repoIDs[gitRepo], repoIDs[docs]))
+	h.env = append(h.env, "LOAM_FAKE_CLAUDE_PRINT="+os.Getenv("LOAM_FAKE_CLAUDE_PRINT"))
+	var split struct {
+		Runs []struct {
+			ID      string `json:"id"`
+			GroupID string `json:"group_id"`
+		} `json:"runs"`
+	}
+	parse(h.run("run_shape_split", "run-shape", 0, "run", "shape", "Runs", "--title", "Rename the plan setting", "--split"), &split)
+	if len(split.Runs) != 2 || split.Runs[0].GroupID != split.Runs[0].ID || split.Runs[1].GroupID != split.Runs[0].ID {
+		t.Fatalf("split runs %+v", split.Runs)
+	}
+	h.run("error_run_shape_split_repo", "error", 2, "run", "shape", "Runs", "--title", "Rename the plan setting", "--split", "--repo", docs)
 	return h
 }
 

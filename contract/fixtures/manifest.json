@@ -1374,5 +1374,35 @@
     ],
     "exit_code": 0,
     "schema": "run-defaults"
+  },
+  {
+    "name": "run_shape_split",
+    "args": [
+      "run",
+      "shape",
+      "Runs",
+      "--title",
+      "Rename the plan setting",
+      "--split",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "run-shape"
+  },
+  {
+    "name": "error_run_shape_split_repo",
+    "args": [
+      "run",
+      "shape",
+      "Runs",
+      "--title",
+      "Rename the plan setting",
+      "--split",
+      "--repo",
+      "/tmp/loam-contract/repos/docs",
+      "--json"
+    ],
+    "exit_code": 2,
+    "schema": "error"
   }
 ]

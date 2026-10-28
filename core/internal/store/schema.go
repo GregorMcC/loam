@@ -218,6 +218,9 @@ CREATE TABLE run_defaults (
   updated_at INTEGER NOT NULL
 );
 `,
+	// 15: linked runs: the runs that one shape made for one issue, one in
+	// each repo, share a group.
+	`ALTER TABLE runs ADD COLUMN group_id TEXT NOT NULL DEFAULT '';`,
 }
 
 // SchemaVersion is the schema version of this binary.

@@ -48,7 +48,8 @@ type StartOptions struct {
 	Goal     string
 	DoneWhen []store.Check
 	// Repo is the repo of a new worktree: an ID or a path. Empty means the
-	// main repo.
+	// repo of the plot that a GitHub issue link belongs to, else the main
+	// repo.
 	Repo string
 	// Worktree is the name of the worktree. Loam uses the worktree when it
 	// exists, and makes it when it does not. Empty means a new worktree with
@@ -277,7 +278,7 @@ func findOrMakeWorktree(s *store.Store, plot store.Plot, o StartOptions, title s
 			return store.Worktree{}, nil, err
 		}
 	}
-	repo, err := runRepo(plot, o.Repo)
+	repo, err := runRepo(plot, o.Repo, o.Link)
 	if err != nil {
 		return store.Worktree{}, nil, err
 	}
@@ -305,11 +306,14 @@ func findOrMakeWorktree(s *store.Store, plot store.Plot, o StartOptions, title s
 	return res.Worktree, res.Warnings, nil
 }
 
-// runRepo returns the repo of a run: the repo that arg names, or the main
-// repo of the plot.
-func runRepo(plot store.Plot, arg string) (store.Repo, error) {
+// runRepo returns the repo of a run: the repo that arg names, else the repo
+// of the plot that the link is a GitHub issue of, else the main repo.
+func runRepo(plot store.Plot, arg, link string) (store.Repo, error) {
 	if arg != "" {
 		return worktree.FindRepo(plot, arg)
+	}
+	if repo, ok := linkRepo(plot, link); ok {
+		return repo, nil
 	}
 	if m := plot.MainRepo(); m != nil {
 		return *m, nil
@@ -472,7 +476,8 @@ func Prompt(r store.Run, rules []store.Rule) string {
 // A Shaping run has no session, so Stop only cancels it. A run that has ended
 // stays as it is. When claude stop fails, for example
 // because the session is gone, the run is Cancelled anyway and the result
-// has a warning.
+// has a warning. When the run is the last of its group, and another run of
+// the group landed, its Linear issue moves to Done.
 func Stop(ctx context.Context, s *store.Store, id string) (store.Run, []string, error) {
 	r, err := s.GetRun(id)
 	if err != nil || r.State.Ended() {
@@ -488,7 +493,13 @@ func Stop(ctx context.Context, s *store.Store, id string) (store.Run, []string, 
 		r.State, r.Note = store.RunCancelled, "Stopped by you"
 		return nil
 	})
-	return r, warnings, err
+	if err != nil {
+		return r, warnings, err
+	}
+	if warning := finishLinearIssue(ctx, s, r); warning != "" {
+		warnings = append(warnings, warning)
+	}
+	return r, warnings, nil
 }
 
 // stopSession stops the background session of the run. It returns a warning

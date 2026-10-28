@@ -26,7 +26,7 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["source", "key", "title", "status", "priority", "labels", "url", "updated_at", "run_id"],
+        "required": ["source", "key", "title", "status", "priority", "labels", "url", "updated_at", "run_id", "repo"],
         "properties": {
           "source": { "enum": ["linear", "github", "map"] },
           "key": { "description": "ENG-523, #48, owner/repo#48, or map 135. It is the key of a run that starts from the item.", "type": "string", "minLength": 1 },
@@ -36,7 +36,8 @@
           "labels": { "type": "array", "items": { "type": "string" } },
           "url": { "description": "The web page of an issue, for run start --link, or the path of a ticket file, for run start --ticket.", "type": "string", "minLength": 1 },
           "updated_at": { "description": "The last change in Linear or on GitHub, or empty for a ticket.", "type": "string" },
-          "run_id": { "description": "The newest run that started from the item, or empty.", "anyOf": [{ "$ref": "defs.json#/$defs/id" }, { "const": "" }] }
+          "run_id": { "description": "The newest run that started from the item, or empty.", "anyOf": [{ "$ref": "defs.json#/$defs/id" }, { "const": "" }] },
+          "repo": { "description": "The ID of the repo of the plot that a GitHub issue belongs to. Empty for a Linear issue and a ticket.", "anyOf": [{ "$ref": "defs.json#/$defs/id" }, { "const": "" }] }
         }
       }
     }

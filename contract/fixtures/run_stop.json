@@ -9,6 +9,7 @@
     ],
     "folder": "/tmp/loam-contract/loamhome/worktrees/plotaaaaae/web-57-fix-the-login-form",
     "goal": "The login form works on phones.",
+    "group_id": "",
     "id": "runraaaaab",
     "max_tries": 3,
     "note": "Stopped by you",

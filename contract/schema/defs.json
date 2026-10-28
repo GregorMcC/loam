@@ -383,7 +383,7 @@
     "run": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "plot_id", "worktree_id", "folder", "title", "goal", "done_when", "state", "tries", "max_tries", "session_id", "note", "created_at", "updated_at"],
+      "required": ["id", "plot_id", "worktree_id", "folder", "title", "goal", "done_when", "state", "tries", "max_tries", "session_id", "note", "group_id", "created_at", "updated_at"],
       "properties": {
         "id": { "$ref": "#/$defs/id" },
         "plot_id": { "$ref": "#/$defs/id" },
@@ -400,6 +400,7 @@
         "shape": { "description": "The draft of a run that started in Shaping (loam run shape). It is left out for a run that loam run start started.", "$ref": "#/$defs/runShape" },
         "session_id": { "description": "The Claude Code session of the run. It is empty until the session starts.", "type": "string" },
         "note": { "description": "Why the run is in its state, such as the failed checks.", "type": "string" },
+        "group_id": { "description": "The group of the runs that one split shape made for one issue, one in each repo: the ID of the first run. Empty for a run alone.", "anyOf": [{ "$ref": "#/$defs/id" }, { "const": "" }] },
         "created_at": { "$ref": "#/$defs/time" },
         "updated_at": { "$ref": "#/$defs/time" }
       }
@@ -445,7 +446,8 @@
         "link": { "description": "The link that the work starts from, as loam run start --link takes it, or empty.", "type": "string" },
         "model": { "description": "The Claude model of the draft and of the session, or empty for the Claude Code setting.", "type": "string" },
         "effort": { "description": "The effort level of the draft and of the session, or empty for the Claude Code setting.", "$ref": "#/$defs/effort" },
-        "brief": { "description": "What Claude drafts from when the run has no issue, such as the prompt of a recurring run. It is left out when it is empty.", "type": "string" }
+        "brief": { "description": "What Claude drafts from when the run has no issue, such as the prompt of a recurring run. It is left out when it is empty.", "type": "string" },
+        "split": { "description": "True while a shape with --split has no draft, so a redraft splits again. It is left out when it is false.", "const": true }
       }
     },
     "recurring": {

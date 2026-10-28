@@ -22,7 +22,7 @@ func TestPRBodyHasTheGoalTheChecksAndTheIssue(t *testing.T) {
 	}
 	for name, c := range cases {
 		r.Source = c.src
-		body := prBody(r, widgets)
+		body := prBody(r, widgets, nil)
 		for _, want := range []string{"A link moves by drag.", "- Tests: `go test ./...`", "- " + CommittedCheck, c.want} {
 			if !strings.Contains(body, want) {
 				t.Errorf("%s: the body misses %q:\n%s", name, want, body)
@@ -36,5 +36,17 @@ func TestPRBodyHasTheGoalTheChecksAndTheIssue(t *testing.T) {
 		if strings.Contains(body, "linear.app") {
 			t.Errorf("%s: the body has a Linear URL:\n%s", name, body)
 		}
+	}
+}
+
+// A run of a group names the other repos of its issue.
+func TestPRBodyOfAGroupNamesTheOtherRepos(t *testing.T) {
+	widgets := github.Repo{Owner: "example", Name: "widgets"}
+	r := store.Run{Title: "Rename the setting", Source: &store.RunSource{Kind: "linear", Key: "ENG-523"}}
+	if body := prBody(r, widgets, []string{"example/docs", "site"}); !strings.Contains(body, "\nThe issue also has runs in example/docs and site.\n") {
+		t.Fatalf("body:\n%s", body)
+	}
+	if body := prBody(r, widgets, nil); strings.Contains(body, "also has runs") {
+		t.Fatalf("body:\n%s", body)
 	}
 }
