@@ -12,6 +12,9 @@ public final class AppModel {
     public let settings: SettingsModel
     /// What the settings window shows about the Ghostty config. The terminal runtime fills it.
     public let terminalConfig = TerminalConfigModel()
+    /// Settings > Connections: the Linear API key (ticket 205).
+    public let connections: ConnectionsModel
+    public let runsSettings: RunsSettingsModel
     public private(set) var plots: [PlotSummary] = [] { didSet { if plots != oldValue { onWorkspaceChange?() } } }
     /// Archived plots. They leave the sidebar but keep their panes (spec section 10).
     public private(set) var archivedPlots: [PlotSummary] = []
@@ -145,6 +148,53 @@ public final class AppModel {
     public var sidebarCollapsed = false { didSet { onWorkspaceChange?(); saveLayout() } }
     /// The last core error, in words for a person. The window shows it.
     public var lastError: String?
+    /// The runs of every plot, newest first, as the core last listed them (ticket 203).
+    public internal(set) var runs: [Run] = [] { didSet { if runs != oldValue { onWorkspaceChange?() } } }
+    /// What the desk shows (ticket 207).
+    public internal(set) var desk = DeskState()
+    /// The time between the ticks that ship runs (ticket 206).
+    public var runTickInterval: Duration = .seconds(30)
+    /// The loop of `startRunTicks`, or nil before it starts.
+    var runTicks: Task<Void, Never>?
+    /// The page that the well shows in place of the tabs and panes: Today or a run. Nil shows the panes.
+    /// A move to a space or a pane closes it.
+    public internal(set) var page: AppPage? {
+        didSet {
+            guard page != oldValue else { return }
+            // The desk and a run page open from Today, so you leave Today only when you leave all three.
+            if Self.isTodayGroup(oldValue), !Self.isTodayGroup(page) { leftToday() }
+            onWorkspaceChange?()
+        }
+    }
+    /// What Today reads besides the runs.
+    public internal(set) var todayData = TodayData()
+    /// The run that the run page shows, with its history, as the core last read it.
+    public internal(set) var runStatus: RunStatus?
+    /// A shape that the start form started and that has not ended. The desk opens on its run when the run shows
+    /// up, so you see Claude draft it.
+    var pendingShape: PendingShape?
+    /// The run defaults of the plot of the start form or the Recurring page, as the core last read them.
+    public internal(set) var runDefaults: RunDefaults?
+    /// Why the run defaults could not be saved, for the Recurring page.
+    public internal(set) var runDefaultsError: String?
+    /// The intake that the Intake page shows, as the core last read it (ticket 204).
+    public internal(set) var intake: IntakeList?
+    /// Why the last run did not start, for the Intake page.
+    public internal(set) var runStartError: String?
+    /// True while `loam run start` runs.
+    public internal(set) var isStartingRun = false
+    /// The bases of the main repo of the plot of the start form (TAS-21), or nil before they are read.
+    public internal(set) var runBases: RunBases?
+    /// The recurring runs of the plot that the Recurring page shows (ticket 208).
+    public internal(set) var recurring: [Recurring] = []
+    /// Why the last change of a recurring run failed, for the Recurring page.
+    public internal(set) var recurringError: String?
+    /// Whether launchd runs `loam tick` while the app is closed, as the core last said. Nil before the first read.
+    public internal(set) var tickStatus: TickStatus?
+    /// True when a plot has a recurring run, as the last list said.
+    var hasRecurring = false
+    /// The rules of the plot that the Recurring page shows (ticket 209).
+    public internal(set) var rules: [Rule] = []
     /// Set when the launch check fails. The window shows it and loads nothing else.
     public private(set) var launchBlock: String?
     /// The setup steps that are not done. A non-empty list shows the setup banner.
@@ -207,6 +257,8 @@ public final class AppModel {
         // The file is in the client's LOAM_HOME, so a test store has its own settings.
         self.settings = SettingsModel(file: settingsFile ?? SettingsFile(environment: client.environment),
                                       launchBinary: client.binary.path)
+        self.connections = ConnectionsModel(client: client)
+        self.runsSettings = RunsSettingsModel(client: client)
         self.panel = PlotPanelModel(client: client)
         panel.suggestionRoots = settings.repoFolderPaths
         self.review = ReviewModel(client: client, state: stateFile)
@@ -237,7 +289,8 @@ public final class AppModel {
         SidebarModel(
             plots: plots, workspace: workspace, collapsed: sidebarCollapsed,
             newChangeCounts: review.sidebarCounts(activePlot: workspace.activePlotID), worktrees: worktrees,
-            arriving: arrivingPanes(), repos: repoCheckouts, titles: terminalTitles, selectedWorktree: selectedWorktree)
+            arriving: arrivingPanes(), repos: repoCheckouts, titles: terminalTitles, selectedWorktree: selectedWorktree,
+            page: page, runWorktrees: Set(runs.filter { !$0.state.ended && !$0.worktreeID.isEmpty }.map(\.worktreeID)))
     }
 
     /// ⌘I. Closing the panel marks the changes of the active plot as seen.
@@ -310,9 +363,11 @@ public final class AppModel {
             await reloadPlots()
             await review.reload()
             await reloadWorktrees()
+            await reloadRuns()
             if shouldStartFeed {
                 startFeed()
                 shipRefresh.start()
+                startRunTicks()
             }
         }
     }
@@ -502,7 +557,7 @@ public final class AppModel {
         await panel.load(plotID: workspace.activePlotID)
     }
 
-    private func report(_ error: Error) {
+    func report(_ error: Error) {
         lastError = Self.message(for: error)
     }
 
@@ -544,6 +599,7 @@ public final class AppModel {
                 await self.reloadPlots()
                 await self.review.reload()
                 await self.reloadWorktrees()
+                await self.reloadRuns()
             }
         }
     }
@@ -637,6 +693,7 @@ public final class AppModel {
 
     private func activate(_ space: Space) {
         endWorktreeSelection()
+        page = nil
         let opens = space != workspace.activeSpace
         // A switch with the panel open marks the plot that you leave as seen.
         if panel.visible, opens { review.markSeen(plot: workspace.activePlotID) }
@@ -747,7 +804,14 @@ public final class AppModel {
     public func openTab(_ kind: PaneSpec.Kind = .shell, folder: String? = nil, repo: String? = nil,
                         worktree: WorktreeRef? = nil) {
         guard let space = workspace.activeSpace else { return }
+        page = nil
         workspace.openTab(spec(kind, in: space, folder: folder, repo: repo, worktree: worktree))
+    }
+
+    /// Opens a tab with a spec that the caller built, such as the attach tab of a run (ticket 203).
+    func openTab(_ spec: PaneSpec) {
+        page = nil
+        workspace.openTab(spec)
     }
 
     /// ⌘D and ⌘⇧D split with a session. A shell split comes from the menu or ⌘J.
@@ -1089,6 +1153,7 @@ public final class AppModel {
 
     public func focus(_ pane: PaneID) {
         endWorktreeSelection()
+        page = nil
         let changed = workspace.spec(of: pane).flatMap { workspace.selectedTab(of: $0.space) }?.focused != pane
         workspace.focus(pane)
         if changed { useTimes?.record(SwitcherItem.paneKey(pane.uuidString)) }

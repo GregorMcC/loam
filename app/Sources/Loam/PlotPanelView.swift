@@ -52,6 +52,9 @@ struct PlotPanelView: View {
                     .padding(.top, 8)
                     .padding(.bottom, 24)
                 }
+                // The content stops under the title bar, so it never scrolls under the toolbar buttons and shows
+                // through them.
+                .clipped()
                 // Ticket 78: a drop adds a git checkout as a repo, and any other file, folder, or URL as a link.
                 .dropDestination(for: URL.self) { urls, _ in
                     guard !urls.isEmpty else { return false }

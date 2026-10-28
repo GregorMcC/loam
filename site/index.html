@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Loam</title>
-<meta name="description" content="Loam is a macOS terminal, built on libghostty, that gives every Claude Code session a home. Each session starts with the brief, the repos, and the links of its plot.">
+<meta name="description" content="Loam has Claude Code work on your issues in the background, until your checks pass. It opens the pull request, reads CI, and brings each decision to you. A macOS app built on libghostty.">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#12110f" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#fcfbf8" media="(prefers-color-scheme: light)">
@@ -14,16 +14,16 @@
 
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Loam">
-<meta property="og:title" content="Loam: a home for every Claude Code session">
-<meta property="og:description" content="A macOS terminal, built on libghostty. Each Claude Code session starts with the brief, the repos, and the links of its plot.">
+<meta property="og:title" content="Loam: from an issue to a merged pull request">
+<meta property="og:description" content="Claude Code works on your issues in the background until your checks pass. Loam opens the pull request and brings each decision to you.">
 <meta property="og:url" content="https://gregormcc.github.io/loam/">
 <meta property="og:image" content="https://gregormcc.github.io/loam/images/hero-night.png">
-<meta property="og:image:width" content="2480">
-<meta property="og:image:height" content="1640">
-<meta property="og:image:alt" content="The Loam window with the sidebar, a Claude Code session, and the plot panel.">
+<meta property="og:image:width" content="2880">
+<meta property="og:image:height" content="1800">
+<meta property="og:image:alt" content="The Today page of Loam: the desk, the line of runs, and the limits.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Loam: a home for every Claude Code session">
-<meta name="twitter:description" content="A macOS terminal, built on libghostty. Each Claude Code session starts with the brief, the repos, and the links of its plot.">
+<meta name="twitter:title" content="Loam: from an issue to a merged pull request">
+<meta name="twitter:description" content="Claude Code works on your issues in the background until your checks pass. Loam opens the pull request and brings each decision to you.">
 <meta name="twitter:image" content="https://gregormcc.github.io/loam/images/hero-night.png">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -258,7 +258,7 @@ section { padding-block: 112px 0; }
 .head h2 { margin-top: var(--space-4); font-size: clamp(28px, 4.2vw, 40px); line-height: 1.15; }
 .head p { margin-top: var(--space-4); font-size: 18px; color: var(--ink-muted); text-wrap: pretty; }
 
-.why-grid > *, .plot-grid > *, .feature > *, .install > *, .themes > *, .extras > *, .decisions > * { min-width: 0; }
+.plot-grid > *, .feature > *, .install > *, .themes > *, .extras > *, .decisions > * { min-width: 0; }
 
 .card {
   background: var(--horizon-a);
@@ -266,14 +266,6 @@ section { padding-block: 112px 0; }
   border-radius: var(--radius-lg);
 }
 
-/* Why */
-.why-grid { display: grid; gap: var(--space-4); margin-top: 48px; }
-@media (min-width: 860px) { .why-grid { grid-template-columns: 1fr 1fr; } }
-.why-card { padding: var(--space-8); }
-.why-card h3 { display: flex; align-items: center; gap: 10px; font-size: 19px; }
-.why-card p { margin-top: var(--space-3); color: var(--ink-muted); }
-.why-card p + p { margin-top: var(--space-3); }
-.why-card .term { margin-top: var(--space-6); }
 .tag {
   display: inline-flex; align-items: center; height: 22px; padding-inline: 8px;
   border-radius: var(--radius-pill); font: 500 12px/1 var(--font-ui);
@@ -321,6 +313,10 @@ section { padding-block: 112px 0; }
 .figure { margin: 48px 0 0; }
 .figure .diagram { display: block; padding: var(--space-2); background: #191714; border-radius: 18px; border: 1px solid var(--hairline); }
 .figure .diagram img { border-radius: 12px; }
+@media (max-width: 719px) {
+  .figure .diagram { overflow-x: auto; }
+  .figure .diagram img { min-width: 760px; }
+}
 figcaption { margin-top: var(--space-3); color: var(--ink-muted); font-size: 14px; }
 
 /* Features */
@@ -339,6 +335,7 @@ figcaption { margin-top: var(--space-3); color: var(--ink-muted); font-size: 14p
 .feature__text p { margin-top: var(--space-3); color: var(--ink-muted); }
 .feature__text .keys { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); margin-top: var(--space-4); padding: 0; list-style: none; color: var(--ink-muted); font-size: 14px; }
 .feature__text .keys li { display: inline-flex; align-items: center; gap: var(--space-2); }
+@media (max-width: 959px) { .feature--flip .feature__text { order: -1; } }
 .shot img { width: 100%; filter: drop-shadow(0 12px 28px var(--shot-shade)); }
 .signals { display: grid; gap: var(--space-2); margin-top: var(--space-4); padding: 0; list-style: none; font-size: 14px; }
 .signals li { display: flex; align-items: center; gap: 10px; color: var(--ink-muted); }
@@ -367,6 +364,17 @@ figcaption { margin-top: var(--space-3); color: var(--ink-muted); font-size: 14p
 .extra { padding: var(--space-6); }
 .extra h3 { font-size: 16px; }
 .extra p { margin-top: var(--space-2); color: var(--ink-muted); font-size: 15px; }
+
+/* The line */
+.feature__text .station { font: 500 12px/1 var(--font-mono); color: var(--ink-muted); text-transform: uppercase; letter-spacing: 0.08em; }
+.feature__text .station + h3 { margin-top: var(--space-2); }
+.notes-card, .keys-card { padding: var(--space-8); }
+.notes-title { font-weight: 600; font-size: 15px; margin-bottom: var(--space-4); }
+.keygroup { margin-top: var(--space-6); font: 500 12px/1 var(--font-mono); color: var(--ink-muted); text-transform: uppercase; letter-spacing: 0.08em; }
+.notes-title + .keygroup { margin-top: 0; }
+.keymap { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: var(--space-2) var(--space-4); align-items: center; margin: var(--space-3) 0 0; font-size: 15px; color: var(--ink-muted); }
+.keymap dt { display: flex; gap: 4px; }
+.keymap dd { margin: 0; }
 
 /* Install */
 .install { margin-top: 48px; display: grid; gap: var(--space-4); }
@@ -421,7 +429,7 @@ footer a { color: var(--ink); }
   .hero { padding-top: 56px; }
   .hero .icon { width: 80px; height: 80px; border-radius: 18px; }
   section { padding-top: 88px; }
-  .why-card, .side, .steps { padding: var(--space-6); }
+  .notes-card, .keys-card, .side, .steps { padding: var(--space-6); }
   .decision { padding: var(--space-6); }
   .shot-hero { margin-top: 48px; }
   .cmd { font-size: 12.5px; }
@@ -447,9 +455,10 @@ footer a { color: var(--ink); }
     </a>
     <nav aria-label="Sections">
       <ul>
-        <li class="opt"><a href="#why">Why</a></li>
-        <li class="opt"><a href="#plot">The plot</a></li>
-        <li class="opt"><a href="#features">Features</a></li>
+        <li class="opt"><a href="#line">The line</a></li>
+        <li class="opt"><a href="#today">Today</a></li>
+        <li class="opt"><a href="#control">Control</a></li>
+        <li class="opt"><a href="#terminal">Terminal</a></li>
         <li><a href="#install">Install</a></li>
         <li><a href="https://github.com/GregorMcC/loam">GitHub</a></li>
       </ul>
@@ -462,8 +471,8 @@ footer a { color: var(--ink); }
     <div class="wrap">
       <img class="icon" src="images/loam-icon.png" width="96" height="96" alt="The Loam icon: soil horizons under a moss sprout.">
       <h1 class="wordmark" aria-label="Loam">loam</h1>
-      <p class="lede">A macOS terminal, built on libghostty, that gives every Claude Code session a home.</p>
-      <p class="sub">Loam keeps each area of work in a plot: a short brief, the repos, and the links that matter. Each session that Loam starts in the plot gets all of it from its first message.</p>
+      <p class="lede">Loam has Claude Code work on your issues in the background, until your checks pass.</p>
+      <p class="sub">Each run works in its own worktree. When its checks pass, Loam opens the pull request and reads CI. You decide twice: when you approve the plan, and when you merge.</p>
       <div class="cmd" role="group" aria-label="Install command">
         <code><span class="p" aria-hidden="true">$</span>curl -fsSL https://raw.githubusercontent.com/GregorMcC/loam/main/scripts/install-release.sh | sh</code>
         <button class="copy" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/GregorMcC/loam/main/scripts/install-release.sh | sh">Copy</button>
@@ -475,78 +484,259 @@ footer a { color: var(--ink); }
           View on GitHub
         </a>
       </div>
-      <p class="reqs">macOS 26 or later, Apple silicon, and Claude Code.</p>
+      <p class="reqs">macOS 26 or later on Apple silicon, with Claude Code. The GitHub CLI opens the pull requests.</p>
     </div>
     <div class="shot-hero">
       <picture>
         <source media="(prefers-color-scheme: light)" srcset="images/hero-day.png">
-        <img src="images/hero-night.png" width="2480" height="1640" fetchpriority="high" alt="The Loam window. The sidebar shows plots as a tree of checkouts, worktrees, and panes. A Claude Code session and a shell sit in a split. The plot panel on the right shows the brief, repos, links, and the change log.">
+        <img src="images/hero-night.png" width="2880" height="1800" fetchpriority="high" alt="The Today page of Loam. Your desk holds the runs that need a decision. Below it, the line shows runs at several stations, from Intake to Land. While you were away lists the run events since the last look, and the limits show the runs at work and the week's usage.">
       </picture>
     </div>
   </div>
 
-  <section id="why" aria-labelledby="why-title">
+  <section id="line" aria-labelledby="line-title">
     <div class="wrap">
       <div class="head">
-        <span class="eyebrow">Why Loam</span>
-        <h2 id="why-title">A new session starts blank</h2>
-        <p>A Claude Code session does not know what the work is, why it matters, or where the key documents are. Loam gives it that knowledge before you type.</p>
+        <span class="eyebrow">The line</span>
+        <h2 id="line-title">From an issue to a merged pull request</h2>
+        <p>A run is one goal that a background Claude Code session works on in its own worktree, until its checks pass. The line shows the runs of each plot by station. You decide at Shape and at Land, and Loam does the steps between them.</p>
       </div>
 
-      <div class="why-grid">
-        <article class="card why-card">
-          <h3><span class="tag">The problem</span></h3>
-          <p>Each new session needs the same explanation again. You type the purpose of the work, the repos it touches, and the paths to the documents.</p>
-          <p>Many people paste a brief that they wrote at the start of the work. The pasted brief stays the same when the work moves on. The session then starts from an old state and can follow the wrong document.</p>
-        </article>
-        <article class="card why-card">
-          <h3><span class="tag tag--moss">Loam's answer</span></h3>
-          <p>Loam keeps the context in a plot. A plot is one area of work, with a brief, its repos, and links to the documents that matter.</p>
-          <p>Each session that Loam starts in the plot gets a seed with the current plot. Claude can update the plot through the Loam MCP tools. Each edit goes in a change log, and you can undo it. The next session then starts from where the work stands now.</p>
-        </article>
+      <figure class="figure">
+        <a class="diagram" href="images/the-line.svg" title="Open the diagram at full size">
+          <img src="images/the-line.svg" width="1200" height="440" loading="lazy" alt="The line has five stations: Intake, Shape, Run, Ship and Land. You decide at Shape and at Land. At Run, a failed check goes back to the session as its next try. At Ship, a CI failure sends the run back to Run.">
+        </a>
+        <figcaption>A failed check goes back to the session as its next try. A CI failure on the pull request does the same.</figcaption>
+      </figure>
+
+      <div class="feature">
+        <div class="feature__text">
+          <p class="station">Station 1</p>
+          <h3>Intake</h3>
+          <p>Intake lists the open work of a plot. It reads the GitHub issues of the plot's repos through <code>gh</code>, the Linear issues of its Linear team and project links, and the tickets of a <code>map.md</code> file in its links. Filters show only the issues assigned to you, or the Linear issues in the current cycle.</p>
+          <p>Select items and press <kbd>⌘</kbd><kbd>↩</kbd> to send them to Shape. Start as a chore skips Shape: you write the goal and the Done when checks, and the run starts now.</p>
+          <ul class="keys">
+            <li><kbd>X</kbd> Select an item</li>
+            <li><kbd>⌘</kbd><kbd>↩</kbd> Shape the selected items</li>
+          </ul>
+        </div>
+        <div class="shot">
+          <picture>
+            <source media="(prefers-color-scheme: light)" srcset="images/intake-day.png">
+            <img src="images/intake-night.png" width="2880" height="1800" loading="lazy" alt="Intake for a plot. A table lists Linear and GitHub issues with their key, title, source, status and priority. One issue is selected, and the detail card at the right shows its text.">
+          </picture>
+        </div>
       </div>
 
-      <h3 class="subhead">The decisions behind the design</h3>
-      <p>Each decision has a record in the repo, with the options that I rejected and the reasons.</p>
-      <div class="decisions">
-        <article class="decision">
-          <h3>A seed holds links only</h3>
-          <p>Loam never fetches or caches the content of a linked page. A link is always current, and no work content goes to disk. Claude fetches a page through its own connectors when the task needs it.</p>
-          <a href="https://github.com/GregorMcC/loam/blob/main/docs/adr/0001-seeds-hold-links-not-snapshots.md">ADR 0001</a>
+      <div class="feature feature--flip">
+        <div class="shot">
+          <img src="images/desk-shape.png" width="2880" height="1800" loading="lazy" alt="A Shape draft at the desk. It shows the goal, the plan, the Done when checks, and what Loam does if you approve.">
+        </div>
+        <div class="feature__text">
+          <p class="station">Station 2</p>
+          <h3>Shape</h3>
+          <p>Claude reads the repo and drafts the run: a goal, a plan, the assumptions that it made, and the Done when checks. Each check is a shell command that passes when it exits 0 in the worktree.</p>
+          <p>You approve the draft, or ask Claude to change it. An issue that needs changes in more than one repo can split into a group of runs, one in each repo.</p>
+          <ul class="keys">
+            <li><kbd>A</kbd> Approve, then go to the next item</li>
+            <li><kbd>C</kbd> Ask Claude to change it</li>
+            <li><kbd>N</kbd> Not now: the run ends, and the issue stays open</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="feature">
+        <div class="feature__text">
+          <p class="station">Station 3</p>
+          <h3>Run</h3>
+          <p>Loam makes a worktree and starts a background session with <code>claude --bg</code>. The session gets the seed of the plot. It works in Claude Code's auto permission mode, because nobody is there to answer a prompt.</p>
+          <p>Each time the session ends a turn, the gate runs the Done when checks and the plot's rules in the worktree, and checks that the work is committed. A failed check goes back to the session as its next try. When the tries run out, the run stops and comes to your desk.</p>
+        </div>
+        <div class="shot">
+          <img src="images/run-page.png" width="2880" height="1800" loading="lazy" alt="The page of a run while it runs. It shows the state, the tries, the turns, the checks, and the session of the run.">
+        </div>
+      </div>
+
+      <div class="feature feature--flip feature--panel">
+        <div class="card notes-card">
+          <p class="notes-title">Ship notes</p>
+          <dl class="parts">
+            <div class="part">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M5 3h10v14H5z"/><path d="M8 7h4M8 10h4M8 13h2"/></svg>
+              <dt>Walkthrough</dt>
+              <dd>What changed and why, in 2 to 4 plain sentences.</dd>
+            </div>
+            <div class="part">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M4 5h12M4 10h12M4 15h7"/></svg>
+              <dt>Files in reading order</dt>
+              <dd>Each changed file once, with its role. Loam checks the list against the diff and adds any file that Claude left out.</dd>
+            </div>
+            <div class="part">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M10 3 17 16H3z"/><path d="M10 8v4M10 14v.5"/></svg>
+              <dt>Risk</dt>
+              <dd>Low, medium or high, with reasons. Loam adds its own facts, such as a store migration, a changed dependency file, or a file that the plan did not name.</dd>
+            </div>
+          </dl>
+        </div>
+        <div class="feature__text">
+          <p class="station">Station 4</p>
+          <h3>Ship</h3>
+          <p>When every check passes and the repo is on GitHub, Loam pushes the branch and opens the pull request. If the repo has a PR template, Claude fills it in. A run in a repo that is not on GitHub goes straight to Ready.</p>
+          <p>Loam then reads CI on the pull request. A failed CI check goes back to the session as a try, with the end of its log, and the fix goes to the same pull request.</p>
+        </div>
+      </div>
+
+      <div class="feature">
+        <div class="feature__text">
+          <p class="station">Station 5</p>
+          <h3>Land</h3>
+          <p>The run is Ready. At the desk you read the walkthrough, the files in order, the diff, the evidence from the checks and CI, and the risk.</p>
+          <p>Add a note to a line and send the run back. The session resumes with your notes, and the gate and CI run again. Or merge: Loam merges a run only when you choose Merge.</p>
+          <p>After the merge, Loam can remove the worktree and the branch, move the Linear issue to Done, and move Where it stands on.</p>
+          <ul class="keys">
+            <li><kbd>⌘</kbd><kbd>↩</kbd> Merge</li>
+            <li><kbd>S</kbd> Send back</li>
+            <li><kbd>]</kbd> Next file</li>
+          </ul>
+        </div>
+        <div class="shot">
+          <img src="images/desk-land.png" width="2880" height="1800" loading="lazy" alt="Land at the desk. The walkthrough and the files in reading order sit next to the diff, which has a note on one line. The evidence lists the checks and CI, the risk card gives a level with reasons, and When you merge lists what Loam does after the merge.">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="today" aria-labelledby="today-title">
+    <div class="wrap">
+      <div class="head">
+        <span class="eyebrow">Today and the desk</span>
+        <h2 id="today-title">One decision at a time</h2>
+        <p>Today is the home page for runs. The desk on it holds only the runs that need you, and shows them to you one at a time.</p>
+      </div>
+
+      <div class="plot-grid">
+        <dl class="parts">
+          <div class="part">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M3 8h14v8H3z"/><path d="M6 8V5h8v3"/></svg>
+            <dt>Your desk</dt>
+            <dd>The runs that need a decision now: drafts at Shape, runs at Land, and runs that stopped.</dd>
+          </div>
+          <div class="part">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="4" cy="10" r="1.6"/><circle cx="10" cy="10" r="1.6"/><circle cx="16" cy="10" r="1.6"/><path d="M5.6 10h2.8M11.6 10h2.8"/></svg>
+            <dt>The line</dt>
+            <dd>Every run of every plot, by station.</dd>
+          </div>
+          <div class="part">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M3.5 10a6.5 6.5 0 1 0 2-4.7"/><path d="M3.5 3.5v3h3"/><path d="M10 6.5V10l2.5 1.5"/></svg>
+            <dt>While you were away</dt>
+            <dd>The run events since you last looked, such as a try that failed, a pull request that Loam opened, or a CI result.</dd>
+          </div>
+          <div class="part">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M3 15a7 7 0 0 1 14 0"/><path d="M10 15l3-5"/></svg>
+            <dt>Limits</dt>
+            <dd>How many runs are at work, and how much of the week's Claude Code usage is used.</dd>
+          </div>
+        </dl>
+
+        <div class="card keys-card">
+          <p class="notes-title">Keys</p>
+          <p class="keygroup">On Today</p>
+          <dl class="keymap">
+            <dt><kbd>⌘</kbd><kbd>↩</kbd></dt><dd>Open the desk</dd>
+            <dt><kbd>⌘</kbd><kbd>R</kbd></dt><dd>Start a run: opens Intake</dd>
+          </dl>
+          <p class="keygroup">At Shape</p>
+          <dl class="keymap">
+            <dt><kbd>A</kbd></dt><dd>Approve, then go to the next item</dd>
+            <dt><kbd>C</kbd></dt><dd>Ask Claude to change the draft</dd>
+            <dt><kbd>N</kbd></dt><dd>Not now</dd>
+          </dl>
+          <p class="keygroup">At Land</p>
+          <dl class="keymap">
+            <dt><kbd>⌘</kbd><kbd>↩</kbd></dt><dd>Merge</dd>
+            <dt><kbd>S</kbd></dt><dd>Send back with your notes</dd>
+            <dt><kbd>]</kbd></dt><dd>Next file</dd>
+          </dl>
+          <p class="keygroup">Anywhere on the desk</p>
+          <dl class="keymap">
+            <dt><kbd>J</kbd> <kbd>K</kbd></dt><dd>Next and previous item</dd>
+            <dt><kbd>esc</kbd></dt><dd>Leave the desk</dd>
+          </dl>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="control" aria-labelledby="control-title">
+    <div class="wrap">
+      <div class="head">
+        <span class="eyebrow">Control</span>
+        <h2 id="control-title">Runs work inside the limits that you set</h2>
+        <p>Runs spend your Claude Code usage. The limits set how much they can spend, and how many run at once.</p>
+      </div>
+
+      <div class="feature">
+        <div class="feature__text">
+          <h3>Limits and the usage hold</h3>
+          <p>By default, 3 runs work at a time and a run can take 40 turns. Each run gets 3 tries, and the chore start form can change that. A run over the limit waits in Queued, with a note such as "Waits for a slot".</p>
+          <p>The usage hold reads the week's Claude Code usage. At 80% by default, new runs wait in Queued until the usage drops or the week starts again. A turn limit or a hold of 0 turns it off.</p>
+          <p>Each plot can have a model and an effort for its runs. The chore start form sets them for one run.</p>
+        </div>
+        <div class="shot">
+          <img src="images/settings-runs.png" width="2880" height="1800" loading="lazy" alt="The Runs tab of Settings. The limits are At a time, Turn limit and Hold at. Below them, Usage this week shows how much of the week's Claude Code usage is used.">
+        </div>
+      </div>
+
+      <div class="feature feature--flip">
+        <div class="shot">
+          <img src="images/settings-linear.png" width="2880" height="1800" loading="lazy" alt="The Connections tab of Settings. It shows What each plot reads, and Updates to Linear with its four switches.">
+        </div>
+        <div class="feature__text">
+          <h3>Updates to Linear</h3>
+          <p>Each update that Loam makes to a Linear issue has its own switch. Loam can move the issue to In Progress when a run starts, attach the pull request, and move the issue to Done when the run lands.</p>
+          <p>It can also post the walkthrough as a comment. That switch is off by default. A write to Linear that fails never stops a run.</p>
+        </div>
+      </div>
+
+      <div class="feature">
+        <div class="feature__text">
+          <h3>Recurring runs</h3>
+          <p>A recurring run starts on a timetable, such as weekdays at 06:30. A precheck decides if there is work. With no work, the run is Skipped, and no session starts.</p>
+          <p>A Shape recurring run drafts a run for you to approve. A chore runs to its gate and waits for you to land it. A recurring run starts nothing while a run that it started has not ended.</p>
+        </div>
+        <div class="shot">
+          <img src="images/recurring.png" width="2880" height="1800" loading="lazy" alt="The list of recurring runs of a plot. Each row shows the title, the kind, the timetable, and what the last tick did.">
+        </div>
+      </div>
+
+      <div class="extras">
+        <article class="card extra">
+          <h3>Rules</h3>
+          <p>A rule is a check that every run of a plot must pass, such as "Views use the colour tokens". When you send back a note like one that you sent back before, Loam offers to make it a rule.</p>
         </article>
-        <article class="decision">
-          <h3>Sessions start in the main repo</h3>
-          <p>Claude Code applies only the settings of the folder where a session starts. A session in the main repo keeps its permissions, hooks, and git status. The plot folder, with the seed, and the other repos attach as added folders.</p>
-          <a href="https://github.com/GregorMcC/loam/blob/main/docs/adr/0003-sessions-start-in-the-main-repo.md">ADR 0003</a>
+        <article class="card extra">
+          <h3>The tick</h3>
+          <p><code>loam tick</code> starts the recurring runs that are due, ships the runs whose checks passed, and starts queued runs. <code>loam tick install</code> has launchd run it every 5 minutes while you are logged in, so runs move when the app is closed.</p>
         </article>
-        <article class="decision">
-          <h3>The core works without the app</h3>
-          <p>The <code>loam</code> CLI and the MCP server hold the plots and start seeded sessions. You can use them in any terminal. The app is one front end to the core.</p>
-          <a href="https://github.com/GregorMcC/loam/blob/main/docs/adr/0002-core-works-without-the-app.md">ADR 0002</a>
+        <article class="card extra">
+          <h3>Stopped by a limit</h3>
+          <p>When Claude Code stops a session at a usage limit, the run shows Stopped by a limit and counts no try.</p>
         </article>
-        <article class="decision">
-          <h3>The CLI is the contract</h3>
-          <p>The core is one Go binary. The Swift app reads and changes plots only through <code>loam --json</code>, with stable exit codes. The two sides share no code.</p>
-          <a href="https://github.com/GregorMcC/loam/blob/main/docs/adr/0004-go-core-and-the-cli-as-the-contract.md">ADR 0004</a>
+        <article class="card extra">
+          <h3>Runs from the CLI</h3>
+          <p>Each step has a command, such as <code>loam run start</code>, <code>loam run approve</code> and <code>loam run land</code>. The app uses the same commands. A run with no issue starts from the CLI.</p>
         </article>
       </div>
     </div>
   </section>
 
-  <section id="plot" aria-labelledby="plot-title">
+  <section id="terminal" aria-labelledby="terminal-title">
     <div class="wrap">
       <div class="head">
-        <span class="eyebrow">The plot</span>
-        <h2 id="plot-title">What a plot holds</h2>
-        <p>A plot is a named area of work. It can hold code, or only a brief and links. Every seeded session in the plot reads it.</p>
+        <span class="eyebrow">The terminal half</span>
+        <h2 id="terminal-title">Every run starts knowing the work</h2>
+        <p>Loam is also a macOS terminal built on libghostty. It keeps each area of work in a plot. Each run and each interactive session starts with the brief, the repos and the links of its plot.</p>
       </div>
-
-      <figure class="figure">
-        <a class="diagram" href="images/plot-to-session.svg" title="Open the diagram at full size">
-          <img src="images/plot-to-session.svg" width="1200" height="470" loading="lazy" alt="A plot holds a brief, repos, links, and worktrees. loam start writes the seed file, then runs claude in the main repo with the Loam MCP tools. Each edit goes back to the plot as a change in the log.">
-        </a>
-        <figcaption><code>loam start</code> writes the seed, then runs Claude Code in the main repo with the Loam MCP tools.</figcaption>
-      </figure>
 
       <div class="plot-grid">
         <dl class="parts">
@@ -566,25 +756,23 @@ footer a { color: var(--ink); }
           <div class="part">
             <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M8.5 11.5a3 3 0 0 0 4.2 0l3-3a3 3 0 0 0-4.2-4.2l-1 1"/><path d="M11.5 8.5a3 3 0 0 0-4.2 0l-3 3a3 3 0 0 0 4.2 4.2l1-1"/></svg>
             <dt>Links</dt>
-            <dd>Labelled pointers to Notion pages, Linear issues, GitHub, vault notes, URLs, and local folders. A seed holds the links, never their content.</dd>
+            <dd>Labelled pointers to Notion pages, Linear issues, GitHub, notes, URLs, and local folders. A seed holds the links, never their content.</dd>
           </div>
           <div class="part">
             <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="5.5" cy="4.5" r="1.8"/><circle cx="5.5" cy="15.5" r="1.8"/><circle cx="14.5" cy="15.5" r="1.8"/><path d="M5.5 6.3v7.4M14.5 13.7V9c0-2-1.5-3-3.5-3H9"/><path d="M10.5 4.2 8.8 6l1.7 1.8"/></svg>
             <dt>Worktrees</dt>
-            <dd>Separate checkouts of a repo, each on its own branch, that Loam makes for the plot. Loam runs your setup command in each new worktree.</dd>
+            <dd>Separate checkouts of a repo, each on its own branch. Each run gets one. Loam runs your setup command in each new worktree.</dd>
           </div>
           <div class="part">
             <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M3.5 10a6.5 6.5 0 1 0 2-4.7"/><path d="M3.5 3.5v3h3"/><path d="M10 6.5V10l2.5 1.5"/></svg>
             <dt>Change log</dt>
-            <dd>Every edit, by you or by a session, with who made it and when. Undo adds a change. It never removes one.</dd>
+            <dd>Every edit to the plot, by you or by a session, with who made it and when. Undo adds a change. It never removes one.</dd>
           </div>
         </dl>
 
-        <div>
-
-          <div class="term seed">
-            <div class="term__bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>What a session sees: the seed</div>
-<pre><code><span class="b"># Plot: Loam v1 build</span>
+        <div class="term seed">
+          <div class="term__bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>What a run sees: the seed</div>
+<pre><code><span class="b"># Plot: Checkout</span>
 
 <span class="b">## How to use this plot</span>
 - The plot can change while you work. Before you rely
@@ -598,35 +786,25 @@ footer a { color: var(--ink); }
 <span class="b">### Where it stands</span>   <span class="c">...</span>
 
 <span class="b">## Repos</span>
-- <span class="y">~/Development/loam</span>: the Loam repo<span class="cursor" aria-hidden="true"></span></code></pre>
-          </div>
+- <span class="y">~/Code/storefront</span>: the web shop<span class="cursor" aria-hidden="true"></span></code></pre>
         </div>
-      </div>
-    </div>
-  </section>
-
-  <section id="features" aria-labelledby="features-title">
-    <div class="wrap">
-      <div class="head">
-        <span class="eyebrow">Features</span>
-        <h2 id="features-title">What you get</h2>
-        <p>The sidebar shows each plot as a tree: the main checkout, each worktree, and the panes that run in it. <kbd>⌘</kbd> <kbd>T</kbd> starts a seeded session in the active plot.</p>
       </div>
 
       <div class="feature">
         <div class="feature__text">
-          <h3>A signal when a session needs you</h3>
-          <p>A pane whose session waits on you, for example at a permission prompt, turns amber. The sidebar lists it under Needs you, and its plot shows a count, also when the plot is not on screen.</p>
+          <h3>Seeded sessions, side by side</h3>
+          <p>Press <kbd>⌘</kbd><kbd>T</kbd> for an interactive Claude Code session with the seed of the active plot. The sidebar shows each plot as a tree of repos, worktrees and panes.</p>
           <ul class="signals">
             <li><span class="dot dot--needs" aria-hidden="true"></span><span><b>Needs you</b>: the session waits on your answer.</span></li>
             <li><span class="dot dot--unread" aria-hidden="true"></span><span><b>Done, unread</b>: the session finished a turn that you have not seen.</span></li>
           </ul>
           <ul class="keys">
+            <li><kbd>⌘</kbd><kbd>T</kbd> New seeded session</li>
             <li><kbd>⌘</kbd><kbd>L</kbd> Next pane that needs you</li>
           </ul>
         </div>
         <div class="shot">
-          <img src="images/needs-you.png" width="2480" height="1640" loading="lazy" alt="A Claude Code session waits at a permission prompt for the Loam tool that sets Where it stands. Its pane has an amber ring, the sidebar lists it under Needs you, and the plot row shows a count of 1.">
+          <img src="images/session.png" width="2880" height="1800" loading="lazy" alt="A plot with a seeded Claude Code session and a shell in a split. The sidebar shows the plot's repos, worktrees and panes, and the plot panel is open at the right.">
         </div>
       </div>
 
@@ -644,65 +822,18 @@ footer a { color: var(--ink); }
         </div>
       </div>
 
-      <div class="feature feature--panel">
-        <div class="feature__text">
-          <h3>See how far each branch is from merged</h3>
-          <p>A worktree with a pull request shows its PR number and a stage mark in the sidebar. The plot panel lists each worktree with its stage and a status line, such as 2 of 3 checks failed.</p>
-          <p>Ship state does not raise an alert. No stage turns a pane amber or shows a banner. Only Conflicts and Checks failed take a warning colour.</p>
-          <ul class="keys">
-            <li><kbd>⇧</kbd><kbd>⌘</kbd><kbd>L</kbd> Next worktree that is ready to merge</li>
-          </ul>
-        </div>
-        <div class="panel-stage panel-stage--card">
-          <img src="images/ship-state.png" width="495" height="520" loading="lazy" alt="The Worktrees section of the plot panel. Five rows each have a stage mark, the branch, the PR number, and a status line. Three rows are ready to merge and have a Land button. One row shows 2 of 3 checks failed in red. One row shows 1 of 2 checks done.">
-        </div>
-      </div>
-
-      <div class="feature feature--flip feature--panel">
-        <div class="panel-stage panel-stage--card">
-          <img src="images/pr-popover.png" width="740" height="939" loading="lazy" alt="The PR popover for a PR with failed checks. It shows the stage, the title, the checks, the review, the base, and conflicts. Two failed checks have a time and a Log link. Below them are the button Start session with prompt, and the buttons Re-run failed and Open on GitHub. A note says that Loam starts a session and types the failures prompt, and that you press Return.">
-        </div>
-        <div class="feature__text">
-          <h3>Read the checks, then send the fix</h3>
-          <p>Click a stage mark to open the PR popover. It shows the checks, the review, the base branch, and conflicts. Each failed check has a Log link, and the passed checks are in a list under them.</p>
-          <p>When a PR has failed checks, requested changes, or conflicts, the popover has a button such as Send failures to session. Loam types a short prompt into the session of the worktree and never presses Return. You press Return to send it.</p>
-          <p>Loam types only when the session is idle and its input is empty. Otherwise the button copies the prompt.</p>
-        </div>
-      </div>
-
-      <div class="feature feature--sheet">
-        <div class="feature__text">
-          <h3>Land from one sheet</h3>
-          <p>At Ready to merge, the Land sheet lists each item that can block the merge: checks, review, base, conflicts, and local work. Merge stays off while an item blocks. A merge cannot be undone.</p>
-          <p>After the merge, Loam can close the panes and remove the worktree, delete the branch on GitHub, and move Where it stands on. The change to Where it stands has an Undo.</p>
-        </div>
-        <div class="panel-stage panel-stage--wide">
-          <img src="images/land-sheet.png" width="1120" height="1135" loading="lazy" alt="The Land sheet. It lists five items that pass, the merge method Squash, and three boxes for after the merge. A text box holds the new Where it stands text. The footer says that you cannot undo a merge, and has Cancel and Merge buttons.">
-        </div>
-      </div>
-
-      <div class="feature feature--flip feature--sheet">
-        <div class="panel-stage panel-stage--wide">
-          <img src="images/start-work.png" width="1120" height="930" loading="lazy" alt="The New worktree sheet. A card shows a Linear issue. The sheet fills in the repo, the branch, the base, the goal, and the link from the issue. The footer has Cancel and Start session buttons.">
-        </div>
-        <div class="feature__text">
-          <h3>Start work from a link</h3>
-          <p>A Linear issue link or a GitHub issue link starts work in one step. Choose Start work… in the Link actions menu. Or press <kbd>⌘</kbd><kbd>Return</kbd> on the link in the quick switcher.</p>
-          <p>The New worktree sheet fills in the branch and the goal from the link. Start session makes the worktree and opens a seeded session in it. Loam does not copy the issue. The session reads it through its own connector.</p>
-        </div>
-      </div>
-
       <div class="feature">
         <div class="feature__text">
           <h3>Go anywhere from the keyboard</h3>
-          <p>The quick switcher finds plots, panes, links, and commands. Each plot also has its own key.</p>
+          <p>The quick switcher finds plots, panes, links, and commands. Actions lists what you can do in the active plot. Each plot also has its own key.</p>
           <ul class="keys">
             <li><kbd>⌘</kbd><kbd>P</kbd> Quick switcher</li>
+            <li><kbd>⌘</kbd><kbd>J</kbd> Actions</li>
             <li><kbd>⌃</kbd><kbd>1</kbd> to <kbd>⌃</kbd><kbd>9</kbd> Go to a plot</li>
           </ul>
         </div>
         <div class="shot">
-          <img src="images/switcher.png" width="2480" height="1640" loading="lazy" alt="The quick switcher over the Loam window. The query design matches a link, the plot, and its panes.">
+          <img src="images/switcher.png" width="2880" height="1800" loading="lazy" alt="The quick switcher over the Loam window. The query matches a link, a plot, and its panes.">
         </div>
       </div>
 
@@ -714,11 +845,11 @@ footer a { color: var(--ink); }
       </div>
       <div class="themes">
         <figure class="shot">
-          <img src="images/theme-dracula.png" width="2480" height="1640" loading="lazy" alt="Loam with the Dracula theme: the sidebar, toolbar, and plot panel take Dracula's colours.">
+          <img src="images/theme-dracula.png" width="2880" height="1800" loading="lazy" alt="Loam with the Dracula theme: the sidebar, toolbar, and plot panel take Dracula's colours.">
           <figcaption>Dracula</figcaption>
         </figure>
         <figure class="shot">
-          <img src="images/theme-catppuccin-latte.png" width="2480" height="1640" loading="lazy" alt="Loam with the Catppuccin Latte theme: the window chrome follows the light terminal colours.">
+          <img src="images/theme-catppuccin-latte.png" width="2880" height="1800" loading="lazy" alt="Loam with the Catppuccin Latte theme: the window chrome follows the light terminal colours.">
           <figcaption>Catppuccin Latte</figcaption>
         </figure>
       </div>
@@ -730,15 +861,67 @@ footer a { color: var(--ink); }
         </article>
         <article class="card extra">
           <h3>The CLI works in any terminal</h3>
-          <p>Use <code>loam start</code> in Ghostty or any other terminal to start a seeded session without the app. <code>loam worktree land</code> merges a PR from a terminal.</p>
+          <p>Use <code>loam start</code> in Ghostty or any other terminal to start a seeded session without the app. The MCP server lets each session read and update its plot.</p>
         </article>
         <article class="card extra">
-          <h3>After a merge on GitHub</h3>
-          <p>A reviewer or the merge queue can merge a PR outside Loam. A setting of the repo says what Loam does then: ask you, remove the worktree when that is safe, or do nothing.</p>
+          <h3>Worktrees that you make</h3>
+          <p>A worktree that you make by hand shows its ship state, from Not pushed to Merged, and lands from the Land sheet. Ship state is information, so it raises no alert.</p>
         </article>
         <article class="card extra">
           <h3>GitHub through gh</h3>
-          <p>Loam reads and changes GitHub only through the GitHub CLI, and it holds no credentials. Without <code>gh</code>, or when you are signed out, Loam shows local state and says how to fix it.</p>
+          <p>Loam reads and changes GitHub only through the GitHub CLI, and it holds no GitHub credentials. Without <code>gh</code>, or when you are signed out, Loam shows local state and says how to fix it.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="decisions" aria-labelledby="decisions-title">
+    <div class="wrap">
+      <div class="head">
+        <span class="eyebrow">Design</span>
+        <h2 id="decisions-title">The decisions behind the design</h2>
+        <p>Each decision about plots and sessions has a record in the repo, with the options that I rejected and the reasons. The decisions about runs link to the contract, which says what the core does.</p>
+      </div>
+      <div class="decisions">
+        <article class="decision">
+          <h3>The gate runs your checks</h3>
+          <p>A run ends its work when your checks pass in its worktree and the work is committed. What Claude says about its work does not count. The gate is the session's Stop hook, so a failed check goes back at once as the next try.</p>
+          <a href="https://github.com/GregorMcC/loam/blob/main/docs/contract.md#runs">Contract: Runs</a>
+        </article>
+        <article class="decision">
+          <h3>You merge</h3>
+          <p>Loam opens the pull request and reads CI, then stops at Ready. A run lands only when you choose Merge at the desk, or when the pull request merges on GitHub.</p>
+          <a href="https://github.com/GregorMcC/loam/blob/main/docs/contract.md#land">Contract: Land</a>
+        </article>
+        <article class="decision">
+          <h3>Rules live outside the worktree</h3>
+          <p>Loam keeps the rules of a plot in its store. A run cannot change a rule to make its own work pass.</p>
+          <a href="https://github.com/GregorMcC/loam/blob/main/docs/contract.md#rules">Contract: Rules</a>
+        </article>
+        <article class="decision">
+          <h3>The Linear key stays in the Keychain</h3>
+          <p>Loam keeps your personal Linear API key in the macOS login Keychain, and only the core reads it. A pull request names the issue key and no Linear URL, because the repo can be public and the workspace private.</p>
+          <a href="https://github.com/GregorMcC/loam/blob/main/docs/contract.md#linear">Contract: Linear</a>
+        </article>
+        <article class="decision">
+          <h3>A seed holds links only</h3>
+          <p>Loam never fetches or caches the content of a linked page. A link is always current, and no work content goes to disk. Claude fetches a page through its own connectors when the task needs it.</p>
+          <a href="https://github.com/GregorMcC/loam/blob/main/docs/adr/0001-seeds-hold-links-not-snapshots.md">ADR 0001</a>
+        </article>
+        <article class="decision">
+          <h3>Sessions start in the main repo</h3>
+          <p>Claude Code applies only the settings of the folder where a session starts. A session in the main repo keeps its permissions, hooks, and git status. The plot folder, with the seed, and the other repos attach as added folders.</p>
+          <a href="https://github.com/GregorMcC/loam/blob/main/docs/adr/0003-sessions-start-in-the-main-repo.md">ADR 0003</a>
+        </article>
+        <article class="decision">
+          <h3>The core works without the app</h3>
+          <p>The <code>loam</code> CLI and the MCP server hold the plots, start seeded sessions, and move runs. You can use them in any terminal. The app is one front end to the core.</p>
+          <a href="https://github.com/GregorMcC/loam/blob/main/docs/adr/0002-core-works-without-the-app.md">ADR 0002</a>
+        </article>
+        <article class="decision">
+          <h3>The CLI is the contract</h3>
+          <p>The core is one Go binary. The Swift app reads and changes plots and runs only through <code>loam --json</code>, with stable exit codes. The two sides share no code.</p>
+          <a href="https://github.com/GregorMcC/loam/blob/main/docs/adr/0004-go-core-and-the-cli-as-the-contract.md">ADR 0004</a>
         </article>
       </div>
     </div>
@@ -772,7 +955,19 @@ footer a { color: var(--ink); }
           </li>
           <li>
             <h3>Start your first plot</h3>
-            <p>Open Loam. Press <kbd>⌘</kbd><kbd>N</kbd> and name the plot. Write the brief in the plot panel and add the repos. Then press <kbd>⌘</kbd><kbd>T</kbd> to start a seeded session.</p>
+            <p>Open Loam. Press <kbd>⌘</kbd><kbd>N</kbd> and name the plot. Add the repos, and a Linear team or project link if you use Linear. Write the brief in the plot panel.</p>
+          </li>
+          <li>
+            <h3>Start your first run</h3>
+            <p>On Today, press <kbd>⌘</kbd><kbd>R</kbd> to open Intake. Select an issue with <kbd>X</kbd> and press <kbd>⌘</kbd><kbd>↩</kbd>. Claude drafts the run, and the draft comes to your desk.</p>
+          </li>
+          <li>
+            <h3>Let runs move while Loam is closed</h3>
+            <p>This command is optional. It has launchd run <code>loam tick</code> every 5 minutes while you are logged in.</p>
+            <div class="cmd" role="group" aria-label="Tick command">
+              <code><span class="p" aria-hidden="true">$</span>loam tick install</code>
+              <button class="copy" type="button" data-copy="loam tick install">Copy</button>
+            </div>
           </li>
         </ol>
         <aside class="card side" aria-label="Requirements and updates">
@@ -781,7 +976,8 @@ footer a { color: var(--ink); }
             <li>macOS 26 or later</li>
             <li>A Mac with Apple silicon</li>
             <li>Claude Code, with <code>claude</code> on your PATH</li>
-            <li>For ship state: the GitHub CLI (<code>gh</code>), signed in. Loam works without it.</li>
+            <li>For Ship and Land: the GitHub CLI (<code>gh</code>), signed in. Loam opens pull requests and reads CI through it.</li>
+            <li>Optional: a Linear personal API key, for Linear issues in Intake and updates to Linear. Add it in Settings.</li>
           </ul>
           <hr>
           <h3>Update</h3>
@@ -806,6 +1002,9 @@ footer a { color: var(--ink); }
     <p>Loam is open source under the <a href="https://github.com/GregorMcC/loam/blob/main/LICENSE">MIT license</a>. It is built on <a href="https://ghostty.org">Ghostty</a>, which is also MIT licensed.</p>
     <ul>
       <li><a href="https://github.com/GregorMcC/loam">GitHub</a></li>
+      <li><a href="https://github.com/GregorMcC/loam/blob/main/docs/guide.md">Guide</a></li>
+      <li><a href="https://github.com/GregorMcC/loam/blob/main/docs/cli.md">The loam CLI</a></li>
+      <li><a href="https://github.com/GregorMcC/loam/blob/main/docs/how-it-works.md">How it works</a></li>
       <li><a href="https://github.com/GregorMcC/loam/blob/main/docs/design/README.md">Design system</a></li>
       <li><a href="https://github.com/GregorMcC/loam/blob/main/CONTRIBUTING.md">Contribute</a></li>
     </ul>

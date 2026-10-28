@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam run shape --json",
+  "description": "The Shaping run with Claude's draft, or with the reason that there is none as its note, and every run that the shape made. loam run redraft --json prints the same.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run",
+    "runs"
+  ],
+  "properties": {
+    "run": {
+      "description": "The first run: the run that the shape recorded.",
+      "$ref": "defs.json#/$defs/run"
+    },
+    "runs": {
+      "description": "Every run that the shape made, the first one first. A split shape makes one run for each repo that the issue needs changes in.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "defs.json#/$defs/run" }
+    }
+  }
+}

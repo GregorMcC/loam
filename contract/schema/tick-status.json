@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam tick status --json",
+  "description": "Whether launchd runs loam tick, and what the last tick did. loam tick install and uninstall print the same.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "installed",
+    "plist",
+    "interval"
+  ],
+  "properties": {
+    "installed": {
+      "description": "True when the launchd agent is installed.",
+      "type": "boolean"
+    },
+    "plist": {
+      "description": "The path of the launchd agent.",
+      "type": "string",
+      "minLength": 1
+    },
+    "interval": {
+      "description": "How often launchd runs loam tick, in seconds.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "last_tick": {
+      "description": "The last loam tick. It is left out before the first.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "at",
+        "error"
+      ],
+      "properties": {
+        "at": {
+          "$ref": "defs.json#/$defs/time"
+        },
+        "error": {
+          "description": "Why the tick failed, or empty.",
+          "type": "string"
+        }
+      }
+    }
+  }
+}

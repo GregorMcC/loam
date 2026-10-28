@@ -132,6 +132,142 @@ ALTER TABLE worktrees ADD COLUMN link_id TEXT NOT NULL DEFAULT '';
 	// 9: what the app does when a refresh finds that GitHub merged the PR of
 	// a worktree of the repo path: ask, remove, or keep.
 	`ALTER TABLE repo_settings ADD COLUMN after_merge TEXT NOT NULL DEFAULT 'ask';`,
+	// 10: runs and their events. A run is one goal that a background
+	// session works on in a folder, until its Done when checks pass and CI
+	// passes on the PR that Loam opens for it. The worktree ID is not a
+	// foreign key: a run outlives its worktree. Neither table is in the change
+	// log.
+	`
+CREATE TABLE runs (
+  id TEXT PRIMARY KEY,
+  plot_id TEXT NOT NULL REFERENCES plots(id),
+  worktree_id TEXT NOT NULL DEFAULT '',
+  folder TEXT NOT NULL,
+  title TEXT NOT NULL,
+  goal TEXT NOT NULL DEFAULT '',
+  done_when TEXT NOT NULL DEFAULT '[]',
+  state TEXT NOT NULL,
+  tries INTEGER NOT NULL DEFAULT 0,
+  max_tries INTEGER NOT NULL,
+  session_id TEXT NOT NULL DEFAULT '',
+  note TEXT NOT NULL DEFAULT '',
+  source_kind TEXT NOT NULL DEFAULT '',
+  source_key TEXT NOT NULL DEFAULT '',
+  source_url TEXT NOT NULL DEFAULT '',
+  pr_number INTEGER NOT NULL DEFAULT 0,
+  pr_url TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX runs_plot ON runs(plot_id, created_at);
+CREATE INDEX runs_session ON runs(session_id);
+CREATE TABLE run_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id TEXT NOT NULL REFERENCES runs(id),
+  at INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  detail TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX run_events_run ON run_events(run_id, id);
+`,
+	`ALTER TABLE runs ADD COLUMN shape TEXT NOT NULL DEFAULT '';`,
+	// 12: recurring runs (ticket 208). Not in the change log, as runs are
+	// not.
+	`
+CREATE TABLE recurring (
+  id TEXT PRIMARY KEY,
+  plot_id TEXT NOT NULL REFERENCES plots(id),
+  title TEXT NOT NULL,
+  prompt TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  days TEXT NOT NULL,
+  at TEXT NOT NULL,
+  precheck TEXT NOT NULL DEFAULT '',
+  if_asleep TEXT NOT NULL,
+  repo TEXT NOT NULL DEFAULT '',
+  done_when TEXT NOT NULL DEFAULT '[]',
+  max_tries INTEGER NOT NULL,
+  model TEXT NOT NULL DEFAULT '',
+  next_at INTEGER NOT NULL,
+  last_at INTEGER NOT NULL DEFAULT 0,
+  last_note TEXT NOT NULL DEFAULT '',
+  last_run_id TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX recurring_next ON recurring(next_at);
+`,
+	// 13: rules (ticket 209): checks that every run of a plot must pass.
+	`
+CREATE TABLE rules (
+  id TEXT PRIMARY KEY,
+  plot_id TEXT NOT NULL REFERENCES plots(id),
+  name TEXT NOT NULL,
+  command TEXT NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX rules_plot ON rules(plot_id, created_at);
+`,
+	// 14: effort of runs, and the model and effort that a plot defaults to.
+	`
+ALTER TABLE recurring ADD COLUMN effort TEXT NOT NULL DEFAULT '';
+CREATE TABLE run_defaults (
+  plot_id TEXT PRIMARY KEY REFERENCES plots(id),
+  model TEXT NOT NULL DEFAULT '',
+  effort TEXT NOT NULL DEFAULT '',
+  updated_at INTEGER NOT NULL
+);
+`,
+	// 15: linked runs: the runs that one shape made for one issue, one in
+	// each repo, share a group.
+	`ALTER TABLE runs ADD COLUMN group_id TEXT NOT NULL DEFAULT '';`,
+	// 16: run limits and the queue. turns counts the turns that the session
+	// of a run ended. queue says how a Queued run starts its session when a
+	// slot is free, as JSON. run_limits has one row, and usage has one row:
+	// the last usage that Claude Code reported. Neither is in the change log.
+	`
+ALTER TABLE runs ADD COLUMN turns INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE runs ADD COLUMN queue TEXT NOT NULL DEFAULT '';
+CREATE TABLE run_limits (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  at_a_time INTEGER NOT NULL,
+  max_turns INTEGER NOT NULL,
+  hold_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE usage (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  five_hour REAL,
+  five_hour_resets_at INTEGER,
+  seven_day REAL,
+  seven_day_resets_at INTEGER,
+  read_at INTEGER NOT NULL
+);
+`,
+	// 17: the ship notes of a run, as JSON, or NULL when it has none. And the
+	// switches for the updates that Loam makes to Linear: one row, for every
+	// plot. Neither is in the change log.
+	`
+ALTER TABLE runs ADD COLUMN notes TEXT;
+CREATE TABLE linear_updates (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  in_progress INTEGER NOT NULL,
+  attach_pr INTEGER NOT NULL,
+  done INTEGER NOT NULL,
+  walkthrough_comment INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+`,
+	// 18: when Loam last tried a probe of the usage, whether it worked or
+	// not, so separate processes probe at most once in a while. A usage row
+	// with read_at 0 has no report yet. turn_base is the turns of a run when
+	// Loam last resumed its session, for the turn limit. pr_draft is the PR
+	// text that Loam made before it opened the PR of a run, as JSON, or ''.
+	`
+ALTER TABLE usage ADD COLUMN tried_at INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE runs ADD COLUMN turn_base INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE runs ADD COLUMN pr_draft TEXT NOT NULL DEFAULT '';
+`,
 }
 
 // SchemaVersion is the schema version of this binary.

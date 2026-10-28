@@ -37,6 +37,15 @@ import Testing
                      repos: repos, selectedWorktree: selected)
     }
 
+    /// A worktree of a run that has not ended lands at the desk, which lands the run too. The row leaves it out, so
+    /// a merge from the sidebar cannot remove the worktree under the run.
+    @Test func aWorktreeOfARunIsNotInTheRow() throws {
+        let worktrees = ["a": [try worktree("a1", "a", .readyToMerge), try worktree("a2", "a", .readyToMerge)]]
+        let model = SidebarModel(plots: [plot("a")], workspace: Workspace(), collapsed: false, worktrees: worktrees,
+                                 runWorktrees: ["a2"])
+        #expect(model.readyToMerge.map(\.id) == ["a1"])
+    }
+
     // MARK: The count
 
     @Test func countsTheReadyWorktreesOfEveryPlot() throws {

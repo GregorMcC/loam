@@ -104,11 +104,7 @@ extension Scenarios {
         try "#!/bin/sh\necho \"loam: \(names.joined(separator: " ")) mcp\"\n".write(to: claude, atomically: true, encoding: .utf8)
         try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: claude.path)
         let plots = rig.loamHome.appendingPathComponent("plots").path
-        let trusted = [plots, plots.replacingOccurrences(of: "/tmp/", with: "/private/tmp/")]
-            .map { "\"\($0)\": {\"hasTrustDialogAccepted\": true}" }.joined(separator: ", ")
-        try fm.createDirectory(at: rig.fakeHome, withIntermediateDirectories: true)
-        try "{\"projects\": {\(trusted)}}".write(to: rig.fakeHome.appendingPathComponent(".claude.json"),
-                                                  atomically: true, encoding: .utf8)
+        try rig.trust([plots, plots.replacingOccurrences(of: "/tmp/", with: "/private/tmp/")])
         let environment = rig.environment.merging(try rig.neutralPrompt()) { $1 }.merging([
             "PATH": bin.path + ":" + (ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"),
         ]) { $1 }

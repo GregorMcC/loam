@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam run list --json",
+  "description": "The runs, newest first. It is [] when none exists.",
+  "type": "array",
+  "items": {
+    "$ref": "defs.json#/$defs/run"
+  }
+}

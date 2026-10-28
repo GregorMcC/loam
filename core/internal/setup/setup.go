@@ -7,7 +7,6 @@ package setup
 
 import (
 	"bufio"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -132,7 +131,7 @@ func (s *runner) registerStep() error {
 
 func (s *runner) trustStep(plots string) error {
 	out := s.o.Out
-	if trusted(plots) {
+	if claudebin.Trusted(plots) {
 		fmt.Fprintln(out, "Trust for the plots folder: done")
 		return nil
 	}
@@ -162,40 +161,6 @@ func (s *runner) trustStep(plots string) error {
 // namesBinary reports whether the output holds the path as a whole word.
 func namesBinary(out, bin string) bool {
 	return regexp.MustCompile(`(^|\s)` + regexp.QuoteMeta(bin) + `(\s|$)`).MatchString(out)
-}
-
-// trusted reads ~/.claude.json and reports whether Claude Code recorded trust
-// for the folder. A missing or unreadable file means not trusted.
-func trusted(dir string) bool {
-	h := os.Getenv("CLAUDE_CONFIG_DIR")
-	if h == "" {
-		var err error
-		if h, err = os.UserHomeDir(); err != nil {
-			return false
-		}
-	}
-	b, err := os.ReadFile(filepath.Join(h, ".claude.json"))
-	if err != nil {
-		return false
-	}
-	var cfg struct {
-		Projects map[string]struct {
-			Trusted bool `json:"hasTrustDialogAccepted"`
-		} `json:"projects"`
-	}
-	if json.Unmarshal(b, &cfg) != nil {
-		return false
-	}
-	keys := []string{dir}
-	if r, err := filepath.EvalSymlinks(dir); err == nil {
-		keys = append(keys, r)
-	}
-	for _, k := range keys {
-		if cfg.Projects[k].Trusted {
-			return true
-		}
-	}
-	return false
 }
 
 // mcpState asks claude if the loam MCP server is registered, and if it
@@ -244,7 +209,7 @@ func Check(binary string) (Report, error) {
 			mcp.Detail = "the loam MCP server is not registered"
 		}
 	}
-	trust := Step{ID: "trust", Done: trusted(filepath.Join(home, "plots"))}
+	trust := Step{ID: "trust", Done: claudebin.Trusted(filepath.Join(home, "plots"))}
 	if !trust.Done {
 		trust.Detail = "Claude Code has not trusted the plots folder"
 	}

@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/GregorMcC/loam/core/internal/github"
+	"github.com/GregorMcC/loam/core/internal/run"
 	"github.com/GregorMcC/loam/core/internal/worktree"
 	"github.com/spf13/cobra"
 )
@@ -47,6 +48,13 @@ func newWorktreeLandCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// A merge ends the runs of the worktree at once, so a land from
+			// the sidebar does not leave them waiting for a tick.
+			if !o.DryRun && res.Merged && res.PR != nil {
+				landed, warnings := run.LandWorktree(cmd.Context(), s, p.ID, res.Worktree.ID, res.PR.Number, run.MergedNote(res))
+				res.LandedRuns = append(res.LandedRuns, landed...)
+				res.RunWarnings = append(res.RunWarnings, warnings...)
+			}
 			if JSON(cmd) {
 				return printJSON(cmd, res)
 			}
@@ -55,6 +63,12 @@ func newWorktreeLandCmd() *cobra.Command {
 				return nil
 			}
 			printLand(cmd.OutOrStdout(), res)
+			for _, r := range res.LandedRuns {
+				fmt.Fprintf(cmd.OutOrStdout(), "Landed the run %s.\n", r.Title)
+			}
+			for _, w := range res.RunWarnings {
+				fmt.Fprintln(cmd.ErrOrStderr(), w)
+			}
 			return nil
 		},
 	}

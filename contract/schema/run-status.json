@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam run status --json",
+  "description": "A run and its history, oldest first.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run",
+    "events"
+  ],
+  "properties": {
+    "run": {
+      "$ref": "defs.json#/$defs/run"
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "$ref": "defs.json#/$defs/runEvent"
+      }
+    }
+  }
+}

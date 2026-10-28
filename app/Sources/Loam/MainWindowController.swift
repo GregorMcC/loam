@@ -51,6 +51,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var popoverContext: ActionsContext?
     var keysBeforePopover: HeldKeys?
     let panelController: NSHostingController<PlotPanelView>
+    /// Today and the run page (ticket 203), in the well while `model.page` is set.
+    private lazy var pageHost = NSHostingView(rootView: PageView(model: model))
+    private var pageShown = false
 
     init(model: AppModel, factory: PaneViewFactory) {
         self.model = model
@@ -380,8 +383,18 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         // session ends: the bar takes the keys only from the terminal, or when nothing holds them. The open
         // switcher, the open actions menu, the open PR popover, the open Land sheet and the open New worktree sheet keep the keyboard too.
         let target = tab.flatMap { paneArea.container(for: $0.focused) }?.focusTarget
+        // A page takes the keys when it opens, and gives them back to the focused pane when it closes.
+        if (model.page != nil) != pageShown {
+            pageShown = model.page != nil
+            columnView.showPage(pageShown ? pageHost : nil)
+            if pageShown {
+                window?.makeFirstResponder(pageHost)
+            } else if let target {
+                window?.makeFirstResponder(target)
+            }
+        }
         let holder = window?.firstResponder === window ? nil : window?.firstResponder
-        if views.movesKeys(in: workspace, target: target, heldBy: holder), !model.switcher.isOpen, !actionBar.menu.isOpen,
+        if !pageShown, views.movesKeys(in: workspace, target: target, heldBy: holder), !model.switcher.isOpen, !actionBar.menu.isOpen,
            !model.prPopover.isOpen, !model.landSheet.isOpen, !model.newWorktreeSheet.isOpen, let target {
             window?.makeFirstResponder(target)
         }
@@ -692,7 +705,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     /// ⌘, (ticket 81). One settings window: a second ⌘, brings it to the front.
     func showSettings() {
-        let controller = settingsWindow ?? SettingsWindowController(settings: model.settings, terminal: model.terminalConfig)
+        let controller = settingsWindow ?? SettingsWindowController(settings: model.settings, terminal: model.terminalConfig,
+                                                                               connections: model.connections,
+                                                                               runs: model.runsSettings)
         settingsWindow = controller
         controller.show()
         // You may have installed `gh` or signed in on the way here (ticket 108).

@@ -4,16 +4,22 @@ import LoamKit
 import LoamTerminal
 import UniformTypeIdentifiers
 
-/// Driver scenario for the README shots. It builds a demo of Loam's own work and takes the shots
-/// that `docs/images` holds: the main window in Night and Day, after a reload with Dracula and
-/// with Catppuccin Latte, a session that needs you, the plot panel with a change by Claude, and
-/// the quick switcher.
+/// Driver scenario for the README and site shots. It stages the work of a small product team
+/// (`ReadmeShotStage`) and takes the shots that `docs/images` and `site/images` hold, at 1440 by
+/// 900 points:
 ///
-/// The demo: the plot "Loam redesign" with a clone of this repo on `main` as its main repo, a
-/// worktree `native-panel`, and three links, plus the plots "Release notes" and "Website". The
-/// shells run real commands. The hero pane is a real Claude Code session that Loam starts with
-/// `loam start`, on the model in `LOAM_CLAUDE_EXTRA_ARGS` (default Haiku). So the scenario needs
-/// the network and your Claude Code login, and `DriverTests` does not run it.
+/// - The pages of runs: Today in Night and Day (`hero-night`, `hero-day`), Intake in Night and Day,
+///   a Shape draft at the desk (`desk-shape`), a run's page (`run-page`), Land at the desk with a
+///   note on a line (`desk-land`), the Recurring page (`recurring`), and the Runs and Connections
+///   tabs of Settings (`settings-runs`, `settings-linear`).
+/// - The terminal half: a seeded Claude Code session above a shell with the plot panel open
+///   (`session`), the quick switcher (`switcher`), the chrome after a reload with Dracula and with
+///   Catppuccin Latte, and the plot panel with a change by Claude (`plot-panel`).
+///
+/// The runs, Linear, and GitHub are fakes (see `ReadmeShotStage`). The session pane is a real
+/// Claude Code session that Loam starts with `loam start`, on the model in
+/// `LOAM_CLAUDE_EXTRA_ARGS` (default Haiku). So the scenario needs the network and your Claude Code
+/// login, and `DriverTests` does not run it.
 ///
 /// Claude Code and the shells run with a fake HOME in the rig, so they never read or change your
 /// own settings. Your login comes from the keychain. Each shot fails the run if a pane shows an
@@ -22,11 +28,13 @@ import UniformTypeIdentifiers
 /// Run (from the repo root):
 ///
 ///     go -C core build -o /tmp/loam-readme/bin/loam ./cmd/loam
+///     (cd core && go build -o /tmp/loam-readme/bin ./internal/testutil/fakegh ./internal/testutil/fakelinear)
 ///     LOAM_DRIVER=readme-shots LOAM_DRIVER_OUT=/tmp/loam-readme/out \
-///       LOAM_DRIVER_LOAM=/tmp/loam-readme/bin/loam app/.build/debug/Loam
+///       LOAM_DRIVER_LOAM=/tmp/loam-readme/bin/loam LOAM_DRIVER_FAKE_GH=/tmp/loam-readme/bin/fakegh \
+///       LOAM_DRIVER_FAKE_LINEAR=/tmp/loam-readme/bin/fakelinear app/.build/debug/Loam
 ///
-/// `LOAM_DRIVER_CLAUDE` names the claude binary (default: `claude` on PATH). `LOAM_DRIVER_REPO`
-/// names the repo to clone (default: the repo of this source file).
+/// `LOAM_DRIVER_CLAUDE` names the claude binary (default: `claude` on PATH). The shots keep the
+/// number that the driver gives them: `NN-<name>.png`.
 @MainActor
 extension Scenarios {
     private static func ensure(_ condition: Bool, _ message: @autoclosure () -> String) throws {
@@ -95,7 +103,10 @@ extension Scenarios {
         let fm = FileManager.default
         let launch = ProcessInfo.processInfo.environment
         let realHome = NSHomeDirectory()
-        let rig = try PanelRig(outFolder: app.outFolder)
+        var rig = try PanelRig(outFolder: app.outFolder)
+        // The real Claude Code of this scenario keeps its login and its state in its default places,
+        // so it does not get the rig's CLAUDE_CONFIG_DIR. Its `.claude.json` is in the fake HOME.
+        rig.environment["CLAUDE_CONFIG_DIR"] = nil
         let home = rig.fakeHome
         let bin = rig.root.appendingPathComponent("bin")
         try fm.createDirectory(at: bin, withIntermediateDirectories: true)
@@ -104,7 +115,6 @@ extension Scenarios {
         let claude = launch["LOAM_DRIVER_CLAUDE"] ?? onPath("claude") ?? "\(realHome)/.local/bin/claude"
         try ensure(fm.isExecutableFile(atPath: claude), "no claude binary at \(claude). Set LOAM_DRIVER_CLAUDE")
         try fm.createSymbolicLink(atPath: bin.appendingPathComponent("loam").path, withDestinationPath: rig.binary.path)
-        try fm.createSymbolicLink(atPath: bin.appendingPathComponent("claude").path, withDestinationPath: claude)
         var path = [bin.path]
         var goVariables: [String: String] = [:]
         if let go = onPath("go") {
@@ -135,48 +145,8 @@ extension Scenarios {
         try app.writeConfig(config)
         app.runtime.reloadConfig()
 
-        // The repos: a clone of this repo on main, and a small site repo.
-        let developer = home.appendingPathComponent("Developer")
-        try fm.createDirectory(at: developer, withIntermediateDirectories: true)
-        let source = launch["LOAM_DRIVER_REPO"] ?? URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().path
-        let repo = developer.appendingPathComponent("loam")
-        try await runGit(developer, ["clone", "-q", "--shared", "--single-branch", "--no-tags", "--branch", "main", source, repo.path])
-        try await runGit(repo, ["remote", "set-url", "origin", "https://github.com/GregorMcC/loam.git"])
-        func smallRepo(_ name: String, _ file: String, _ text: String) async throws -> URL {
-            let folder = developer.appendingPathComponent(name)
-            try fm.createDirectory(at: folder, withIntermediateDirectories: true)
-            try text.write(to: folder.appendingPathComponent(file), atomically: true, encoding: .utf8)
-            try await runGit(folder, ["init", "-q"])
-            try await runGit(folder, ["add", "."])
-            try await runGit(folder, ["commit", "-q", "-m", "First draft"])
-            return folder
-        }
-        let site = try await smallRepo("loam-site", "index.md", "# Loam\n\nA macOS terminal for Claude Code.\n")
-        let notesRepo = try await smallRepo("release-notes", "1.0.md", "# Loam 1.0\n")
-
-        // The plots.
-        let plot = try rig.newPlot("Loam redesign")
-        try rig.loam(["repo", "add", plot, repo.path])
-        try rig.loam(["set", plot, "what", "A macOS terminal on libghostty that gives every Claude Code session a home."])
-        try rig.loam(["set", plot, "why", "Loam should feel like part of macOS 26: a glass sidebar, a unified toolbar, "
-            + "and chrome that takes its color from your Ghostty theme."])
-        try rig.loam(["set", plot, "where-it-stands", "The native frame, the color, the sidebar tree, the plot panel, "
-            + "and the app icon are done. Next: the README shots."])
-        try rig.loam(["link", "add", plot, "Repository", "https://github.com/GregorMcC/loam"])
-        try rig.loam(["link", "add", plot, "Design system", repo.appendingPathComponent("docs/design").path,
-                      "--note", "Tokens, type, and components"])
-        try rig.loam(["link", "add", plot, "Liquid Glass HIG",
-                      "https://developer.apple.com/design/human-interface-guidelines/materials"])
-        let notes = try rig.newPlot("Release notes")
-        try rig.loam(["repo", "add", notes, notesRepo.path])
-        try rig.loam(["set", notes, "what", "The notes for Loam 1.0: what is new, and how to install it."])
-        let website = try rig.newPlot("Website")
-        try rig.loam(["repo", "add", website, site.path])
-        try rig.loam(["set", website, "what", "A one-page site for Loam."])
-
         // Claude Code in the fake HOME: onboarding done, the Loam MCP server, and trust for the plots
-        // folder, so the setup banner does not show. The repo is not trusted, so the session asks.
+        // folder, so the setup banner does not show. The stage adds trust for its repos, which runs need.
         let plots = rig.loamHome.appendingPathComponent("plots").path
         let claudeJSON = home.appendingPathComponent(".claude.json")
         let trusted = Set([plots, realPath(plots)]).reduce(into: [String: Any]()) { $0[$1] = ["hasTrustDialogAccepted": true] }
@@ -198,7 +168,7 @@ extension Scenarios {
         // No link to your keychain stays in the out folder after the run.
         defer { try? fm.removeItem(at: keychains) }
 
-        let environment = rig.environment.merging([
+        var environment = rig.environment.merging([
             "PATH": path.joined(separator: ":"),
             "LANG": "en_US.UTF-8",
             "LESS": "FRX",
@@ -206,6 +176,11 @@ extension Scenarios {
             "DISABLE_AUTOUPDATER": "1",
             "LOAM_CLAUDE_EXTRA_ARGS": launch["LOAM_CLAUDE_EXTRA_ARGS"] ?? #"["--model","haiku"]"#,
         ].merging(goVariables) { $1 }) { $1 }
+
+        // The staged work: the repos, the plots, and the runs.
+        let stage = try ReadmeShotStage.make(rig: rig, environment: &environment, home: home, bin: bin, claude: claude)
+        defer { stage.linear.terminate() }
+        let plot = stage.checkout, mobile = stage.mobile
 
         let host = try await app.launchApp(
             client: LoamClient(binary: rig.binary, environment: environment), state: rig.stateFile, terminals: true)
@@ -219,7 +194,7 @@ extension Scenarios {
         // The run must not depend on which app you use while it runs, and it posts no real banner.
         model.isFrontmost = { true }
         model.notifier = RecordingNotifier()
-        try await app.waitUntil("3 plots") { model.plots.count == 3 && model.workspace.activePlotID != nil }
+        try await app.waitUntil("2 plots") { model.plots.count == 2 && model.workspace.activePlotID != nil && !model.runs.isEmpty }
         try ensure(model.launchBlock == nil, "the launch is blocked: \(model.launchBlock ?? "")")
         try ensure(model.setupSteps.isEmpty, "the setup banner shows: \(model.setupSteps)")
         // The app shows the repo path with a tilde for the home folder. The demo's home is the rig.
@@ -227,7 +202,8 @@ extension Scenarios {
         setenv("CFFIXED_USER_HOME", home.path, 1)
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         Log.line("screen \(screen)")
-        host.window.setFrame(NSRect(x: screen.minX + 40, y: screen.maxY - 820 - 20, width: 1240, height: 820), display: true)
+        // The size of the design frames. It can be larger than the screen: the shots capture the whole window.
+        host.window.setFrame(NSRect(x: screen.minX, y: screen.maxY - 900, width: 1440, height: 900), display: true)
 
         func surface(_ pane: PaneID) throws -> TerminalSurfaceView {
             guard let view = host.paneView(pane) as? TerminalSurfaceView else { throw DriverFailure("pane \(pane) has no terminal") }
@@ -320,17 +296,15 @@ extension Scenarios {
             try await settle(pane, 2)
         }
 
-        // A shell in each other plot. Then in the main checkout: a Claude Code session above a
-        // shell, and in the worktree: a shell tab.
+        // A shell in each other plot. Then in the main checkout of Checkout: a Claude Code session
+        // above a shell.
         model.shell = sessionShell.path
         var otherPanes: [PaneID] = []
-        for other in [notes, website] {
+        for other in [mobile] {
             model.activate(plot: other)
             await model.openShellTab()
             otherPanes += model.workspace.selectedTab(of: .plot(other)).map { [$0.focused] } ?? []
         }
-        let made = try await model.client.worktreeNew(plot: plot, repo: repo.path, name: "native-panel", base: "main")
-        await model.reloadWorktrees()
         model.activate(plot: plot)
         model.openTab(.session)
         await model.splitShell(.stacked)
@@ -338,26 +312,22 @@ extension Scenarios {
         try ensure(mainPanes.count == 2, "the main checkout tab has \(mainPanes.count) panes")
         let claudePane = mainPanes[0], shellPane = mainPanes[1]
         model.setSplitRatio(0.55, at: [])
-        model.openWorktreePane(made.worktree, kind: .shell)
-        let worktreePane = try model.workspace.selectedTab(of: .plot(plot))?.focused ?? { throw DriverFailure("no worktree tab") }()
-        model.selectTab(number: 1)
+        // A sidebar wide enough for the names of the run worktrees.
         if let split = host.window.contentViewController as? NSSplitViewController {
-            split.splitView.setPosition(230, ofDividerAt: 0)
+            split.splitView.setPosition(265, ofDividerAt: 0)
         }
         // Only the active plot shows its tree. A plot that got its first pane while active can stay
         // open, so close the others with their disclosure arrows.
         await app.sleep(0.5)
-        for (other, pane) in zip([notes, website], otherPanes) where app.exists("pane-row-\(pane.uuidString)") {
+        for (other, pane) in zip([mobile], otherPanes) where app.exists("pane-row-\(pane.uuidString)") {
             try ensure(AccessibilityProbe.shared.discloseRow("plot-\(other)", open: false), "the tree of \(other) did not close")
         }
         try await app.waitUntil("the other trees close") { !otherPanes.contains { app.exists("pane-row-\($0.uuidString)") } }
 
         // The shells.
-        try await run(worktreePane, "loam show \"Loam redesign\"")
-        try await run(shellPane, "git log --oneline -4")
-        try await run(shellPane, "cd core && go test ./internal/seed ./internal/linkkind", timeout: 180)
+        try await run(shellPane, "git log --oneline -5")
+        try await run(shellPane, "go test ./...", timeout: 180)
         dump(shellPane, "shell")
-        dump(worktreePane, "worktree")
 
         // The session: answer the trust question in the pane, then ask about the plot.
         try await focus(claudePane)
@@ -385,10 +355,6 @@ extension Scenarios {
         try await ask(claudePane, "In two sentences: what is this plot and what is next?")
         dump(claudePane, "claude answered")
 
-        // The hero: the panel open, the session focused.
-        try await app.openPanel(host)
-        scrollPanel(host, toEnd: false)
-        try await focus(claudePane)
         /// A single theme stays dark in Day, so the wait for the pane can never end. It keeps its deadline, and the run goes on.
         func appearance(_ name: NSAppearance.Name) async {
             NSApp.appearance = NSAppearance(named: name)
@@ -401,33 +367,44 @@ extension Scenarios {
         /// A shot of the window as the active window, so it has its colored window buttons. Then
         /// the app you used before is active again.
         /// With `panel`, the shot keeps only the plot panel.
-        func shot(_ name: String, panel: Bool = false) async throws {
+        /// With `of`, the shot is of that window, such as the settings window.
+        func shot(_ name: String, panel: Bool = false, of other: NSWindow? = nil) async throws {
             try checkPrivate()
             let previous = NSWorkspace.shared.frontmostApplication
             NSApp.activate()
-            host.window.makeKeyAndOrderFront(nil)
+            let window = other ?? host.window
+            window.makeKeyAndOrderFront(nil)
             // These three waits can fail to end (the app stays inactive, an image stays on the clipboard), so they keep their
             // deadlines and the shot goes on.
-            try? await app.waitUntil("the window is active", timeout: 2) { NSApp.isActive && host.window.isKeyWindow }
+            try? await app.waitUntil("the window is active", timeout: 2) { NSApp.isActive && window.isKeyWindow }
             // When the pane gets the focus, Claude Code can show a short note about an image on
             // your clipboard. Wait for the note to go.
             try? await settle(claudePane, 1, timeout: 5)
             try? await app.waitUntil("no clipboard note", timeout: 10) { !text(claudePane).contains("Image in clipboard") }
-            if panel { try cropToPanel(app, host, name) } else { app.screenshot(name) }
+            if panel { try cropToPanel(app, host, name) } else { app.screenshot(name, of: other) }
             if let previous, previous != NSRunningApplication.current { previous.activate() }
         }
+        // The pages of runs.
+        try await runPages(app, host, stage, shot: { try await shot($0) }, window: { try await shot($0, of: $1) })
+
+        // The terminal half: the panel open, the session focused.
+        model.closePage()
+        try await app.waitUntil("the panes show") { model.page == nil && !app.exists("today") }
+        try await app.openPanel(host)
+        // The panel opens with an animation, and a width set before its end does not hold.
+        await app.sleep(0.6)
+        setPanelWidth(host, 320)
+        scrollPanel(host, toEnd: false)
+        try await focus(claudePane)
         await appearance(.darkAqua)
-        try await shot("hero-night")
-        await appearance(.aqua)
-        dump(claudePane, "claude in Day")
-        try await shot("hero-day")
+        try await shot("session")
 
         // The quick switcher, with a query.
         await appearance(.darkAqua)
         try app.pressMenuKey("p")
         try await app.waitUntil("the switcher shows") { app.exists("switcher-field") }
         try await app.waitUntil("the field has the keys") { (app.window.firstResponder as? NSTextView)?.isFieldEditor == true }
-        try app.type("design")
+        try app.type("pay")
         try await app.waitUntil("the switcher lists matches") { app.exists("switcher-row-1") }
         await app.sleep(0.8)
         try await shot("switcher")
@@ -446,22 +423,13 @@ extension Scenarios {
         app.runtime.reloadConfig()
         await appearance(.darkAqua)
 
-        // Needs you: Claude asks before it writes the plot.
+        // Claude writes the plot. A session in auto mode does not ask. One that asks (a first call to get the plot,
+        // then the write) gets Return for each question until the change shows. Return goes only while a question
+        // shows, so a late Return never answers something else.
         try await send(claudePane, "Call the mcp__loam__set_where_it_stands tool yourself, not through an agent, "
-            + "for this plot with the text: \"The plot panel is in review. Next: the README shots.\"")
-        try await app.waitUntil("claude needs you", timeout: 180) { model.workspace.state(of: claudePane) == .needsYou }
-        try await settle(claudePane, 1.5)
-        dump(claudePane, "claude asks")
-        try ensure(text(claudePane).contains("set_where_it_stands") || text(claudePane).contains("Set Where it stands"), "claude asks about another tool")
-        try await shot("needs-you")
-
-        // Yes: the change by Claude lands, and the panel shows it as new. A key that comes too
-        // soon after the window changes focus can get lost, so wait, and try again if needed.
+            + "for this plot with the text: \"Webhook retries are ready to land. Next: the gift card VAT fix.\"")
         try await focus(claudePane)
-        // Claude may ask more than once (a first call to get the plot, then the write), so answer
-        // each question until the change shows. Press only while a question shows, so a late
-        // Return never answers something else.
-        let deadline = Date().addingTimeInterval(150)
+        let deadline = Date().addingTimeInterval(180)
         while !app.exists("panel-new-since") && Date() < deadline {
             await app.sleep(1)
             if text(claudePane).contains("Do you want to proceed?") { app.press(.returnKey); await app.sleep(2) }

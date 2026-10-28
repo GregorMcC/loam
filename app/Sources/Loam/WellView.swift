@@ -15,6 +15,9 @@ import LoamKit
 /// and a titlebar style change lay it out again with no code of ours.
 final class PaneColumnView: NSView {
     private let tabBar: TabBarView
+    private let paneArea: PaneAreaView
+    /// The page that covers the tab bar and the panes (ticket 203), or nil.
+    private var page: NSView?
     private let barHeight: NSLayoutConstraint
     let well = WellView()
     private var top: NSLayoutConstraint!
@@ -32,6 +35,7 @@ final class PaneColumnView: NSView {
 
     init(tabBar: TabBarView, paneArea: PaneAreaView) {
         self.tabBar = tabBar
+        self.paneArea = paneArea
         barHeight = tabBar.heightAnchor.constraint(equalToConstant: 0)
         super.init(frame: .zero)
         wantsLayer = true
@@ -65,8 +69,28 @@ final class PaneColumnView: NSView {
 
     /// The bar hides when the plot has no tab.
     func setTabBarShown(_ shown: Bool) {
-        tabBar.isHidden = !shown
+        tabBar.isHidden = !shown || page != nil
         barHeight.constant = shown ? TabBarView.height : 0
+    }
+
+    /// Shows a page in the well in place of the tab bar and the panes, or nil to show them again
+    /// (ticket 203). The panes keep running under the page.
+    func showPage(_ view: NSView?) {
+        guard view !== page else { return }
+        page?.removeFromSuperview()
+        page = view
+        let barShown = barHeight.constant > 0
+        tabBar.isHidden = view != nil || !barShown
+        paneArea.isHidden = view != nil
+        guard let view else { return }
+        view.translatesAutoresizingMaskIntoConstraints = false
+        well.addSubview(view)
+        NSLayoutConstraint.activate([
+            view.topAnchor.constraint(equalTo: well.topAnchor),
+            view.leadingAnchor.constraint(equalTo: well.leadingAnchor),
+            view.trailingAnchor.constraint(equalTo: well.trailingAnchor),
+            view.bottomAnchor.constraint(equalTo: well.bottomAnchor),
+        ])
     }
 
     /// Which regions touch the well: the sidebar on the left, the plot panel on the right.

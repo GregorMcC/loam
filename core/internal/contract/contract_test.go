@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -54,6 +55,7 @@ type harness struct {
 	counts  map[string]int
 	entries []Entry
 	outputs map[string][]byte // normalized output by fixture name
+	stdin   string            // the input of the next command
 }
 
 var timeRE = regexp.MustCompile(`\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?(Z|[+-]\d\d:\d\d)`)
@@ -146,6 +148,7 @@ func (h *harness) raw(args ...string) (string, string, int) {
 	h.t.Helper()
 	cmd := exec.Command(h.bin, args...)
 	cmd.Env = h.env
+	cmd.Stdin = strings.NewReader(h.stdin)
 	var o, e bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &o, &e
 	err := cmd.Run()
@@ -203,6 +206,36 @@ func (h *harness) harvest() {
 	for _, w := range wts {
 		h.token("wtre", w.Worktree.ID)
 	}
+	out, _, _ = h.raw("run", "list", "--json")
+	var runs []struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(out), &runs); err != nil {
+		h.t.Fatal(err)
+	}
+	for _, r := range runs {
+		h.token("runr", r.ID)
+	}
+	out, _, _ = h.raw("recurring", "list", "--json")
+	var recurring struct {
+		Recurring []struct{ ID string } `json:"recurring"`
+	}
+	if err := json.Unmarshal([]byte(out), &recurring); err != nil {
+		h.t.Fatal(err)
+	}
+	for _, r := range recurring.Recurring {
+		h.token("recu", r.ID)
+	}
+	out, _, _ = h.raw("rule", "list", "--json")
+	var rules struct {
+		Rules []struct{ ID string } `json:"rules"`
+	}
+	if err := json.Unmarshal([]byte(out), &rules); err != nil {
+		h.t.Fatal(err)
+	}
+	for _, r := range rules.Rules {
+		h.token("rule", r.ID)
+	}
 }
 
 // normalize replaces IDs, times, and temp paths with fixed values.
@@ -230,6 +263,14 @@ func (h *harness) run(name, schema string, wantExit int, args ...string) []byte 
 	h.t.Helper()
 	full := append(append([]string{}, args...), "--json")
 	return h.record(name, schema, wantExit, full)
+}
+
+// runInput is run with input on stdin.
+func (h *harness) runInput(name, schema, input string, wantExit int, args ...string) []byte {
+	h.t.Helper()
+	h.stdin = input
+	defer func() { h.stdin = "" }()
+	return h.run(name, schema, wantExit, args...)
 }
 
 // record is run without the added --json flag.
@@ -570,7 +611,305 @@ func scenario(t *testing.T) *harness {
 	parse(h.run("worktree_edit", "worktree-edit", 0, "worktree", "edit", loam, "fix-login", "--goal", "Fix the login form on phones"), &edit)
 	h.run("error_stale_worktree", "error", 10, "worktree", "edit", loam, "fix-login", "--goal", "x",
 		"--expect", "worktree:"+edit.Worktree.ID+"=0")
+
+	// Runs, in a plot of their own, so the lists above keep their worktrees.
+	// Claude Code must trust the repo. The setup command of the repo must
+	// pass in the new worktree. The fake claude stands in for claude --bg and
+	// claude stop, so no hook records a session.
+	cfg = fmt.Sprintf(`{"projects":{%q:{"hasTrustDialogAccepted":true},%q:{"hasTrustDialogAccepted":true}}}`,
+		filepath.Join(h.home, "plots"), gitRepo)
+	if err := os.WriteFile(filepath.Join(h.root, "userhome", ".claude.json"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"new", "Runs"}, {"repo", "add", "Runs", gitRepo}, {"repo", "edit", "Runs", gitRepo, "--setup", "true"}} {
+		if _, errOut, code := h.raw(args...); code != 0 {
+			t.Fatalf("%v: exit %d: %s", args, code, errOut)
+		}
+	}
+	var started struct {
+		Run struct{ ID string } `json:"run"`
+	}
+	parse(h.run("run_start", "run-start", 0, "run", "start", "Runs", "--title", "Fix the login form",
+		"--goal", "The login form works on phones.", "--check", "Go tests=go test ./...",
+		"--link", "https://github.com/example/widgets/issues/57"), &started)
+	h.run("run_list", "run-list", 0, "run", "list", "Runs")
+	h.run("run_events", "run-events", 0, "run", "events")
+	h.run("run_events_plot_since", "run-events", 0, "run", "events", "--plot", "Runs", "--since", "2020-01-01T00:00:00Z")
+	// The intake of the plot: the issues of its GitHub repo, from the fake gh,
+	// and the tickets of a map in its links. Issue 57 has the run above.
+	tickets := filepath.Join(h.root, "build", "issues")
+	if err := os.MkdirAll(tickets, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, text := range map[string]string{
+		"../map.md":           "# Build\n",
+		"12-run-page-plan.md": "Status: open\nBlocked by: none\n\n# Run page: show the plan\n",
+		"13-run-page-diff.md": "Status: open\nBlocked by: 12\n\n# Run page: show the diff\n",
+		"9-first-ticket.md":   "Status: resolved\n\n# The first ticket\n",
+	} {
+		if err := os.WriteFile(filepath.Join(tickets, name), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, errOut, code := h.raw("link", "add", "Runs", "Build map", filepath.Join(h.root, "build", "map.md")); code != 0 {
+		t.Fatalf("link add: exit %d: %s", code, errOut)
+	}
+	// Linear: a fake API, and a secrets file in place of the Keychain. The
+	// key goes in with linear key set, and a team link gives the plot Linear
+	// issues.
+	lin := testutil.FakeLinear(t)
+	secrets := filepath.Join(h.root, "secrets.json")
+	h.env = append(h.env, "LOAM_LINEAR_URL="+lin.URL, "LOAM_SECRETS_FILE="+secrets)
+	h.run("linear_status_none", "linear-status", 0, "linear", "status")
+	h.runInput("linear_key_set", "linear-key", testutil.LinearKey+"\n", 0, "linear", "key", "set")
+	h.run("linear_status", "linear-status", 0, "linear", "status")
+	// The switches for the updates to Linear, and a set of two of them. The
+	// raw call puts the defaults back.
+	h.run("linear_updates", "linear-updates", 0, "linear", "updates")
+	h.run("linear_updates_set", "linear-updates", 0, "linear", "updates", "--walkthrough", "on", "--done", "off")
+	if _, errOut, code := h.raw("linear", "updates", "--walkthrough", "off", "--done", "on"); code != 0 {
+		t.Fatalf("linear updates: exit %d: %s", code, errOut)
+	}
+	if _, errOut, code := h.raw("link", "add", "Runs", "ENG team", "https://linear.app/acme/team/ENG/active"); code != 0 {
+		t.Fatalf("link add: exit %d: %s", code, errOut)
+	}
+	h.run("intake_list", "intake-list", 0, "intake", "list", "Runs")
+	h.run("linear_key_rm", "linear-key", 0, "linear", "key", "rm")
+	h.run("run_status", "run-status", 0, "run", "status", started.Run.ID)
+	h.run("run_stop", "run-stop", 0, "run", "stop", started.Run.ID)
+
+	// Ship (ticket 206). A run with no checks passes its gate at once, when
+	// its session ends a turn. The repo is on GitHub, so the run ships: the
+	// tick pushes the branch over the fake ssh and opens the PR on the fake gh.
+	out, errOut, code = h.raw("run", "start", "Runs", "--title", "Tidy the README", "--json")
+	if code != 0 {
+		t.Fatalf("run start: exit %d: %s", code, errOut)
+	}
+	var tidy struct {
+		Run struct{ ID, Folder string } `json:"run"`
+	}
+	parse([]byte(out), &tidy)
+	hook := func(event string) {
+		t.Helper()
+		h.stdin = fmt.Sprintf(`{"hook_event_name":%q,"session_id":"c57ef956-3136-4e86-bfde-da8facfe0523"}`, event)
+		defer func() { h.stdin = "" }()
+		if _, errOut, code := h.raw("run", "hook", tidy.Run.ID); code != 0 {
+			t.Fatalf("run hook %s: exit %d: %s", event, code, errOut)
+		}
+	}
+	hook("SessionStart")
+	// The session commits one change, which the diff of ticket 207 shows.
+	if err := os.WriteFile(filepath.Join(tidy.Run.Folder, "README.md"), []byte("# Loam\n\nA terminal for plots.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	testutil.Git(t, tidy.Run.Folder, "commit", "-qam", "Tidy the README")
+	h.tokens[testutil.Git(t, tidy.Run.Folder, "rev-parse", "HEAD")] = runHead
+	hook("Stop")
+	// Before it opens the PR, the tick has claude -p write the ship notes.
+	testutil.FakeClaudePrint(t, `{"type": "result", "subtype": "success", "is_error": false, "result": "",
+ "structured_output": {"walkthrough": "The README says what Loam is. It was a title alone.",
+  "files": [{"path": "README.md", "role": "What you see"}],
+  "risk": {"level": "low", "reasons": ["One file.", "No store change."]},
+  "where_it_stands": "The README says what Loam is. Next: the guide."}}`)
+	h.env = append(h.env, "LOAM_FAKE_CLAUDE_PRINT="+os.Getenv("LOAM_FAKE_CLAUDE_PRINT"))
+	h.run("run_tick", "run-tick", 0, "run", "tick")
+
+	// Land (ticket 207). CI passes on #25, so a tick makes the run Ready. A
+	// send-back takes it round the gate and Ship again, and the land merges
+	// #25.
+	passCI(t, h.ghState, 25, testutil.Git(t, tidy.Run.Folder, "rev-parse", "HEAD"))
+	if _, errOut, code := h.raw("run", "tick"); code != 0 {
+		t.Fatalf("run tick: exit %d: %s", code, errOut)
+	}
+	h.run("run_diff", "run-diff", 0, "run", "diff", tidy.Run.ID)
+	h.run("run_send_back", "run-send-back", 0, "run", "send-back", tidy.Run.ID,
+		"--note", "README.md:3: Say what a plot is.", "--note", "Keep the README short.")
+	hook("Stop")
+	if _, errOut, code := h.raw("run", "tick"); code != 0 {
+		t.Fatalf("run tick: exit %d: %s", code, errOut)
+	}
+	h.run("run_land_dry_run", "run-land", 0, "run", "land", tidy.Run.ID, "--dry-run")
+	h.run("run_land", "run-land", 0, "run", "land", tidy.Run.ID, "--where-it-stands", "--no-linear-done")
+	h.run("error_run_land_not_ready", "error", 2, "run", "land", started.Run.ID)
+
+	// Shape (ticket 207). The fake claude prints a draft for claude -p. A
+	// redraft takes a change, and the approve starts the run with your edits.
+	testutil.FakeClaudePrint(t, `{"type": "result", "subtype": "success", "is_error": false, "result": "",
+ "structured_output": {"goal": "The run page shows the plan of the run.",
+  "checks": [{"name": "Go tests", "command": "go test ./..."}],
+  "assumptions": ["The plan shows as a numbered list."],
+  "plan": ["Read the plan from the run.", "Show it on the run page."],
+  "size": "About 60 lines in the app."}}`)
+	h.env = append(h.env, "LOAM_FAKE_CLAUDE_PRINT="+os.Getenv("LOAM_FAKE_CLAUDE_PRINT"))
+	var shaped struct {
+		Run struct{ ID string } `json:"run"`
+	}
+	parse(h.run("run_shape", "run-shape", 0, "run", "shape", "Runs", "--title", "Show the plan on the run page",
+		"--ticket", filepath.Join(tickets, "12-run-page-plan.md")), &shaped)
+	h.run("run_redraft", "run-shape", 0, "run", "redraft", shaped.Run.ID, "--change", "Add a check for a run with no plan")
+	h.run("error_run_approve_no_assumption", "error", 2, "run", "approve", shaped.Run.ID, "--answer", "5=No")
+	h.run("run_approve", "run-start", 0, "run", "approve", shaped.Run.ID,
+		"--goal", "The run page shows the plan of the run, or says that it has none.", "--answer", "1=The plan shows as steps with checkboxes.")
+
+	// Recurring runs and loam tick (ticket 208). Both are due daily at the
+	// same time, so they list in the order that they were added. The chore's
+	// precheck finds no work, and the Shape run has a draft that waits for you,
+	// so the tick starts nothing. A fake launchctl stands in for launchd.
+	h.run("recurring_add", "recurring", 0, "recurring", "add", "Runs", "--title", "Bump Go dependencies",
+		"--prompt", "Bump the Go modules that have updates.", "--kind", "chore", "--days", "daily", "--at", "02:00",
+		"--precheck", "false", "--check", "Go tests=go test ./...")
+	var recurring struct {
+		Recurring struct{ ID string } `json:"recurring"`
+	}
+	out, errOut, code = h.raw("recurring", "add", "Runs", "--title", "Shape new issues", "--prompt", "Shape a run for each new bug.",
+		"--kind", "shape", "--days", "daily", "--at", "02:00", "--if-asleep", "skip", "--json")
+	if code != 0 {
+		t.Fatalf("recurring add: exit %d: %s", code, errOut)
+	}
+	parse([]byte(out), &recurring)
+	h.run("recurring_run", "recurring-run", 0, "recurring", "run", recurring.Recurring.ID)
+	h.run("recurring_list", "recurring-list", 0, "recurring", "list", "Runs")
+	h.run("tick", "tick", 0, "tick", "--now", "2099-01-01T12:00:00Z")
+	launchctl := filepath.Join(h.root, "launchctl")
+	if err := os.WriteFile(launchctl, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	h.env = append(h.env, "LOAM_LAUNCHCTL="+launchctl)
+	h.run("tick_install", "tick-status", 0, "tick", "install")
+	h.run("tick_status", "tick-status", 0, "tick", "status")
+	h.run("tick_uninstall", "tick-status", 0, "tick", "uninstall")
+	h.run("recurring_rm", "recurring", 0, "recurring", "rm", recurring.Recurring.ID)
+
+	// Rules (ticket 209). A run fails its one try and stops. Its send-back
+	// has a note like the note on the README run, so Loam offers a rule.
+	out, errOut, code = h.raw("run", "start", "Runs", "--title", "Write the guide", "--check", "Guide=test -f GUIDE.md",
+		"--max-tries", "1", "--json")
+	if code != 0 {
+		t.Fatalf("run start: exit %d: %s", code, errOut)
+	}
+	parse([]byte(out), &tidy)
+	hook("SessionStart")
+	hook("Stop")
+	h.run("run_send_back_rule_offer", "run-send-back", 0, "run", "send-back", tidy.Run.ID, "--note", "Keep the README short, please.")
+	var rule struct {
+		Rule struct{ ID string } `json:"rule"`
+	}
+	parse(h.run("rule_add", "rule", 0, "rule", "add", "Runs", "--name", "Short README",
+		"--command", "test $(wc -l < README.md) -lt 40", "--note", "Keep the README short, please."), &rule)
+	h.token("rule", rule.Rule.ID)
+	h.run("rule_list", "rule-list", 0, "rule", "list", "Runs")
+	h.run("rule_rm", "rule", 0, "rule", "rm", rule.Rule.ID)
+	h.run("error_rule_add_no_command", "error", 2, "rule", "add", "Runs", "--name", "Short README")
+
+	// Run defaults: the model and effort of the runs of a plot.
+	h.run("run_defaults_get", "run-defaults", 0, "run", "defaults", "Runs")
+	h.run("run_defaults_set", "run-defaults", 0, "run", "defaults", "Runs", "--model", "opus", "--effort", "high")
+	h.run("error_run_defaults_bad_effort", "error", 2, "run", "defaults", "Runs", "--effort", "extreme")
+	h.run("run_defaults_clear", "run-defaults", 0, "run", "defaults", "Runs", "--model", "", "--effort", "")
+
+	// Run limits, the queue, and usage. Two runs hold a slot here: the
+	// approved run and the guide run that went back. With 2 at a time, a new
+	// run waits for a slot.
+	h.run("run_limits_get", "run-limits", 0, "run", "limits")
+	h.run("run_limits_set", "run-limits", 0, "run", "limits", "--at-a-time", "2", "--max-turns", "30", "--hold-at", "90")
+	h.run("error_run_limits_bad", "error", 2, "run", "limits", "--at-a-time", "21")
+	var queued struct {
+		Run struct{ ID, State string } `json:"run"`
+	}
+	parse(h.run("run_start_queued", "run-start", 0, "run", "start", "Runs", "--title", "Sort the plot list"), &queued)
+	if queued.Run.State != "queued" {
+		t.Fatalf("run start with no free slot: state %q", queued.Run.State)
+	}
+	if _, errOut, code := h.raw("run", "stop", queued.Run.ID); code != 0 {
+		t.Fatalf("run stop: exit %d: %s", code, errOut)
+	}
+	h.run("usage_none", "usage", 0, "usage")
+	// The fake claude prints the stream of the probe, as Claude Code does.
+	testutil.FakeClaudePrint(t, `{"type":"system","subtype":"init"}
+{"type":"rate_limit_event","rate_limit_info":{"status":"allowed","resetsAt":1793187600,"rateLimitType":"five_hour","overageStatus":"rejected","isUsingOverage":false,"unifiedWindows":{"five_hour":{"utilization":0.18,"resetsAt":1793187600,"status":"allowed"},"seven_day":{"utilization":0.41,"resetsAt":1793660400,"status":"allowed"}}}}
+{"type":"result","subtype":"success","is_error":false,"result":"ok"}
+`)
+	h.env = append(h.env, "LOAM_FAKE_CLAUDE_PRINT="+os.Getenv("LOAM_FAKE_CLAUDE_PRINT"))
+	h.run("usage_refresh", "usage", 0, "usage", "--refresh")
+
+	// Linked runs. A second repo joins the plot, and Claude splits one issue
+	// into a run in each repo. The two runs share a group.
+	docs, _ := testutil.GitRepoAt(t, filepath.Join(h.root, "docs.git"), filepath.Join(h.root, "repos", "docs"))
+	cfg = fmt.Sprintf(`{"projects":{%q:{"hasTrustDialogAccepted":true},%q:{"hasTrustDialogAccepted":true},%q:{"hasTrustDialogAccepted":true}}}`,
+		filepath.Join(h.home, "plots"), gitRepo, docs)
+	if err := os.WriteFile(filepath.Join(h.root, "userhome", ".claude.json"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, errOut, code := h.raw("repo", "add", "Runs", docs); code != 0 {
+		t.Fatalf("repo add: exit %d: %s", code, errOut)
+	}
+	out, errOut, code = h.raw("show", "Runs", "--json")
+	if code != 0 {
+		t.Fatalf("show: exit %d: %s", code, errOut)
+	}
+	var runsPlot struct {
+		Repos []struct{ ID, Path string } `json:"repos"`
+	}
+	parse([]byte(out), &runsPlot)
+	repoIDs := map[string]string{}
+	for _, r := range runsPlot.Repos {
+		repoIDs[r.Path] = r.ID
+	}
+	testutil.FakeClaudePrint(t, fmt.Sprintf(`{"type": "result", "subtype": "success", "is_error": false, "result": "",
+ "structured_output": {"runs": [
+  {"repo": %q, "goal": "The app names the setting Plan view.", "checks": [{"name": "Go tests", "command": "go test ./..."}],
+   "assumptions": ["The docs can say the new name before the app ships it."], "plan": ["Rename the setting."], "size": "About 20 lines."},
+  {"repo": %q, "goal": "The docs name the setting Plan view.", "checks": [{"name": "Docs", "command": "grep -q 'Plan view' README.md"}],
+   "assumptions": [], "plan": ["Rename the setting in the README."], "size": "One line."}]}}`, repoIDs[gitRepo], repoIDs[docs]))
+	h.env = append(h.env, "LOAM_FAKE_CLAUDE_PRINT="+os.Getenv("LOAM_FAKE_CLAUDE_PRINT"))
+	var split struct {
+		Runs []struct {
+			ID      string `json:"id"`
+			GroupID string `json:"group_id"`
+		} `json:"runs"`
+	}
+	parse(h.run("run_shape_split", "run-shape", 0, "run", "shape", "Runs", "--title", "Rename the plan setting", "--split"), &split)
+	if len(split.Runs) != 2 || split.Runs[0].GroupID != split.Runs[0].ID || split.Runs[1].GroupID != split.Runs[0].ID {
+		t.Fatalf("split runs %+v", split.Runs)
+	}
+	h.run("error_run_shape_split_repo", "error", 2, "run", "shape", "Runs", "--title", "Rename the plan setting", "--split", "--repo", docs)
 	return h
+}
+
+// runHead is the fixed stand-in for the commit of the run that the scenario
+// lands.
+const runHead = "1234512345123451234512345123451234512345"
+
+// passCI gives the PR, at head, a passed check in the state of the fake gh,
+// and makes it ready to merge.
+func passCI(t *testing.T, stateFile string, number int, head string) {
+	t.Helper()
+	data, err := os.ReadFile(stateFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var state map[string]any
+	if err := json.Unmarshal(data, &state); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range state["pulls"].([]any) {
+		if pull := p.(map[string]any); pull["number"] == float64(number) {
+			pull["mergeable"], pull["mergeStateStatus"], pull["headRefOid"] = "MERGEABLE", "CLEAN", head
+		}
+	}
+	var details map[string]any
+	if err := json.Unmarshal([]byte(`{"baseRef": {"compare": {"behindBy": 0}}, "reviewThreads": {"nodes": []},
+  "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "SUCCESS", "contexts": {"totalCount": 1, "nodes": [
+    {"__typename": "CheckRun", "name": "test", "status": "COMPLETED", "conclusion": "SUCCESS", "isRequired": true}]}}}}]}}`), &details); err != nil {
+		t.Fatal(err)
+	}
+	state["details"].(map[string]any)[strconv.Itoa(number)] = details
+	if data, err = json.Marshal(state); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stateFile, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 type changeRec struct {

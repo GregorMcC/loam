@@ -151,6 +151,12 @@ func addSessionRecord(s *store.Store, pid int, plotID string, h hookInput, logf 
 	}
 }
 
+// PrintSeed prints the seed of the plot as SessionStart additional context,
+// for a hook after a compact. It logs each error with logf.
+func PrintSeed(home, plotID string, out io.Writer, logf func(string, ...any)) {
+	printSeed(home, plotID, out, logf)
+}
+
 // printSeed prints the seed of the plot as SessionStart additional context.
 func printSeed(home, plotID string, out io.Writer, logf func(string, ...any)) {
 	if plotID == "" {

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam run tick --json",
+  "description": "The runs that the tick moved, and what went wrong on the way. A tick that waits on GitHub moves no run.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "runs",
+    "warnings"
+  ],
+  "properties": {
+    "runs": {
+      "type": "array",
+      "items": {
+        "$ref": "defs.json#/$defs/run"
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

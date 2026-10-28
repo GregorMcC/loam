@@ -1,0 +1,125 @@
+{
+  "run": {
+    "created_at": "2026-01-01T00:00:00Z",
+    "done_when": [
+      {
+        "command": "go test ./...",
+        "name": "Go tests"
+      }
+    ],
+    "folder": "/tmp/loam-contract/repos/web",
+    "goal": "The app names the setting Plan view.",
+    "group_id": "runraaaaaj",
+    "id": "runraaaaaj",
+    "max_tries": 3,
+    "note": "",
+    "notes": null,
+    "plot_id": "plotaaaaae",
+    "session_id": "",
+    "shape": {
+      "assumptions": [
+        {
+          "answer": "",
+          "text": "The docs can say the new name before the app ships it."
+        }
+      ],
+      "base": "",
+      "drafted_at": "2026-01-01T00:00:00Z",
+      "effort": "",
+      "link": "",
+      "model": "",
+      "plan": [
+        "Rename the setting."
+      ],
+      "repo": "repoaaaaag",
+      "size": "About 20 lines."
+    },
+    "state": "shaping",
+    "title": "Rename the plan setting",
+    "tries": 0,
+    "turns": 0,
+    "updated_at": "2026-01-01T00:00:00Z",
+    "worktree_id": ""
+  },
+  "runs": [
+    {
+      "created_at": "2026-01-01T00:00:00Z",
+      "done_when": [
+        {
+          "command": "go test ./...",
+          "name": "Go tests"
+        }
+      ],
+      "folder": "/tmp/loam-contract/repos/web",
+      "goal": "The app names the setting Plan view.",
+      "group_id": "runraaaaaj",
+      "id": "runraaaaaj",
+      "max_tries": 3,
+      "note": "",
+      "notes": null,
+      "plot_id": "plotaaaaae",
+      "session_id": "",
+      "shape": {
+        "assumptions": [
+          {
+            "answer": "",
+            "text": "The docs can say the new name before the app ships it."
+          }
+        ],
+        "base": "",
+        "drafted_at": "2026-01-01T00:00:00Z",
+        "effort": "",
+        "link": "",
+        "model": "",
+        "plan": [
+          "Rename the setting."
+        ],
+        "repo": "repoaaaaag",
+        "size": "About 20 lines."
+      },
+      "state": "shaping",
+      "title": "Rename the plan setting",
+      "tries": 0,
+      "turns": 0,
+      "updated_at": "2026-01-01T00:00:00Z",
+      "worktree_id": ""
+    },
+    {
+      "created_at": "2026-01-01T00:00:00Z",
+      "done_when": [
+        {
+          "command": "grep -q 'Plan view' README.md",
+          "name": "Docs"
+        }
+      ],
+      "folder": "/tmp/loam-contract/repos/docs",
+      "goal": "The docs name the setting Plan view.",
+      "group_id": "runraaaaaj",
+      "id": "runraaaaai",
+      "max_tries": 3,
+      "note": "",
+      "notes": null,
+      "plot_id": "plotaaaaae",
+      "session_id": "",
+      "shape": {
+        "assumptions": [],
+        "base": "",
+        "drafted_at": "2026-01-01T00:00:00Z",
+        "effort": "",
+        "link": "",
+        "model": "",
+        "plan": [
+          "Rename the setting in the README."
+        ],
+        "repo": "repoaaaaah",
+        "size": "One line."
+      },
+      "state": "shaping",
+      "title": "Rename the plan setting",
+      "tries": 0,
+      "turns": 0,
+      "updated_at": "2026-01-01T00:00:00Z",
+      "worktree_id": ""
+    }
+  ]
+}

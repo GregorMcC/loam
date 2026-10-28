@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam run defaults --json",
+  "description": "The run defaults of the plot, after the command applied any flag. A plot with none has empty strings.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "defaults"
+  ],
+  "properties": {
+    "defaults": {
+      "$ref": "defs.json#/$defs/runDefaults"
+    }
+  }
+}

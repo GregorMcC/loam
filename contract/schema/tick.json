@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam tick --json",
+  "description": "What the tick did: the recurring runs that were due, then the runs that loam run tick moved.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "recurring",
+    "runs",
+    "warnings"
+  ],
+  "properties": {
+    "recurring": {
+      "type": "array",
+      "items": {
+        "$ref": "defs.json#/$defs/recurringResult"
+      }
+    },
+    "runs": {
+      "type": "array",
+      "items": {
+        "$ref": "defs.json#/$defs/run"
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

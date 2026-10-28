@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam linear status --json",
+  "description": "Whether Loam has a Linear API key, and the person of the key.",
+  "$ref": "defs.json#/$defs/linearStatus"
+}

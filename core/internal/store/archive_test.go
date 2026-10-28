@@ -99,6 +99,11 @@ func TestDeletePlotRemovesItsRecordsOnly(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	for _, p := range []store.Plot{gone, keep} {
+		if _, err := s.SetRunDefaults(store.RunDefaults{PlotID: p.ID, Model: "opus", Effort: "high"}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := s.SetArchived(gone.ID, true); err != nil {
 		t.Fatal(err)
 	}
@@ -121,6 +126,12 @@ func TestDeletePlotRemovesItsRecordsOnly(t *testing.T) {
 	}
 	if cs, _ := s.ListChanges(store.ChangeQuery{PlotID: keep.ID}); len(cs) == 0 {
 		t.Fatal("the other change log is gone")
+	}
+	if d, _ := s.GetRunDefaults(gone.ID); d.Model != "" || d.Effort != "" {
+		t.Fatalf("the run defaults are still there: %+v", d)
+	}
+	if d, _ := s.GetRunDefaults(keep.ID); d.Model != "opus" {
+		t.Fatalf("the other run defaults are gone: %+v", d)
 	}
 	if rs, _ := s.ListSessions(""); len(rs) != 1 || rs[0].PlotID != keep.ID {
 		t.Fatalf("%+v", rs)

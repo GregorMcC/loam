@@ -54,11 +54,99 @@ func decodeFixture(schema: String, data: Data) throws {
     case "worktree-rerun": _ = try d.decode(RerunResult.self, from: data)
     case "worktree-update": _ = try d.decode(UpdateResult.self, from: data)
     case "delete": _ = try d.decode(DeleteResult.self, from: data)
+    case "run-start": _ = try d.decode(RunStartResult.self, from: data)
+    case "run-list": _ = try d.decode([Run].self, from: data)
+    case "run-events": _ = try d.decode(RunEventFeed.self, from: data)
+    case "run-status": _ = try d.decode(RunStatus.self, from: data)
+    case "run-stop", "run-send-back", "run-shape": _ = try d.decode(RunResult.self, from: data)
+    case "run-land": _ = try d.decode(RunLandResult.self, from: data)
+    case "run-diff": _ = try d.decode(RunDiff.self, from: data)
+    case "run-tick": _ = try d.decode(RunTickResult.self, from: data)
+    case "recurring": _ = try d.decode(RecurringOne.self, from: data)
+    case "recurring-list": _ = try d.decode(RecurringList.self, from: data)
+    case "recurring-run": _ = try d.decode(RecurringResult.self, from: data)
+    case "rule": _ = try d.decode(RuleOne.self, from: data)
+    case "rule-list": _ = try d.decode(RuleList.self, from: data)
+    case "run-defaults": _ = try d.decode(RunDefaultsOne.self, from: data)
+    case "run-limits": _ = try d.decode(RunLimitsOne.self, from: data)
+    case "usage": _ = try d.decode(UsageOne.self, from: data)
+    case "tick": _ = try d.decode(TickResult.self, from: data)
+    case "tick-status": _ = try d.decode(TickStatus.self, from: data)
+    case "intake-list": _ = try d.decode(IntakeList.self, from: data)
+    case "linear-status", "linear-key": _ = try d.decode(LinearStatus.self, from: data)
+    case "linear-updates": _ = try d.decode(LinearUpdatesOne.self, from: data)
     default: Issue.record("No Swift type for schema \(schema)")
     }
 }
 
 @Suite struct FixtureTests {
+    /// Ticket 207: a line on one side of a diff has no number on the other.
+    @Test func aRunDiffDecodesItsLines() throws {
+        let diff = try JSONDecoder().decode(RunDiff.self, from: Fixtures.data("run_diff"))
+        let file = try #require(diff.files.first)
+        #expect(file.path == "README.md" && file.status == "modified" && file.added == 3 && file.oldPath == nil)
+        let lines = try #require(file.hunks.first?.lines)
+        #expect(lines.first == RunDiff.Line(kind: .del, old: 1, new: nil, text: "hello"))
+        #expect(lines[1] == RunDiff.Line(kind: .add, old: nil, new: 1, text: "# Loam"))
+    }
+
+    /// The desk draws the indent of a line apart from its code, so a long line wraps under its code.
+    @Test func aDiffLineSplitsItsIndentFromItsCode() {
+        #expect(RunDiff.Line(kind: .add, text: "\t\tscore := Score(q)").indentAndCode == ("\t\t", "score := Score(q)"))
+        #expect(RunDiff.Line(kind: .add, text: "    x").indentAndCode == ("    ", "x"))
+        #expect(RunDiff.Line(kind: .add, text: "x").indentAndCode == ("", "x"))
+        #expect(RunDiff.Line(kind: .add, text: "   ").indentAndCode == ("", "   "))
+        #expect(RunDiff.Line(kind: .add, text: "").indentAndCode == ("", ""))
+    }
+
+    /// Ticket 207: a Shaping run has the rest of Claude's draft in its shape.
+    @Test func aShapingRunDecodesItsDraft() throws {
+        let run = try JSONDecoder().decode(RunResult.self, from: Fixtures.data("run_shape")).run
+        #expect(run.state == .shaping && run.worktreeID.isEmpty)
+        let shape = try #require(run.shape)
+        #expect(shape.assumptions == [RunAssumption(text: "The plan shows as a numbered list.", answer: "")])
+        #expect(shape.plan.count == 2 && shape.size == "About 60 lines in the app." && shape.isDrafted)
+        let approved = try JSONDecoder().decode(RunStartResult.self, from: Fixtures.data("run_approve")).run
+        #expect(approved.shape?.assumptions.first?.answer == "The plan shows as steps with checkboxes.")
+    }
+
+    /// A run that Loam shipped has the ship notes that Claude wrote, and a run before its PR has none.
+    @Test func aShippedRunDecodesItsNotes() throws {
+        let landed = try JSONDecoder().decode(RunLandResult.self, from: Fixtures.data("run_land")).run
+        let notes = try #require(landed.notes)
+        #expect(notes.walkthrough == "The README says what Loam is. It was a title alone.")
+        #expect(notes.files == [RunNotes.File(path: "README.md", role: "What you see")])
+        #expect(notes.risk.level == "low" && notes.risk.reasons == ["One file.", "No store change."])
+        #expect(notes.whereItStands == "The README says what Loam is. Next: the guide." && !notes.writtenAt.isEmpty)
+        let started = try JSONDecoder().decode(RunStartResult.self, from: Fixtures.data("run_start")).run
+        #expect(started.notes == nil)
+    }
+
+    /// Ticket 209: a send-back whose note is like an earlier note offers a rule.
+    @Test func aSendBackDecodesItsRuleOffer() throws {
+        #expect(try JSONDecoder().decode(RunResult.self, from: Fixtures.data("run_send_back")).ruleOffer == nil)
+        let offer = try #require(try JSONDecoder().decode(RunResult.self, from: Fixtures.data("run_send_back_rule_offer")).ruleOffer)
+        #expect(offer.note == "Keep the README short, please." && offer.earlier == "Keep the README short.")
+        #expect(offer.earlierTitle == "Tidy the README" && !offer.earlierRunID.isEmpty)
+        let rule = try JSONDecoder().decode(RuleOne.self, from: Fixtures.data("rule_add")).rule
+        #expect(rule.name == "Short README" && rule.note == "Keep the README short, please.")
+    }
+
+    @Test func aRecurringRunAndATickDecode() throws {
+        let added = try JSONDecoder().decode(RecurringOne.self, from: Fixtures.data("recurring_add")).recurring
+        #expect(added.kind == .chore && added.days.count == 7 && added.at == "02:00" && added.precheck == "false")
+        #expect(added.ifAsleep == .once && added.doneWhen.count == 1 && added.lastAt == nil && !added.nextAt.isEmpty)
+        let list = try JSONDecoder().decode(RecurringList.self, from: Fixtures.data("recurring_list")).recurring
+        #expect(list.map(\.title) == ["Bump Go dependencies", "Shape new issues"])
+        #expect(list[1].ifAsleep == .skip && list[1].lastRunID.isEmpty == false)
+        let tick = try JSONDecoder().decode(TickResult.self, from: Fixtures.data("tick"))
+        #expect(tick.recurring.map(\.run?.state) == [.skipped, nil])
+        #expect(tick.recurring[0].note.contains("found no work") && tick.runs.isEmpty)
+        let status = try JSONDecoder().decode(TickStatus.self, from: Fixtures.data("tick_install"))
+        #expect(status.installed && status.interval == 300 && status.lastTick?.error == "")
+        #expect(try JSONDecoder().decode(TickStatus.self, from: Fixtures.data("tick_uninstall")).installed == false)
+    }
+
     @Test func everyFixtureDecodes() throws {
         let entries = try Fixtures.manifest()
         #expect(entries.count >= 39)
@@ -239,6 +327,14 @@ func decodeFixture(schema: String, data: Data) throws {
         withNote["land_note"] = "Loam cleared the land of PR #12 that the worktree recorded: the branch has PR #23 now."
         let stale = try d.decode(LandResult.self, from: JSONSerialization.data(withJSONObject: withNote))
         #expect(stale.landNote?.hasPrefix("Loam cleared the land of PR #12") == true)
+        #expect(land.landedRuns.isEmpty && land.runWarnings.isEmpty)
+        // A land that landed a run of the worktree lists it, and what went wrong on the way.
+        var withRun = try #require(JSONSerialization.jsonObject(with: Fixtures.data("worktree_land")) as? [String: Any])
+        let runLand = try #require(JSONSerialization.jsonObject(with: Fixtures.data("run_land")) as? [String: Any])
+        withRun["landed_runs"] = [try #require(runLand["run"])]
+        withRun["run_warnings"] = ["Loam could not move ENG-523 to Done: no Linear key"]
+        let landedRun = try d.decode(LandResult.self, from: JSONSerialization.data(withJSONObject: withRun))
+        #expect(landedRun.landedRuns.map(\.state) == [.landed] && landedRun.runWarnings.count == 1)
         let auto = try d.decode(LandResult.self, from: Fixtures.data("worktree_land_auto"))
         #expect(auto.mergeLater && !auto.worktreeRemoved)
         #expect(auto.worktree.land == PendingLand(pr: 23, method: "squash", auto: true, mergeQueue: false,

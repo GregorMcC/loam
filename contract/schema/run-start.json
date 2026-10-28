@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam run start --json",
+  "description": "The new run and the worktree that it works in. loam run approve --json prints the same for a Shaping run that you approve.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run",
+    "worktree"
+  ],
+  "properties": {
+    "run": {
+      "$ref": "defs.json#/$defs/run"
+    },
+    "worktree": {
+      "$ref": "defs.json#/$defs/worktree"
+    }
+  }
+}

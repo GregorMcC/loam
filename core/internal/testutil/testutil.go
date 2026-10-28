@@ -83,6 +83,17 @@ func FakeClaude(t *testing.T) string {
 	return dir
 }
 
+// FakeClaudePrint makes a -p call of the fake claude print text, as
+// claude -p --output-format json prints its result.
+func FakeClaudePrint(t *testing.T, text string) {
+	t.Helper()
+	file := filepath.Join(t.TempDir(), "print.json")
+	if err := os.WriteFile(file, []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LOAM_FAKE_CLAUDE_PRINT", file)
+}
+
 // FakeClaudeInvocation returns what the fake claude recorded. It fails the
 // test if the fake did not run.
 func FakeClaudeInvocation(t *testing.T) Invocation {
@@ -96,6 +107,28 @@ func FakeClaudeInvocation(t *testing.T) Invocation {
 		t.Fatal(err)
 	}
 	return inv
+}
+
+// FakeClaudeCalls returns the argv of each call of the fake claude, oldest
+// first.
+func FakeClaudeCalls(t *testing.T) [][]string {
+	t.Helper()
+	b, err := os.ReadFile(os.Getenv("LOAM_FAKE_CLAUDE_OUT") + ".log")
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls [][]string
+	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		var args []string
+		if err := json.Unmarshal([]byte(line), &args); err != nil {
+			t.Fatal(err)
+		}
+		calls = append(calls, args)
+	}
+	return calls
 }
 
 // FakeGH builds a fake `gh` and points LOAM_GH at it for the test. The fake

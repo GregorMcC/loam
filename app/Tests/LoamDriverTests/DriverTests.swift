@@ -141,36 +141,30 @@ struct DriverTests {
     }
 
     /// The core's fake `claude` in hook mode, built from ../core: LOAM_DRIVER_FAKE_CLAUDE, else a build in a temp folder.
-    static let fakeClaude: String = {
-        if let path = ProcessInfo.processInfo.environment["LOAM_DRIVER_FAKE_CLAUDE"] { return path }
-        let core = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("core")
-        let out = FileManager.default.temporaryDirectory.appendingPathComponent("loam-driver-fakeclaude-\(UUID().uuidString)")
-        let build = Process()
-        build.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        build.arguments = ["go", "build", "-o", out.path, "./internal/testutil/fakeclaude"]
-        build.currentDirectoryURL = core
-        do { try build.run() } catch { fatalError("go build did not start: \(error)") }
-        build.waitUntilExit()
-        if build.terminationStatus != 0 { fatalError("go build of the fake claude failed with \(build.terminationStatus)") }
-        return out.path
-    }()
+    static let fakeClaude = coreTool("fakeclaude", environment: "LOAM_DRIVER_FAKE_CLAUDE")
 
     /// The core's fake `gh`, built from ../core: LOAM_DRIVER_FAKE_GH, else a build in a temp folder.
-    static let fakeGH: String = {
-        if let path = ProcessInfo.processInfo.environment["LOAM_DRIVER_FAKE_GH"] { return path }
+    static let fakeGH = coreTool("fakegh", environment: "LOAM_DRIVER_FAKE_GH")
+
+    /// The core's fake Linear API, built from ../core: LOAM_DRIVER_FAKE_LINEAR, else a build in a temp folder.
+    static let fakeLinear = coreTool("fakelinear", environment: "LOAM_DRIVER_FAKE_LINEAR")
+
+    /// A test tool of the core, from core/internal/testutil: the path in the environment variable, else a build in a
+    /// temp folder.
+    static func coreTool(_ name: String, environment: String) -> String {
+        if let path = ProcessInfo.processInfo.environment[environment] { return path }
         let core = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("core")
-        let out = FileManager.default.temporaryDirectory.appendingPathComponent("loam-driver-fakegh-\(UUID().uuidString)")
+        let out = FileManager.default.temporaryDirectory.appendingPathComponent("loam-driver-\(name)-\(UUID().uuidString)")
         let build = Process()
         build.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        build.arguments = ["go", "build", "-o", out.path, "./internal/testutil/fakegh"]
+        build.arguments = ["go", "build", "-o", out.path, "./internal/testutil/\(name)"]
         build.currentDirectoryURL = core
         do { try build.run() } catch { fatalError("go build did not start: \(error)") }
         build.waitUntilExit()
-        if build.terminationStatus != 0 { fatalError("go build of the fake gh failed with \(build.terminationStatus)") }
+        if build.terminationStatus != 0 { fatalError("go build of \(name) failed with \(build.terminationStatus)") }
         return out.path
-    }()
+    }
 
     /// Ticket 28: a seeded pane and a shell pane, the pane socket, /clear, and "Session ended" with resume, new, and close.
     @Test func runsSeededAndShellPanesAndShowsSessionEnded() async throws {
@@ -302,6 +296,58 @@ struct DriverTests {
         try await expectPass("attention", environment: [
             "LOAM_DRIVER_LOAM": Self.loamBinary, "LOAM_DRIVER_FAKE_CLAUDE": Self.fakeClaude,
         ])
+    }
+
+    /// Ticket 203: five runs in two plots. The Today row opens Today with its tiles, the line, and the runs.
+    /// A run row opens the run page with its note and history, and Back goes to Today.
+    @Test func showsTodayAndTheRunPage() async throws {
+        try await expectPass("today-shot", environment: [
+            "LOAM_DRIVER_LOAM": Self.loamBinary, "LOAM_DRIVER_FAKE_CLAUDE": Self.fakeClaude,
+        ])
+    }
+
+    /// Ticket 204: the Intake page lists two GitHub issues and two open map tickets, filters them, and starts a run
+    /// from a ticket through the core. The new run shows its page, and the ticket shows its run.
+    @Test func listsTheIntakeAndStartsARunFromATicket() async throws {
+        try await expectPass("intake-shot", environment: [
+            "LOAM_DRIVER_LOAM": Self.loamBinary, "LOAM_DRIVER_FAKE_GH": Self.fakeGH,
+        ])
+    }
+
+    /// Ticket 205: Settings > Connections takes a Linear API key, Intake lists the issues of a Linear team link, and a
+    /// run from an issue moves the issue to In Progress.
+    @Test func connectsLinearAndStartsARunFromAnIssue() async throws {
+        try await expectPass("linear-shot", environment: [
+            "LOAM_DRIVER_LOAM": Self.loamBinary, "LOAM_DRIVER_FAKE_LINEAR": Self.fakeLinear,
+        ])
+    }
+
+    /// Ticket 206: a run whose checks pass ships. A tick pushes it and opens #1, a CI failure goes back to the session
+    /// as a try, the fix goes to #1, and CI passes, so the run waits on the Land tile.
+    @Test func shipsARunThroughAFailedCIToLand() async throws {
+        try await expectPass("ship-shot", environment: [
+            "LOAM_DRIVER_LOAM": Self.loamBinary, "LOAM_DRIVER_FAKE_GH": Self.fakeGH,
+        ])
+    }
+
+    /// Ticket 207: the Land tile opens the desk on a ready run, with its diff. A note on a line goes back to the
+    /// session, the change comes back through the gate and CI, and Merge lands the run.
+    @Test func reviewsARunAtTheDeskSendsANoteBackAndMergesIt() async throws {
+        try await expectPass("desk-shot", environment: [
+            "LOAM_DRIVER_LOAM": Self.loamBinary, "LOAM_DRIVER_FAKE_GH": Self.fakeGH,
+        ])
+    }
+
+    /// Ticket 207: Claude drafts a run from a ticket. The Shape tile opens the desk on the draft, a changed
+    /// assumption is typed, and A approves the run, which starts with the change.
+    @Test func shapesARunAtTheDeskChangesAnAssumptionAndApprovesIt() async throws {
+        try await expectPass("shape-shot", environment: ["LOAM_DRIVER_LOAM": Self.loamBinary])
+    }
+
+    /// Ticket 208: a skipped chore shows on the Recurring page, a new Shape run is typed and added, Run now drafts
+    /// a run, and the switch installs the launchd agent.
+    @Test func addsARecurringRunAndRunsItNow() async throws {
+        try await expectPass("recurring-shot", environment: ["LOAM_DRIVER_LOAM": Self.loamBinary])
     }
 
     /// Ticket 107: two plots with a worktree each that is ready to merge. The Ready to merge row counts 2,

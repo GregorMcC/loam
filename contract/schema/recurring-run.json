@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam recurring run --json",
+  "description": "What starting the recurring run now did.",
+  "$ref": "defs.json#/$defs/recurringResult"
+}

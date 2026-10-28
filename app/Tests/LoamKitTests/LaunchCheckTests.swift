@@ -24,14 +24,17 @@ import Testing
     }
 
     @Test func aMatchingContractLoadsPlotsAndShowsPendingSetupSteps() async throws {
-        let fake = try FakeLoam([("version", 0), ("setup_check", 0), ("list", 0), ("list_archived", 0), ("changes", 0), ("worktree_list_empty", 0)])
+        let fake = try FakeLoam([("version", 0), ("setup_check", 0), ("list", 0), ("list_archived", 0), ("changes", 0), ("worktree_list_empty", 0),
+                                  ("run_list", 0)])
         let state = AppStateFile(url: FileManager.default.temporaryDirectory.appendingPathComponent("state-\(UUID().uuidString)/state.json"))
         let model = AppModel(client: fake.client(), stateFile: state)
         await model.launch(startFeed: false)
         #expect(model.launchBlock == nil)
         #expect(model.setupSteps.map(\.id) == ["mcp"])
         #expect(model.plots.count == 2)
-        #expect(fake.args() == ["version --json", "setup --check --json", "list --json", "list --archived --json", "changes --json", "worktree list --json"])
+        #expect(fake.args() == ["version --json", "setup --check --json", "list --json", "list --archived --json", "changes --json", "worktree list --json",
+                             "run list --json"])
+        #expect(model.runs.map(\.title) == ["Fix the login form"])
     }
 
     @Test func aFailedSetupCheckShowsNoBannerAndStillLoads() async throws {

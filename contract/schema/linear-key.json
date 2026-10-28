@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam linear key set --json and loam linear key rm --json",
+  "description": "The state after the key changed.",
+  "$ref": "defs.json#/$defs/linearStatus"
+}

@@ -95,6 +95,25 @@ public struct LoamClient: Sendable {
         try await read(["worktree", "list", plot, "--refresh", "--worktree", worktree])
     }
 
+    /// `loam run list [<plot>]`: the runs of a plot, or of every plot, newest first.
+    public func runs(plot: String? = nil) async throws -> [Run] {
+        try await read(["run", "list"] + (plot.map { [$0] } ?? []))
+    }
+
+    /// `loam run status <run>`: a run and its history.
+    public func runStatus(_ id: String) async throws -> RunStatus {
+        try await read(["run", "status"], positionals: [id])
+    }
+
+    /// `loam run events`: the events of the runs, newest first, at most 200. `since` is an RFC 3339 time and
+    /// keeps only the events after it. `plot` keeps only the runs of that plot.
+    public func runEvents(plot: String? = nil, since: String? = nil) async throws -> RunEventFeed {
+        var args = ["run", "events"]
+        if let plot { args += ["--plot", plot] }
+        if let since { args += ["--since", since] }
+        return try await read(args)
+    }
+
     // MARK: Writes (all with `--actor app`)
 
     public func new(name: String) async throws -> Plot {
@@ -252,6 +271,231 @@ public struct LoamClient: Sendable {
     }
 
     /// `positionals` are the arguments that are not flags. They go after `--`, so none of them can be read as a flag.
+    /// `loam run start <plot>`: starts a run in a new worktree of the plot's main repo. Like the other run commands, it is
+    /// not in the change log, so it takes no `--actor`.
+    public func runStart(plot: String, draft: RunDraft) async throws -> RunStartResult {
+        var args = ["run", "start", "--title", draft.title, "--goal", draft.goal]
+        for check in draft.checks { args += ["--check", "\(check.name)=\(check.command)"] }
+        args += ["--max-tries", String(draft.maxTries)]
+        if let repo = draft.repo { args += ["--repo", repo] }
+        if let base = draft.base { args += ["--base", base] }
+        if let link = draft.link { args += ["--link", link] }
+        if let ticket = draft.ticket { args += ["--ticket", ticket] }
+        args += Self.modelArgs(model: draft.model, effort: draft.effort)
+        if draft.approveSetup { args.append("--approve-setup") }
+        return try await read(args, positionals: [plot])
+    }
+
+    /// `--model` and `--effort` for the ones that are set. An empty one leaves the choice to the plot default.
+    static func modelArgs(model: String, effort: String) -> [String] {
+        (model.isEmpty ? [] : ["--model", model]) + (effort.isEmpty ? [] : ["--effort", effort])
+    }
+
+    /// `loam run shape <plot>`: records a run in Shaping, and Claude drafts its goal, checks, assumptions and plan
+    /// (ticket 207). Nothing starts until you approve the run. The command returns when the draft is done or failed.
+    public func runShape(plot: String, draft: RunDraft) async throws -> RunResult {
+        var args = ["run", "shape", "--title", draft.title, "--max-tries", String(draft.maxTries)]
+        if draft.split {
+            args.append("--split")
+        } else if let repo = draft.repo {
+            args += ["--repo", repo]
+        }
+        if let base = draft.base { args += ["--base", base] }
+        if let link = draft.link { args += ["--link", link] }
+        if let ticket = draft.ticket { args += ["--ticket", ticket] }
+        args += Self.modelArgs(model: draft.model, effort: draft.effort)
+        return try await read(args, positionals: [plot])
+    }
+
+    /// `loam run redraft <run>`: Claude drafts the run again, with your change to the last draft.
+    public func runRedraft(_ id: String, change: String) async throws -> RunResult {
+        try await read(["run", "redraft", "--change", change], positionals: [id])
+    }
+
+    /// `loam run approve <run>`: starts a run in Shaping with its draft and your edits. A nil goal or nil checks
+    /// keep the draft, and empty checks remove the draft's. `answers` maps the index of an assumption, from 0, to what you want instead.
+    public func runApprove(_ id: String, goal: String? = nil, checks: [RunCheck]? = nil, answers: [Int: String] = [:],
+                           approveSetup: Bool = false) async throws -> RunStartResult {
+        var args = ["run", "approve"]
+        if let goal { args += ["--goal", goal] }
+        if checks?.isEmpty == true { args.append("--no-checks") }
+        for check in checks ?? [] { args += ["--check", "\(check.name)=\(check.command)"] }
+        for (index, answer) in answers.sorted(by: { $0.key < $1.key }) { args += ["--answer", "\(index + 1)=\(answer)"] }
+        if approveSetup { args.append("--approve-setup") }
+        return try await read(args, positionals: [id])
+    }
+
+    /// `loam recurring list [<plot>]`: the recurring runs of a plot, or of every plot (ticket 208).
+    public func recurringList(plot: String? = nil) async throws -> [Recurring] {
+        let list: RecurringList = try await read(["recurring", "list"], positionals: plot.map { [$0] } ?? [])
+        return list.recurring
+    }
+
+    /// `loam recurring add <plot>`: a run that starts on a timetable.
+    public func recurringAdd(plot: String, draft: RecurringDraft) async throws -> Recurring {
+        var args = ["recurring", "add", "--title", draft.title, "--prompt", draft.prompt, "--kind", draft.kind.rawValue,
+                    "--days", draft.days.joined(separator: ","), "--at", draft.at, "--if-asleep", draft.ifAsleep.rawValue]
+        let precheck = draft.precheck.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !precheck.isEmpty { args += ["--precheck", precheck] }
+        args += Self.modelArgs(model: draft.model, effort: draft.effort)
+        if draft.approveSetup { args.append("--approve-setup") }
+        let one: RecurringOne = try await read(args, positionals: [plot])
+        return one.recurring
+    }
+
+    /// `loam recurring rm <recurring>`. Its runs stay.
+    public func recurringRemove(_ id: String) async throws -> Recurring {
+        let one: RecurringOne = try await read(["recurring", "rm"], positionals: [id])
+        return one.recurring
+    }
+
+    /// `loam recurring run <recurring>`: starts it now, with its precheck, as a tick does.
+    public func recurringRun(_ id: String) async throws -> RecurringResult {
+        try await read(["recurring", "run"], positionals: [id])
+    }
+
+    /// `loam run defaults <plot>`: the model and the effort that a run of the plot gets when it names none.
+    public func runDefaults(plot: String) async throws -> RunDefaults {
+        let one: RunDefaultsOne = try await read(["run", "defaults"], positionals: [plot])
+        return one.defaults
+    }
+
+    /// `loam run defaults <plot> --model <model> --effort <level>`. An empty value clears it.
+    public func setRunDefaults(plot: String, model: String, effort: String) async throws -> RunDefaults {
+        let one: RunDefaultsOne = try await read(["run", "defaults", "--model", model, "--effort", effort], positionals: [plot])
+        return one.defaults
+    }
+
+    /// `loam run limits`: the limits of every run.
+    public func runLimits() async throws -> RunLimits {
+        let one: RunLimitsOne = try await read(["run", "limits"])
+        return one.limits
+    }
+
+    /// `loam run limits --at-a-time <n> --max-turns <n> --hold-at <percent>`: sets the limits of every run.
+    public func setRunLimits(_ limits: RunLimits) async throws -> RunLimits {
+        let one: RunLimitsOne = try await read(["run", "limits", "--at-a-time", String(limits.atATime),
+                                                "--max-turns", String(limits.maxTurns), "--hold-at", String(limits.holdAt)])
+        return one.limits
+    }
+
+    /// `loam usage`: the last usage that Claude Code reported. With `refresh`, `loam usage --refresh` asks Claude
+    /// Code now, with a small `claude -p` call. Do not refresh each time the change feed wakes the app: a refresh
+    /// writes the store.
+    public func usage(refresh: Bool = false) async throws -> Usage {
+        let one: UsageOne = try await read(refresh ? ["usage", "--refresh"] : ["usage"])
+        return one.usage
+    }
+
+    /// `loam rule list [<plot>]`: the rules of the plot, or of every plot, oldest first.
+    public func ruleList(plot: String? = nil) async throws -> [Rule] {
+        let list: RuleList = try await read(["rule", "list"], positionals: plot.map { [$0] } ?? [])
+        return list.rules
+    }
+
+    /// `loam rule add <plot>`: a check that every run of the plot must pass. `note` is the note that it came from.
+    public func ruleAdd(plot: String, name: String, command: String, note: String = "") async throws -> Rule {
+        var args = ["rule", "add", "--name", name, "--command", command]
+        if !note.isEmpty { args += ["--note", note] }
+        let one: RuleOne = try await read(args, positionals: [plot])
+        return one.rule
+    }
+
+    /// `loam rule rm <rule>`. The gate stops running it.
+    public func ruleRemove(_ id: String) async throws -> Rule {
+        let one: RuleOne = try await read(["rule", "rm"], positionals: [id])
+        return one.rule
+    }
+
+    /// `loam tick`: starts the recurring runs that are due, then ships runs as `loam run tick` does.
+    public func tick() async throws -> TickResult {
+        try await read(["tick"])
+    }
+
+    /// `loam tick status`, or with `installed`, `loam tick install` or `uninstall`: the launchd agent that runs
+    /// `loam tick` while the app is closed.
+    public func tickStatus(set installed: Bool? = nil) async throws -> TickStatus {
+        switch installed {
+        case nil: try await read(["tick", "status"])
+        case true?: try await read(["tick", "install"])
+        case false?: try await read(["tick", "uninstall"])
+        }
+    }
+
+    /// `loam intake list <plot>`: the open issues and map tickets of the plot.
+    public func intake(plot: String) async throws -> IntakeList {
+        try await read(["intake", "list"], positionals: [plot])
+    }
+
+    /// `loam linear status`: whether a Linear API key is stored, and its person.
+    public func linearStatus() async throws -> LinearStatus {
+        try await read(["linear", "status"])
+    }
+
+    /// `loam linear key set`: checks the key with Linear, then stores it in the Keychain. The key goes on stdin, so
+    /// it is never in the arguments of a process.
+    public func linearSetKey(_ key: String) async throws -> LinearStatus {
+        try decode(await run(["linear", "key", "set", "--json"], stdin: key + "\n"))
+    }
+
+    /// `loam linear key rm`: removes the key from the Keychain.
+    public func linearRemoveKey() async throws -> LinearStatus {
+        try await read(["linear", "key", "rm"])
+    }
+
+    /// `loam linear updates`: the switches for the updates that Loam makes to Linear.
+    public func linearUpdates() async throws -> LinearUpdates {
+        let one: LinearUpdatesOne = try await read(["linear", "updates"])
+        return one.updates
+    }
+
+    /// `loam linear updates --<switch> on|off`: sets each switch that is not nil, and leaves the others.
+    public func setLinearUpdates(inProgress: Bool? = nil, attachPR: Bool? = nil, done: Bool? = nil,
+                                 walkthroughComment: Bool? = nil) async throws -> LinearUpdates {
+        var args = ["linear", "updates"]
+        for (flag, value) in [("--in-progress", inProgress), ("--attach-pr", attachPR), ("--done", done),
+                              ("--walkthrough", walkthroughComment)] {
+            if let value { args += [flag, value ? "on" : "off"] }
+        }
+        let one: LinearUpdatesOne = try await read(args)
+        return one.updates
+    }
+
+    /// `loam run stop <run>`: stops the background session of a run.
+    public func runStop(_ id: String) async throws -> RunResult {
+        try await read(["run", "stop"], positionals: [id])
+    }
+
+    /// `loam run diff`: the work that a run committed (ticket 207).
+    public func runDiff(_ id: String) async throws -> RunDiff {
+        try await read(["run", "diff"], positionals: [id])
+    }
+
+    /// `loam run send-back`: resumes the session of a run with your notes. A note is `<file>:<line>: <text>`, or
+    /// text alone.
+    public func runSendBack(_ id: String, notes: [String]) async throws -> RunResult {
+        try await read(["run", "send-back"] + notes.flatMap { ["--note", $0] }, positionals: [id])
+    }
+
+    /// `loam run land`: merges the PR of a run that is ready to land. `head` is the PR head that you read: the
+    /// merge throws `.notReady` when GitHub has another head. `linearDone` false leaves the Linear issue where it is.
+    /// `whereItStands` sets Where it stands of the plot to the text of the ship notes, as a change by you in the app.
+    public func runLand(_ id: String, head: String? = nil, keepWorktree: Bool = false, linearDone: Bool = true,
+                        whereItStands: Bool = false, openPanes: [String] = []) async throws -> RunLandResult {
+        var args = ["run", "land"]
+        if let head { args += ["--head", head] }
+        if keepWorktree { args.append("--keep-worktree") }
+        if !linearDone { args.append("--no-linear-done") }
+        args += openPanes.flatMap { ["--open-pane", $0] }
+        if whereItStands { return try await write(args + ["--where-it-stands"], positionals: [id]) }
+        return try await read(args, positionals: [id])
+    }
+
+    /// `loam run tick`: ships the runs whose checks passed. It pushes, opens the PR, and reads CI.
+    public func runTick() async throws -> RunTickResult {
+        try await read(["run", "tick"])
+    }
+
     private func read<T: Decodable>(_ args: [String], positionals: [String] = []) async throws -> T {
         try decode(await run(args + ["--json"] + Self.afterFlags(positionals), stdin: nil))
     }

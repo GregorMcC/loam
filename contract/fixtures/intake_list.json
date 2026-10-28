@@ -1,0 +1,130 @@
+{
+  "items": [
+    {
+      "assigned_to_me": true,
+      "branch": "ada/eng-523-plot-panel-drag",
+      "created_at": "2026-01-01T00:00:00Z",
+      "in_cycle": true,
+      "key": "ENG-523",
+      "labels": [
+        "Feature"
+      ],
+      "priority": "High",
+      "repo": "",
+      "run_id": "",
+      "source": "linear",
+      "status": "Todo",
+      "text": "A link in the plot panel moves to a new place when you drag it.",
+      "title": "Plot panel: drag a link to reorder it",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "url": "https://linear.app/acme/issue/ENG-523/plot-panel-drag"
+    },
+    {
+      "assigned_to_me": false,
+      "branch": "ada/eng-525-settings",
+      "created_at": "2026-01-01T00:00:00Z",
+      "in_cycle": false,
+      "key": "ENG-525",
+      "labels": [],
+      "priority": "",
+      "repo": "",
+      "run_id": "",
+      "source": "linear",
+      "status": "Backlog",
+      "text": "",
+      "title": "Settings: choose the worktree folder",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "url": "https://linear.app/acme/issue/ENG-525/settings"
+    },
+    {
+      "assigned_to_me": false,
+      "branch": "",
+      "created_at": "2026-01-01T00:00:00Z",
+      "in_cycle": false,
+      "key": "#61",
+      "labels": [
+        "feature"
+      ],
+      "priority": "",
+      "repo": "repoaaaaag",
+      "run_id": "",
+      "source": "github",
+      "status": "Open",
+      "text": "",
+      "title": "Show the plan on the run page",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "url": "https://github.com/example/widgets/issues/61"
+    },
+    {
+      "assigned_to_me": true,
+      "branch": "",
+      "created_at": "2026-01-01T00:00:00Z",
+      "in_cycle": false,
+      "key": "#57",
+      "labels": [
+        "bug"
+      ],
+      "priority": "",
+      "repo": "repoaaaaag",
+      "run_id": "runraaaaab",
+      "source": "github",
+      "status": "Open",
+      "text": "The form overflows at 320 pixels.",
+      "title": "The login form breaks on phones",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "url": "https://github.com/example/widgets/issues/57"
+    },
+    {
+      "assigned_to_me": false,
+      "branch": "",
+      "created_at": "2026-01-01T00:00:00Z",
+      "in_cycle": false,
+      "key": "map 12",
+      "labels": [],
+      "priority": "",
+      "repo": "",
+      "run_id": "",
+      "source": "map",
+      "status": "Open",
+      "text": "",
+      "title": "Run page: show the plan",
+      "updated_at": "",
+      "url": "/tmp/loam-contract/build/issues/12-run-page-plan.md"
+    },
+    {
+      "assigned_to_me": false,
+      "branch": "",
+      "created_at": "2026-01-01T00:00:00Z",
+      "in_cycle": false,
+      "key": "map 13",
+      "labels": [],
+      "priority": "",
+      "repo": "",
+      "run_id": "",
+      "source": "map",
+      "status": "Blocked by 12",
+      "text": "",
+      "title": "Run page: show the diff",
+      "updated_at": "",
+      "url": "/tmp/loam-contract/build/issues/13-run-page-diff.md"
+    }
+  ],
+  "plot_id": "plotaaaaae",
+  "sources": [
+    {
+      "error": "",
+      "kind": "linear",
+      "label": "ENG team"
+    },
+    {
+      "error": "",
+      "kind": "github",
+      "label": "example/widgets"
+    },
+    {
+      "error": "",
+      "kind": "map",
+      "label": "Build map"
+    }
+  ]
+}

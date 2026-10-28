@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam linear updates --json",
+  "description": "The switches for the updates that Loam makes to Linear, after the command applied any flag.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "updates"
+  ],
+  "properties": {
+    "updates": {
+      "$ref": "defs.json#/$defs/linearUpdates"
+    }
+  }
+}

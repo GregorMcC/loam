@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam run events --json",
+  "description": "The events of every run of every plot, or of the runs of one plot, newest first. At most 200. It holds only the events after --since when that is given.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["events"],
+  "properties": {
+    "events": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["run_id", "plot_id", "run_title", "at", "kind", "detail"],
+        "properties": {
+          "run_id": { "$ref": "defs.json#/$defs/id" },
+          "plot_id": { "$ref": "defs.json#/$defs/id" },
+          "run_title": { "description": "The title of the run.", "type": "string" },
+          "at": { "$ref": "defs.json#/$defs/time" },
+          "kind": { "$ref": "defs.json#/$defs/runEvent/properties/kind" },
+          "detail": { "type": "string" }
+        }
+      }
+    }
+  }
+}

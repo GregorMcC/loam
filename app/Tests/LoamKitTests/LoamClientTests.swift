@@ -132,6 +132,26 @@ struct FakeLoam {
         #expect(fake.args() == ["worktree list plotaaaaab --json", "worktree list --json"])
     }
 
+    /// The Today screen reads the events of every run, or of one plot after a time.
+    @Test func runEventsAreAReadWithOptionalFilters() async throws {
+        let fake = try FakeLoam([("run_events", 0), ("run_events_plot_since", 0)])
+        let all = try await fake.client().runEvents()
+        #expect(!all.events.isEmpty)
+        let some = try await fake.client().runEvents(plot: "plotaaaaae", since: "2026-01-01T00:00:00Z")
+        #expect(some.events.first?.plotID == "plotaaaaae")
+        #expect(fake.args() == ["run events --json", "run events --plot plotaaaaae --since 2026-01-01T00:00:00Z --json"])
+    }
+
+    /// The Intake screen reads the text, branch, time, cycle, and assignee of each item.
+    @Test func intakeItemsCarryTheNewFields() async throws {
+        let fake = try FakeLoam([("intake_list", 0)])
+        let list = try await fake.client().intake(plot: "Runs")
+        let linear = try #require(list.items.first { $0.source == "linear" })
+        #expect(!linear.text.isEmpty && !linear.branch.isEmpty && !linear.createdAt.isEmpty)
+        #expect(list.items.contains { $0.inCycle && $0.assignedToMe })
+        #expect(fake.args() == ["intake list --json -- Runs"])
+    }
+
     @Test func changesSinceIsARead() async throws {
         let fake = try FakeLoam([("changes_since", 0)])
         let changes = try await fake.client().changes(since: 7)
@@ -192,6 +212,34 @@ struct FakeLoam {
                 #expect(matches(e), "exit \(code) gave \(e)")
             }
         }
+    }
+
+    /// A land can leave the Linear issue where it is, and can set Where it stands from the ship notes. That write is
+    /// a change by you in the app.
+    @Test func runLandPassesItsFlags() async throws {
+        let fake = try FakeLoam([("run_land", 0), ("run_land", 0)])
+        let client = fake.client()
+        let land = try await client.runLand("runraaaaab", linearDone: false, whereItStands: true, openPanes: ["/p"])
+        #expect(land.run.state == .landed && land.run.notes != nil)
+        _ = try await client.runLand("runraaaaab", head: "abc", keepWorktree: true)
+        #expect(fake.args() == [
+            "run land --no-linear-done --open-pane /p --where-it-stands --json --actor app -- runraaaaab",
+            "run land --head abc --keep-worktree --json -- runraaaaab",
+        ])
+    }
+
+    /// The switches for the updates to Linear: a read, and a set that names only the switches it changes.
+    @Test func linearUpdatesReadAndSetTheSwitches() async throws {
+        let fake = try FakeLoam([("linear_updates", 0), ("linear_updates_set", 0)])
+        let client = fake.client()
+        let read = try await client.linearUpdates()
+        #expect(read == LinearUpdates(inProgress: true, attachPR: true, done: true, walkthroughComment: false))
+        let set = try await client.setLinearUpdates(done: false, walkthroughComment: true)
+        #expect(!set.done && set.walkthroughComment && set.inProgress && set.attachPR)
+        #expect(fake.args() == [
+            "linear updates --json",
+            "linear updates --done off --walkthrough on --json",
+        ])
     }
 
     @Test func worktreeLandRerunAndUpdatePassTheirFlags() async throws {
@@ -317,6 +365,26 @@ struct FakeLoam {
         let check = try await fake.client().setupCheck()
         #expect(check.needsBanner)
         #expect(fake.args() == ["setup --check --json"])
+    }
+
+    /// The limits of every run: a read, and a write that passes each limit.
+    @Test func runLimitsReadAndSet() async throws {
+        let fake = try FakeLoam([("run_limits_get", 0), ("run_limits_set", 0)])
+        let client = fake.client()
+        #expect(try await client.runLimits() == RunLimits(atATime: 3, maxTurns: 40, holdAt: 80))
+        let set = try await client.setRunLimits(RunLimits(atATime: 2, maxTurns: 30, holdAt: 90))
+        #expect(set == RunLimits(atATime: 2, maxTurns: 30, holdAt: 90))
+        #expect(fake.args() == ["run limits --json", "run limits --at-a-time 2 --max-turns 30 --hold-at 90 --json"])
+    }
+
+    /// The usage is a read. Before the first report, its windows and its time are nil.
+    @Test func usageReadsTheLastReportOrRefreshes() async throws {
+        let fake = try FakeLoam([("usage_none", 0), ("usage_refresh", 0)])
+        let none = try await fake.client().usage()
+        #expect(none.fiveHour == nil && none.sevenDay == nil && none.readAt == nil)
+        let fresh = try await fake.client().usage(refresh: true)
+        #expect(fresh.fiveHour?.utilization == 0.18 && fresh.sevenDay?.utilization == 0.41 && fresh.readAt != nil)
+        #expect(fake.args() == ["usage --json", "usage --refresh --json"])
     }
 
     @Test func loamHomeIsPassedToTheProcess() async throws {

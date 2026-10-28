@@ -1,6 +1,7 @@
 // Command fakeclaude stands in for `claude` in tests. It writes its argv, its
 // environment, and its working folder as JSON to the file named in
-// LOAM_FAKE_CLAUDE_OUT. It then exits 0.
+// LOAM_FAKE_CLAUDE_OUT, and adds its argv as one JSON line to that name with
+// ".log" after it, so a test sees each call. It then exits 0.
 //
 // With LOAM_FAKE_CLAUDE_HOOKS=1 it acts as a session instead of exiting. It
 // runs the hooks of the --settings file, as Claude Code does, and reads one
@@ -38,6 +39,10 @@
 // folder to a terminal title. A session in a folder named there sets that
 // title at its start, as Claude Code sets the topic of a session.
 //
+// With LOAM_FAKE_CLAUDE_PRINT set to a file, a call with -p (print mode)
+// prints the text of that file to stdout, as claude -p --output-format json
+// prints its result.
+//
 // With LOAM_FAKE_CLAUDE_HUP_WAIT set to a duration, a SIGHUP and the EOF of
 // stdin do not end the process at once. It waits that long, then exits 0, as
 // Claude Code takes time to end a session. A hang-up gives both: the pane's
@@ -54,10 +59,26 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
 )
+
+// appendCall adds args to the call log as one JSON line.
+func appendCall(file string, args []string) error {
+	line, err := json.Marshal(args)
+	if err != nil {
+		return err
+	}
+	f, err := os.OpenFile(file, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.Write(append(line, '\n'))
+	return err
+}
 
 func main() {
 	// First, so the invocation file shows that the SIGHUP handler is in place.
@@ -81,6 +102,19 @@ func main() {
 	if err := os.WriteFile(out, b, 0o644); err != nil {
 		fmt.Fprintln(os.Stderr, "fakeclaude:", err)
 		os.Exit(2)
+	}
+	if err := appendCall(out+".log", os.Args[1:]); err != nil {
+		fmt.Fprintln(os.Stderr, "fakeclaude:", err)
+		os.Exit(2)
+	}
+	if print := os.Getenv("LOAM_FAKE_CLAUDE_PRINT"); print != "" && slices.Contains(os.Args[1:], "-p") {
+		b, err := os.ReadFile(print)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "fakeclaude:", err)
+			os.Exit(2)
+		}
+		os.Stdout.Write(b)
+		return
 	}
 	if os.Getenv("LOAM_FAKE_CLAUDE_HOOKS") == "1" {
 		if eof := session(os.Args[1:], cwd); eof {

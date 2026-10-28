@@ -1,0 +1,9 @@
+{
+  "connected": true,
+  "error": "",
+  "viewer": {
+    "email": "ada@example.com",
+    "name": "Ada Example",
+    "organization": "Acme"
+  }
+}

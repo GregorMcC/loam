@@ -21,9 +21,16 @@
 //     ruleset, by branch. The branch stays.
 //   - "rerun_refusals": the message of GitHub for a run that GitHub does not
 //     run again, by run ID.
+//   - "issues": the open issues of the repo, as gh issue list --json prints
+//     them.
+//   - "login": the login that gh api user --jq .login prints.
 //   - "merge_refusal": the message of GitHub for a merge that it refuses, such
 //     as "Pull request is not mergeable". The PR stays open. A state file with no
 //     "merge_refusal" merges again, so a test can fail a merge and then retry it.
+//   - "logs": the log of the failed jobs of a run, as gh run view --log-failed
+//     prints it, by run ID.
+//   - "create_refusal": the message of GitHub for a gh pr create that it
+//     refuses. No PR opens.
 //
 // The fake answers these commands:
 //
@@ -31,6 +38,7 @@
 //     variables as Loam names them: h<i> is a branch in the first query, n<i>
 //     is a PR number in the second query, and number is the PR of the merge
 //     settings.
+//   - gh api user --jq .login: prints "login".
 //   - gh api repos/<owner>/<repo>/git/ref/heads/<branch>: the head of a branch.
 //   - gh api --method DELETE repos/<owner>/<repo>/git/refs/heads/<branch>:
 //     removes the branch from "refs". GitHub gives HTTP 422 in two cases: the
@@ -40,8 +48,16 @@
 //     in the queue. With --auto, the PR stays open, unless "auto_merges_clean"
 //     merges it. --match-head-commit must be the PR head.
 //   - gh pr update-branch <number>: a PR that is behind its base is clean.
+//   - gh pr view <number> --json state,number: prints the state and the number
+//     of the PR of "pulls" with that number, or fails as gh does.
+//   - gh issue list: prints "issues".
+//   - gh issue view <url>: prints the title and the body of the issue of
+//     "issues" with that URL, or fails as gh does for a missing issue.
 //   - gh run rerun <id> --failed: does nothing, or fails as "rerun_refusals"
 //     says.
+//   - gh pr create --head <branch>: adds an open PR to "pulls", with the next
+//     free number, and prints its URL. The PR keeps its "title" and its "body".
+//   - gh run view <id> --log-failed: prints the log of "logs".
 //
 // LOAM_FAKE_GH_FAIL makes each call fail as gh does, with the exit code and
 // the text that gh prints (see [failures]). "hang" waits for a minute, as a
@@ -55,6 +71,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -73,6 +90,10 @@ type state struct {
 	DeleteRefusals map[string]string          `json:"delete_refusals,omitempty"`
 	RerunRefusals  map[string]string          `json:"rerun_refusals,omitempty"`
 	MergeRefusal   string                     `json:"merge_refusal,omitempty"`
+	CreateRefusal  string                     `json:"create_refusal,omitempty"`
+	Issues         []map[string]any           `json:"issues,omitempty"`
+	Login          string                     `json:"login,omitempty"`
+	Logs           map[string]string          `json:"logs,omitempty"`
 }
 
 func main() {
@@ -113,10 +134,20 @@ func main() {
 		rest(st, args[1:])
 	case len(args) > 2 && args[0] == "pr" && args[1] == "merge":
 		merge(st, args[2:])
+	case len(args) > 2 && args[0] == "pr" && args[1] == "view":
+		view(st, args[2])
 	case len(args) > 2 && args[0] == "pr" && args[1] == "update-branch":
 		updateBranch(st, args[2])
+	case len(args) > 1 && args[0] == "issue" && args[1] == "list":
+		issues(st)
+	case len(args) > 2 && args[0] == "issue" && args[1] == "view":
+		issue(st, args[2])
 	case len(args) > 2 && args[0] == "run" && args[1] == "rerun":
 		rerun(st, args[2])
+	case len(args) > 1 && args[0] == "pr" && args[1] == "create":
+		create(st, args[2:])
+	case len(args) > 2 && args[0] == "run" && args[1] == "view":
+		fmt.Print(st.Logs[args[2]])
 	default:
 		fail(2, "fakegh: unknown command "+strings.Join(args, " "))
 	}
@@ -186,6 +217,10 @@ func query(st *state, vars map[string]any) {
 
 // rest answers gh api for the ref of a branch: a read, or a delete.
 func rest(st *state, args []string) {
+	if slices.Contains(args, "user") {
+		fmt.Println(st.Login)
+		return
+	}
 	method, path := "GET", ""
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -285,12 +320,94 @@ func merge(st *state, args []string) {
 	st.write()
 }
 
+// view prints the state and the number of a PR, as gh pr view --json
+// state,number does.
+func view(st *state, number string) {
+	p := st.pull(number)
+	b, err := json.Marshal(map[string]any{"number": p["number"], "state": p["state"]})
+	if err != nil {
+		fail(2, "fakegh: "+err.Error())
+	}
+	fmt.Println(string(b))
+}
+
 // rerun runs the failed jobs of a run again, as gh run rerun --failed does.
 // gh prints the HTTP error of GitHub with the URL of the request.
 func rerun(st *state, id string) {
 	if msg, ok := st.RerunRefusals[id]; ok {
 		fail(1, fmt.Sprintf("failed to rerun: HTTP 403: %s (https://api.github.com/repos/example/widgets/actions/runs/%s/rerun-failed-jobs)", msg, id))
 	}
+}
+
+// create opens a PR, as gh pr create does: it prints the URL of the PR.
+func create(st *state, args []string) {
+	var head, base, title, body string
+	for i := 0; i+1 < len(args); i++ {
+		switch args[i] {
+		case "--body-file":
+			if args[i+1] == "-" {
+				b, _ := io.ReadAll(os.Stdin)
+				body = string(b)
+			}
+		case "--head":
+			head = args[i+1]
+		case "--base":
+			base = args[i+1]
+		case "--title":
+			title = args[i+1]
+		}
+	}
+	if head == "" {
+		fail(1, "fakegh: pr create needs --head")
+	}
+	if st.CreateRefusal != "" {
+		fail(1, "pull request create failed: GraphQL: "+st.CreateRefusal+" (createPullRequest)")
+	}
+	number := 1
+	for _, p := range st.Pulls {
+		if n, ok := p["number"].(float64); ok && int(n) >= number {
+			number = int(n) + 1
+		}
+	}
+	url := fmt.Sprintf("https://github.com/example/widgets/pull/%d", number)
+	st.Pulls = append(st.Pulls, map[string]any{
+		"number": number, "title": title, "body": body, "url": url, "state": "OPEN", "headRefName": head,
+		"baseRefName": base, "headRefOid": st.head(head), "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN",
+	})
+	if !slices.Contains(st.Refs, head) {
+		st.Refs = append(st.Refs, head)
+	}
+	st.write()
+	fmt.Println(url)
+}
+
+// issues prints the open issues, as gh issue list --json does.
+func issues(st *state) {
+	list := st.Issues
+	if list == nil {
+		list = []map[string]any{}
+	}
+	b, err := json.Marshal(list)
+	if err != nil {
+		fail(2, "fakegh: "+err.Error())
+	}
+	fmt.Println(string(b))
+}
+
+// issue prints the title and the body of one issue, as gh issue view --json
+// title,body does.
+func issue(st *state, url string) {
+	for _, i := range st.Issues {
+		if i["url"] == url {
+			b, err := json.Marshal(map[string]any{"title": i["title"], "body": i["body"]})
+			if err != nil {
+				fail(2, "fakegh: "+err.Error())
+			}
+			fmt.Println(string(b))
+			return
+		}
+	}
+	fail(1, "GraphQL: Could not resolve to an issue or pull request with the number of "+path.Base(url)+". (repository.issue)")
 }
 
 // updateBranch brings a PR up to date with its base, as gh pr update-branch does.

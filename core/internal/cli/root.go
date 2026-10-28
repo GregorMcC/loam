@@ -5,6 +5,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -105,6 +106,10 @@ func execute(root *cobra.Command, args []string, out, errOut io.Writer) int {
 	err := root.Execute()
 	if err == nil {
 		return ExitOK
+	}
+	var code exitCode
+	if errors.As(err, &code) {
+		return int(code)
 	}
 	// A bad flag fails before cobra parses --json, so look at the args too.
 	v, _ := root.PersistentFlags().GetBool("json")

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam rule add --json",
+  "description": "The rule that the command added. loam rule rm --json prints the one that it removed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "rule"
+  ],
+  "properties": {
+    "rule": {
+      "$ref": "defs.json#/$defs/rule"
+    }
+  }
+}

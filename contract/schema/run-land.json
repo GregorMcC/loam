@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam run land --json",
+  "description": "The run after the land, what the land of its worktree did, and what went wrong on the way. With --dry-run, the run is as it was, and land is the plan.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run",
+    "land",
+    "warnings"
+  ],
+  "properties": {
+    "run": {
+      "$ref": "defs.json#/$defs/run"
+    },
+    "land": {
+      "$ref": "worktree-land.json"
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

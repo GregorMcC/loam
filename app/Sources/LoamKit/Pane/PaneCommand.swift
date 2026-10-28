@@ -43,6 +43,11 @@ public enum PaneCommand {
         return "/bin/zsh"
     }
 
+    /// `claude attach <id>` in a login shell: opens the background session of a run (ticket 203).
+    public static func attach(shell: String, sessionID: String) -> String {
+        loginShell(shell, running: ["claude", "attach", sessionID])
+    }
+
     private static func loginShell(_ shell: String, running args: [String]) -> String {
         let inner = "exec " + args.map(quote).joined(separator: " ")
         return [shell, "-lc", inner].map(quote).joined(separator: " ")

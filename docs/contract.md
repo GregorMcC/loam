@@ -442,7 +442,8 @@ The land result:
     { "name": "unpushed_commits", "state": "none", "blocks": false }
   ],
   "ready": true, "dry_run": false, "merged": true, "merge_later": false,
-  "remote_branch_deleted": true, "worktree_removed": true, "branch_deleted": true
+  "remote_branch_deleted": true, "worktree_removed": true, "branch_deleted": true,
+  "landed_runs": [], "run_warnings": []
 }
 ```
 
@@ -452,6 +453,7 @@ The land result:
 - `ready` is true when no check blocks. `merged` is true when GitHub says that the PR is merged. For a merged PR, `methods` and `default_method` are empty, and `checks` has `work_after_pr` only. `merge_later` is true when GitHub merges later, and when Loam cannot see the merge yet (`merge_note` says why).
 - `worktree` has the `land` that the worktree records after the land. It has no `land` after the tidy up of a merge, and after a removal. When the tidy up waits for open panes (step 6), it has the `land` that the land recorded.
 - `land_note` says that the worktree recorded a `land` of another PR (see below).
+- `landed_runs` are the runs of the worktree that the land landed after the merge, and `run_warnings` says what went wrong on the way. Both are always there. See [Land](#land) under Runs.
 - The notes `merge_note`, `remote_branch_note`, `worktree_note`, and `branch_note` say why a step did not happen. Each is left out when it does not apply.
 
 The checks of an open PR, in this order. A merged PR has the check `work_after_pr` only.
@@ -508,6 +510,322 @@ When the refresh after the merge fails, or the PR does not show a merge that Git
 `skipped_checks` lists the failed checks that are not jobs of GitHub Actions. `runs` and `skipped_checks` are `[]` when none. The PR must be open, else the command exits with code 1.
 
 `update` runs `gh pr update-branch`, so GitHub adds a merge commit of the base branch to the PR. Then it fetches the branch from `origin`, so the local repo has the new PR head, and the stage rule can see that the worktree is in the PR. It does not change the branch of the worktree. `fetched` is false when the fetch failed, and `fetch_note` says why. GitHub still has the update. The PR must be open, else the command exits with code 1.
+
+### Runs
+
+A run is one goal that a background Claude Code session (`claude --bg`) works on in a worktree of a plot, until its Done when checks pass and CI passes on its PR. Runs are not in the change log. Each write of a run rewrites `loam.changed`.
+
+```json
+{
+  "id": "runraaaaab", "plot_id": "k3v9q2mxa7", "worktree_id": "wtreeaaaab", "folder": "/abs/path/of/worktree",
+  "title": "Fix the login form", "goal": "The login form works on phones.",
+  "done_when": [{ "name": "Go tests", "command": "go test ./..." }],
+  "state": "running", "tries": 1, "max_tries": 3, "turns": 2,
+  "source": { "kind": "github", "key": "#57", "url": "https://github.com/example/widgets/issues/57" },
+  "pr": { "number": 147, "url": "https://github.com/example/widgets/pull/147" },
+  "session_id": "c57ef956-3136-4e86-bfde-da8facfe0523", "note": "Try 1 failed: Go tests", "group_id": "", "notes": null,
+  "created_at": "2026-10-02T09:00:00Z", "updated_at": "2026-10-02T09:04:00Z"
+}
+```
+
+- `state` is one of these:
+  - `shaping`: it waits for you to approve its goal and checks.
+  - `queued`: it waits for a slot. The run limits or the week's usage hold its session, and `note` says why. A tick starts it when a slot is free. See [Limits, the queue, and usage](#limits-the-queue-and-usage).
+  - `starting`: Loam is starting its session.
+  - `running`: its session works, or the gate or CI sent failures back.
+  - `shipping`: every check passed, and the repo is on GitHub. `loam run tick` pushes the branch, opens the PR, and reads CI.
+  - `ready`: it waits for you to land it. Every check passed, and CI passed on its PR, or it has no PR. `note` says which.
+  - `stopped`: it used all its tries, or a failure stopped it.
+  - `limited`: Claude Code hit a usage limit (Stopped by a limit). It counts no try.
+  - `start_unknown`: `claude --bg` did not return in time. The session may exist.
+  - `landed`, `cancelled` (stopped by you), and `skipped` (a recurring run found no work).
+- `shaping`, `stopped`, and `limited` need you.
+- `tries` counts the failed gates and the CI failures. `max_tries` is 1 to 8, because Claude Code lets a session stop after 8 blocked stops in a row.
+- `turns` counts the turns that the session ended: the Stop hook adds 1 for each Stop, in any state. It is always there, and it is 0 before the first Stop.
+- `session_id` is empty until the SessionStart hook of the session records it. `claude --bg` picks its own session ID. `claude attach`, `logs`, and `stop` take its first 8 characters.
+- `pr` is the PR that Loam opened for the run, or the open PR of its branch that Loam found. It is left out before the run ships.
+- `source` is the issue of the worktree's link, or the map ticket that `--ticket` names (`kind` `map`, `key` such as `map 135`, `url` the path of the ticket file). It is left out when there is none.
+- `group_id` links the runs that one split shape made for one issue, one in each repo (see Shape). It is the ID of the first run of the group. It is always there, and it is empty for a run alone. `run list` and `run status` show it.
+- `notes` are the ship notes that Claude wrote when Loam opened the PR of the run (see Ship). It is always there. It is null before Loam opens the PR, and when Claude wrote no notes.
+
+```json
+{
+  "walkthrough": "The plot panel moves a link by drag. The order goes through the change log, so undo puts it back.",
+  "files": [{ "path": "core/internal/store/order.go", "role": "The rule" }, { "path": "core/internal/store/order_test.go", "role": "Tests" }],
+  "risk": { "level": "low", "reasons": ["Two files, both in the plan.", "No store change."] },
+  "where_it_stands": "Links move by drag. Next: drag a repo.",
+  "written_at": "2026-10-02T09:04:00Z"
+}
+```
+
+- `walkthrough` says what changed and why, in 2 to 4 plain sentences.
+- `files` holds each changed file once, in the order that a reviewer should read them. `role` is 1 to 4 words.
+- `risk.level` is `low`, `medium`, or `high`. `reasons` are short sentences: Claude's first, then the facts that Loam adds.
+- `where_it_stands` is a new text for the Where it stands of the plot: the text that the plot had, moved on by this change. `run land --where-it-stands` sets it.
+
+The gate is the Stop hook of the session. Each time the session ends a turn, Loam runs each check with `sh -c` in the folder, then checks that `git status --porcelain` is empty ("Work committed"). When all pass, the run is `shipping` when the origin of its repo is on GitHub, else `ready`. When one fails, the try counts. With tries left, the hook exits 2 and the failures go back to the session as its next prompt. With no tries left, the session stops and the run is `stopped`.
+
+| Command | Output |
+| :- | :- |
+| `loam run start <plot> --title <text> [--goal <text>] [--check <name>=<command>]... [--worktree <name>] [--repo <repo>] [--base <branch>] [--link <link-id or URL> \| --ticket <file>] [--max-tries <n>] [--model <model>] [--effort <level>] [--approve-setup]` | `{ "run": {...}, "worktree": {...} }` |
+| `loam run list [<plot>]` | An array of runs, newest first. It is `[]` when none exists. |
+| `loam run events [--since <time>] [--plot <plot>]` | `{ "events": [{ "run_id": "...", "plot_id": "...", "run_title": "...", "at": "...", "kind": "state", "detail": "running" }] }` |
+| `loam run status <run>` | `{ "run": {...}, "events": [{ "id": 1, "run_id": "...", "at": "...", "kind": "state", "detail": "running" }] }`. `kind` is `state`, `try`, `check`, `linear`, `ship`, `ci`, `review`, `note`, `land`, `shape`, or `draft`. |
+| `loam run stop <run>` | `{ "run": {...} }`. The run is `cancelled`. A run that has ended stays as it is. A `queued` run is cancelled too. |
+| `loam run tick` | `{ "runs": [...], "warnings": ["..."] }`. `runs` are the runs that the tick moved or started. Both are `[]` when none. |
+
+`run events` lists the events of every run of every plot, or of the runs of one plot with `--plot`, newest first, at most 200. `--since` takes an RFC 3339 time and lists only the events after it. A time that does not parse gives exit code 2. `run_title` and `plot_id` are those of the run. `kind` is as in `run status`. The Today screen shows the list as "While you were away".
+
+`run start` uses the worktree that `--worktree` names, or makes it. With no `--worktree`, it makes a worktree with a name from the key of the link or the ticket, and the title. With no `--repo`, a new worktree is in the repo of the plot whose origin the `--link` is a GitHub issue of, else in the main repo. `--repo` always wins. `run shape` picks its repo in the same way. A run has `--link` or `--ticket`, not both (exit code 2). It refuses, with exit code 1, a folder that Claude Code does not trust: a background session cannot show the trust prompt. In git, Claude Code trusts a worktree when it trusts the main checkout of the repo. A setup command that you have not approved gives exit code 2 (`invalid`); `--approve-setup` approves it. When `claude --bg` fails, the run is `stopped` with the output in `note`, and the command exits 0. When no slot is free, the run is `queued` with the reason in `note`, and the command exits 0 (see [Limits, the queue, and usage](#limits-the-queue-and-usage)).
+
+#### Ship
+
+`loam run tick` moves on each run in `shipping`. A tick that waits on GitHub changes nothing, so the app runs it often while a run ships. Only one tick runs at a time: a second one prints the empty result at once. For each run, the tick does the first step that applies:
+
+1. The run's worktree is gone, and the run has no `pr`, or the origin is not on GitHub: the run is `ready`, and `note` says why. A run that has a `pr` and has lost its worktree (for example after `loam worktree land` removed it) reads its PR by number with `gh pr view <number> --repo <owner/name> --json state,number`. Merged: the run is `landed`, as in step 2. Closed: the run is `stopped`. Open: the run is `ready`, and `note` says "The worktree is gone. Merge #12 on GitHub, or cancel the run". gh missing or signed out makes it `ready` too, with the error in `note`. The worktree is gone only when the store has no record of it: a store that cannot read the record, such as a busy store, is a warning, and the run waits for the next tick. `run land` exits with that error.
+2. GitHub has the run's PR merged: the run is `landed`, with a `land` event, and its Linear issue moves to Done. Closed: the run is `stopped`.
+3. An open PR of the branch that is not the run's PR: it becomes the run's PR (event `ship`, "Found #12, the open PR of the branch").
+4. The head of the worktree is not the PR head: the tick runs `git push -u origin <branch>` when `origin/<branch>` is not the head. A failed push stops the run with the output in `note`. With no PR, it runs `gh pr create` with the title of the run, the base of the worktree, and a body with the goal, the Done when checks, and the issue (`Closes #57` for a GitHub issue, the key, such as `Linear: ENG-523`, for a Linear issue). With a PR template in the worktree, the body comes from the template instead (see below). For a run of a group, the body has one more line with the repos of the other runs of the issue, such as "The issue also has runs in example/docs." A repo on GitHub is `owner/name`, and another repo is its folder name. A cancelled run does not count. It names no local path and no Linear URL, because the repo can be public and the Linear workspace private. The events are `ship`: "Opened #12", or "Pushed the fix to #12". For a Linear issue, Loam attaches the PR to it (event `linear`), when that update to Linear is on (see Linear). A failed attach is a warning. The run gets its `notes` in the same write as its `pr`.
+5. CI on the PR head:
+   - No checks: the run waits 3 minutes after the push, then is `ready` ("No CI ran on #12").
+   - A failed check: the try counts. With tries left, the run is `running` (or `queued`, with the prompt, when no slot is free) and Loam sends the session a prompt with each failed check and the last 60 lines of its failed log (`gh run view <id> --log-failed`). Loam runs `claude stop` and then `claude --bg --resume <session ID> "<prompt>"` with no other flag, so the session wakes with its own options and hooks. The next gate that passes ships the fix to the same PR. With no tries left, the run is `stopped`.
+   - Checks that run or wait: nothing changes.
+   - All passed: the run is `ready` ("CI passed on #12: 14 of 14 checks").
+
+**Ship notes and PR template.** Before `gh pr create`, Loam runs `claude -p` in the worktree with the tools Read, Grep, and Glob only, `--output-format json`, a `--json-schema`, `--no-session-persistence`, and the model and effort of the run when it has them. The call stops after 3 minutes, and it needs a folder that Claude Code trusts. The answer has the ship notes: `walkthrough`, `files` (each `{ "path", "role" }`), `risk` (`{ "level", "reasons" }`), and `where_it_stands`. The prompt holds the Where it stands of the plot, the goal, the Done when checks (all passed), the plan of the shape when there is one, the commit messages of the branch, `git diff --stat` of the branch, and the list of changed files. It asks Claude to write plainly and to use no em dashes.
+
+Loam then checks the notes against the diff. It drops a file that the branch did not change, and adds each changed file that Claude left out, with the role "Also changed". A level that is not `low`, `medium`, or `high` is `medium`. Loam adds its own facts to the end of `risk.reasons`, not Claude:
+
+- the changed files that the plan of the shape does not name, such as "1 changed file is not in the plan: go.mod." The fact is there only when the plan names at least one changed file, by its path or its base name. A run with no plan, or a plan that names no changed file, gets no such fact;
+- a store migration in the diff: a path with a folder or file whose name holds "migrat", such as `db/migrations/0002.sql` or `app/migrate.go`, or a store schema file: `schema.prisma`, `schema.rb`, `schema.sql`, or `structure.sql`. Another file named `schema` is not one;
+- changed dependency files: `go.mod`, `go.sum`, `Package.swift`, `Package.resolved`, `package.json`, and lock files such as `yarn.lock` or `package-lock.json`.
+
+Loam also looks for a PR template in the worktree as GitHub does: `pull_request_template.md` (or `.txt`, any case) in `.github/`, in the root, or in `docs/`, else the first file, by name, of a `PULL_REQUEST_TEMPLATE/` folder in one of them. With a template, the same call also asks for `{ "title", "body" }`, and the prompt holds the template. It asks Claude to fill each section, to follow the comments of the template, and to tick a checkbox only when a check proves it. The PR title is the title that Claude gives, else the title of the run. The body is the body that Claude gives, a blank line, and the footer: the issue line (`Closes #57` or `Linear: ENG-523`), the line about the other runs of a group, and "Loam opened this PR for a run whose checks passed." With no template, the PR has the title and the body described in step 4.
+
+When `claude -p` fails, times out, or gives no walkthrough, the run has no `notes`, and a `ship` event says why: "Loam wrote no ship notes: <why>", or with a template "Loam used no PR template and wrote no ship notes: <why>". A template answer with no body keeps the body of step 4, with the event "Loam used no PR template: claude -p gave an empty body". The PR text is not part of the JSON contract. When Claude wrote the notes, Loam saves the PR text and the notes on the run before it asks gh to open the PR. When gh cannot open it, a later tick opens it with the saved text, and calls no `claude -p`, while the branch head is the same. Text that Loam wrote because Claude could not is not saved, so the next tick asks Claude again. A fix that Loam pushes after a CI failure or a send-back keeps the notes of the first push.
+
+Each CI result is a `ci` event.
+
+A tick also watches the PR of each run that is `ready` and has a `pr`. A merge on GitHub lands the run, as in step 2, and a close stops it. A run whose worktree is gone reads its PR by number, as in step 1. A run that cannot reach GitHub waits with no warning.
+
+#### Land
+
+| Command | Output |
+| :- | :- |
+| `loam run diff <run>` | `{ "base": "<commit>", "head": "<commit>", "files": [{ "path": "README.md", "status": "modified", "added": 3, "deleted": 1, "hunks": [{ "header": "@@ -1 +1,3 @@", "old_start": 1, "new_start": 1, "lines": [{ "kind": "del", "old": 1, "text": "hello" }, { "kind": "add", "new": 1, "text": "# Loam" }] }] }] }` |
+| `loam run send-back <run> --note <text>...` | `{ "run": { ... }, "rule_offer": { "note": "...", "earlier": "...", "earlier_run_id": "...", "earlier_title": "..." } }` |
+| `loam run land <run> [--head <commit>] [--keep-worktree] [--no-linear-done] [--where-it-stands] [--open-pane <folder>]... [--dry-run]` | `{ "run": { ... }, "land": { ... }, "warnings": [] }` |
+
+- `run diff` is the work that the run committed: from `base`, the commit where its branch left the base of its worktree, to `head`. `status` is `added`, `modified`, `deleted`, or `renamed`, with `old_path` for a rename. A binary file has `binary` and no hunks. A file keeps at most 3000 lines and then has `truncated`; `added` and `deleted` count every line. A line has `old`, `new`, or both: the numbers of the line before and after the change.
+- `run send-back` takes a run that is `ready` or `stopped`, and at least one note. A note is `<file>:<line>: <text>` for a line, or text alone. Loam stops the session and resumes it with the notes as its prompt, as for a CI failure, and the run is `running` ("Sent back with 2 notes", event `review`). A note uses no try. A run with no tries left gets one more (`max_tries` goes up by 1, to at most 8). The next gate that passes ships the change to the same PR. Each note is an event `note`: `<file> line <n>: <text>`, or the text alone.
+- `rule_offer` is there when a note is like a note on another run of the plot: they share at least 2 words, and at least half of all their words, when Loam leaves out short and common words. A note like the `note` of a rule of the plot gets no offer. `note` and `earlier` are the texts of the two notes, and `earlier_run_id` is the other run. The app offers to make the note a rule with `loam rule add`.
+- `run land` takes a run that is `ready` and has a `pr`. Loam checks the land first with a dry run. When the land can go on, Loam stops the session, because the land removes the worktree. A land that refuses keeps the session. Loam then lands the worktree as `loam worktree land` does, with the default merge method: `land` is the `worktree land` result. A merge makes the run `landed` ("Merged #25 with squash", event `land`), and its Linear issue moves to the first completed state (event `linear`). A run of a group moves it only after the last run of the group (see Linear). With a merge queue, the run stays `ready` ("#25 is in the merge queue of main"), and a tick lands it when GitHub merges. `--dry-run` changes nothing, and `land` is the plan.
+- A run whose worktree is gone reads its PR by number (see Ship, step 1) and calls no land. A merged PR makes the run `landed` ("#25 was merged on GitHub") and a closed PR makes it `stopped`. In both cases `land` is `null`. With `--dry-run`, `land` is `null` and `warnings` says what a land records. An open PR exits 2: Loam cannot merge a PR with no worktree.
+- `loam worktree land` also lands each run that works in the worktree and has not ended (`shipping` or `ready`), when the land merged the PR, so a land from the sidebar ends the run at once. The note is the one of `run land`. A run with a `pr` other than the merged one stays as it is. `landed_runs` holds each run that the land landed, and `run_warnings` says what went wrong on the way, such as an update to Linear that failed. Both are always there, and empty when the land landed no run. The text output adds the line "Landed the run <title>." for each run, and prints each warning on stderr. In the `land` of `run land`, both are empty: `run land` has its own `run` and `warnings`.
+- A run in another state, or with no PR, exits 2. A check that blocks the merge exits 16, and gh missing or signed out exits 17, as for `worktree land`.
+- `--keep-worktree` keeps the worktree after the merge.
+- `--no-linear-done` leaves the Linear issue where it is: this land does not move it to Done, and the `linear` event is "This land leaves ENG-523 where it is". It holds only for a land that merges now. When GitHub merges later, a run with a Linear issue gets a warning that the tick that lands the run follows the `done` switch.
+- `--where-it-stands` sets the Where it stands of the plot to `notes.where_it_stands` when the run lands, through the same store path and change log as `loam set <plot> where-it-stands` and the MCP tool `set_where_it_stands`. The actor is that of the command. A run with no `notes`, or with an empty `where_it_stands`, exits 2 before Loam merges anything. A land that does not land the run now, such as one that waits for a merge queue, sets nothing, and a warning says so. A failed write is a warning, because the merge has happened.
+
+#### Shape
+
+| Command | Output |
+| :- | :- |
+| `loam run shape <plot> --title <text> [--repo <repo> \| --split] [--base <branch>] [--link <link> \| --ticket <file>] [--max-tries <n>] [--model <model>] [--effort <level>]` | `{ "run": { ..., "state": "shaping", "shape": { "assumptions": [{ "text": "...", "answer": "" }], "plan": ["..."], "size": "...", "drafted_at": "...", "repo": "repoaaaaag", "base": "", "link": "", "model": "", "effort": "" } }, "runs": [{ ... }] }` |
+| `loam run redraft <run> [--change <text>]` | `{ "run": { ... }, "runs": [{ ... }] }` |
+| `loam run approve <run> [--goal <text>] [--check <name>=<command>]... [--no-checks] [--answer <n>=<text>]... [--approve-setup]` | `{ "run": { ... }, "worktree": { ... } }`, as for `run start` |
+
+- `run shape` records a run that is `shaping`, with the repo as its `folder` and no worktree, then has Claude draft it: `claude -p` in the repo, with the tools Read, Grep, and Glob only, `--output-format stream-json --verbose`, a `--json-schema`, and `--no-session-persistence`. The prompt holds the title and the text of the issue: the ticket file, `gh issue view`, or the Linear issue. The draft sets `goal` and `done_when`, and `shape` holds the rest (event `shape`). The command can take minutes. While Claude drafts, each step that it takes is an event `draft`, such as `Read window/frame.go`, `Searched for SaveFrame`, or the first line of its text, up to 100 steps for one draft. The app reads them to show the draft as it happens.
+- While Claude drafts, the `note` is "Claude is drafting the run". A run that Claude has not drafted yet has no `drafted_at`. A first draft that fails keeps the run `shaping` with no `drafted_at`, and the `note` says why ("Claude could not draft the run: ..."). The command exits 0.
+- `run redraft` drafts a `shaping` run again. `--change` is what you want changed: Claude gets its last draft and the change.
+- `run` is the run that the command recorded or drafted. `runs` is every run that it made, with `run` first. It is always there, and it has one run unless a split made more.
+
+`--split` is for an issue that needs changes in more than one repo of the plot. Claude reads every repo and drafts one run for each repo that the issue needs changes in.
+
+- `--split` with `--repo` exits 2. In a plot with one repo, `--split` is a normal shape.
+- `claude -p` runs in the main repo, with `--add-dir <path>` for each other repo, so that Read, Grep, and Glob can read them. Claude Code must trust every repo. An untrusted repo is a failed draft, with the folder in `note`.
+- The schema of a split draft is `{ "runs": [{ "repo": "<repo id>", "goal": "...", "checks": [...], "assumptions": [...], "plan": [...], "size": "..." }] }`, with 1 or more runs and each repo at most once. The prompt lists each repo with its ID, name, and path. It tells Claude that each run works alone in a worktree of its repo, that its checks run there, and that the runs may land in any order. So each run must be correct alone, or say in an assumption what it needs from another run.
+- The steps of the draft are `draft` events of the first run.
+- The run that the shape recorded becomes the run of the first repo of the draft: its `folder` and `shape.repo` are that repo. Each other repo gets a new `shaping` run that Claude has drafted, with the same title, `source`, `max_tries`, `link`, model, and effort. `shape.base` is kept for the main repo and is empty for another repo. Each run gets a `shape` event.
+- With 2 or more runs, every run of the split gets the same `group_id`: the ID of the first run. A draft with one run has no group.
+- A draft with a repo that the plot does not have, or with a repo twice, fails as a whole. The first run keeps the reason in `note`, and Loam makes no other run.
+- While a split has no draft, `shape.split` is `true`, so `run redraft` splits again. After the split, `shape.split` is left out. A redraft of a run of a group drafts that run alone, for its own repo.
+- You approve each run of a group with `run approve`.
+- `run approve` takes a `shaping` run that has a draft. Loam makes the worktree, as `run start` does with the `repo`, `base`, and `link` of the shape, and starts the session. `--goal` and `--check` replace the draft's, and `--no-checks` removes the draft's checks (it exits 2 with `--check`). `--answer` sets the `answer` of an assumption, by number from 1. The session prompt holds the assumptions, with your answer in place of an assumption that you changed, and the plan. A run in another state, a run with no draft, or an answer to no assumption exits 2.
+- `run stop` on a `shaping` run cancels it, with no `claude stop`.
+- The `shape` of a run that a recurring run shaped has a `brief`: the prompt of the recurring run and what its precheck printed. Claude drafts from it, as from the text of an issue.
+
+#### Model, effort, and run defaults
+
+`run start`, `run shape`, and `recurring add` take `--model <model>` and `--effort <level>`. The level is `low`, `medium`, `high`, `xhigh`, or `max`. Loam passes them to Claude Code as `--model` and `--effort`: to the session of the run, and for `run shape` also to `claude -p`, which drafts the run. `run approve` starts the session with the model and effort of the shape. An empty value passes no flag, so Claude Code uses its own setting. A level that is not in the list exits 2, and the message lists the levels.
+
+A plot can have run defaults: a model and an effort. A run, a Shape run, and a recurring run that fires use the default of the plot for the model or the effort that it leaves empty. A flag or a field that is set wins. Loam fills the value when it starts or shapes the run, so a change of the defaults does not change a run that exists. Run defaults are not in the change log. Deleting a plot deletes its run defaults.
+
+```json
+{ "plot_id": "k3v9q2mxa7", "model": "opus", "effort": "high" }
+```
+
+| Command | Output |
+| :- | :- |
+| `loam run defaults <plot> [--model <model>] [--effort <level>]` | `{ "defaults": {...} }` |
+
+- With no flag, the command prints the defaults. A plot that has none prints empty strings for `model` and `effort`.
+- A flag sets that field and leaves the other. An empty value clears the field. The command prints the defaults after the change.
+- An `--effort` that is not a level exits 2.
+
+#### Limits, the queue, and usage
+
+The run limits hold for every run of every plot. There is one set, and it is not in the change log.
+
+```json
+{ "at_a_time": 3, "max_turns": 40, "hold_at": 80 }
+```
+
+- `at_a_time` is how many runs can hold a slot at once: 1 to 20. The default is 3. A run in `starting`, `running`, or `start_unknown` holds a slot. A run in `shipping` or `ready` does not: its session waits for CI or for you.
+- `max_turns` is how many turns a run can take. The default is 40. 0 means no limit.
+- `hold_at` is a percent of the 7-day usage of Claude Code: 0 to 100. The default is 80. 0 turns the hold off.
+
+The usage is the last usage that Claude Code reported to Loam. It is not in the change log. A write of it rewrites `loam.changed`, so the app must not run `usage --refresh` each time the change feed wakes it.
+
+```json
+{
+  "five_hour": { "utilization": 0.18, "resets_at": "2026-10-28T14:00:00Z" },
+  "seven_day": { "utilization": 0.41, "resets_at": "2026-11-01T09:00:00Z" },
+  "read_at": "2026-10-28T10:12:00Z"
+}
+```
+
+- `utilization` is the share of the window that is used, from 0 to 1. `resets_at` is when the window starts again.
+- A window is `null` until Claude Code reports it. `read_at` is `null` before the first report. All three keys are always there.
+
+| Command | Output |
+| :- | :- |
+| `loam run limits [--at-a-time <n>] [--max-turns <n>] [--hold-at <percent>]` | `{ "limits": {...} }` |
+| `loam usage [--refresh]` | `{ "usage": {...} }` |
+
+- With no flag, `run limits` prints the limits. A flag sets that limit and leaves the others. A value out of range exits 2.
+- Each path that starts or resumes the session of a run checks for a slot first: `run start`, `run approve`, a recurring chore, `run send-back`, and the CI failure that `run tick` sends back. The run goes to `queued` instead when:
+  1. `hold_at` is not 0, and the known 7-day `utilization` is at or over `hold_at` percent. `note` is such as "Held: the week's usage is at 82%, over the 80% limit". A 7-day window whose `resets_at` has passed is not known.
+  2. Else the other runs that hold a slot are `at_a_time` or more. `note` is such as "Waits for a slot: 3 of 3 runs are running".
+- A queued run keeps how it starts: a new session with the model and effort of the run, or a resume of its own session with your notes or the CI failure. A send-back that waits keeps its `review` and `note` events. A CI failure that waits counts its try at once.
+- `run tick`, and the tick that `loam tick` runs, start the queued runs, oldest first, while a slot is free and the usage is under the hold. A new session goes to `starting`, then `running`, as for `run start`. A resume goes to `running`. A run that still waits gets a new `note` only when the reason changed, so a tick that starts nothing writes nothing.
+- When the hold is on, a slot is free, a run waits, and the usage is more than 30 minutes old or was never read, the tick runs the probe first (see below). A probe that fails is a warning, and the tick uses the usage that it has. Loam tries at most one probe in 30 minutes, whether it works or not, so a probe that fails does not run again on each tick. Separate `loam` processes share that time.
+- `run start`, `run approve`, and `run send-back` run the probe first too, when the hold is on, a slot is free, and the usage is more than 30 minutes old or was never read, under the same limit of one probe in 30 minutes. So an action of yours costs at most one probe. A probe that fails leaves the usage that Loam has, and the run is held or not by it, as before.
+- The app counts the runs that are running and the runs that wait from `loam run list`: the states `starting`, `running`, and `start_unknown` hold a slot, and `queued` waits.
+- At each Stop of a `running` run, when the checks fail and `max_turns` is not 0 and the turns since Loam last resumed the session reach `max_turns`, the run is `stopped` with the note "Stopped after 40 turns, the limit for each run". Loam resumes the session with your notes (`run send-back`) and with a CI failure, also from the queue, and each resume starts the count again. `turns` stays the total. No try counts. A Stop whose checks pass ships as always.
+- Loam records the usage from each `claude -p` call that it makes with `--output-format stream-json`: a Shape draft, and the probe. Claude Code reports it as a `rate_limit_event` line, whose `rate_limit_info.unifiedWindows` holds `five_hour` and `seven_day`, each with `utilization` and `resetsAt` in Unix seconds. A window that a report does not have keeps its last value.
+- `usage --refresh` runs the probe: `claude -p "Reply with ok" --model haiku --output-format stream-json --verbose --no-session-persistence --tools ""` in a new temp folder, for at most 60 seconds. It records the usage and prints it. A probe that fails, or that reports no usage, exits 1.
+
+#### Rules
+
+A rule is a check that every run of a plot must pass, such as "Views use the colour tokens" (ticket 209). Loam keeps the rules in the store, outside the worktree, so a run cannot change them. Rules are not in the change log, as runs are not.
+
+```json
+{ "id": "ruleaaaaab", "plot_id": "k3v9q2mxa7", "name": "Short README", "command": "test $(wc -l < README.md) -lt 40", "note": "Keep the README short.", "created_at": "2026-10-01T09:00:00Z" }
+```
+
+| Command | Output |
+| :- | :- |
+| `loam rule add <plot> --name <name> --command <command> [--note <text>]` | `{ "rule": {...} }` |
+| `loam rule list [<plot>]` | `{ "rules": [...] }`, oldest first |
+| `loam rule rm <rule>` | `{ "rule": {...} }`, the one that it removed |
+
+- The gate runs the rules of the plot after the checks of the run, each as the check `Rule: <name>`, with `sh -c` in the folder of the run. A rule that fails blocks the stop as a check does. The session prompt lists the rules with the checks.
+- `note` is the note that the rule came from. A note like it gets no `rule_offer`.
+- A name or a command that is empty exits 2.
+
+#### Recurring
+
+A recurring run starts on a timetable, such as weekdays at 06:30, when its precheck finds work (ticket 208). `loam tick` starts it when it is due. Recurring runs are not in the change log, as runs are not.
+
+```json
+{
+  "id": "recuaaaaab", "plot_id": "k3v9q2mxa7", "title": "Bump Go dependencies", "prompt": "Bump the Go modules that have updates.",
+  "kind": "chore", "days": ["mon", "tue", "wed", "thu", "fri"], "at": "02:00",
+  "precheck": "go list -m -u all | grep -q '\\['", "if_asleep": "once", "repo": "",
+  "done_when": [{ "name": "Go tests", "command": "go test ./..." }], "max_tries": 3, "model": "", "effort": "",
+  "next_at": "2026-10-29T02:00:00Z", "last_at": "2026-10-28T02:00:00Z",
+  "last_note": "Skipped, because the precheck found no work (exit 1)", "last_run_id": "runraaaaab",
+  "created_at": "2026-10-01T09:00:00Z"
+}
+```
+
+| Command | Output |
+| :- | :- |
+| `loam recurring add <plot> --title <text> --prompt <text> --kind shape\|chore --days <days> --at <HH:MM> [--precheck <command>] [--if-asleep once\|skip] [--repo <repo>] [--check <name>=<command>]... [--max-tries <n>] [--model <model>] [--effort <level>] [--approve-setup]` | `{ "recurring": {...} }` |
+| `loam recurring list [<plot>]` | `{ "recurring": [...] }`, the next due first |
+| `loam recurring rm <recurring>` | `{ "recurring": {...} }`, the one that it removed. Its runs stay. |
+| `loam recurring run <recurring>` | `{ "recurring": {...}, "run": {...}, "note": "..." }`: it starts the run now, as a tick does. `next_at` stays. |
+| `loam tick` | `{ "recurring": [{ "recurring": {...}, "run": {...}, "note": "..." }], "runs": [...], "warnings": [] }` |
+| `loam tick install` | `{ "installed": true, "plist": "...", "interval": 300, "last_tick": { "at": "...", "error": "" } }` |
+| `loam tick status` | The same |
+| `loam tick uninstall` | The same, with `installed` false |
+
+- `--days` is `daily`, `weekdays`, `weekends`, or days such as `mon,wed,fri`. `days` holds them in the order of the week. `at` is the time on the clock of the Mac.
+- `kind` `shape` has Claude draft a run in `shaping` from the prompt, as `run shape` does, for you to approve. `kind` `chore` starts a run with the prompt as its goal, as `run start` does, in a new worktree. A chore cannot ask to approve the setup command of the repo: `--approve-setup` on `recurring add` approves it then.
+- When a recurring run is due, `loam tick` first moves `next_at` to the next time after the tick. Two ticks at once never start it twice. Then:
+  1. A plot that is archived, or a run of the recurring run that has not ended (`source` `kind` `recurring`, `key` its ID), starts nothing: runs never stack. `note` says why, and no run is made.
+  2. A time more than 15 minutes late counts as one time that the Mac slept through, however many it missed. With `if_asleep` `skip`, the run is skipped.
+  3. The precheck runs with `sh -c` in the repo, for at most 2 minutes. An exit code that is not 0 skips the run. Exit 126 or 127 (the shell could not run the command) says that the precheck could not run its command, with the end of what it printed, not that it found no work. What it prints goes to Claude after the prompt.
+  4. A skip makes a run that is `skipped` and starts no session, with the reason in `note`. A skip after a skip changes that run, so a quiet week makes one run.
+  5. Else the run starts or Claude shapes it. A failure to start is the `note`, and the tick goes on.
+- `last_at`, `last_note`, and `last_run_id` say what the last tick did. `last_at` is left out before the first time.
+- After the recurring runs, `loam tick` does what `run tick` does, and `runs` and `warnings` are its result.
+- `tick install` writes the launchd agent `~/Library/LaunchAgents/dev.loam.tick.plist`, which runs this loam binary with `tick` every 300 seconds, with the `PATH` and `LOAM_HOME` of the command, and loads it with `launchctl bootstrap`. `tick uninstall` unloads it and removes the file. `installed` is true while the file exists. `last_tick` is the last `loam tick`, with its error, if any. It is left out before the first tick.
+
+### Intake
+
+The intake of a plot is the work that it can start runs from: the open issues of its Linear team and project links, the open issues of its GitHub repos, through `gh`, and the open tickets of the wayfinder maps in its links. A Linear team link is a page such as `https://linear.app/acme/team/ENG/active`. A project link is a page such as `https://linear.app/acme/project/loam-redesign-8f3a2b1c9d0e/overview`. A map is a local link to a file called `map.md`. Its tickets are the `.md` files in the `issues` folder next to it. A ticket file starts with lines such as `Status: open` and `Blocked by: 135`, then a `# Title` line. A ticket whose status is resolved, done, closed, dropped, or wontfix is not open.
+
+| Command | Output |
+| :- | :- |
+| `loam intake list <plot>` | `{ "plot_id": "...", "sources": [{ "kind": "github", "label": "example/widgets", "error": "" }], "items": [{ "source": "github", "key": "#57", "title": "...", "status": "Open", "priority": "", "labels": ["bug"], "url": "https://github.com/example/widgets/issues/57", "updated_at": "...", "run_id": "runraaaaab", "repo": "repoaaaaab", "text": "...", "branch": "", "created_at": "...", "in_cycle": false, "assigned_to_me": false }] }` |
+
+- The items are the Linear issues first, then the GitHub issues, each the newest change first (at most 100 for each link or repo), then the map tickets in number order. A Linear issue is open while its state is not completed or canceled.
+- `status` is for a person to read: the Linear state, such as `Todo`, `Open`, or `Blocked by 135` for a ticket.
+- `priority` is the Linear priority (`Urgent`, `High`, `Medium`, or `Low`), or empty.
+- `url` is what `loam run start` takes: `--link` for an issue, `--ticket` for a ticket.
+- `run_id` is the newest run with the item as its `source`, or empty.
+- `repo` is the ID of the repo of the plot that a GitHub issue belongs to. It is empty for a Linear issue and a ticket. `run start` and `run shape` with that `--link` use that repo.
+- `text` is the first 1200 characters of the Linear description or the GitHub body, trimmed. For a ticket it is the text of the file after its `# Title` line. It is empty when there is none.
+- `branch` is the branch name that Linear gives the issue. It is empty for a GitHub issue and a ticket.
+- `created_at` is when the issue was made (RFC 3339). For a ticket it is the change time of the file.
+- `in_cycle` is true for a Linear issue in the active cycle of its team, else false.
+- `assigned_to_me` is true when the Linear assignee is the person of the Linear key, or when the assignees of a GitHub issue include the user of `gh` (`gh api user`, read once for a list). It is false for a ticket.
+- All five fields are always there.
+- A source that Loam cannot read, such as a repo when `gh` is missing or rate-limited, or a Linear link with no API key, has its `error`, and the other sources still show. The command exits 0.
+
+### Linear
+
+Loam keeps a personal Linear API key in the login Keychain of macOS (service `Loam`, account `linear-api-key`). Only the core reads it.
+
+| Command | Output |
+| :- | :- |
+| `loam linear status` | `{ "connected": true, "viewer": { "name": "...", "email": "...", "organization": "..." }, "error": "" }` |
+| `loam linear key set` | The same, after the key on stdin passed a check with Linear. A key that Linear refuses is not stored (exit code 1). |
+| `loam linear key rm` | `{ "connected": false, "viewer": null, "error": "" }` |
+
+- `connected` is true when a key is stored. `viewer` is null when there is no key, or when Linear did not answer, and then `error` says why.
+- When a run starts from a Linear issue, Loam moves the issue to the first started state of its team, such as In Progress, unless the issue has started or ended. A `linear` event of the run says what happened. A failure is a warning: the run still starts. The second run of a group finds the issue started, which is not a warning.
+- When a run lands, its issue moves to the first completed state, such as Done. For a run of a group, this happens only when every other run of the group has ended as `landed` or `cancelled`. Until then, the `linear` event says why the issue stays, such as "ENG-523 stays In Progress: 1 more run of the issue has not landed". The rule is the same for `run land` and for a tick that lands a run after a merge queue. When you stop the last run of a group, and another run of the group landed, the issue moves to Done too.
+- When a run lands with `notes` and a `pr`, and the `walkthrough_comment` switch is on, Loam adds a comment to its issue: "Landed in #25 by a Loam run. <walkthrough> 3 of 3 checks passed." The checks are those of the last gate of the run. Each run of a group adds its own comment. The `linear` event is "Added the walkthrough to ENG-523 as a comment". A failure is a warning.
+
+**Updates to Linear.** Four switches turn each update that Loam makes to the Linear issue of a run on or off. They hold for every plot. They are not in the change log.
+
+```json
+{ "updates": { "in_progress": true, "attach_pr": true, "done": true, "walkthrough_comment": false } }
+```
+
+| Command | Output |
+| :- | :- |
+| `loam linear updates [--in-progress on\|off] [--attach-pr on\|off] [--done on\|off] [--walkthrough on\|off]` | `{ "updates": {...} }` |
+
+- `in_progress`: when a run starts, move the issue to In Progress. On by default.
+- `attach_pr`: when Loam opens the PR, attach it to the issue. On by default.
+- `done`: when a run lands, move the issue to Done, with the rule for a group above. On by default.
+- `walkthrough_comment`: when a run lands, add its walkthrough as a comment. Off by default.
+- With no flag, the command prints the switches. A flag sets that switch and leaves the others. A value that is not `on` or `off` exits 2.
+- An update that is off makes no call to Linear. For `in_progress`, `attach_pr`, and `done`, the `linear` event says so, such as "Loam did not move ENG-523 to Done: that update to Linear is off".
 
 ### Sessions
 
@@ -615,6 +933,7 @@ Writes the old values back as a new change by the actor (`--actor app` for the a
 | `loam start` | It replaces the process with `claude`. `--repo` takes a repo ID or a path. `--plot-folder` starts in the plot folder of a plot with repos, and every repo is then an added folder; it fails with exit code 2 (`invalid`) with `--repo` or `--worktree`. An unknown repo exits with code 1, as in `loam repo edit`. Each local link adds its folder (or the folder of the file) with `--add-dir`, except the root, the home folder, and a parent of the home folder: a link to one of them adds nothing. |
 | `loam mcp` | It speaks the MCP protocol on stdio. |
 | `loam hook` | It is hidden. It speaks the Claude Code hook protocol. |
+| `loam run hook <run>` | It is hidden. It speaks the Claude Code hook protocol for the session of a run. A failed gate exits 2 with the reason on stderr. |
 | `loam setup` | It is interactive. Use `loam setup --check --json` instead. |
 | `loam resume <session-id> [--plot <plot>]` | It replaces the process with `claude --resume`. When Claude Code keeps no conversation for the session (no `projects/*/<session-id>.jsonl` in `CLAUDE_CONFIG_DIR`, else `~/.claude`), it runs `claude --session-id` with the same ID instead. Claude Code writes that file at the first prompt, so a session that never had a prompt has none, and `claude --resume` would fail. |
 

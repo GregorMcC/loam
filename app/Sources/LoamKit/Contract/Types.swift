@@ -592,9 +592,16 @@ public struct LandResult: Codable, Equatable, Sendable {
     public var worktreeNote: String?
     public var branchDeleted: Bool
     public var branchNote: String?
+    /// The runs of the worktree that `loam worktree land` landed after the merge. Empty in a dry
+    /// run, and in the `land` of `loam run land`, which has its own run.
+    public var landedRuns: [Run]
+    /// What went wrong as the core landed those runs, such as an update to Linear that failed.
+    /// Empty in the `land` of `loam run land`, which has its own warnings.
+    public var runWarnings: [String]
     enum CodingKeys: String, CodingKey {
         case worktree, pr, stage, changed, unpushed, methods, method, auto, checks, ready, merged
         case landNote = "land_note"
+        case landedRuns = "landed_runs", runWarnings = "run_warnings"
         case defaultMethod = "default_method", mergeQueue = "merge_queue", dryRun = "dry_run", mergeLater = "merge_later"
         case mergeNote = "merge_note", remoteBranchDeleted = "remote_branch_deleted", remoteBranchNote = "remote_branch_note"
         case worktreeRemoved = "worktree_removed", worktreeNote = "worktree_note"

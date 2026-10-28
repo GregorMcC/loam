@@ -185,19 +185,19 @@ func commandPath(s string) string {
 	return strings.Join(words, " ")
 }
 
-// runPaths returns the command words of a run: the first word, and the first
-// two words (for "link add").
+// runPaths returns the command words of a run: the first word, the first two
+// words (for "link add"), and the first three (for "linear key set").
 func runPaths(args []string) []string {
 	var words []string
 	for _, a := range args {
-		if strings.HasPrefix(a, "-") || len(words) == 2 {
+		if strings.HasPrefix(a, "-") || len(words) == 3 {
 			break
 		}
 		words = append(words, a)
 	}
-	out := []string{words[0]}
-	if len(words) == 2 {
-		out = append(out, strings.Join(words, " "))
+	var out []string
+	for i := range words {
+		out = append(out, strings.Join(words[:i+1], " "))
 	}
 	return out
 }

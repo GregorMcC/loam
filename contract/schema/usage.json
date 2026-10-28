@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam usage --json",
+  "description": "The last usage that Claude Code reported. With --refresh, the usage that the probe read.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "usage"
+  ],
+  "properties": {
+    "usage": {
+      "$ref": "defs.json#/$defs/usage"
+    }
+  }
+}

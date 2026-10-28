@@ -20,8 +20,10 @@ extension Scenarios {
         var cwd: String?
     }
 
-    /// Runs git in a folder with no global config, so the host's signing and hooks do not matter.
-    static func git(_ folder: URL, _ args: [String]) throws {
+    /// Runs git in a folder with no global config, so the host's signing and hooks do not matter. It returns the
+    /// output, trimmed.
+    @discardableResult
+    static func git(_ folder: URL, _ args: [String]) throws -> String {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.arguments = ["-c", "user.name=Driver", "-c", "user.email=driver@example.com",
@@ -29,11 +31,14 @@ extension Scenarios {
         process.currentDirectoryURL = folder
         process.environment = ["PATH": "/usr/bin:/bin", "HOME": folder.path,
                                "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null"]
-        process.standardOutput = FileHandle.nullDevice
+        let out = Pipe()
+        process.standardOutput = out
         process.standardError = FileHandle.nullDevice
         try process.run()
+        let data = out.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
         if process.terminationStatus != 0 { throw DriverFailure("git \(args.joined(separator: " ")) failed in \(folder.path)") }
+        return String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// One MCP call as Claude would make it. The setup command that it sets is not approved.

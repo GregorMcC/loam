@@ -1,0 +1,20 @@
+{
+  "events": [
+    {
+      "at": "2026-01-01T00:00:00Z",
+      "detail": "running",
+      "kind": "state",
+      "plot_id": "plotaaaaae",
+      "run_id": "runraaaaab",
+      "run_title": "Fix the login form"
+    },
+    {
+      "at": "2026-01-01T00:00:00Z",
+      "detail": "starting",
+      "kind": "state",
+      "plot_id": "plotaaaaae",
+      "run_id": "runraaaaab",
+      "run_title": "Fix the login form"
+    }
+  ]
+}

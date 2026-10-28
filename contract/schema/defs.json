@@ -345,6 +345,293 @@
           "minimum": 1
         }
       }
+    },
+    "runState": {
+      "description": "Where a run is. shaping, stopped, and limited need you. queued waits for a slot. shipping passed its gate and waits for its PR and CI. ready waits for you to land it.",
+      "enum": ["shaping", "queued", "starting", "running", "shipping", "ready", "stopped", "limited", "start_unknown", "landed", "cancelled", "skipped"]
+    },
+    "runCheck": {
+      "description": "A Done when check: a shell command that passes when it exits 0 in the folder of the run.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "command"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "command": { "type": "string", "minLength": 1 }
+      }
+    },
+    "runSource": {
+      "description": "The issue that a run started from.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "key", "url"],
+      "properties": {
+        "kind": { "enum": ["linear", "github", "map", "recurring"] },
+        "key": { "type": "string" },
+        "url": { "type": "string" }
+      }
+    },
+    "runPR": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["number", "url"],
+      "properties": {
+        "number": { "type": "integer", "minimum": 1 },
+        "url": { "type": "string", "minLength": 1 }
+      }
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "plot_id", "worktree_id", "folder", "title", "goal", "done_when", "state", "tries", "max_tries", "turns", "session_id", "note", "group_id", "notes", "created_at", "updated_at"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "plot_id": { "$ref": "#/$defs/id" },
+        "worktree_id": { "description": "The worktree of the run. It can be gone. It is empty for a run in a repo folder.", "anyOf": [{ "$ref": "#/$defs/id" }, { "const": "" }] },
+        "folder": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "goal": { "type": "string" },
+        "done_when": { "type": "array", "items": { "$ref": "#/$defs/runCheck" } },
+        "state": { "$ref": "#/$defs/runState" },
+        "tries": { "description": "How many times the gate or CI failed.", "type": "integer", "minimum": 0 },
+        "max_tries": { "type": "integer", "minimum": 1, "maximum": 8 },
+        "turns": { "description": "How many turns the session ended: one for each Stop.", "type": "integer", "minimum": 0 },
+        "source": { "description": "It is left out when the run has no issue.", "$ref": "#/$defs/runSource" },
+        "pr": { "description": "The PR that Loam opened for the run. It is left out before the run ships.", "$ref": "#/$defs/runPR" },
+        "shape": { "description": "The draft of a run that started in Shaping (loam run shape). It is left out for a run that loam run start started.", "$ref": "#/$defs/runShape" },
+        "session_id": { "description": "The Claude Code session of the run. It is empty until the session starts.", "type": "string" },
+        "note": { "description": "Why the run is in its state, such as the failed checks.", "type": "string" },
+        "group_id": { "description": "The group of the runs that one split shape made for one issue, one in each repo: the ID of the first run. Empty for a run alone.", "anyOf": [{ "$ref": "#/$defs/id" }, { "const": "" }] },
+        "notes": {
+          "description": "The ship notes that Claude wrote when Loam opened the PR. Null before Loam opens the PR, and when Claude wrote none.",
+          "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/runNotes" }]
+        },
+        "created_at": { "$ref": "#/$defs/time" },
+        "updated_at": { "$ref": "#/$defs/time" }
+      }
+    },
+    "runNotes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["walkthrough", "files", "risk", "where_it_stands", "written_at"],
+      "properties": {
+        "walkthrough": { "description": "What changed and why, in 2 to 4 plain sentences.", "type": "string", "minLength": 1 },
+        "files": {
+          "description": "Each changed file once, in the order that a reviewer should read them.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "role"],
+            "properties": {
+              "path": { "type": "string", "minLength": 1 },
+              "role": { "description": "The role of the file in the change, in 1 to 4 words, such as Tests.", "type": "string" }
+            }
+          }
+        },
+        "risk": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["level", "reasons"],
+          "properties": {
+            "level": { "enum": ["low", "medium", "high"] },
+            "reasons": { "description": "Short sentences: Claude's first, then the facts that Loam adds.", "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "where_it_stands": { "description": "A new Where it stands for the plot, moved on by this change.", "type": "string" },
+        "written_at": { "$ref": "#/$defs/time" }
+      }
+    },
+    "effort": {
+      "description": "An effort level of Claude Code, or empty for the Claude Code setting.",
+      "enum": ["", "low", "medium", "high", "xhigh", "max"]
+    },
+    "runDefaults": {
+      "description": "The model and the effort that a run of a plot uses when it names none (loam run defaults).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plot_id", "model", "effort"],
+      "properties": {
+        "plot_id": { "$ref": "#/$defs/id" },
+        "model": { "description": "The Claude model, or empty for the Claude Code setting.", "type": "string" },
+        "effort": { "$ref": "#/$defs/effort" }
+      }
+    },
+    "runLimits": {
+      "description": "The limits of every run (loam run limits).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at_a_time", "max_turns", "hold_at"],
+      "properties": {
+        "at_a_time": { "description": "How many runs can hold a slot at once.", "type": "integer", "minimum": 1, "maximum": 20 },
+        "max_turns": { "description": "How many turns a run can take. 0 means no limit.", "type": "integer", "minimum": 0 },
+        "hold_at": { "description": "The percent of the 7-day usage at which new runs wait. 0 means no hold.", "type": "integer", "minimum": 0, "maximum": 100 }
+      }
+    },
+    "usageWindow": {
+      "description": "The usage of one window of Claude Code's limits, or null until Claude Code reports it.",
+      "anyOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["utilization", "resets_at"],
+          "properties": {
+            "utilization": { "description": "The share of the window that is used, from 0 to 1.", "type": "number", "minimum": 0 },
+            "resets_at": { "description": "When the window starts again.", "$ref": "#/$defs/time" }
+          }
+        }
+      ]
+    },
+    "usage": {
+      "description": "The last usage that Claude Code reported (loam usage).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["five_hour", "seven_day", "read_at"],
+      "properties": {
+        "five_hour": { "$ref": "#/$defs/usageWindow" },
+        "seven_day": { "$ref": "#/$defs/usageWindow" },
+        "read_at": { "description": "When Loam read the usage, or null before the first report.", "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/time" }] }
+      }
+    },
+    "runShape": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assumptions", "plan", "size", "repo", "base", "link", "model", "effort"],
+      "properties": {
+        "assumptions": {
+          "description": "The choices that Claude made and the issue does not settle.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["text", "answer"],
+            "properties": {
+              "text": { "type": "string" },
+              "answer": { "description": "What you want instead, or empty when you keep the assumption.", "type": "string" }
+            }
+          }
+        },
+        "plan": { "description": "The steps that Claude means to take.", "type": "array", "items": { "type": "string" } },
+        "size": { "description": "Claude's estimate of the change, in one sentence.", "type": "string" },
+        "drafted_at": { "description": "When Claude finished the last draft. It is left out while the run has no draft: Claude drafts it, or the draft failed and the note says why.", "$ref": "#/$defs/time" },
+        "repo": { "description": "The repo of the run, as loam run start --repo takes it.", "type": "string" },
+        "base": { "description": "The branch that the worktree's branch starts from, or empty for the default branch of origin.", "type": "string" },
+        "link": { "description": "The link that the work starts from, as loam run start --link takes it, or empty.", "type": "string" },
+        "model": { "description": "The Claude model of the draft and of the session, or empty for the Claude Code setting.", "type": "string" },
+        "effort": { "description": "The effort level of the draft and of the session, or empty for the Claude Code setting.", "$ref": "#/$defs/effort" },
+        "brief": { "description": "What Claude drafts from when the run has no issue, such as the prompt of a recurring run. It is left out when it is empty.", "type": "string" },
+        "split": { "description": "True while a shape with --split has no draft, so a redraft splits again. It is left out when it is false.", "const": true }
+      }
+    },
+    "recurring": {
+      "description": "A run that starts on a timetable (loam recurring add).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "plot_id", "title", "prompt", "kind", "days", "at", "precheck", "if_asleep", "repo", "done_when", "max_tries", "model", "effort", "next_at", "last_note", "last_run_id", "created_at"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "plot_id": { "$ref": "#/$defs/id" },
+        "title": { "type": "string", "minLength": 1 },
+        "prompt": { "description": "What Claude does: the goal of a chore, or the brief of a Shape run.", "type": "string", "minLength": 1 },
+        "kind": { "description": "shape: Claude drafts a run for you to approve. chore: a run starts and works to its gate.", "enum": ["shape", "chore"] },
+        "days": { "description": "The days of the week, in the order of the week.", "type": "array", "minItems": 1, "items": { "enum": ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] } },
+        "at": { "description": "The time of day, HH:MM, on the clock of the Mac.", "type": "string", "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$" },
+        "precheck": { "description": "A shell command in the repo. The run starts only when it exits 0. Empty starts the run each time.", "type": "string" },
+        "if_asleep": { "description": "once: a time that the Mac slept through runs once when it wakes. skip: it is skipped.", "enum": ["once", "skip"] },
+        "repo": { "description": "The repo of the runs, by ID or path, or empty for the main repo.", "type": "string" },
+        "done_when": { "type": "array", "items": { "$ref": "#/$defs/runCheck" } },
+        "max_tries": { "type": "integer", "minimum": 1, "maximum": 8 },
+        "model": { "type": "string" },
+        "effort": { "$ref": "#/$defs/effort" },
+        "next_at": { "$ref": "#/$defs/time" },
+        "last_at": { "description": "When a tick last took it. It is left out before the first time.", "$ref": "#/$defs/time" },
+        "last_note": { "description": "What the last tick did, for a person to read.", "type": "string" },
+        "last_run_id": { "description": "The last run that it started or skipped, or empty.", "anyOf": [{ "$ref": "#/$defs/id" }, { "const": "" }] },
+        "created_at": { "$ref": "#/$defs/time" }
+      }
+    },
+    "rule": {
+      "description": "A check that every run of a plot must pass (loam rule add). The gate runs it as the check Rule: <name>.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "plot_id", "name", "command", "note", "created_at"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "plot_id": { "$ref": "#/$defs/id" },
+        "name": { "type": "string", "minLength": 1 },
+        "command": { "description": "A shell command in the folder of the run. The rule holds when it exits 0.", "type": "string", "minLength": 1 },
+        "note": { "description": "The note that the rule came from, or empty.", "type": "string" },
+        "created_at": { "$ref": "#/$defs/time" }
+      }
+    },
+    "ruleOffer": {
+      "description": "A note that you sent back is like a note that you sent back on another run of the plot, so it can become a rule.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["note", "earlier", "earlier_run_id", "earlier_title"],
+      "properties": {
+        "note": { "description": "The text of the note, without its file and line.", "type": "string", "minLength": 1 },
+        "earlier": { "description": "The text of the note like it.", "type": "string", "minLength": 1 },
+        "earlier_run_id": { "$ref": "#/$defs/id" },
+        "earlier_title": { "type": "string" }
+      }
+    },
+    "recurringResult": {
+      "description": "What a tick did with one recurring run.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["recurring", "note"],
+      "properties": {
+        "recurring": { "$ref": "#/$defs/recurring" },
+        "run": { "description": "The run that the tick started or skipped. It is left out when the tick made none, such as when the last run has not ended.", "$ref": "#/$defs/run" },
+        "note": { "type": "string" }
+      }
+    },
+    "runEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "run_id", "at", "kind", "detail"],
+      "properties": {
+        "id": { "type": "integer", "minimum": 1 },
+        "run_id": { "$ref": "#/$defs/id" },
+        "at": { "$ref": "#/$defs/time" },
+        "kind": { "description": "state: the new state. try: a failed gate or CI, with its note. check: the result of one check. linear: what Loam did to the Linear issue of the run. ship: a push or a PR. ci: the result of CI on the PR. review: your notes went back to the session. note: one of those notes, as <file> line <n>: <text> or as text alone. land: a merge of the PR, or where it waits. shape: a draft by Claude, or why it failed. draft: one step that Claude took while it drafted, such as Read window/frame.go.", "enum": ["state", "try", "check", "linear", "ship", "ci", "review", "note", "land", "shape", "draft"] },
+        "detail": { "type": "string" }
+      }
+    },
+    "linearStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["connected", "viewer", "error"],
+      "properties": {
+        "connected": { "description": "True when a key is stored.", "type": "boolean" },
+        "viewer": {
+          "description": "The person of the key. It is null with no key, or when Linear did not answer.",
+          "anyOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "email", "organization"],
+              "properties": { "name": { "type": "string" }, "email": { "type": "string" }, "organization": { "type": "string" } }
+            }
+          ]
+        },
+        "error": { "description": "Why Linear did not answer a stored key, or empty.", "type": "string" }
+      }
+    },
+    "linearUpdates": {
+      "description": "The switches for the updates that Loam makes to the Linear issue of a run. They hold for every plot.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["in_progress", "attach_pr", "done", "walkthrough_comment"],
+      "properties": {
+        "in_progress": { "description": "When a run starts, move the issue to In Progress.", "type": "boolean" },
+        "attach_pr": { "description": "When Loam opens the PR, attach it to the issue.", "type": "boolean" },
+        "done": { "description": "When a run lands, move the issue to Done.", "type": "boolean" },
+        "walkthrough_comment": { "description": "When a run lands, add its walkthrough to the issue as a comment.", "type": "boolean" }
+      }
     }
   }
 }

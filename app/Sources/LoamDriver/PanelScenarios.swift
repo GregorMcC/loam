@@ -18,7 +18,20 @@ struct PanelRig {
     let openLog: URL
     let stateFile: AppStateFile
     let binary: URL
-    let environment: [String: String]
+    var environment: [String: String]
+
+    /// The `.claude.json` that Claude Code and the core's trust check read: in CLAUDE_CONFIG_DIR when
+    /// the rig sets it, else in the fake HOME.
+    var claudeJSON: URL {
+        URL(fileURLWithPath: environment["CLAUDE_CONFIG_DIR"] ?? fakeHome.path).appendingPathComponent(".claude.json")
+    }
+
+    /// Writes `.claude.json` with trust for each folder in `trusted`.
+    func trust(_ trusted: [String]) throws {
+        let projects = trusted.reduce(into: [String: Any]()) { $0[$1] = ["hasTrustDialogAccepted": true] }
+        try FileManager.default.createDirectory(at: claudeJSON.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try JSONSerialization.data(withJSONObject: ["projects": projects]).write(to: claudeJSON, options: .atomic)
+    }
 
     init(outFolder: String) throws {
         try self.init(root: URL(fileURLWithPath: outFolder).appendingPathComponent("rig"), fresh: true)
@@ -66,9 +79,10 @@ struct PanelRig {
         ((try? String(contentsOf: openLog, encoding: .utf8)) ?? "").split(separator: "\n").map(String.init)
     }
 
-    /// Runs `loam` with the temp store and returns stdout. Throws on a non-zero exit.
+    /// Runs `loam` with the temp store and returns stdout. Throws on a non-zero exit. `input` is the
+    /// text on stdin.
     @discardableResult
-    func loam(_ args: [String], extra: [String: String] = [:]) throws -> String {
+    func loam(_ args: [String], extra: [String: String] = [:], input: String? = nil) throws -> String {
         let process = Process()
         process.executableURL = binary
         process.arguments = args
@@ -77,7 +91,13 @@ struct PanelRig {
         let out = Pipe()
         process.standardOutput = out
         process.standardError = FileHandle.nullDevice
+        let stdin = input.map { _ in Pipe() }
+        if let stdin { process.standardInput = stdin }
         try process.run()
+        if let stdin, let input {
+            stdin.fileHandleForWriting.write(Data(input.utf8))
+            try stdin.fileHandleForWriting.close()
+        }
         // The read blocks the main thread until `loam` ends, which a busy machine can hold for more than 10 s.
         let data = Watchdog.excuse { out.fileHandleForReading.readDataToEndOfFile() }
         process.waitUntilExit()
@@ -437,8 +457,11 @@ extension DriverApp {
 
     /// Replaces the text of a field.
     func fill(_ id: String, with text: String) throws {
-        // Focus the field and type into its editor, so SwiftUI sees an edit.
-        if AccessibilityProbe.shared.focus(id), let editor = window.firstResponder as? NSTextView {
+        // Focus the field and type into its editor, so SwiftUI sees an edit. The field can be in another window, such as
+        // Settings, and a secure field takes no text through accessibility.
+        let windows: [NSWindow] = [window] + NSApp.windows.filter { $0 !== window && $0.isVisible }
+        if AccessibilityProbe.shared.focus(id),
+           let editor = windows.lazy.compactMap({ $0.firstResponder as? NSTextView }).first(where: \.isFieldEditor) {
             editor.selectAll(nil)
             editor.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
             Log.line("fill \(id)")
