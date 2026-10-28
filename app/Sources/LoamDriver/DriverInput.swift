@@ -115,6 +115,30 @@ extension DriverApp {
         return nil
     }
 
+    /// Presses a key that a SwiftUI button takes as its shortcut, such as ↓ on the Intake page or ] at the desk. AppKit
+    /// offers every key down to the key equivalents of the window before the first responder sees it, and SwiftUI finds a
+    /// shortcut there. So the key works whatever view has the keys, as a real key does. A key that no shortcut takes
+    /// goes on to the first responder.
+    func pressShortcut(_ characters: String, code: UInt16, flags: NSEvent.ModifierFlags = []) {
+        guard let event = NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber, context: nil, characters: characters, charactersIgnoringModifiers: characters,
+            isARepeat: false, keyCode: code) else { return }
+        Log.line("shortcut \(characters.unicodeScalars.map { String($0.value, radix: 16) }.joined())")
+        if !window.performKeyEquivalent(with: event) { window.sendEvent(event) }
+    }
+
+    /// Presses a key of `Key` as a shortcut. An arrow key comes with the flags that a real one has.
+    func pressShortcut(_ key: Key) {
+        pressShortcut(key.characters, code: key.code, flags: key == .up || key == .down ? [.numericPad, .function] : [])
+    }
+
+    /// Presses a letter or a sign, such as "j" or "]", as a shortcut.
+    func pressShortcut(letter: Character) throws {
+        guard let code = Self.keyCodes[letter] else { throw DriverFailure("no key code for \(letter)") }
+        pressShortcut(String(letter), code: code)
+    }
+
     /// One key down of a key that you hold: the first press, or with `isARepeat` a repeat that macOS sends while
     /// the key stays down. `keyUp` ends the hold.
     func keyDown(_ key: Key, isARepeat: Bool = false) {
@@ -215,9 +239,15 @@ extension DriverApp {
     /// mouse up follows, since a mouse up over the menu would pick the item under it. The press waits until the window
     /// server has the frame of the window, so a move or a resize before it does not shift the press (ticket 134).
     func postRightMouseDown(at point: NSPoint) async throws {
+        try await postMouseDown(.rightMouseDown, at: point)
+    }
+
+    /// A mouse down of the type on the event queue of the app, as `postRightMouseDown` posts it. A left mouse down on a
+    /// pop-up button opens its menu.
+    func postMouseDown(_ type: NSEvent.EventType, at point: NSPoint) async throws {
         try await waitUntil("the window server has the frame of the window") { windowServerHasFrame() }
         guard let event = NSEvent.mouseEvent(
-            with: .rightMouseDown, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+            with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
             windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)
         else { return }
         NSApp.postEvent(event, atStart: false)

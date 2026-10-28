@@ -124,9 +124,13 @@ public struct TodayContent: Equatable, Sendable {
 
     public var tiles: [Tile]
     public var line: [LineRow]
-    /// The runs that wait for you, the oldest wait first.
+    /// The runs on the line that need you: Shape, Stopped, and Stopped by a limit, the longest wait first.
     public var needsYou: [Run]
     public var needsYouCount: Int { needsYou.count }
+    /// The runs on the line that are done, unread: Ready to land, the longest wait first (TAS-45).
+    public var doneUnread: [Run]
+    /// The runs that wait for you in any way. The Today row of the sidebar counts them.
+    public var waitsForYouCount: Int { needsYou.count + doneUnread.count }
 
     /// Builds Today from the runs of every plot. A landed run counts on the line for 7 days after it moved. A run of
     /// a plot that is not in `plots` shows nowhere. `intake` holds the intake of each plot that is read, `repoNames`
@@ -160,6 +164,7 @@ public struct TodayContent: Equatable, Sendable {
                            landed: mine.filter { $0.state == .landed }.count)
         }
         needsYou = onLine.filter(\.state.needsYou)
+        doneUnread = onLine.filter(\.state.doneUnread)
     }
 
     // MARK: Tiles
@@ -206,7 +211,7 @@ public struct TodayContent: Equatable, Sendable {
     // MARK: The line
 
     static func chip(_ run: Run) -> Chip {
-        let mark: Chip.Mark = run.state.needsYou ? .needsYou : run.state == .ready ? .doneUnread : .none
+        let mark: Chip.Mark = run.state.needsYou ? .needsYou : run.state.doneUnread ? .doneUnread : .none
         return Chip(runID: run.id, mark: mark, key: run.shortKey, title: run.title, state: chipState(run),
                     stopped: run.state == .stopped || run.state == .limited, waits: run.state == .queued)
     }

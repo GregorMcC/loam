@@ -779,7 +779,7 @@ The intake of a plot is the work that it can start runs from: the open issues of
 
 | Command | Output |
 | :- | :- |
-| `loam intake list <plot>` | `{ "plot_id": "...", "sources": [{ "kind": "github", "label": "example/widgets", "error": "" }], "items": [{ "source": "github", "key": "#57", "title": "...", "status": "Open", "priority": "", "labels": ["bug"], "url": "https://github.com/example/widgets/issues/57", "updated_at": "...", "run_id": "runraaaaab", "repo": "repoaaaaab", "text": "...", "branch": "", "created_at": "...", "in_cycle": false, "assigned_to_me": false }] }` |
+| `loam intake list <plot>` | `{ "plot_id": "...", "sources": [{ "kind": "github", "label": "example/widgets", "error": "" }], "items": [{ "source": "github", "key": "#57", "title": "...", "status": "Open", "priority": "", "labels": ["bug"], "url": "https://github.com/example/widgets/issues/57", "updated_at": "...", "run_id": "runraaaaab", "repo": "repoaaaaab", "text": "...", "branch": "", "created_at": "...", "in_cycle": false, "assigned_to_me": false, "assignee": "ada", "in_progress": false, "milestone": "", "milestone_order": 0 }] }` |
 
 - The items are the Linear issues first, then the GitHub issues, each the newest change first (at most 100 for each link or repo), then the map tickets in number order. A Linear issue is open while its state is not completed or canceled.
 - `status` is for a person to read: the Linear state, such as `Todo`, `Open`, or `Blocked by 135` for a ticket.
@@ -792,7 +792,10 @@ The intake of a plot is the work that it can start runs from: the open issues of
 - `created_at` is when the issue was made (RFC 3339). For a ticket it is the change time of the file.
 - `in_cycle` is true for a Linear issue in the active cycle of its team, else false.
 - `assigned_to_me` is true when the Linear assignee is the person of the Linear key, or when the assignees of a GitHub issue include the user of `gh` (`gh api user`, read once for a list). It is false for a ticket.
-- All five fields are always there.
+- `assignee` is the name of the Linear assignee, or the logins of the GitHub assignees joined with ", ". It is "" for no assignee and for a ticket.
+- `in_progress` is true for a Linear issue whose workflow state type is `started`, such as In Progress or In Review, else false.
+- `milestone` is the name of the project milestone of a Linear issue, or "". `milestone_order` is the `sortOrder` of that milestone in its project, so a lower number comes first. It is 0 for no milestone.
+- All nine fields are always there.
 - A source that Loam cannot read, such as a repo when `gh` is missing or rate-limited, or a Linear link with no API key, has its `error`, and the other sources still show. The command exits 0.
 
 ### Linear

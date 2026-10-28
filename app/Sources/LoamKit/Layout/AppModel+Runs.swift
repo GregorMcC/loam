@@ -57,6 +57,15 @@ extension AppModel {
         page = .today
     }
 
+    /// Opens a run that waits for you where you decide on it: the desk for a run in its queue, else the run page.
+    public func openWaitingRun(_ id: String) async {
+        if deskQueue.contains(where: { $0.id == id }) {
+            await openDesk(id)
+        } else {
+            await openRun(id)
+        }
+    }
+
     /// Shows the page of a run, and reads its history.
     public func openRun(_ id: String) async {
         // You approve a draft at the desk.

@@ -130,6 +130,15 @@ type Issue struct {
 	InCycle bool
 	// AssignedToMe is true when the assignee is the person of the key.
 	AssignedToMe bool
+	// Assignee is the name of the person the issue is assigned to, or "".
+	Assignee string
+	// InProgress is true when the type of the workflow state is started.
+	InProgress bool
+	// Milestone is the name of the project milestone of the issue, or "".
+	Milestone string
+	// MilestoneOrder is the place of the milestone in its project. It is 0
+	// for no milestone.
+	MilestoneOrder float64
 }
 
 // Issues returns the open issues of the scope, the most recently updated
@@ -162,11 +171,17 @@ func (c *Client) Issues(ctx context.Context, s Scope) ([]Issue, error) {
 					IsActive bool `json:"isActive"`
 				} `json:"cycle"`
 				Assignee *struct {
-					ID string `json:"id"`
+					ID   string `json:"id"`
+					Name string `json:"name"`
 				} `json:"assignee"`
 				State struct {
 					Name string `json:"name"`
+					Type string `json:"type"`
 				} `json:"state"`
+				ProjectMilestone *struct {
+					Name      string  `json:"name"`
+					SortOrder float64 `json:"sortOrder"`
+				} `json:"projectMilestone"`
 				Labels struct {
 					Nodes []struct {
 						Name string `json:"name"`
@@ -176,8 +191,8 @@ func (c *Client) Issues(ctx context.Context, s Scope) ([]Issue, error) {
 		} `json:"issues"`
 	}
 	q := fmt.Sprintf(`query($filter: IssueFilter) { viewer { id } issues(filter: $filter, first: %d, orderBy: updatedAt) {
-  nodes { identifier title url priorityLabel updatedAt createdAt description branchName cycle { isActive } assignee { id }
-    state { name } labels { nodes { name } } } } }`, issueLimit)
+  nodes { identifier title url priorityLabel updatedAt createdAt description branchName cycle { isActive } assignee { id name }
+    state { name type } projectMilestone { name sortOrder } labels { nodes { name } } } } }`, issueLimit)
 	if err := c.query(ctx, q, map[string]any{"filter": filter}, &out); err != nil {
 		return nil, err
 	}
@@ -191,10 +206,19 @@ func (c *Client) Issues(ctx context.Context, s Scope) ([]Issue, error) {
 		if priority == "No priority" {
 			priority = ""
 		}
+		var assignee, milestone string
+		var milestoneOrder float64
+		if n.Assignee != nil {
+			assignee = n.Assignee.Name
+		}
+		if n.ProjectMilestone != nil {
+			milestone, milestoneOrder = n.ProjectMilestone.Name, n.ProjectMilestone.SortOrder
+		}
 		issues[i] = Issue{Key: n.Identifier, Title: n.Title, URL: n.URL, State: n.State.Name, Priority: priority,
 			Labels: labels, UpdatedAt: n.UpdatedAt, Description: n.Description, Branch: n.BranchName,
 			CreatedAt: n.CreatedAt, InCycle: n.Cycle != nil && n.Cycle.IsActive,
-			AssignedToMe: n.Assignee != nil && out.Viewer.ID != "" && n.Assignee.ID == out.Viewer.ID}
+			AssignedToMe: n.Assignee != nil && out.Viewer.ID != "" && n.Assignee.ID == out.Viewer.ID,
+			Assignee:     assignee, InProgress: n.State.Type == "started", Milestone: milestone, MilestoneOrder: milestoneOrder}
 	}
 	return issues, nil
 }

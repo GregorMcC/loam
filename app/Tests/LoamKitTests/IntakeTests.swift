@@ -41,6 +41,20 @@ import Testing
         #expect(model.page == nil)
     }
 
+    /// TAS-44: the plot menu of the page, and the Intake column of Today, show the intake of another plot. The active plot
+    /// of the window stays.
+    @Test func anotherPlotsIntakeKeepsTheActivePlot() async throws {
+        let (model, fake) = try model([("intake_list", 0), ("intake_list", 0)])
+        model.apply([PlotSummary(id: "plotaaaaae", name: "Runs", what: "", createdAt: "2026-01-01T00:00:00Z"),
+                     PlotSummary(id: "plotbbbbbb", name: "Reports", what: "", createdAt: "2026-01-01T00:00:00Z")])
+        model.activate(plot: "plotaaaaae")
+        await model.showIntake(plot: "plotaaaaae")
+        await model.showIntake(plot: "plotbbbbbb")
+        #expect(model.page == .intake("plotbbbbbb"))
+        #expect(model.workspace.activePlotID == "plotaaaaae")
+        #expect(fake.args() == ["intake list --json -- plotaaaaae", "intake list --json -- plotbbbbbb"])
+    }
+
     @Test func aStartedRunOpensItsPage() async throws {
         let (model, fake) = try model([("intake_list", 0), ("run_start", 0), ("run_list", 0), ("run_status", 0)])
         await model.showIntake(plot: "plotaaaaae")

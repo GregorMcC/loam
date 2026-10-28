@@ -972,22 +972,39 @@ public final class AppModel {
         return AttentionCycle.next(order: sidebarPaneIDs, matching: waiting, after: workspace.focusedPane)
     }
 
-    /// The next pane that is done, unread, by the same rule as `nextPaneThatNeedsYou`.
-    public func nextPaneDoneUnread() -> PaneID? {
-        let order = sidebarPaneIDs
-        return AttentionCycle.next(order: order, matching: Set(order.filter { workspace.attention(of: $0) == .doneUnread }),
-                                   after: workspace.focusedPane)
+    /// A place that a fixed attention row of the sidebar goes to: a pane, or a run that waits for you (TAS-45).
+    public enum AttentionTarget: Hashable, Sendable {
+        case pane(PaneID)
+        case run(String)
     }
 
-    /// A click on a fixed attention row of the sidebar: goes to the next pane in that state, across spaces.
-    /// It does nothing for another state or when no pane is in the state.
-    public func goToNextPane(in attention: PaneAttention) {
-        let pane = switch attention {
-        case .needsYou: nextPaneThatNeedsYou()
-        case .doneUnread: nextPaneDoneUnread()
-        case .none: nil as PaneID?
+    /// The next pane or run in the state, after the one that you look at. The order is the panes in sidebar order,
+    /// then the runs of Today, the longest wait first, round to the start. Nil when nothing is in the state.
+    public func nextAttentionTarget(in attention: PaneAttention) -> AttentionTarget? {
+        let today = today
+        let (panes, runs): ([PaneID], [Run]) = switch attention {
+        case .needsYou: (needsYouPanes, today.needsYou)
+        case .doneUnread: (sidebarPaneIDs.filter { workspace.attention(of: $0) == .doneUnread }, today.doneUnread)
+        case .none: ([], [])
         }
-        if let pane { goToPane(pane) }
+        let order = sidebarPaneIDs.map(AttentionTarget.pane) + runs.map { AttentionTarget.run($0.id) }
+        let matching = Set(panes.map(AttentionTarget.pane) + runs.map { AttentionTarget.run($0.id) })
+        let current: AttentionTarget? = switch page {
+        case .desk: desk.runID.map(AttentionTarget.run)
+        case .run(let id): .run(id)
+        default: workspace.focusedPane.map(AttentionTarget.pane)
+        }
+        return AttentionCycle.next(order: order, matching: matching, after: current)
+    }
+
+    /// A click on a fixed attention row of the sidebar: goes to the next pane or run in that state, across spaces.
+    /// It does nothing for another state or when nothing is in the state.
+    public func goToNext(in attention: PaneAttention) async {
+        switch nextAttentionTarget(in: attention) {
+        case .pane(let pane): goToPane(pane)
+        case .run(let id): await openWaitingRun(id)
+        case nil: break
+        }
     }
 
     /// ⌘L: makes the next pane that needs you active and focused. Returns false when no other pane needs you.

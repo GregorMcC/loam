@@ -40,12 +40,21 @@ public struct IntakeItem: Codable, Equatable, Sendable, Identifiable {
     public var inCycle: Bool = false
     /// True when the Linear assignee is the person of the key, or the GitHub assignees include the gh user.
     public var assignedToMe: Bool = false
+    /// The name of the Linear assignee, or the logins of the GitHub assignees, such as "ada, sam". Empty for none.
+    public var assignee: String = ""
+    /// True for a Linear issue whose workflow state type is started, such as In Progress.
+    public var inProgress: Bool = false
+    /// The project milestone of a Linear issue, or empty.
+    public var milestone: String = ""
+    /// The place of the milestone in its Linear project, a lower number first. 0 for no milestone.
+    public var milestoneOrder: Double = 0
     public var id: String { url }
     public var isTicket: Bool { source == "map" }
     enum CodingKeys: String, CodingKey {
-        case source, key, title, status, priority, labels, url, repo, text, branch
+        case source, key, title, status, priority, labels, url, repo, text, branch, assignee, milestone
         case updatedAt = "updated_at", runID = "run_id", createdAt = "created_at"
-        case inCycle = "in_cycle", assignedToMe = "assigned_to_me"
+        case inCycle = "in_cycle", assignedToMe = "assigned_to_me", inProgress = "in_progress"
+        case milestoneOrder = "milestone_order"
     }
 }
 

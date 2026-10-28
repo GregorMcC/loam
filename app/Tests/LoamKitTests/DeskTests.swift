@@ -41,6 +41,24 @@ import Testing
         #expect(model.page == .today)
     }
 
+    /// TAS-49: ] goes through every file in the order to read them, and from the last file back to the first.
+    @Test func nextFileGoesThroughEveryFileAndWraps() throws {
+        let (model, _) = try model([])
+        let files = ["a.go", "b.go", "c.go"].map { RunDiff.File(path: $0, status: "modified", added: 1, deleted: 0, hunks: []) }
+        model.desk.runID = "r1"
+        model.desk.diff = RunDiff(base: "main", head: "abc", files: files)
+        model.desk.file = "a.go"
+        var shown: [String?] = []
+        for _ in files {
+            model.showNextDeskFile()
+            shown.append(model.desk.file)
+        }
+        #expect(shown == ["b.go", "c.go", "a.go"])
+        // One file has no next file.
+        model.desk.diff = RunDiff(base: "main", head: "abc", files: [files[0]])
+        #expect(model.nextDeskFile == nil)
+    }
+
     @Test func nextAndPreviousStayInTheQueue() async throws {
         let (model, _) = try model(Array(repeating: ("run_diff", 0), count: 8))
         await model.openDesk()

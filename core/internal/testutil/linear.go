@@ -24,7 +24,9 @@ type LinearCall struct {
 
 // FakeLinearServer stands in for the Linear API. Team ENG has two open
 // issues: ENG-523 (Todo, High, label Feature) and ENG-525 (Backlog, no
-// priority). ENG-523 is in the active cycle and assigned to the viewer. An update moves ENG-523 to the state that it names, such as In
+// priority). ENG-523 is in the active cycle, in milestone Beta, and assigned
+// to the viewer, Ada Example. ENG-525 is in milestone Alpha, which comes
+// before Beta, and assigned to Bob Example. An update moves ENG-523 to the state that it names, such as In
 // Progress or Done, an attachment link and a comment succeed, and
 // ENG-523 has a description. It is an
 // [http.Handler], so the fakelinear command can serve it for the app's
@@ -130,12 +132,13 @@ func (f *FakeLinearServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			{"identifier":"ENG-523","title":"Plot panel: drag a link to reorder it","url":"https://linear.app/acme/issue/ENG-523/plot-panel-drag",
 			 "priorityLabel":"High","updatedAt":"2026-10-20T10:00:00.000Z","createdAt":"2026-10-01T09:30:00.000Z",
 			 "description":"A link in the plot panel moves to a new place when you drag it.","branchName":"ada/eng-523-plot-panel-drag",
-			 "cycle":{"isActive":true},"assignee":{"id":"user-ada"},
-			 "state":{"name":"`+state+`"},"labels":{"nodes":[{"name":"Feature"}]}},
+			 "cycle":{"isActive":true},"assignee":{"id":"user-ada","name":"Ada Example"},
+			 "state":{"name":"`+state+`","type":"`+stateType+`"},"projectMilestone":{"name":"Beta","sortOrder":2},
+			 "labels":{"nodes":[{"name":"Feature"}]}},
 			{"identifier":"ENG-525","title":"Settings: choose the worktree folder","url":"https://linear.app/acme/issue/ENG-525/settings",
 			 "priorityLabel":"No priority","updatedAt":"2026-10-19T10:00:00.000Z","createdAt":"2026-10-02T11:00:00.000Z",
-			 "description":null,"branchName":"ada/eng-525-settings","cycle":null,"assignee":{"id":"user-bob"},
-			 "state":{"name":"Backlog"},"labels":{"nodes":[]}}]}}}`)
+			 "description":null,"branchName":"ada/eng-525-settings","cycle":null,"assignee":{"id":"user-bob","name":"Bob Example"},
+			 "state":{"name":"Backlog","type":"backlog"},"projectMilestone":{"name":"Alpha","sortOrder":1},"labels":{"nodes":[]}}]}}}`)
 	case strings.Contains(req.Query, "viewer"):
 		io.WriteString(w, `{"data":{"viewer":{"name":"Ada Example","email":"ada@example.com"},"organization":{"name":"Acme"}}}`)
 	case strings.Contains(req.Query, "attachmentLinkURL"):

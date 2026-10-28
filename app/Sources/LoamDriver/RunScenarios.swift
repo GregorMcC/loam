@@ -111,7 +111,9 @@ extension Scenarios {
         try await app.waitUntil("the runs load") { model.runs.count == 6 }
         try confirm(model.runs.first { $0.id == queued }?.state == .queued, "the new run does not wait for a slot")
         try confirm(model.today.needsYouCount == 2, "Today counts \(model.today.needsYouCount) runs that need you")
-        try await app.waitUntil("the Today row counts 2") { app.text(of: "sidebar-today")?.contains("2") == true }
+        // The ready run is done, unread (TAS-45), so the Today row counts it with the two runs that need you.
+        try confirm(model.today.doneUnread.map(\.id) == [ready], "Today has \(model.today.doneUnread.map(\.id)) done, unread")
+        try await app.waitUntil("the Today row counts 3") { app.text(of: "sidebar-today")?.contains("3") == true }
 
         func appearance(_ name: NSAppearance.Name) async {
             NSApp.appearance = NSAppearance(named: name)
@@ -158,9 +160,34 @@ extension Scenarios {
         await appearance(.aqua)
         app.screenshot("run-page-day")
 
-        // Back goes to Today. A move to a plot closes the page and shows its panes again.
+        // Back goes to Today.
         try app.click("run-page-back")
         try await app.waitUntil("Back shows Today") { model.page == .today && app.exists("today") }
+
+        // TAS-45: the two runs that need you count in Needs you, as panes do. No pane needs you, so a click goes to the
+        // run that waits longest, at the desk, and the next click to the run that a limit stopped, on its page.
+        try await app.waitUntil("Needs you counts the runs") { app.text(of: "attention-needs-you")?.contains("2") == true }
+        try app.click("attention-needs-you")
+        try await app.waitUntil("Needs you opens the desk") { model.page == .desk && model.desk.runID == gate }
+        try app.click("attention-needs-you")
+        try await app.waitUntil("Needs you opens the run page") { model.page == .run(limit) }
+        model.showToday()
+        try await app.waitUntil("Today shows again") { model.page == .today && app.exists("today-intake-\(plot)") }
+
+        // TAS-44: the Intake column of a plot opens its Intake page. The plot menu of the page shows another plot, and the
+        // active plot of the window stays.
+        let active = model.workspace.activePlotID
+        try app.click("today-intake-\(plot)")
+        try await app.waitUntil("the intake of the plot shows") { model.page == .intake(plot) && app.exists("intake-row-map 135") }
+        try await app.openMenu(of: "intake-plot")
+        app.screenshot("intake-plot-menu")
+        try await app.pickMenuItem("Reporting \u{00B7} None")
+        try await app.waitUntil("the intake of the other plot shows") {
+            model.page == .intake(other) && app.text(of: "intake-plot") == "Reporting" && app.exists("intake-empty")
+        }
+        try confirm(model.workspace.activePlotID == active, "the plot menu moved the active plot")
+
+        // A move to a plot closes the page and shows its panes again.
         model.activate(plot: plot)
         try await app.waitUntil("the plot shows") { model.page == nil && !app.exists("today") }
         NSApp.appearance = nil
@@ -182,7 +209,7 @@ extension Scenarios {
         let (rig, shotEnvironment, _) = try shotRig(app)
         let (repo, ssh) = try widgetsRepo(rig, onGitHub: true)
         let ghState = rig.root.appendingPathComponent("gh-state.json")
-        try #"{"issues": [{"number": 52, "title": "Paste a long prompt without a hang", "url": "https://github.com/example/widgets/issues/52", "labels": [], "updatedAt": "2026-10-22T09:00:00Z", "createdAt": "2026-10-21T09:00:00Z", "body": "A paste of 4000 characters hangs the pane for a second.", "assignees": []}, {"number": 48, "title": "Install fails when the bin folder is missing", "url": "https://github.com/example/widgets/issues/48", "labels": [{"name": "bug"}], "updatedAt": "2026-10-20T10:00:00Z", "createdAt": "2026-10-18T10:00:00Z", "body": "The install script stops when ~/.local/bin is missing.", "assignees": []}]}"#
+        try #"{"issues": [{"number": 52, "title": "Paste a long prompt without a hang", "url": "https://github.com/example/widgets/issues/52", "labels": [], "updatedAt": "2026-10-22T09:00:00Z", "createdAt": "2026-10-21T09:00:00Z", "body": "A paste of 4000 characters hangs the pane for a second.\nStep 1: paste the text again and watch the pane.\nStep 2: paste the text again and watch the pane.\nStep 3: paste the text again and watch the pane.\nStep 4: paste the text again and watch the pane.\nStep 5: paste the text again and watch the pane.\nStep 6: paste the text again and watch the pane.\nStep 7: paste the text again and watch the pane.\nStep 8: paste the text again and watch the pane.\nStep 9: paste the text again and watch the pane.\nStep 10: paste the text again and watch the pane.\nStep 11: paste the text again and watch the pane.\nStep 12: paste the text again and watch the pane.\nStep 13: paste the text again and watch the pane.\nStep 14: paste the text again and watch the pane.\nStep 15: paste the text again and watch the pane.\nStep 16: paste the text again and watch the pane.\nStep 17: paste the text again and watch the pane.\nStep 18: paste the text again and watch the pane.\nStep 19: paste the text again and watch the pane.", "assignees": []}, {"number": 48, "title": "Install fails when the bin folder is missing", "url": "https://github.com/example/widgets/issues/48", "labels": [{"name": "bug"}], "updatedAt": "2026-10-20T10:00:00Z", "createdAt": "2026-10-18T10:00:00Z", "body": "The install script stops when ~/.local/bin is missing.", "assignees": []}]}"#
             .write(to: ghState, atomically: true, encoding: .utf8)
 
         // A map with two open tickets and one resolved ticket.
@@ -232,6 +259,36 @@ extension Scenarios {
         try await app.waitUntil("the map filter") { !app.exists("intake-row-#52") && app.exists("intake-row-map 136") }
         try app.click("intake-filter-all")
         try await app.waitUntil("all items") { app.exists("intake-row-#52") }
+
+        // TAS-47: ↓ and J select the next row, ↑ and K the row before, and the detail shows the row. The move stops at the
+        // first row.
+        guard let list = model.intake else { throw DriverFailure("the intake has no list") }
+        let titles = IntakeContent.rows(list, filter: .init()).map(\.title)
+        try await app.waitUntil("the detail shows the first row") { app.text(of: "intake-detail-title") == titles[0] }
+        app.pressShortcut(.down)
+        try await app.waitUntil("↓ selects the next row") { app.text(of: "intake-detail-title") == titles[1] }
+        try app.pressShortcut(letter: "j")
+        try await app.waitUntil("J selects the next row") { app.text(of: "intake-detail-title") == titles[2] }
+        try app.pressShortcut(letter: "k")
+        app.pressShortcut(.up)
+        try await app.waitUntil("K and ↑ select the first row") { app.text(of: "intake-detail-title") == titles[0] }
+        app.pressShortcut(.up)
+        // Time for a move that must not come.
+        await app.sleep(0.5)
+        try confirm(app.text(of: "intake-detail-title") == titles[0], "↑ moved past the first row")
+        // X checks the selected row and shows the bar, and X again unchecks it.
+        try app.pressShortcut(letter: "x")
+        try await app.waitUntil("X checks the row") { app.text(of: "intake-batch-start") == "Shape 1 run" }
+        try app.pressShortcut(letter: "x")
+        try await app.waitUntil("X unchecks the row") { !app.exists("intake-batch") }
+
+        // TAS-48: the detail shows all of a long text, more than the 12 lines that it showed before.
+        try app.click("intake-row-#52")
+        try await app.waitUntil("the detail shows the long text") { app.text(of: "intake-text")?.hasPrefix("A paste of 4000") == true }
+        let lineHeight: CGFloat = 18
+        try confirm((AccessibilityProbe.shared.node("intake-text")?.frame?.height ?? 0) > 13 * lineHeight,
+                    "the detail clips the long text")
+        app.screenshot("intake-long-text")
 
         // The detail of a ticket, and two checked issues with the bar.
         try app.click("intake-row-map 135")
@@ -306,7 +363,7 @@ extension Scenarios {
     }
 
     /// Ticket 205: Settings > Connections takes a Linear API key, and the Intake page of a plot with a Linear team
-    /// link lists its issues. A run from an issue moves the issue to In Progress. The Linear API is the core's fake
+    /// link lists its issues. Hide taken and the Milestone menu filter them (TAS-50, TAS-51). A run from an issue moves the issue to In Progress. The Linear API is the core's fake
     /// (`LOAM_DRIVER_FAKE_LINEAR`), on a local port, and a temp secrets file stands in for the Keychain.
     private static func linearShotSteps(_ app: DriverApp) async throws {
         guard let fakeLinear = ProcessInfo.processInfo.environment["LOAM_DRIVER_FAKE_LINEAR"] else {
@@ -393,11 +450,32 @@ extension Scenarios {
         }
         settingsWindow()?.close()
 
-        // Intake lists the issues of the team.
+        // Intake lists the issues of the team. Hide taken is on, so the issue that Bob has is not in the list (TAS-50).
         try app.click("sidebar-intake")
-        try await app.waitUntil("the Linear issues") { app.exists("intake-row-ENG-523") && app.exists("intake-row-ENG-525") }
+        try await app.waitUntil("the Linear issues") { app.exists("intake-row-ENG-523") }
+        try confirm(!app.exists("intake-row-ENG-525"), "Hide taken shows the issue that Bob has")
         try confirm(app.exists("intake-filter-linear"), "no Linear filter")
         try confirm(app.exists("intake-this-cycle"), "no This cycle chip")
+        app.screenshot("intake-hide-taken")
+        try app.click("intake-hide-taken")
+        try await app.waitUntil("the taken issue") { app.exists("intake-row-ENG-525") }
+        try app.click("intake-row-ENG-525")
+        try await app.waitUntil("the assignee and the milestone") {
+            app.text(of: "intake-detail-facts") == "Assigned to Bob Example \u{00B7} Milestone Alpha"
+        }
+        // The Milestone menu keeps the issues of one milestone (TAS-51).
+        try confirm(app.text(of: "intake-milestone") == "Milestone", "the Milestone menu says \(app.text(of: "intake-milestone") ?? "nothing")")
+        try await app.openMenu(of: "intake-milestone")
+        app.screenshot("intake-milestone-menu")
+        try await app.pickMenuItem("Alpha")
+        try await app.waitUntil("the Alpha issue only") {
+            app.exists("intake-row-ENG-525") && !app.exists("intake-row-ENG-523") && app.text(of: "intake-milestone") == "Alpha"
+        }
+        await app.sleep(0.5)
+        app.screenshot("intake-milestone-alpha")
+        try await app.openMenu(of: "intake-milestone")
+        try await app.pickMenuItem("All milestones")
+        try await app.waitUntil("every milestone") { app.exists("intake-row-ENG-523") && app.exists("intake-row-ENG-525") }
         try app.click("intake-row-ENG-523")
         try await app.waitUntil("the detail") { app.exists("intake-chore") && app.exists("intake-text") }
         try app.click("intake-check-ENG-523")

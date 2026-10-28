@@ -54,10 +54,12 @@ func TestIssuesOfATeamAreTheOpenOnes(t *testing.T) {
 	}
 	a, b := got[0], got[1]
 	if a.Description != "A link in the plot panel moves to a new place when you drag it." || a.Branch != "ada/eng-523-plot-panel-drag" ||
-		a.CreatedAt != "2026-10-01T09:30:00.000Z" || !a.InCycle || !a.AssignedToMe {
+		a.CreatedAt != "2026-10-01T09:30:00.000Z" || !a.InCycle || !a.AssignedToMe || a.Assignee != "Ada Example" ||
+		a.InProgress || a.Milestone != "Beta" || a.MilestoneOrder != 2 {
 		t.Fatalf("first %+v", a)
 	}
-	if b.Description != "" || b.InCycle || b.AssignedToMe {
+	if b.Description != "" || b.InCycle || b.AssignedToMe || b.Assignee != "Bob Example" || b.InProgress ||
+		b.Milestone != "Alpha" || b.MilestoneOrder != 1 {
 		t.Fatalf("second %+v", b)
 	}
 	filter, _ := json.Marshal(f.Calls()[0].Variables["filter"])
@@ -81,6 +83,10 @@ func TestStartMovesAnIssueThatHasNotStarted(t *testing.T) {
 	moved, err = c.Start(context.Background(), "ENG-523")
 	if err != nil || moved != "" || len(f.Calls()) != 3 {
 		t.Fatalf("%q %v %d queries", moved, err, len(f.Calls()))
+	}
+	// TAS-50: the list says that the issue is in progress.
+	if got, err := c.Issues(context.Background(), linear.Scope{Team: "ENG"}); err != nil || !got[0].InProgress || got[1].InProgress {
+		t.Fatalf("%+v %v", got, err)
 	}
 }
 
