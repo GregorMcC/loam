@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -20,6 +23,9 @@ import (
 
 // shapeTimeout limits one draft. Claude reads the repo before it answers.
 const shapeTimeout = 10 * time.Minute
+
+// draftStepsMax is how many steps of one draft Loam records as draft events.
+const draftStepsMax = 100
 
 // issueTextMax is how much of the text of an issue a draft prompt keeps.
 const issueTextMax = 20000
@@ -202,7 +208,13 @@ func Approve(ctx context.Context, s *store.Store, id string, o ApproveOptions) (
 // the reason that there is none. A run that left Shaping meanwhile, such as
 // one that you stopped, stays as it is.
 func draftRun(ctx context.Context, s *store.Store, r store.Run, change string) (store.Run, error) {
-	d, failure := askForDraft(ctx, r, change)
+	steps := 0
+	d, failure := askForDraft(ctx, r, change, func(step string) {
+		// A step that Loam cannot record is lost, and the draft goes on.
+		if steps < draftStepsMax && s.AddRunEvent(r.ID, "draft", step) == nil {
+			steps++
+		}
+	})
 	r, err := s.UpdateRun(r.ID, func(r *store.Run) error {
 		if r.State != store.RunShaping || r.Shape == nil {
 			return nil
@@ -234,7 +246,9 @@ func draftRun(ctx context.Context, s *store.Store, r store.Run, change string) (
 // askForDraft runs claude -p in the folder of the run, with read-only tools,
 // and returns the draft, or why there is none. claude -p asks no trust
 // question, so as for a run, the folder must be one that Claude Code trusts.
-func askForDraft(ctx context.Context, r store.Run, change string) (draft, string) {
+// It streams its output, and step gets each step that Claude takes, such as
+// "Read window/frame.go", as it takes it.
+func askForDraft(ctx context.Context, r store.Run, change string, step func(string)) (draft, string) {
 	if !claudebin.Trusted(r.Folder) {
 		return draft{}, fmt.Sprintf("%v %s. Run claude in it once and choose Yes, then draft the run again", ErrUntrusted, r.Folder)
 	}
@@ -244,7 +258,7 @@ func askForDraft(ctx context.Context, r store.Run, change string) (draft, string
 	}
 	ctx, cancel := context.WithTimeout(ctx, shapeTimeout)
 	defer cancel()
-	args := []string{"-p", shapePrompt(ctx, r, change), "--output-format", "json", "--json-schema", draftSchema,
+	args := []string{"-p", shapePrompt(ctx, r, change), "--output-format", "stream-json", "--verbose", "--json-schema", draftSchema,
 		"--no-session-persistence", "--tools", "Read,Grep,Glob"}
 	if r.Shape.Model != "" {
 		args = append(args, "--model", r.Shape.Model)
@@ -252,24 +266,28 @@ func askForDraft(ctx context.Context, r store.Run, change string) (draft, string
 	cmd := exec.CommandContext(ctx, claude, args...)
 	cmd.Dir = r.Folder
 	cmd.WaitDelay = time.Second
-	var out, errOut bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &errOut
-	if err := cmd.Run(); err != nil {
+	var errOut bytes.Buffer
+	cmd.Stderr = &errOut
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return draft{}, err.Error()
+	}
+	if err := cmd.Start(); err != nil {
+		return draft{}, failureNote("claude -p failed", err, errOut.String())
+	}
+	res, readErr := readDraftStream(stdout, r.Folder, step)
+	if err := cmd.Wait(); err != nil && !errors.Is(err, exec.ErrWaitDelay) {
 		if ctx.Err() != nil {
 			return draft{}, "claude -p did not answer in time"
 		}
-		return draft{}, failureNote("claude -p failed", err, errOut.String()+out.String())
+		return draft{}, failureNote("claude -p failed", err, errOut.String())
 	}
-	var res struct {
-		IsError          bool   `json:"is_error"`
-		Subtype          string `json:"subtype"`
-		Result           string `json:"result"`
-		StructuredOutput *draft `json:"structured_output"`
-	}
-	if err := json.Unmarshal(out.Bytes(), &res); err != nil {
-		return draft{}, "claude -p gave an answer that Loam cannot read: " + err.Error()
-	}
-	if res.IsError || res.StructuredOutput == nil {
+	switch {
+	case readErr != nil:
+		return draft{}, "claude -p gave an answer that Loam cannot read: " + readErr.Error()
+	case res == nil:
+		return draft{}, "claude -p ended with no result"
+	case res.IsError || res.StructuredOutput == nil:
 		return draft{}, strings.TrimSpace(fmt.Sprintf("%s %s", res.Subtype, tail(res.Result, noteTail)))
 	}
 	d := *res.StructuredOutput
@@ -283,6 +301,97 @@ func askForDraft(ctx context.Context, r store.Run, change string) (draft, string
 	}
 	d.Checks = checks
 	return d, ""
+}
+
+// draftResult is the last message of claude -p: the draft, or why there is none.
+type draftResult struct {
+	IsError          bool   `json:"is_error"`
+	Subtype          string `json:"subtype"`
+	Result           string `json:"result"`
+	StructuredOutput *draft `json:"structured_output"`
+}
+
+// readDraftStream reads the stream-json messages of claude -p. It gives each
+// step of an assistant message to step, and returns the result message.
+func readDraftStream(out io.Reader, folder string, step func(string)) (*draftResult, error) {
+	dec := json.NewDecoder(out)
+	var res *draftResult
+	for {
+		var msg struct {
+			Type    string `json:"type"`
+			Message struct {
+				Content []struct {
+					Type  string         `json:"type"`
+					Text  string         `json:"text"`
+					Name  string         `json:"name"`
+					Input map[string]any `json:"input"`
+				} `json:"content"`
+			} `json:"message"`
+		}
+		raw := json.RawMessage{}
+		if err := dec.Decode(&raw); err == io.EOF {
+			return res, nil
+		} else if err != nil {
+			return res, err
+		}
+		if err := json.Unmarshal(raw, &msg); err != nil {
+			return res, err
+		}
+		switch msg.Type {
+		case "result":
+			res = &draftResult{}
+			if err := json.Unmarshal(raw, res); err != nil {
+				return nil, err
+			}
+		case "assistant":
+			for _, c := range msg.Message.Content {
+				if s := draftStep(c.Type, c.Text, c.Name, c.Input, folder); s != "" {
+					step(s)
+				}
+			}
+		}
+	}
+}
+
+// draftStep says what one part of an assistant message did, for a person,
+// or "" for a part that says nothing, such as thinking.
+func draftStep(kind, text, tool string, input map[string]any, folder string) string {
+	arg := func(key string) string { s, _ := input[key].(string); return s }
+	switch {
+	case kind == "text":
+		line, _, _ := strings.Cut(strings.TrimSpace(text), "\n")
+		return truncate(strings.TrimSpace(line), 200)
+	case kind != "tool_use":
+		return ""
+	case tool == "Read":
+		return "Read " + relativeTo(folder, arg("file_path"))
+	case tool == "Grep":
+		return "Searched for " + arg("pattern")
+	case tool == "Glob":
+		return "Looked for " + arg("pattern")
+	case tool == "StructuredOutput":
+		return "Wrote the draft"
+	default:
+		return "Used " + tool
+	}
+}
+
+// relativeTo gives path from folder, or path as it is when it is not in the
+// folder. A folder behind a symlink, such as /var on macOS, still matches.
+func relativeTo(folder, path string) string {
+	for _, dir := range []string{folder, resolved(folder)} {
+		if rel, err := filepath.Rel(dir, path); err == nil && !strings.HasPrefix(rel, "..") {
+			return rel
+		}
+	}
+	return path
+}
+
+func resolved(path string) string {
+	if r, err := filepath.EvalSymlinks(path); err == nil {
+		return r
+	}
+	return path
 }
 
 // shapePrompt asks Claude for a draft of the run, from its title and the
@@ -360,4 +469,13 @@ func issueText(ctx context.Context, src store.RunSource) (string, error) {
 		text = strings.ToValidUTF8(text[:issueTextMax], "") + "\n[Loam cut the rest of the text]"
 	}
 	return strings.TrimSpace(text), nil
+}
+
+// truncate cuts text to at most n characters, with an ellipsis.
+func truncate(text string, n int) string {
+	runes := []rune(text)
+	if len(runes) <= n {
+		return text
+	}
+	return string(runes[:n-1]) + "…"
 }

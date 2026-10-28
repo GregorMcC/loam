@@ -503,7 +503,7 @@
         "id": { "type": "integer", "minimum": 1 },
         "run_id": { "$ref": "#/$defs/id" },
         "at": { "$ref": "#/$defs/time" },
-        "kind": { "description": "state: the new state. try: a failed gate or CI, with its note. check: the result of one check. linear: what Loam did to the Linear issue of the run. ship: a push or a PR. ci: the result of CI on the PR. review: your notes went back to the session. note: one of those notes, as <file> line <n>: <text> or as text alone. land: a merge of the PR, or where it waits. shape: a draft by Claude, or why it failed.", "enum": ["state", "try", "check", "linear", "ship", "ci", "review", "note", "land", "shape"] },
+        "kind": { "description": "state: the new state. try: a failed gate or CI, with its note. check: the result of one check. linear: what Loam did to the Linear issue of the run. ship: a push or a PR. ci: the result of CI on the PR. review: your notes went back to the session. note: one of those notes, as <file> line <n>: <text> or as text alone. land: a merge of the PR, or where it waits. shape: a draft by Claude, or why it failed. draft: one step that Claude took while it drafted, such as Read window/frame.go.", "enum": ["state", "try", "check", "linear", "ship", "ci", "review", "note", "land", "shape", "draft"] },
         "detail": { "type": "string" }
       }
     },

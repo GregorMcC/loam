@@ -12,7 +12,8 @@ import (
 	"github.com/GregorMcC/loam/core/internal/testutil"
 )
 
-// shapeDraft is what claude -p --output-format json prints for a draft.
+// shapeDraft is the result message that claude -p prints for a draft. With
+// --output-format stream-json it is the last message.
 const shapeDraft = `{"type": "result", "subtype": "success", "is_error": false, "result": "",
  "structured_output": {
   "goal": "Loam remembers the window size of each plot.",
@@ -72,7 +73,7 @@ func TestRunShapeDraftsTheGoalAndTheChecksWithClaude(t *testing.T) {
 	if realPath(t, inv.Cwd) != realPath(t, repo) {
 		t.Fatalf("cwd %s", inv.Cwd)
 	}
-	for _, want := range [][]string{{"-p"}, {"--output-format", "json"}, {"--no-session-persistence"}, {"--tools", "Read,Grep,Glob"}} {
+	for _, want := range [][]string{{"-p"}, {"--output-format", "stream-json", "--verbose"}, {"--no-session-persistence"}, {"--tools", "Read,Grep,Glob"}} {
 		if !containsRun(inv.Args, want) {
 			t.Errorf("args %q miss %q", inv.Args, want)
 		}
@@ -87,6 +88,32 @@ func TestRunShapeDraftsTheGoalAndTheChecksWithClaude(t *testing.T) {
 	}
 	if ws, _ := s.ListWorktrees(p.ID); len(ws) != 0 {
 		t.Fatalf("a shaping run made a worktree: %+v", ws)
+	}
+}
+
+// Ticket 207: the steps of a draft stream in. Each step that claude -p takes
+// is a draft event, so the desk can show it while Claude drafts.
+func TestRunShapeRecordsEachStepOfTheDraft(t *testing.T) {
+	s, _, repo := shapeCLI(t)
+	steps := []string{
+		`{"type": "system", "subtype": "init"}`,
+		`{"type": "assistant", "message": {"content": [{"type": "thinking", "thinking": ""}, {"type": "text", "text": "I'll read the window code first.\nThen the tests."}]}}`,
+		`{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Read", "input": {"file_path": "` + repo + `/window/frame.go"}}]}}`,
+		`{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Grep", "input": {"pattern": "SaveFrame"}}]}}`,
+		`{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Glob", "input": {"pattern": "**/*_test.go"}}]}}`,
+		`{"type": "user", "message": {"content": [{"type": "tool_result", "content": "..."}]}}`,
+		`{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "StructuredOutput", "input": {}}]}}`,
+		strings.ReplaceAll(shapeDraft, "\n", " "),
+	}
+	testutil.FakeClaudePrint(t, strings.Join(steps, "\n")+"\n")
+	r := shapeRun(t, "shape", "alpha", "--title", "Remember the window size per plot")
+	if r.Shape.DraftedAt == nil || r.Goal != "Loam remembers the window size of each plot." {
+		t.Fatalf("run %+v", r)
+	}
+	want := []string{"I'll read the window code first.", "Read window/frame.go", "Searched for SaveFrame",
+		"Looked for **/*_test.go", "Wrote the draft"}
+	if got := events(t, s, r.ID, "draft"); !slices.Equal(got, want) {
+		t.Fatalf("draft events %q, want %q", got, want)
 	}
 }
 
