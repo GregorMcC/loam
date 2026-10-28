@@ -71,6 +71,9 @@ func TestReadTicketReadsOneFile(t *testing.T) {
 	if err != nil || got.Key != "map 135" || got.Title != "Driver scenario: quit during a merge" {
 		t.Fatalf("%+v %v", got, err)
 	}
+	if got.Text != "## Question" || got.Modified.IsZero() {
+		t.Fatalf("text %q modified %v", got.Text, got.Modified)
+	}
 	// A file with no title is not a ticket.
 	bad := filepath.Join(filepath.Dir(m), "issues", "200-empty.md")
 	if err := os.WriteFile(bad, []byte("Status: open\n"), 0o644); err != nil {

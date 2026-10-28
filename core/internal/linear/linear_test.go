@@ -52,6 +52,14 @@ func TestIssuesOfATeamAreTheOpenOnes(t *testing.T) {
 		got[1].Priority != "" || got[1].Labels == nil {
 		t.Fatalf("%+v", got)
 	}
+	a, b := got[0], got[1]
+	if a.Description != "A link in the plot panel moves to a new place when you drag it." || a.Branch != "ada/eng-523-plot-panel-drag" ||
+		a.CreatedAt != "2026-10-01T09:30:00.000Z" || !a.InCycle || !a.AssignedToMe {
+		t.Fatalf("first %+v", a)
+	}
+	if b.Description != "" || b.InCycle || b.AssignedToMe {
+		t.Fatalf("second %+v", b)
+	}
 	filter, _ := json.Marshal(f.Calls()[0].Variables["filter"])
 	if !strings.Contains(string(filter), `"ENG"`) || !strings.Contains(string(filter), "completed") {
 		t.Fatalf("filter %s", filter)

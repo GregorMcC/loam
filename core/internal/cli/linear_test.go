@@ -70,7 +70,10 @@ func TestIntakeListsTheLinearIssuesOfATeamLink(t *testing.T) {
 		strings.Join(i.Labels, ",") != "Feature" || i.URL != "https://linear.app/acme/issue/ENG-523/plot-panel-drag" {
 		t.Fatalf("item %+v", i)
 	}
-	if res.Items[1].Key != "ENG-525" || res.Items[1].Priority != "" {
+	if i.Text == "" || i.Branch != "ada/eng-523-plot-panel-drag" || i.CreatedAt != "2026-10-01T09:30:00.000Z" || !i.InCycle || !i.AssignedToMe {
+		t.Fatalf("new fields %+v", i)
+	}
+	if res.Items[1].Key != "ENG-525" || res.Items[1].Priority != "" || res.Items[1].Text != "" || res.Items[1].AssignedToMe {
 		t.Fatalf("second %+v", res.Items[1])
 	}
 

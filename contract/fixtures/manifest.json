@@ -957,6 +957,30 @@
     "schema": "run-list"
   },
   {
+    "name": "run_events",
+    "args": [
+      "run",
+      "events",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "run-events"
+  },
+  {
+    "name": "run_events_plot_since",
+    "args": [
+      "run",
+      "events",
+      "--plot",
+      "Runs",
+      "--since",
+      "2026-01-01T00:00:00Z",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "run-events"
+  },
+  {
     "name": "linear_status_none",
     "args": [
       "linear",

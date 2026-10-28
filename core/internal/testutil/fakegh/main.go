@@ -23,6 +23,7 @@
 //     run again, by run ID.
 //   - "issues": the open issues of the repo, as gh issue list --json prints
 //     them.
+//   - "login": the login that gh api user --jq .login prints.
 //   - "merge_refusal": the message of GitHub for a merge that it refuses, such
 //     as "Pull request is not mergeable". The PR stays open. A state file with no
 //     "merge_refusal" merges again, so a test can fail a merge and then retry it.
@@ -35,6 +36,7 @@
 //     variables as Loam names them: h<i> is a branch in the first query, n<i>
 //     is a PR number in the second query, and number is the PR of the merge
 //     settings.
+//   - gh api user --jq .login: prints "login".
 //   - gh api repos/<owner>/<repo>/git/ref/heads/<branch>: the head of a branch.
 //   - gh api --method DELETE repos/<owner>/<repo>/git/refs/heads/<branch>:
 //     removes the branch from "refs". GitHub gives HTTP 422 in two cases: the
@@ -87,6 +89,7 @@ type state struct {
 	RerunRefusals  map[string]string          `json:"rerun_refusals,omitempty"`
 	MergeRefusal   string                     `json:"merge_refusal,omitempty"`
 	Issues         []map[string]any           `json:"issues,omitempty"`
+	Login          string                     `json:"login,omitempty"`
 	Logs           map[string]string          `json:"logs,omitempty"`
 }
 
@@ -211,6 +214,10 @@ func query(st *state, vars map[string]any) {
 
 // rest answers gh api for the ref of a branch: a read, or a delete.
 func rest(st *state, args []string) {
+	if slices.Contains(args, "user") {
+		fmt.Println(st.Login)
+		return
+	}
 	method, path := "GET", ""
 	for i := 0; i < len(args); i++ {
 		switch args[i] {

@@ -10,9 +10,10 @@ import (
 	"github.com/GregorMcC/loam/core/internal/testutil"
 )
 
-const issuesState = `{"issues": [
+const issuesState = `{"login": "ada", "issues": [
   {"number": 48, "title": "Install fails when ~/.local/bin is missing", "url": "https://github.com/example/widgets/issues/48",
-   "labels": [{"name": "bug"}], "updatedAt": "2026-10-20T10:00:00Z", "body": "The script stops when the folder is missing."},
+   "labels": [{"name": "bug"}], "updatedAt": "2026-10-20T10:00:00Z", "body": "The script stops when the folder is missing.",
+   "createdAt": "2026-10-01T10:00:00Z", "assignees": [{"login": "ada"}]},
   {"number": 52, "title": "Paste a long prompt without a hang", "url": "https://github.com/example/widgets/issues/52",
    "labels": [], "updatedAt": "2026-10-22T09:00:00Z"}
 ]}`
@@ -28,6 +29,10 @@ func TestIssuesListsTheOpenIssuesOfARepo(t *testing.T) {
 		got[0].URL != "https://github.com/example/widgets/issues/48" || !slices.Equal(got[0].Labels, []string{"bug"}) ||
 		got[0].UpdatedAt != "2026-10-20T10:00:00Z" || got[1].Labels == nil {
 		t.Fatalf("%+v", got)
+	}
+	if got[0].Body != "The script stops when the folder is missing." || got[0].CreatedAt != "2026-10-01T10:00:00Z" ||
+		!slices.Equal(got[0].Assignees, []string{"ada"}) || got[1].Assignees == nil {
+		t.Fatalf("fields %+v", got)
 	}
 	calls := testutil.FakeGHCalls(t)
 	if len(calls) != 1 || !slices.Contains(calls[0].Args, "github.com/example/widgets") || !slices.Contains(calls[0].Args, "open") {
@@ -57,5 +62,14 @@ func TestIssueTextIsTheTitleAndTheBody(t *testing.T) {
 	}
 	if _, err := client(t).IssueText(context.Background(), "https://github.com/example/widgets/issues/7"); err == nil {
 		t.Fatal("a missing issue has text")
+	}
+}
+
+func TestLoginIsTheUserOfGH(t *testing.T) {
+	testutil.Home(t)
+	testutil.FakeGH(t, issuesState)
+	login, err := client(t).Login(context.Background())
+	if err != nil || login != "ada" {
+		t.Fatalf("%q %v", login, err)
 	}
 }

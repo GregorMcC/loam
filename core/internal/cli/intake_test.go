@@ -4,19 +4,23 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/GregorMcC/loam/core/internal/intake"
 	"github.com/GregorMcC/loam/core/internal/store"
 	"github.com/GregorMcC/loam/core/internal/testutil"
 )
 
-const intakeIssues = `{"issues": [
+const intakeIssues = `{"login": "ada", "issues": [
   {"number": 52, "title": "Paste a long prompt without a hang", "url": "https://github.com/example/widgets/issues/52",
-   "labels": [], "updatedAt": "2026-10-22T09:00:00Z"},
+   "labels": [], "updatedAt": "2026-10-22T09:00:00Z", "createdAt": "2026-10-21T09:00:00Z", "body": "  A long paste hangs the pane.  ",
+   "assignees": [{"login": "ada"}]},
   {"number": 48, "title": "Install fails when ~/.local/bin is missing", "url": "https://github.com/example/widgets/issues/48",
-   "labels": [{"name": "bug"}], "updatedAt": "2026-10-20T10:00:00Z"}
+   "labels": [{"name": "bug"}], "updatedAt": "2026-10-20T10:00:00Z", "createdAt": "2026-10-01T10:00:00Z", "body": "",
+   "assignees": [{"login": "bob"}]}
 ]}`
 
 // intakeCLI is runCLI with a map in the links of the plot: tickets 135 and
@@ -126,6 +130,28 @@ func TestIntakeListsTheIssuesAndTicketsOfAPlot(t *testing.T) {
 	if i := res.Items[2]; i.Source != "map" || i.URL != ticket || i.RunID != started.Run.ID {
 		t.Fatalf("ticket %+v", i)
 	}
+	// The text, the time, and the assignee of an issue and a ticket.
+	if i := res.Items[0]; i.Text != "A long paste hangs the pane." || i.CreatedAt != "2026-10-21T09:00:00Z" || !i.AssignedToMe ||
+		i.Branch != "" || i.InCycle {
+		t.Fatalf("issue 52 %+v", i)
+	}
+	if i := res.Items[1]; i.Text != "" || i.AssignedToMe {
+		t.Fatalf("issue 48 %+v", i)
+	}
+	if i := res.Items[2]; i.Text != "" || i.AssignedToMe || i.InCycle || i.Branch != "" {
+		t.Fatalf("ticket fields %+v", i)
+	} else if _, err := time.Parse(time.RFC3339, i.CreatedAt); err != nil {
+		t.Fatalf("ticket created_at %q", i.CreatedAt)
+	}
+	logins := 0
+	for _, c := range testutil.FakeGHCalls(t) {
+		if len(c.Args) > 1 && c.Args[0] == "api" && slices.Contains(c.Args, "user") {
+			logins++
+		}
+	}
+	if logins != 1 {
+		t.Fatalf("gh user read %d times", logins)
+	}
 	if i := res.Items[3]; i.Status != "Blocked by 135" || i.RunID != "" {
 		t.Fatalf("blocked ticket %+v", i)
 	}
@@ -143,5 +169,78 @@ func TestIntakeShowsTheMapWhenGitHubFails(t *testing.T) {
 	}
 	if len(res.Items) != 2 || res.Items[0].Key != "map 135" {
 		t.Fatalf("items %+v", res.Items)
+	}
+}
+
+func TestIntakeClipsALongTextAndReadsATicketText(t *testing.T) {
+	_, _, repo, issues := intakeCLI(t)
+	long := strings.Repeat("é", 1300)
+	ticket := filepath.Join(issues, "135-quit-during-a-merge.md")
+	text := "Status: open\nBlocked by: none\n\n# Driver scenario\n\n" + long + "\n"
+	if err := os.WriteFile(ticket, []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	testutil.Git(t, repo, "remote", "set-url", "origin", "https://github.com/example/widgets.git")
+	testutil.FakeGH(t, `{"issues": [{"number": 7, "title": "Long", "url": "https://github.com/example/widgets/issues/7",
+	  "labels": [], "updatedAt": "2026-10-22T09:00:00Z", "createdAt": "2026-10-21T09:00:00Z", "body": "`+long+`", "assignees": []}]}`)
+	res := intakeList(t)
+	for _, i := range res.Items {
+		if (i.Key == "#7" || i.Key == "map 135") && i.Text != strings.Repeat("é", 1200) {
+			t.Fatalf("%s text has %d characters", i.Key, len([]rune(i.Text)))
+		}
+	}
+	for _, c := range testutil.FakeGHCalls(t) {
+		if slices.Contains(c.Args, "user") {
+			t.Fatal("gh user read for issues with no assignee")
+		}
+	}
+}
+
+func TestRunEventsListsTheEventsNewestFirst(t *testing.T) {
+	_, _, _, issues := intakeCLI(t)
+	ticket := filepath.Join(issues, "135-quit-during-a-merge.md")
+	out, errOut, err := lrRun(t, "", "run", "start", "alpha", "--title", "Quit during a merge", "--ticket", ticket, "--json")
+	if err != nil {
+		t.Fatalf("%v %s", err, errOut)
+	}
+	var started runStartOut
+	if err := json.Unmarshal([]byte(out), &started); err != nil {
+		t.Fatal(err)
+	}
+	type feed struct {
+		Events []struct {
+			RunID    string `json:"run_id"`
+			PlotID   string `json:"plot_id"`
+			RunTitle string `json:"run_title"`
+			At       string `json:"at"`
+			Kind     string `json:"kind"`
+			Detail   string `json:"detail"`
+		} `json:"events"`
+	}
+	events := func(args ...string) feed {
+		t.Helper()
+		out, errOut, err := lrRun(t, "", append([]string{"run", "events", "--json"}, args...)...)
+		if err != nil {
+			t.Fatalf("%v %s", err, errOut)
+		}
+		var f feed
+		if err := json.Unmarshal([]byte(out), &f); err != nil {
+			t.Fatalf("%v: %s", err, out)
+		}
+		return f
+	}
+	all := events()
+	if len(all.Events) == 0 || all.Events[0].RunID != started.Run.ID || all.Events[0].RunTitle != "Quit during a merge" ||
+		all.Events[0].PlotID != started.Run.PlotID || all.Events[0].Kind == "" {
+		t.Fatalf("events %+v", all.Events)
+	}
+	if got := events("--plot", "alpha"); len(got.Events) != len(all.Events) {
+		t.Fatalf("plot events %+v", got.Events)
+	}
+	if got := events("--since", "2999-01-01T00:00:00Z"); got.Events == nil || len(got.Events) != 0 {
+		t.Fatalf("future events %+v", got.Events)
+	}
+	if _, _, err := lrRun(t, "", "run", "events", "--since", "yesterday", "--json"); err == nil {
+		t.Fatal("a bad time was accepted")
 	}
 }

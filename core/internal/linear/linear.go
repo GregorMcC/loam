@@ -120,6 +120,15 @@ type Issue struct {
 	Priority  string
 	Labels    []string
 	UpdatedAt string
+	// Description is the whole description, which can be empty.
+	Description string
+	// Branch is the branch name that Linear gives the issue.
+	Branch    string
+	CreatedAt string
+	// InCycle is true when the issue is in the active cycle of its team.
+	InCycle bool
+	// AssignedToMe is true when the assignee is the person of the key.
+	AssignedToMe bool
 }
 
 // Issues returns the open issues of the scope, the most recently updated
@@ -135,6 +144,9 @@ func (c *Client) Issues(ctx context.Context, s Scope) ([]Issue, error) {
 		return nil, errors.New("a Linear scope needs a team or a project")
 	}
 	var out struct {
+		Viewer struct {
+			ID string `json:"id"`
+		} `json:"viewer"`
 		Issues struct {
 			Nodes []struct {
 				Identifier    string `json:"identifier"`
@@ -142,7 +154,16 @@ func (c *Client) Issues(ctx context.Context, s Scope) ([]Issue, error) {
 				URL           string `json:"url"`
 				PriorityLabel string `json:"priorityLabel"`
 				UpdatedAt     string `json:"updatedAt"`
-				State         struct {
+				CreatedAt     string `json:"createdAt"`
+				Description   string `json:"description"`
+				BranchName    string `json:"branchName"`
+				Cycle         *struct {
+					IsActive bool `json:"isActive"`
+				} `json:"cycle"`
+				Assignee *struct {
+					ID string `json:"id"`
+				} `json:"assignee"`
+				State struct {
 					Name string `json:"name"`
 				} `json:"state"`
 				Labels struct {
@@ -153,8 +174,9 @@ func (c *Client) Issues(ctx context.Context, s Scope) ([]Issue, error) {
 			} `json:"nodes"`
 		} `json:"issues"`
 	}
-	q := fmt.Sprintf(`query($filter: IssueFilter) { issues(filter: $filter, first: %d, orderBy: updatedAt) {
-  nodes { identifier title url priorityLabel updatedAt state { name } labels { nodes { name } } } } }`, issueLimit)
+	q := fmt.Sprintf(`query($filter: IssueFilter) { viewer { id } issues(filter: $filter, first: %d, orderBy: updatedAt) {
+  nodes { identifier title url priorityLabel updatedAt createdAt description branchName cycle { isActive } assignee { id }
+    state { name } labels { nodes { name } } } } }`, issueLimit)
 	if err := c.query(ctx, q, map[string]any{"filter": filter}, &out); err != nil {
 		return nil, err
 	}
@@ -169,7 +191,9 @@ func (c *Client) Issues(ctx context.Context, s Scope) ([]Issue, error) {
 			priority = ""
 		}
 		issues[i] = Issue{Key: n.Identifier, Title: n.Title, URL: n.URL, State: n.State.Name, Priority: priority,
-			Labels: labels, UpdatedAt: n.UpdatedAt}
+			Labels: labels, UpdatedAt: n.UpdatedAt, Description: n.Description, Branch: n.BranchName,
+			CreatedAt: n.CreatedAt, InCycle: n.Cycle != nil && n.Cycle.IsActive,
+			AssignedToMe: n.Assignee != nil && out.Viewer.ID != "" && n.Assignee.ID == out.Viewer.ID}
 	}
 	return issues, nil
 }

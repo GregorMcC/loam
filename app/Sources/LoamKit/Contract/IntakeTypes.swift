@@ -30,11 +30,22 @@ public struct IntakeItem: Codable, Equatable, Sendable, Identifiable {
     public var runID: String
     /// The ID of the plot repo of a GitHub issue. Empty for a Linear issue or a map ticket.
     public var repo: String = ""
+    /// The first 1200 characters of the description, body, or ticket text. Empty for none.
+    public var text: String = ""
+    /// The branch name that Linear gives the issue. Empty for a GitHub issue or a map ticket.
+    public var branch: String = ""
+    /// When the issue was made (RFC 3339). For a map ticket, the change time of the file.
+    public var createdAt: String = ""
+    /// True for a Linear issue in the active cycle of its team.
+    public var inCycle: Bool = false
+    /// True when the Linear assignee is the person of the key, or the GitHub assignees include the gh user.
+    public var assignedToMe: Bool = false
     public var id: String { url }
     public var isTicket: Bool { source == "map" }
     enum CodingKeys: String, CodingKey {
-        case source, key, title, status, priority, labels, url, repo
-        case updatedAt = "updated_at", runID = "run_id"
+        case source, key, title, status, priority, labels, url, repo, text, branch
+        case updatedAt = "updated_at", runID = "run_id", createdAt = "created_at"
+        case inCycle = "in_cycle", assignedToMe = "assigned_to_me"
     }
 }
 

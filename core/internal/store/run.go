@@ -183,6 +183,19 @@ type RunEvent struct {
 	Detail string    `json:"detail"`
 }
 
+// FeedLimit is the most events that [Store.RunFeed] returns.
+const FeedLimit = 200
+
+// FeedEvent is a run event with the run and the plot that it belongs to.
+type FeedEvent struct {
+	RunID    string    `json:"run_id"`
+	PlotID   string    `json:"plot_id"`
+	RunTitle string    `json:"run_title"`
+	At       time.Time `json:"at"`
+	Kind     string    `json:"kind"`
+	Detail   string    `json:"detail"`
+}
+
 func (r *Run) check() error {
 	var missing []string
 	if r.PlotID == "" {
@@ -400,6 +413,39 @@ func (s *Store) RunEvents(runID string) ([]RunEvent, error) {
 			out = append(out, e)
 			return nil
 		}, `SELECT id, run_id, at, kind, detail FROM run_events WHERE run_id = ? ORDER BY id`, runID)
+	})
+	return out, err
+}
+
+// RunFeed returns the events of every run of the plot, or of every plot when
+// plotID is "", newest first, at most [FeedLimit]. A zero since returns all
+// events. Else it returns only the events after since.
+func (s *Store) RunFeed(plotID string, since time.Time) ([]FeedEvent, error) {
+	out := []FeedEvent{}
+	query := `SELECT e.run_id, r.plot_id, r.title, e.at, e.kind, e.detail
+  FROM run_events e JOIN runs r ON r.id = e.run_id WHERE 1 = 1`
+	var args []any
+	if plotID != "" {
+		query += ` AND r.plot_id = ?`
+		args = append(args, plotID)
+	}
+	if !since.IsZero() {
+		query += ` AND e.at > ?`
+		args = append(args, since.UnixMilli())
+	}
+	query += ` ORDER BY e.at DESC, e.id DESC LIMIT ?`
+	args = append(args, FeedLimit)
+	err := s.readTx(func(q queryer) error {
+		return scanRows(q, func(rows *sql.Rows) error {
+			var e FeedEvent
+			var at int64
+			if err := rows.Scan(&e.RunID, &e.PlotID, &e.RunTitle, &at, &e.Kind, &e.Detail); err != nil {
+				return err
+			}
+			e.At = tm(at)
+			out = append(out, e)
+			return nil
+		}, query, args...)
 	})
 	return out, err
 }

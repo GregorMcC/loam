@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/GregorMcC/loam/core/internal/run"
 	"github.com/GregorMcC/loam/core/internal/store"
@@ -31,7 +32,7 @@ func newRunCmd() *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
-	c.AddCommand(newRunStartCmd(), newRunShapeCmd(), newRunRedraftCmd(), newRunApproveCmd(), newRunListCmd(), newRunStatusCmd(), newRunStopCmd(), newRunDiffCmd(), newRunSendBackCmd(), newRunLandCmd(), newRunTickCmd(), newRunHookCmd(), newRunDefaultsCmd())
+	c.AddCommand(newRunStartCmd(), newRunShapeCmd(), newRunRedraftCmd(), newRunApproveCmd(), newRunListCmd(), newRunStatusCmd(), newRunEventsCmd(), newRunStopCmd(), newRunDiffCmd(), newRunSendBackCmd(), newRunLandCmd(), newRunTickCmd(), newRunHookCmd(), newRunDefaultsCmd())
 	return c
 }
 
@@ -354,6 +355,59 @@ func newRunStatusCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func newRunEventsCmd() *cobra.Command {
+	var since, plot string
+	c := &cobra.Command{
+		Use:   "events [--since <time>] [--plot <plot>]",
+		Short: "List the run events of every plot, or of one plot, newest first",
+		Long:  "Lists at most 200 events of the runs, newest first. --since takes an RFC 3339 time and lists only the events after it.",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			var after time.Time
+			if since != "" {
+				t, err := time.Parse(time.RFC3339, since)
+				if err != nil {
+					return fmt.Errorf("--since %q is not an RFC 3339 time: %w", since, store.ErrInvalid)
+				}
+				after = t
+			}
+			s, err := openStore()
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+			plotID := ""
+			if plot != "" {
+				p, err := resolvePlot(s, plot)
+				if err != nil {
+					return err
+				}
+				plotID = p.ID
+			}
+			events, err := s.RunFeed(plotID, after)
+			if err != nil {
+				return err
+			}
+			if JSON(cmd) {
+				return printJSON(cmd, struct {
+					Events []store.FeedEvent `json:"events"`
+				}{events})
+			}
+			out := cmd.OutOrStdout()
+			if len(events) == 0 {
+				fmt.Fprintln(out, "No events.")
+			}
+			for _, e := range events {
+				fmt.Fprintf(out, "%s  %s  %-5s %s  %s\n", e.At.Format("2006-01-02 15:04:05"), e.RunID, e.Kind, oneLine(e.Detail), oneLine(e.RunTitle))
+			}
+			return nil
+		},
+	}
+	c.Flags().StringVar(&since, "since", "", "list only the events after this RFC 3339 time")
+	c.Flags().StringVar(&plot, "plot", "", "list only the events of the runs of this plot")
+	return c
 }
 
 func newRunStopCmd() *cobra.Command {
