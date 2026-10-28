@@ -625,13 +625,18 @@ private struct PaneRowView: View {
 
 /// The top of the sidebar (ticket 86), under the window buttons: a search button that looks like a
 /// field, then two fixed attention rows. A click on an attention row goes to the next pane in that
-/// state, across plots. With a count of 0 the row shows no count and does nothing. The "Ready to
-/// merge" row of ticket 107 follows them, and goes to the next ready worktree.
+/// state, across plots, and then to the runs in that state (TAS-45). With a count of 0 the row shows
+/// no count and does nothing. The "Ready to merge" row of ticket 107 follows them, and goes to the
+/// next ready worktree.
 private struct SidebarTop: View {
     let model: AppModel
     let sidebar: SidebarModel
 
     var body: some View {
+        // The panes and the runs in each state (TAS-45).
+        let today = model.today
+        let needsYou = sidebar.needsYouCount + today.needsYouCount
+        let doneUnread = sidebar.doneUnreadCount + today.doneUnread.count
         VStack(spacing: 0) {
             Button { model.switcher.open() } label: {
                 HStack(spacing: 8) {
@@ -655,25 +660,25 @@ private struct SidebarTop: View {
             .accessibilityLabel("Search")
             .accessibilityIdentifier("sidebar-search")
             VStack(spacing: 1) {
-                AttentionRow(title: "Needs you", count: sidebar.needsYouCount, id: "attention-needs-you",
-                             action: { model.goToNextPane(in: .needsYou) }) {
+                AttentionRow(title: "Needs you", count: needsYou, id: "attention-needs-you",
+                             action: { Task { await model.goToNext(in: .needsYou) } }) {
                     AttentionDot(mark: .needs).frame(width: 8, height: 8)
                 } trailing: {
-                    NeedsYouCountBadge(count: sidebar.needsYouCount)
+                    NeedsYouCountBadge(count: needsYou)
                 }
-                AttentionRow(title: "Done, unread", count: sidebar.doneUnreadCount, id: "attention-done-unread",
-                             action: { model.goToNextPane(in: .doneUnread) }) {
+                AttentionRow(title: "Done, unread", count: doneUnread, id: "attention-done-unread",
+                             action: { Task { await model.goToNext(in: .doneUnread) } }) {
                     AttentionDot(mark: .unread).frame(width: 8, height: 8)
                 } trailing: {
-                    PlainCount(count: sidebar.doneUnreadCount)
+                    PlainCount(count: doneUnread)
                 }
-                // Today (ticket 203): the runs of every plot. The count is the runs that need you. The row
+                // Today (ticket 203): the runs of every plot. The count is the runs that wait for you. The row
                 // is a button even with no run, since Today explains how to start one.
-                AttentionRow(title: "Today", count: model.today.needsYouCount, id: "sidebar-today", alwaysOn: true,
+                AttentionRow(title: "Today", count: today.waitsForYouCount, id: "sidebar-today", alwaysOn: true,
                              selected: sidebar.pageRow == .today, action: { model.showToday() }) {
                     Image(systemName: "calendar").font(.system(size: 12, weight: .medium)).foregroundStyle(LoamColor.inkMuted)
                 } trailing: {
-                    NeedsYouCountBadge(count: model.today.needsYouCount)
+                    NeedsYouCountBadge(count: today.waitsForYouCount)
                 }
                 // Intake (ticket 204): the open issues and map tickets of the active plot. The count is the open
                 // items of every plot that the app has read.

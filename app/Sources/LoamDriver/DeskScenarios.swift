@@ -145,8 +145,17 @@ extension Scenarios {
             await app.sleep(1)
         }
 
-        // The Land tile opens the desk on the run, with its diff.
+        // TAS-45: a run that is ready to land is done, unread, and the Today row counts it. A click on Done, unread opens
+        // the desk on it, since no pane is done, unread.
         await appearance(.darkAqua)
+        try await app.waitUntil("Done, unread counts the run") {
+            app.text(of: "attention-done-unread")?.contains("1") == true && app.text(of: "sidebar-today")?.contains("1") == true
+        }
+        app.screenshot("done-unread-run")
+        try app.click("attention-done-unread")
+        try await app.waitUntil("Done, unread opens the desk") { model.page == .desk && model.desk.runID == gh.id }
+
+        // The Land tile opens the desk on the run, with its diff.
         try app.click("sidebar-today")
         try await app.waitUntil("Today shows") { model.page == .today && app.exists("today-tile-land") }
         try app.click("today-tile-land")
@@ -158,9 +167,13 @@ extension Scenarios {
                         && app.exists("desk-risk") && app.exists("desk-where-it-stands"),
                         "the desk shows no ship notes: \(String(describing: model.runs.first?.notes))")
 
-        // ] shows the next file.
-        try app.type("]")
+        // ] shows the next file, and after the last file the first one again (TAS-49).
+        try app.pressShortcut(letter: "]")
         try await app.waitUntil("] shows the next file") { model.desk.file == "search/match_test.go" }
+        try app.pressShortcut(letter: "]")
+        try await app.waitUntil("] goes round to the first file") { model.desk.file == "search/match.go" }
+        try app.pressShortcut(letter: "]")
+        try await app.waitUntil("] shows the next file again") { model.desk.file == "search/match_test.go" }
 
         // A note on line 8, typed. The keys of the desk (j, k, and ]) type into the note, and the desk stays.
         try app.click("desk-file-search/match.go")

@@ -132,13 +132,13 @@ func TestIntakeListsTheIssuesAndTicketsOfAPlot(t *testing.T) {
 	}
 	// The text, the time, and the assignee of an issue and a ticket.
 	if i := res.Items[0]; i.Text != "A long paste hangs the pane." || i.CreatedAt != "2026-10-21T09:00:00Z" || !i.AssignedToMe ||
-		i.Branch != "" || i.InCycle {
+		i.Branch != "" || i.InCycle || i.Assignee != "ada" || i.InProgress || i.Milestone != "" {
 		t.Fatalf("issue 52 %+v", i)
 	}
-	if i := res.Items[1]; i.Text != "" || i.AssignedToMe {
+	if i := res.Items[1]; i.Text != "" || i.AssignedToMe || i.Assignee != "bob" {
 		t.Fatalf("issue 48 %+v", i)
 	}
-	if i := res.Items[2]; i.Text != "" || i.AssignedToMe || i.InCycle || i.Branch != "" {
+	if i := res.Items[2]; i.Text != "" || i.AssignedToMe || i.InCycle || i.Branch != "" || i.Assignee != "" {
 		t.Fatalf("ticket fields %+v", i)
 	} else if _, err := time.Parse(time.RFC3339, i.CreatedAt); err != nil {
 		t.Fatalf("ticket created_at %q", i.CreatedAt)

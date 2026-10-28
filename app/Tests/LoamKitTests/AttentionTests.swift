@@ -176,6 +176,58 @@ import Testing
         #expect(!model.goToNextPaneThatNeedsYou())
     }
 
+    // MARK: Runs in the attention rows (TAS-45)
+
+    /// The runs of plots A and B: one that needs you, one that waits longer and needs you, and one that is ready to land.
+    func addRuns(to model: AppModel) {
+        model.runs = [
+            TodayContentTests.run("ready", plot: "B", .ready, updated: "2026-10-27T17:00:00Z"),
+            TodayContentTests.run("limit", plot: "A", .limited, updated: "2026-10-27T16:00:00Z"),
+            TodayContentTests.run("shape", plot: "B", .shaping, updated: "2026-10-27T15:00:00Z"),
+            TodayContentTests.run("work", plot: "A", .running, updated: "2026-10-27T14:00:00Z"),
+        ]
+    }
+
+    @Test func theAttentionRowsGoToThePanesThenToTheRuns() {
+        let (model, a, b, _) = model()
+        addRuns(to: model)
+        send(model, "PermissionRequest", to: b)
+        // From the focused pane: the next pane that needs you, then the runs, the longest wait first, then the pane again.
+        #expect(model.workspace.focusedPane == a)
+        #expect(model.nextAttentionTarget(in: .needsYou) == .pane(b))
+        model.goToPane(b)
+        #expect(model.nextAttentionTarget(in: .needsYou) == .run("shape"))
+        model.page = .desk
+        model.desk.runID = "shape"
+        #expect(model.nextAttentionTarget(in: .needsYou) == .run("limit"))
+        model.page = .run("limit")
+        #expect(model.nextAttentionTarget(in: .needsYou) == .pane(b))
+        // A run that is ready to land is done, unread. No pane is.
+        model.page = nil
+        #expect(model.nextAttentionTarget(in: .doneUnread) == .run("ready"))
+    }
+
+    @Test func aRunThatEndsLeavesTheAttentionRows() {
+        let (model, _, _, _) = model()
+        addRuns(to: model)
+        model.runs = model.runs.map { run in
+            var run = run
+            if run.state != .running { run.state = run.state == .ready ? .landed : .cancelled }
+            return run
+        }
+        #expect(model.nextAttentionTarget(in: .needsYou) == nil)
+        #expect(model.nextAttentionTarget(in: .doneUnread) == nil)
+    }
+
+    @Test func aClickOnAnAttentionRowGoesToThePane() async {
+        let (model, a, b, _) = model()
+        addRuns(to: model)
+        send(model, "Stop", to: b)
+        #expect(model.workspace.focusedPane == a)
+        await model.goToNext(in: .doneUnread)
+        #expect(model.workspace.activePlotID == "B" && model.workspace.focusedPane == b)
+    }
+
     @Test func theFocusedPaneAloneDoesNotMove() {
         let (model, a, _, _) = model()
         send(model, "PermissionRequest", to: a)

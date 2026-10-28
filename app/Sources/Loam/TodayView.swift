@@ -10,7 +10,8 @@ struct PageView: View {
         Group {
             switch model.page {
             case .run(let id): RunPageView(model: model, id: id)
-            case .intake(let plot): IntakeView(model: model, plotID: plot)
+            // The filter, the selection, and the checks belong to one plot, so a move to another plot starts them anew.
+            case .intake(let plot): IntakeView(model: model, plotID: plot).id(plot)
             case .recurring(let plot): RecurringView(model: model, plotID: plot)
             case .desk: DeskView(model: model)
             case .today, nil: TodayView(model: model)
@@ -248,16 +249,23 @@ private struct TheLine: View {
                         Text(row.plotName).font(.system(size: 13, weight: .semibold)).foregroundStyle(LoamColor.ink)
                         Caption(text: row.caption)
                     }
-                    LineCell {
-                        if let intake = row.intake {
-                            if intake.none {
-                                None()
-                            } else {
-                                Text(intake.count).font(.system(size: 13)).foregroundStyle(LoamColor.ink)
+                    // The intake of the plot opens its Intake page (TAS-44).
+                    Button { Task { await model.showIntake(plot: row.plotID) } } label: {
+                        LineCell {
+                            if let intake = row.intake {
+                                if intake.none {
+                                    None()
+                                } else {
+                                    Text(intake.count).font(.system(size: 13)).foregroundStyle(LoamColor.ink)
+                                }
+                                if let caption = intake.caption { Caption(text: caption) }
                             }
-                            if let caption = intake.caption { Caption(text: caption) }
                         }
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
+                    .help("Open the intake of \(row.plotName)")
+                    .accessibilityIdentifier("today-intake-\(row.plotID)")
                     ForEach(TodayContent.lineStations, id: \.self) { station in
                         LineCell {
                             let chips = row.chips[station] ?? []
@@ -281,11 +289,7 @@ private struct TheLine: View {
 
     /// The desk for a run that waits there, else the run page.
     private func open(_ chip: TodayContent.Chip) {
-        if model.deskQueue.contains(where: { $0.id == chip.runID }) {
-            Task { await model.openDesk(chip.runID) }
-        } else {
-            Task { await model.openRun(chip.runID) }
-        }
+        Task { await model.openWaitingRun(chip.runID) }
     }
 
     private struct Caption: View {

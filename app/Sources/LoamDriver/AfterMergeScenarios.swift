@@ -286,48 +286,12 @@ extension Scenarios {
         try expectMerge(submenu.items.map(\.state) == [.on, .off, .off], "Ask is not the checked item")
 
         // As a hover does, the selected item opens its submenu on a press.
-        let item = try menuItem("After a merge on GitHub")
+        let item = try app.openMenuItem("After a merge on GitHub")
         AXUIElementSetAttributeValue(item, kAXSelectedAttribute as CFString, kCFBooleanTrue)
         AXUIElementPerformAction(item, kAXPressAction as CFString)
-        try await app.waitUntil("the submenu opens") { menuWindows() > 1 }
+        try await app.waitUntil("the submenu opens") { app.openMenuWindows() > 1 }
         try await Task.sleep(for: .seconds(LoamTheme.durationBase * 2))
         app.screenshot("after-merge-setting")
-        guard AXUIElementPerformAction(try menuItem("Remove the worktree"), kAXPressAction as CFString) == .success else {
-            throw DriverFailure("Remove the worktree took no press")
-        }
-        Log.line("press menu item Remove the worktree")
-        try await app.waitUntil("the menu closes") { menuWindows() == 0 }
-    }
-
-    /// The windows of the menus of the app that are open.
-    private static func menuWindows() -> Int {
-        let listed = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
-        let level = Int(CGWindowLevelForKey(.popUpMenuWindow))
-        return listed.filter {
-            ($0[kCGWindowOwnerPID as String] as? Int32) == getpid() && ($0[kCGWindowLayer as String] as? Int ?? 0) >= level
-        }.count
-    }
-
-    /// The item with this title in a menu of the app that is open, through the accessibility API.
-    private static func menuItem(_ title: String) throws -> AXUIElement {
-        func string(_ element: AXUIElement, _ attribute: String) -> String {
-            var value: CFTypeRef?
-            AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
-            return value as? String ?? ""
-        }
-        var queue = [AXUIElementCreateApplication(getpid())]
-        var visited = 0
-        while !queue.isEmpty, visited < 20_000 {
-            let element = queue.removeFirst()
-            visited += 1
-            if string(element, kAXRoleAttribute) == kAXMenuItemRole as String, string(element, kAXTitleAttribute) == title {
-                return element
-            }
-            var children: CFTypeRef?
-            if AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &children) == .success {
-                queue += (children as? [AXUIElement]) ?? []
-            }
-        }
-        throw DriverFailure("no open menu has the item \(title)")
+        try await app.pickMenuItem("Remove the worktree")
     }
 }

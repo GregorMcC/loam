@@ -24,8 +24,69 @@ public enum IntakeContent {
         public var thisCycle = false
         public var assignedToMe = false
         public var hideWithRun = false
+        /// Hide the items that someone else has or that are in progress (TAS-50). On by default.
+        public var hideTaken = true
+        /// The milestone to keep (TAS-51): nil keeps every item, "" keeps the items with no milestone.
+        public var milestone: String?
 
         public init() {}
+    }
+
+    /// An item is taken when someone else is its assignee, or when it is in progress. An item that is assigned to you
+    /// or that has a run is yours, so it is never taken: a run moves its Linear issue to In Progress.
+    public static func isTaken(_ item: IntakeItem) -> Bool {
+        item.runID.isEmpty && !item.assignedToMe && (!item.assignee.isEmpty || item.inProgress)
+    }
+
+    /// The Hide taken chip, with the count of the taken items when there are any, such as "Hide taken 9".
+    public static func hideTakenWords(_ list: IntakeList) -> String {
+        let taken = list.items.filter(isTaken).count
+        return taken == 0 ? "Hide taken" : "Hide taken \(taken)"
+    }
+
+    /// The text of a list that the filter empties. It names Hide taken when that chip alone hides the items.
+    public static func noMatchWords(_ list: IntakeList, filter: Filter) -> String {
+        var all = filter
+        all.hideTaken = false
+        guard filter.hideTaken, !rows(list, filter: all).isEmpty else { return "No item matches." }
+        return "No item matches. Hide taken hides the items that someone else has or that are in progress."
+    }
+
+    /// The milestone that the filter keeps: nil when the choice is All, or when the list has no such choice any more,
+    /// such as after a reload.
+    public static func activeMilestone(_ list: IntakeList, filter: Filter) -> String? {
+        guard let milestone = filter.milestone else { return nil }
+        return milestoneChoices(list).contains { $0.milestone == milestone } ? milestone : nil
+    }
+
+    /// One choice of the Milestone menu. A nil milestone is All, and "" is No milestone.
+    public struct MilestoneChoice: Equatable, Sendable {
+        public var milestone: String?
+        public var words: String
+    }
+
+    /// The choices of the Milestone menu (TAS-51): All, each milestone in the order of its project, then No milestone.
+    /// Milestones with the same place sort by name, and a name in two projects takes its first place. Empty when no item of the list has a milestone, so the page shows
+    /// no menu.
+    public static func milestoneChoices(_ list: IntakeList) -> [MilestoneChoice] {
+        var order: [String: Double] = [:]
+        for item in list.items where !item.milestone.isEmpty {
+            order[item.milestone] = min(order[item.milestone] ?? item.milestoneOrder, item.milestoneOrder)
+        }
+        guard !order.isEmpty else { return [] }
+        let names = order.keys.sorted { a, b in order[a] != order[b] ? order[a]! < order[b]! : a < b }
+        return [MilestoneChoice(milestone: nil, words: "All milestones")]
+            + names.map { MilestoneChoice(milestone: $0, words: $0) }
+            + [MilestoneChoice(milestone: "", words: "No milestone")]
+    }
+
+    /// The label of the Milestone menu: "Milestone" for All, else the name of the choice.
+    public static func milestoneWords(_ milestone: String?) -> String {
+        switch milestone {
+        case nil: "Milestone"
+        case "": "No milestone"
+        case let name?: name
+        }
     }
 
     /// One choice of the source switch, with its count.
@@ -81,11 +142,14 @@ public enum IntakeContent {
     /// The rows that the filter keeps, in the order of the page: the items with no run first, then by Linear
     /// priority, then the oldest first. Items that tie keep the order of the core.
     public static func rows(_ list: IntakeList, filter: Filter) -> [IntakeItem] {
+        let milestone = activeMilestone(list, filter: filter)
         let kept = list.items.enumerated().filter { _, item in
             (filter.source == .all || item.source == filter.source.rawValue)
                 && (!filter.thisCycle || item.inCycle)
                 && (!filter.assignedToMe || item.assignedToMe)
                 && !(filter.hideWithRun && !item.runID.isEmpty)
+                && !(filter.hideTaken && isTaken(item))
+                && (milestone == nil || item.milestone == milestone)
         }
         return kept.sorted { a, b in
             let (i, x) = a
@@ -96,6 +160,30 @@ public enum IntakeContent {
             if let dx, let dy, dx != dy { return dx < dy }
             return i < j
         }.map(\.element)
+    }
+
+    /// A plot in the plot menu of the Intake page (TAS-44).
+    public struct PlotChoice: Equatable, Sendable {
+        public var plotID: String
+        /// The name of the plot, and the count of its intake once the app has read it, such as "Loam · 14 items".
+        public var words: String
+    }
+
+    /// The plot menu of the Intake page: each plot in sidebar order. The count is the one of the Intake column of Today.
+    public static func plotChoices(_ plots: [PlotSummary], intake: [String: IntakeList], now: Date) -> [PlotChoice] {
+        plots.map { plot in
+            let count = intake[plot.id].map { TodayContent.intakeCell($0, now: now).count }
+            return PlotChoice(plotID: plot.id, words: count.map { "\(plot.name) \u{00B7} \($0)" } ?? plot.name)
+        }
+    }
+
+    /// The row that a key selects (TAS-47): the row `step` places after the focused row. The focused row is the
+    /// selected row, or the first row when the filter hides the selected row. The move stops at the first and the last
+    /// row. Nil for an empty list.
+    public static func move(from selected: String?, in rows: [IntakeItem], by step: Int) -> String? {
+        guard !rows.isEmpty else { return nil }
+        let current = rows.firstIndex { $0.id == selected } ?? 0
+        return rows[min(max(current + step, 0), rows.count - 1)].id
     }
 
     /// The place of a Linear priority in the sort: Urgent first, and an item with none last.
@@ -111,6 +199,13 @@ public enum IntakeContent {
     /// The Priority column: the Linear priority, or "None".
     public static func priorityWords(_ item: IntakeItem) -> String {
         item.priority.isEmpty ? "None" : item.priority
+    }
+
+    /// The line under the title of the detail: the assignee and the milestone, such as "Assigned to Bob Example ·
+    /// Milestone Alpha". Empty for neither.
+    public static func detailFacts(_ item: IntakeItem) -> String {
+        [item.assignee.isEmpty ? "" : "Assigned to \(item.assignee)", item.milestone.isEmpty ? "" : "Milestone \(item.milestone)"]
+            .filter { !$0.isEmpty }.joined(separator: " \u{00B7} ")
     }
 
     /// The line at the top right of the detail: the status and the priority, such as "Todo · High".

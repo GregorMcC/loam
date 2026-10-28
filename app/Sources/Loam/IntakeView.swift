@@ -22,11 +22,18 @@ struct IntakeView: View {
     /// The width of the detail column, with its padding.
     static let detailWidth: CGFloat = 300
 
-    var body: some View {
+    /// The list of the plot, the rows that the filter keeps, and the focused row: the selected row, else the first.
+    /// The key actions call it when they run, since SwiftUI can keep the action of the render that first gave the key,
+    /// before the list was read (TAS-47).
+    private func current() -> (list: IntakeList?, rows: [IntakeItem], focused: IntakeItem?) {
         let list = model.intake?.plotID == plotID ? model.intake : nil
         let rows = list.map { IntakeContent.rows($0, filter: filter) } ?? []
+        return (list, rows, rows.first { $0.id == selected } ?? rows.first)
+    }
+
+    var body: some View {
+        let (list, rows, focused) = current()
         let checkedRows = rows.filter { checked.contains($0.id) && $0.runID.isEmpty }
-        let focused = rows.first { $0.id == selected } ?? rows.first
         VStack(alignment: .leading, spacing: 0) {
             header(list)
             if let list {
@@ -67,11 +74,21 @@ struct IntakeView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background {
-            // X checks or unchecks the selected row. ⌘↩ is on the button of the bar.
-            Button("") { toggle(focused) }
-                .keyboardShortcut("x", modifiers: [])
-                .opacity(0)
-                .accessibilityHidden(true)
+            // X checks or unchecks the selected row. ⌘↩ is on the button of the bar. ↓ and ↑, or J and K as at the desk,
+            // select the next and the previous row (TAS-47).
+            Group {
+                Button("") { toggle(current().focused) }
+                    .keyboardShortcut("x", modifiers: [])
+                ForEach([(KeyEquivalent.downArrow, 1), ("j", 1), (.upArrow, -1), ("k", -1)], id: \.0.character) { key, step in
+                    Button("") {
+                        let (_, rows, focused) = current()
+                        selected = IntakeContent.move(from: focused?.id, in: rows, by: step)
+                    }
+                        .keyboardShortcut(key, modifiers: [])
+                }
+            }
+            .opacity(0)
+            .accessibilityHidden(true)
         }
         .sheet(item: $startForm) { item in
             IntakeStartSheet(model: model, plotID: plotID, item: item) { startForm = nil }
@@ -86,7 +103,7 @@ struct IntakeView: View {
 
     private func empty(_ list: IntakeList) -> String {
         if list.sources.isEmpty { return "This plot has no Linear link, no GitHub repo, and no map link, so it has no intake." }
-        return list.items.isEmpty ? "No open issues or tickets." : "No item matches."
+        return list.items.isEmpty ? "No open issues or tickets." : IntakeContent.noMatchWords(list, filter: filter)
     }
 
     private func toggle(_ item: IntakeItem?) {
@@ -99,9 +116,7 @@ struct IntakeView: View {
     private func header(_ list: IntakeList?) -> some View {
         HStack(alignment: .center, spacing: LoamTheme.space3) {
             VStack(alignment: .leading, spacing: 0) {
-                Text("Intake \u{00B7} \(model.plots.first { $0.id == plotID }?.name ?? "")")
-                    .loamText(LoamTheme.windowTitleStyle)
-                    .lineLimit(1)
+                plotMenu()
                 if let list {
                     let reads = IntakeContent.readsLine(list.sources)
                     if !reads.isEmpty {
@@ -132,6 +147,39 @@ struct IntakeView: View {
         }
         .padding(.leading, 20).padding(.trailing, LoamTheme.space3).padding(.vertical, 10)
         .frame(minHeight: 56)
+    }
+
+    /// The title, "Intake · <plot>", is a menu of the plots (TAS-44). A choice shows the intake of that plot, and the
+    /// active plot of the window stays.
+    private func plotMenu() -> some View {
+        let name = model.plots.first { $0.id == plotID }?.name ?? ""
+        let choices = IntakeContent.plotChoices(model.plots, intake: model.todayData.intake.mapValues(\.list), now: model.now())
+        return Menu {
+            Picker("Plot", selection: Binding(get: { plotID }, set: { plot in Task { await model.showIntake(plot: plot) } })) {
+                ForEach(choices, id: \.plotID) { Text($0.words).tag($0.plotID) }
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
+        } label: {
+            HStack(spacing: 6) {
+                Text("Intake \u{00B7} \(name)")
+                    .loamText(LoamTheme.windowTitleStyle)
+                    .lineLimit(1)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(LoamColor.inkMuted)
+            }
+            .contentShape(Rectangle())
+        }
+        // The menu draws its label as it is, as the popups of the new worktree sheet do.
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Show the intake of another plot")
+        .accessibilityLabel("Plot")
+        .accessibilityValue(name)
+        .accessibilityIdentifier("intake-plot")
     }
 
     /// The source switch: All, then each source that the plot has.
@@ -167,11 +215,47 @@ struct IntakeView: View {
             }
             chip("Assigned to me", on: $filter.assignedToMe, id: "intake-assigned")
             chip("Hide items with a run", on: $filter.hideWithRun, id: "intake-hide-with-run")
+            chip(IntakeContent.hideTakenWords(list), on: $filter.hideTaken, id: "intake-hide-taken")
+                .help("Hide the items that someone else has, or that are in progress")
+            let milestones = IntakeContent.milestoneChoices(list)
+            if !milestones.isEmpty { milestoneMenu(list, milestones) }
             Spacer(minLength: LoamTheme.space2)
             Text(IntakeContent.sortWords).font(.system(size: 11)).foregroundStyle(LoamColor.inkMuted).lineLimit(1)
                 .help(IntakeContent.sortHelp)
         }
         .frame(height: 40)
+    }
+
+    /// The Milestone menu (TAS-51), drawn as a chip that is on while it keeps one milestone.
+    private func milestoneMenu(_ list: IntakeList, _ choices: [IntakeContent.MilestoneChoice]) -> some View {
+        let milestone = IntakeContent.activeMilestone(list, filter: filter)
+        let on = milestone != nil
+        return Menu {
+            Picker("Milestone", selection: Binding(get: { milestone }, set: { filter.milestone = $0 })) {
+                ForEach(choices, id: \.milestone) { Text($0.words).tag($0.milestone) }
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
+        } label: {
+            HStack(spacing: 4) {
+                Text(IntakeContent.milestoneWords(milestone)).lineLimit(1)
+                Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold))
+            }
+            .font(.system(size: 12))
+            .foregroundStyle(on ? LoamColor.ink : LoamColor.inkMuted)
+            .padding(.horizontal, 10).frame(height: 26)
+            .background(on ? LoamColor.inkSelected : Color.clear, in: Capsule())
+            .overlay(Capsule().strokeBorder(on ? Color.clear : LoamColor.rule))
+            .contentShape(Capsule())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Show only the issues of one milestone")
+        .accessibilityLabel("Milestone")
+        .accessibilityValue(IntakeContent.milestoneWords(milestone))
+        .accessibilityIdentifier("intake-milestone")
     }
 
     private func chip(_ title: String, on: Binding<Bool>, id: String) -> some View {
@@ -213,18 +297,25 @@ struct IntakeView: View {
             .font(.system(size: 11.5))
             .foregroundStyle(LoamColor.inkFaint)
             .overlay(alignment: .bottom) { LoamColor.rule.frame(height: 1) }
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(rows) { item in
-                        IntakeRow(item: item, run: model.runs.first { $0.id == item.runID }, showsPriority: priority,
-                                  focused: focused == item.id,
-                                  checked: Binding(get: { checked.contains(item.id) },
-                                                   set: { if $0 { checked.insert(item.id) } else { checked.remove(item.id) } })) {
-                            selected = item.id
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(rows) { item in
+                            IntakeRow(item: item, run: model.runs.first { $0.id == item.runID }, showsPriority: priority,
+                                      focused: focused == item.id,
+                                      checked: Binding(get: { checked.contains(item.id) },
+                                                       set: { if $0 { checked.insert(item.id) } else { checked.remove(item.id) } })) {
+                                selected = item.id
+                            }
+                            .id(item.id)
                         }
                     }
+                    .padding(.bottom, barShows ? 80 : LoamTheme.space4)
                 }
-                .padding(.bottom, barShows ? 80 : LoamTheme.space4)
+                // A key moves the selection out of view: the table scrolls the least that shows the row.
+                .onChange(of: focused) { _, id in
+                    if let id { proxy.scrollTo(id) }
+                }
             }
         }
         .accessibilityElement(children: .contain)
@@ -430,11 +521,21 @@ private struct IntakeDetail: View {
                         }
                         Text(item.title).font(.system(size: 15, weight: .semibold)).textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("intake-detail-title")
+                        let facts = IntakeContent.detailFacts(item)
+                        if !facts.isEmpty {
+                            Text(facts).font(.system(size: 11)).foregroundStyle(LoamColor.inkMuted)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityIdentifier("intake-detail-facts")
+                        }
                     }
                     VStack(alignment: .leading, spacing: LoamTheme.space2) {
                         if !item.text.isEmpty {
+                            // All of the text, since the detail scrolls. A line limit clips the text only until a click
+                            // starts a selection, which draws every line over the caption below (TAS-48).
                             Text(item.text).font(.system(size: 12.5)).foregroundStyle(LoamColor.inkMuted).lineSpacing(3)
-                                .lineLimit(12).textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .textSelection(.enabled)
                                 .accessibilityIdentifier("intake-text")
                         }
                         Text(IntakeContent.fromWords(item)).font(.system(size: 11)).foregroundStyle(LoamColor.inkFaint)

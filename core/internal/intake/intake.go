@@ -68,6 +68,17 @@ type Item struct {
 	// AssignedToMe is true for an issue that is assigned to the person of
 	// the Linear key or the gh user. It is false for a ticket.
 	AssignedToMe bool `json:"assigned_to_me"`
+	// Assignee is the name of the Linear assignee, or the logins of the
+	// GitHub assignees, such as "ada, sam". It is "" for no assignee and for
+	// a ticket.
+	Assignee string `json:"assignee"`
+	// InProgress is true for a Linear issue whose state type is started.
+	InProgress bool `json:"in_progress"`
+	// Milestone is the project milestone of a Linear issue, or "".
+	Milestone string `json:"milestone"`
+	// MilestoneOrder is the place of the milestone in its Linear project, or
+	// 0 for no milestone.
+	MilestoneOrder float64 `json:"milestone_order"`
 }
 
 // textLimit is how many characters of text an item keeps.
@@ -128,6 +139,7 @@ func List(ctx context.Context, s *store.Store, plotID string) (*Result, error) {
 				Source: Linear, Key: i.Key, Title: i.Title, Status: i.State, Priority: i.Priority,
 				Labels: i.Labels, URL: i.URL, UpdatedAt: i.UpdatedAt, Text: clip(i.Description), Branch: i.Branch,
 				CreatedAt: i.CreatedAt, InCycle: i.InCycle, AssignedToMe: i.AssignedToMe,
+				Assignee: i.Assignee, InProgress: i.InProgress, Milestone: i.Milestone, MilestoneOrder: i.MilestoneOrder,
 			})
 		}
 	}
@@ -165,6 +177,7 @@ func List(ctx context.Context, s *store.Store, plotID string) (*Result, error) {
 				Source: GitHub, Key: linkkind.IssueKey(i.URL, web), Title: i.Title, Status: "Open",
 				Labels: i.Labels, URL: i.URL, UpdatedAt: i.UpdatedAt, Repo: r.ID,
 				Text: clip(i.Body), CreatedAt: i.CreatedAt, AssignedToMe: login != "" && slices.Contains(i.Assignees, login),
+				Assignee: strings.Join(i.Assignees, ", "),
 			})
 		}
 	}

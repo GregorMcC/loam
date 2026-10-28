@@ -1,6 +1,6 @@
 import Foundation
 
-/// Where a run is. `shaping`, `stopped`, and `limited` need you. `queued` waits for a slot.
+/// Where a run is. `shaping`, `stopped`, and `limited` need you. `ready` is done, unread. `queued` waits for a slot.
 public enum RunState: String, Codable, Equatable, Sendable, CaseIterable {
     case shaping, queued, starting, running, shipping, ready, stopped, limited
     case startUnknown = "start_unknown"
@@ -17,6 +17,10 @@ public enum RunState: String, Codable, Equatable, Sendable, CaseIterable {
 
     /// Shaping, Stopped, and Stopped by a limit wait for you.
     public var needsYou: Bool { self == .shaping || self == .stopped || self == .limited }
+
+    /// Ready to land: the work is done and waits for you, as a pane that is done, unread (TAS-45). It stays so
+    /// until you land the run or cancel it.
+    public var doneUnread: Bool { self == .ready }
 
     /// The run has no session to work any more.
     public var ended: Bool { self == .landed || self == .cancelled || self == .skipped }

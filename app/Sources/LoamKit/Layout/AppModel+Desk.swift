@@ -37,6 +37,21 @@ extension AppModel {
         desk.file = path
     }
 
+    /// The file after the one that the desk shows, in the order to read them, round to the first (TAS-49). Nil when
+    /// the work has fewer than 2 files.
+    public var nextDeskFile: String? {
+        let files = DeskContent.readOrder(desk.diff?.files ?? [], notes: deskRun?.notes).map(\.file.path)
+        guard files.count > 1 else { return nil }
+        let current = files.firstIndex { $0 == desk.file } ?? files.count - 1
+        return files[(current + 1) % files.count]
+    }
+
+    /// ]: shows the next file. It reads the file that the desk shows now, so a key that SwiftUI keeps from an earlier
+    /// render still moves on.
+    public func showNextDeskFile() {
+        if let next = nextDeskFile { desk.file = next }
+    }
+
     /// Keeps the worktree after the merge, or removes it.
     public func setDeskKeepWorktree(_ keep: Bool) {
         desk.keepWorktree = keep

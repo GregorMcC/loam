@@ -179,8 +179,6 @@ private struct DeskBar: View {
 struct DeskNavHints: View {
     let model: AppModel
     let typing: Bool
-    /// The next file of the diff, or nil for a draft or the last file.
-    var nextFile: String?
     var showsNextFile = false
 
     var body: some View {
@@ -193,9 +191,9 @@ struct DeskNavHints: View {
                 .help("Previous item (K)")
                 .accessibilityIdentifier("desk-previous")
             if showsNextFile {
-                DeskHint(title: "Next file", key: "]") { if let nextFile { model.showDeskFile(nextFile) } }
+                DeskHint(title: "Next file", key: "]") { model.showNextDeskFile() }
                     .deskKey("]", typing: typing)
-                    .disabled(nextFile == nil)
+                    .disabled(model.nextDeskFile == nil)
                     .help("Next file (])")
                     .accessibilityIdentifier("desk-next-file")
             }
@@ -352,13 +350,8 @@ private struct DeskItem: View {
                     .frame(width: 344)
             }
             Divider()
-            DeskActions(model: model, run: run, nextFile: Self.next(files, after: model.desk.file), field: field)
+            DeskActions(model: model, run: run, field: field)
         }
-    }
-
-    static func next(_ files: [DeskContent.ReadFile], after path: String?) -> String? {
-        guard let i = files.firstIndex(where: { $0.file.path == path }), i + 1 < files.count else { return nil }
-        return files[i + 1].file.path
     }
 }
 
@@ -794,7 +787,6 @@ private struct DeskEvidence: View {
 private struct DeskActions: View {
     let model: AppModel
     let run: Run
-    let nextFile: String?
     let field: FocusState<DeskField?>.Binding
 
     var body: some View {
@@ -833,7 +825,7 @@ private struct DeskActions: View {
             .lineLimit(2)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.leading, 6)
-            DeskNavHints(model: model, typing: typing, nextFile: nextFile, showsNextFile: true)
+            DeskNavHints(model: model, typing: typing, showsNextFile: true)
         }
         .controlSize(.large)
         .padding(.horizontal, 20)

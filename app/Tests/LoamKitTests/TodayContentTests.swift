@@ -31,6 +31,9 @@ import Testing
         #expect(today.tiles.map(\.count) == [1, 1, 2])
         #expect(today.needsYouCount == 3)
         #expect(Set(today.needsYou.map(\.id)) == ["a", "b", "c"])
+        // TAS-45: a run that is ready to land is done, unread, and the Today row counts it too.
+        #expect(today.doneUnread.map(\.id) == ["d"])
+        #expect(today.waitsForYouCount == 4)
     }
 
     /// A tile names its first 2 runs, the longest wait first, says how long they wait, and adds one line about them.
