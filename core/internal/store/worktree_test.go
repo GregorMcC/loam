@@ -132,6 +132,65 @@ func TestWorktreeRecords(t *testing.T) {
 	}
 }
 
+// TAS-55: a session works in one worktree at a time, and the record of the worktree lists its sessions, so the
+// app can show a session under the worktree that it works in.
+func TestSessionWorktreeLinks(t *testing.T) {
+	s := openStore(t)
+	p := newPlot(t, s, "A")
+	add := func(name string) store.Worktree {
+		t.Helper()
+		w, err := s.AddWorktree(store.Worktree{PlotID: p.ID, Repo: "/work/app", Name: name, Branch: name, Path: "/home/w/app-" + name})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return w
+	}
+	a, b := add("a"), add("b")
+	if a.Sessions == nil || len(a.Sessions) != 0 {
+		t.Fatalf("a new worktree has sessions %#v", a.Sessions)
+	}
+	sessions := func(id string) []string {
+		t.Helper()
+		w, err := s.GetWorktree(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return w.Sessions
+	}
+	for _, link := range [][2]string{{"s1", a.ID}, {"s2", a.ID}} {
+		if err := s.SetSessionWorktree(link[0], link[1]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := sessions(a.ID); !slices.Equal(got, []string{"s1", "s2"}) {
+		t.Fatalf("a: %q", got)
+	}
+	// The latest wins: s1 moves to b.
+	if err := s.SetSessionWorktree("s1", b.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, gotB := sessions(a.ID), sessions(b.ID); !slices.Equal(got, []string{"s2"}) || !slices.Equal(gotB, []string{"s1"}) {
+		t.Fatalf("a %q, b %q", got, gotB)
+	}
+	if all, _ := s.ListWorktrees(p.ID); len(all) != 2 || !slices.Equal(all[1].Sessions, []string{"s1"}) {
+		t.Fatalf("%+v", all)
+	}
+	if err := s.SetSessionWorktree("s3", "nosuchworktree"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("no worktree: %v", err)
+	}
+	// An empty ID clears the link.
+	if err := s.SetSessionWorktree("s2", ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := sessions(a.ID); len(got) != 0 {
+		t.Fatalf("a: %q", got)
+	}
+	// A worktree with a link can go.
+	if err := s.RemoveWorktree(b.ID); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestWorktreeRecordsAreNotChanges(t *testing.T) {
 	s := openStore(t)
 	p := newPlot(t, s, "A")

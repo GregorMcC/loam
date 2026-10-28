@@ -181,6 +181,12 @@ struct DriverTests {
         ])
     }
 
+    /// TAS-55: a session in the main checkout makes a worktree through MCP and shows under it in the sidebar.
+    /// work_in_worktree with no worktree puts it back.
+    @Test func aSessionThatMakesAWorktreeShowsUnderIt() async throws {
+        try await expectPass("session-worktree-shot", environment: ["LOAM_DRIVER_LOAM": Self.loamBinary])
+    }
+
     /// Ticket 108: the Worktrees section reads the ship state from a refresh, in the order of the core. A Stop of a
     /// session makes one refresh. `gh` missing and signed out show a callout. A refresh writes no change marker.
     @Test func showsTheWorktreesSectionAndRefreshesItsShipState() async throws {

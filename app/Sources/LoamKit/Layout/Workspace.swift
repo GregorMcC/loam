@@ -114,6 +114,19 @@ public struct Workspace: Codable, Equatable, Sendable {
     public func paneCount(of space: Space) -> Int { paneIDs(of: space).count }
     public var allPaneIDs: [PaneID] { spaceTabs.values.flatMap { $0.flatMap { $0.tree.paneIDs } } }
     public func spec(of pane: PaneID) -> PaneSpec? { specs[pane] }
+
+    /// The worktree that a pane shows under in the sidebar, with its PR: the worktree that the pane runs in,
+    /// else the worktree of its plot that its session works in (TAS-55). The second does not change the folder
+    /// of the pane, so a resume or a new tab still uses `spec.worktree`.
+    public func shownWorktree(of pane: PaneID, links: SessionLinks) -> WorktreeRef? {
+        guard let spec = specs[pane] else { return nil }
+        if let worktree = spec.worktree { return worktree }
+        guard spec.kind == .session, let plot = spec.space.plotID else { return nil }
+        let session = sessions[pane]
+        let ids = [session?.sessionID ?? spec.sessionID].compactMap { $0 } + (session?.pastSessionIDs.reversed() ?? [])
+        return links.worktree(of: ids, in: plot)
+    }
+
     public func state(of pane: PaneID) -> PaneState? { sessions[pane]?.state }
     public func session(of pane: PaneID) -> PaneSession? { sessions[pane] }
 

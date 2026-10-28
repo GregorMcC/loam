@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/GregorMcC/loam/core/internal/github"
 	"github.com/GregorMcC/loam/core/internal/store"
@@ -22,6 +23,16 @@ type createWorktreeIn struct {
 	Base   string `json:"base,omitempty" jsonschema:"branch that a new branch starts from. Default: the default branch of origin. Not for a branch that exists."`
 	Goal   string `json:"goal,omitempty" jsonschema:"one line that says what the worktree is for. The soft limit is 20 words."`
 	Link   string `json:"link,omitempty" jsonschema:"the link that the work starts from: the ID of a link of the plot, from get_plot, or the URL of a Linear issue or a GitHub issue. A URL does not go into the links of the plot."`
+}
+
+type workInWorktreeIn struct {
+	plotArg
+	WorktreeID string `json:"worktree_id,omitempty" jsonschema:"ID of the worktree, from list_worktrees. Omit it to put the session back under the folder that it started in."`
+}
+
+type workInWorktreeOut struct {
+	// Worktree is the worktree that the session works in now, or null.
+	Worktree *store.Worktree `json:"worktree"`
 }
 
 type setWorktreeGoalIn struct {
@@ -118,6 +129,7 @@ func (s *Server) registerWorktrees(srv *mcp.Server) {
 			"Otherwise Loam fetches from origin and starts a new branch from base, or from the default branch of origin. " +
 			"Loam copies the files that the repo settings and .worktreeinclude list. It does not run the setup command and it does not start a session. " +
 			"The person starts a session in the worktree. " +
+			"This session shows under the new worktree in the Loam sidebar, as work_in_worktree does. " +
 			"Give a goal and the link the work starts from when you know them. The seed of the plot lists each worktree with its goal." + plotNote,
 		Annotations: &mcp.ToolAnnotations{Title: "Create a worktree", DestructiveHint: &no, OpenWorldHint: &open},
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in createWorktreeIn) (*mcp.CallToolResult, any, error) {
@@ -146,7 +158,54 @@ func (s *Server) registerWorktrees(srv *mcp.Server) {
 		if copied == nil {
 			copied = []string{}
 		}
-		return reply(createWorktreeOut{Worktree: res.Worktree, Copied: copied, Warnings: res.Warnings})
+		w, warnings := res.Worktree, res.Warnings
+		switch err := s.workIn(w.ID); {
+		case errors.Is(err, errNoSession):
+		case err != nil:
+			warnings = append(warnings, "Loam could not show this session under the worktree: "+err.Error())
+		default:
+			if linked, err := s.st.GetWorktree(w.ID); err == nil {
+				w = linked
+			}
+		}
+		return reply(createWorktreeOut{Worktree: w, Copied: copied, Warnings: warnings})
+	})
+
+	mcp.AddTool(srv, &mcp.Tool{
+		Name: "work_in_worktree",
+		Description: "Show this session under a worktree of the plot in the Loam sidebar, with the pull request of the worktree. " +
+			"create_worktree does this for the worktree that it makes. Call this tool when you start work in another worktree of the plot. " +
+			"A session works in one worktree at a time. Omit worktree_id to put the session back under the folder that it started in. " +
+			"The session keeps its folder: work in the worktree by its path." + plotNote,
+		Annotations: &mcp.ToolAnnotations{Title: "Work in a worktree", DestructiveHint: &no, IdempotentHint: true},
+	}, func(_ context.Context, _ *mcp.CallToolRequest, in workInWorktreeIn) (*mcp.CallToolResult, any, error) {
+		plotID, err := s.resolvePlot(in.Plot)
+		if err != nil {
+			return fail(err)
+		}
+		if in.WorktreeID != "" {
+			w, err := s.st.GetWorktree(in.WorktreeID)
+			switch {
+			case errors.Is(err, store.ErrNotFound) || err == nil && w.PlotID != plotID:
+				return fail(fmt.Errorf("no worktree of the plot has the ID %q: call list_worktrees to see the IDs", in.WorktreeID))
+			case err != nil:
+				return fail(err)
+			}
+		}
+		switch err := s.workIn(in.WorktreeID); {
+		case errors.Is(err, errNoSession):
+			return fail(errors.New("this server cannot tell which session it serves, so it cannot show the session under a worktree"))
+		case err != nil:
+			return fail(err)
+		}
+		if in.WorktreeID == "" {
+			return reply(workInWorktreeOut{})
+		}
+		w, err := s.st.GetWorktree(in.WorktreeID)
+		if err != nil {
+			return fail(err)
+		}
+		return reply(workInWorktreeOut{Worktree: &w})
 	})
 
 	mcp.AddTool(srv, &mcp.Tool{
@@ -165,6 +224,23 @@ func (s *Server) registerWorktrees(srv *mcp.Server) {
 		}
 		return reply(writeOut{ChangeID: res.ChangeID, Warnings: res.Warnings})
 	})
+}
+
+// errNoSession means that the server cannot tell the session that it serves.
+var errNoSession = errors.New("no session")
+
+// workIn records that the session of the server works in the worktree (see
+// [store.Store.SetSessionWorktree]). An empty ID clears the record. It fails
+// with errNoSession when the server cannot tell its session.
+func (s *Server) workIn(worktreeID string) error {
+	a, err := s.actor()
+	if err != nil {
+		return err
+	}
+	if a.SessionID == "" {
+		return errNoSession
+	}
+	return s.st.SetSessionWorktree(a.SessionID, worktreeID)
 }
 
 // saveSettings sets the worktree settings of a repo of the plot. The settings

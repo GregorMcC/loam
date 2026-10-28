@@ -24,6 +24,26 @@ public struct WorktreeRef: Codable, Equatable, Sendable {
     }
 }
 
+/// The worktrees that sessions work in but did not start in (TAS-55), by session ID. A session that makes a
+/// worktree through MCP works in it, and so does one that MCP `work_in_worktree` points at it.
+public struct SessionLinks: Sendable {
+    private var links: [String: (plot: String, worktree: WorktreeRef)] = [:]
+
+    public init(_ worktrees: [String: [WorktreeStatus]]) {
+        for status in worktrees.values.joined() {
+            for session in status.worktree.sessions ?? [] {
+                links[session] = (status.worktree.plotID, WorktreeRef(status.worktree))
+            }
+        }
+    }
+
+    /// The worktree of the plot that one of the sessions works in. The sessions come newest first, so the
+    /// current session wins over one before a /clear.
+    func worktree(of sessions: [String], in plot: String) -> WorktreeRef? {
+        sessions.lazy.compactMap { self.links[$0] }.first { $0.plot == plot }?.worktree
+    }
+}
+
 /// What the app does when you ask to remove a worktree (spec section 9). The core checks the same
 /// rules again in `loam worktree rm`, so a stale view cannot remove a worktree that is not safe.
 public enum WorktreeRemovalPlan: Equatable, Sendable {

@@ -241,9 +241,10 @@ public struct SidebarModel: Equatable, Sendable {
                 repos: [String: [RepoCheckout]] = [:], titles: [PaneID: String] = [:], selectedWorktree: String? = nil,
                 page: AppPage? = nil, runWorktrees: Set<String> = []) {
         self.plots = plots
+        let links = SessionLinks(worktrees)
         var panesIn: [String: Int] = [:]
         for id in workspace.allPaneIDs {
-            if let worktree = workspace.spec(of: id)?.worktree { panesIn[worktree.id, default: 0] += 1 }
+            if let worktree = workspace.shownWorktree(of: id, links: links) { panesIn[worktree.id, default: 0] += 1 }
         }
         worktreeRows = worktrees.mapValues { list in
             list.map {
@@ -296,7 +297,7 @@ public struct SidebarModel: Equatable, Sendable {
         }
         let worktreeRows = self.worktreeRows
         trees = rowsByPlot.reduce(into: [:]) { all, entry in
-            all[entry.key] = Self.tree(of: entry.key, panes: entry.value, workspace: workspace,
+            all[entry.key] = Self.tree(of: entry.key, panes: entry.value, workspace: workspace, links: links,
                                        worktrees: worktreeRows[entry.key] ?? [], repos: repos[entry.key] ?? [])
         }
         let treeOfPlot = self.trees
@@ -336,14 +337,15 @@ public struct SidebarModel: Equatable, Sendable {
         }
     }
 
-    /// Groups the panes of one plot by `PaneSpec.worktree`, then by `PaneSpec.repo`. A plot session
-    /// (ticket 93) sits right under the plot, before the repo rows. A pane in another
+    /// Groups the panes of one plot by the worktree that each shows under (`Workspace.shownWorktree`), then
+    /// by `PaneSpec.repo`. A session that works in a worktree sits under it, wherever it started (TAS-55). A
+    /// plot session (ticket 93) sits right under the plot, before the repo rows. A pane in another
     /// repo of the plot sits under that repo's row. The main checkout holds the other panes. A plot
     /// with no repos holds them itself. Each worktree nests under the row of its repo (ticket 92). A
     /// worktree that the list misses (it can reload while a pane runs in it) still gets its row, after
     /// the listed ones. With no repo in its reference, it nests under the main repo.
-    private static func tree(of plot: String, panes: [PaneRow], workspace: Workspace, worktrees: [WorktreeRow],
-                             repos: [RepoCheckout]) -> PlotTree {
+    private static func tree(of plot: String, panes: [PaneRow], workspace: Workspace, links: SessionLinks,
+                             worktrees: [WorktreeRow], repos: [RepoCheckout]) -> PlotTree {
         let main = repos.first(where: \.isMain)
         let others = repos.filter { !$0.isMain }
         var outside: [PaneRow] = []
@@ -354,12 +356,10 @@ public struct SidebarModel: Equatable, Sendable {
         let listed = Set(worktrees.map(\.id))
         for pane in panes {
             let spec = workspace.spec(of: pane.id)
-            if spec?.inPlotFolder == true {
-                inPlot.append(pane)
-                continue
-            }
-            guard let ref = spec?.worktree else {
-                if let repo = spec?.repo.flatMap({ path in others.first { $0.holds(path) } }) {
+            guard let ref = workspace.shownWorktree(of: pane.id, links: links) else {
+                if spec?.inPlotFolder == true {
+                    inPlot.append(pane)
+                } else if let repo = spec?.repo.flatMap({ path in others.first { $0.holds(path) } }) {
                     inRepo[repo.id, default: []].append(pane)
                 } else if main != nil {
                     outside.append(pane)

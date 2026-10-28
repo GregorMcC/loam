@@ -223,3 +223,63 @@ extension Scenarios {
         app.screenshot("plot-session")
     }
 }
+
+@MainActor
+extension Scenarios {
+    static func sessionWorktreeShot(_ app: DriverApp) async throws {
+        do { try await sessionWorktreeShotSteps(app) } catch { app.dumpAccessibility(); throw error }
+    }
+
+    /// TAS-55: a session in the main checkout makes a worktree through MCP, as Claude does, and the sidebar shows
+    /// the session under the worktree. The pane keeps its folder. MCP `work_in_worktree` with no worktree puts it
+    /// back under the main checkout.
+    private static func sessionWorktreeShotSteps(_ app: DriverApp) async throws {
+        let (rig, environment, _) = try shotRig(app)
+        // The fake claude of the rig answers `claude mcp` and exits. Here a session clears the screen and stays, so the
+        // pane stays open and the shot shows no path of the machine.
+        let claude = rig.root.appendingPathComponent("bin/claude")
+        let mcp = try String(contentsOf: claude, encoding: .utf8).replacingOccurrences(of: "#!/bin/sh\n", with: "")
+        try "#!/bin/sh\ncase \"$1\" in mcp) \(mcp)exit 0 ;; esac\nprintf '\\033[2J\\033[H'\n"
+            .appending("echo 'Claude is working in the fix-login worktree.'\nexec sleep 600\n")
+            .write(to: claude, atomically: true, encoding: .utf8)
+        let (repo, _) = try widgetsRepo(rig, onGitHub: false)
+        let plot = try rig.newPlot("Loam v1 build")
+        try rig.loam(["repo", "add", plot, repo.path])
+        let host = try await app.launchApp(
+            client: LoamClient(binary: rig.binary, environment: environment), state: rig.stateFile, terminals: true)
+        app.runtime.applyWindowAppearance(to: host.window)
+        NSApp.appearance = NSAppearance(named: .darkAqua)
+        let model = host.model
+        try await app.waitUntil("the plot is active") { model.workspace.activePlotID == plot }
+
+        // A session in the main checkout, with the session ID that its hooks give.
+        model.openTab(.session)
+        guard let pane = model.workspace.focusedPane else { throw DriverFailure("no pane") }
+        let session = "cccccccc-5555-4666-8777-888888888888"
+        let start = #"{"event":"SessionStart","session_id":"\#(session)","cwd":"\#(repo.path)","at":"2026-10-28T09:00:00Z","source":"startup"}"#
+        model.apply(try JSONDecoder().decode(PaneEvent.self, from: Data(start.utf8)), to: pane)
+        let row = "pane-row-\(pane.uuidString)"
+        try await app.waitUntil("the pane sits under the main checkout") { app.treeParent(of: row) == "main-checkout-\(plot)" }
+
+        // The session makes a worktree. It now works in it.
+        let replies = try await rig.mcp([("create_worktree", ["plot": plot, "name": "fix-login", "goal": "Fix the login form"])],
+                                        session: session, app: app)
+        Log.line("RESULT create_worktree: \(replies.last ?? "no reply")")
+        try await app.waitUntil("the worktree lists the session") {
+            model.worktrees[plot]?.first { $0.worktree.branch == "fix-login" }?.worktree.sessions == [session]
+        }
+        guard let made = model.worktrees[plot]?.first(where: { $0.worktree.branch == "fix-login" })?.worktree else {
+            throw DriverFailure("no worktree")
+        }
+        try await app.waitUntil("the pane moves under the worktree") { app.treeParent(of: row) == "worktree-\(made.id)" }
+        try check(model.focusedWorktree?.id == made.id, "the focused worktree is \(model.focusedWorktree?.id ?? "none")")
+        try check(model.workspace.spec(of: pane)?.worktree == nil, "the pane changed its folder")
+        await app.sleep(0.5)
+        app.screenshot("session-under-worktree")
+
+        // work_in_worktree with no worktree: the session is back under the main checkout.
+        _ = try await rig.mcp([("work_in_worktree", ["plot": plot])], session: session, app: app)
+        try await app.waitUntil("the pane is back under the main checkout") { app.treeParent(of: row) == "main-checkout-\(plot)" }
+        NSApp.appearance = nil
+    }
+}
