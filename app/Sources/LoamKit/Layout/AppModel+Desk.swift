@@ -42,6 +42,29 @@ extension AppModel {
         desk.keepWorktree = keep
     }
 
+    /// True when the merge moves the Linear issue of the run to Done: your choice, else the Done switch.
+    public var deskLinearDone: Bool { desk.linearDone ?? desk.linearUpdates?.done ?? true }
+
+    /// Moves the Linear issue to Done at the merge, or leaves it where it is.
+    public func setDeskLinearDone(_ done: Bool) {
+        desk.linearDone = done
+    }
+
+    /// Moves Where it stands of the plot on to the text of the ship notes at the merge, or leaves it.
+    public func setDeskMoveWhereItStands(_ move: Bool) {
+        desk.moveWhereItStands = move
+    }
+
+    /// The worktree of the run in Shaping: the worktree that it has, else the name that the core gives it when
+    /// you approve it.
+    public func deskWorktreeName(_ run: Run) -> String {
+        let worktrees = (worktrees[run.plotID] ?? []).map(\.worktree)
+        if !run.worktreeID.isEmpty, let worktree = worktrees.first(where: { $0.id == run.worktreeID }) {
+            return worktree.name
+        }
+        return RunWorktreeName.name(title: run.title, key: RunWorktreeName.key(of: run), taken: Set(worktrees.map(\.name)))
+    }
+
     /// Adds a note on a line of a file, or with no file, on the whole run. A note with no text is not added.
     public func addDeskNote(file: String?, line: Int?, text: String) {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -70,15 +93,19 @@ extension AppModel {
     /// Merges the PR of the run (`loam run land`), with the head of the diff that you read, and shows the
     /// next run. A merge that the core refuses keeps the run, and `desk.error` says why. The core keeps a
     /// worktree that has open panes, so the desk closes none. The merge can remove the worktree, so the
-    /// worktrees are read again, and the toast says what the merge did, as at the Land sheet.
+    /// worktrees are read again, and the toast says what the merge did, as at the Land sheet. The merge moves
+    /// the Linear issue to Done and Where it stands on, as When you merge says.
     public func landDeskRun() async {
         guard let id = desk.runID, !desk.busy else { return }
         let head = desk.diff?.head
         let keep = desk.keepWorktree
+        let linearDone = deskRun?.source?.kind != "linear" || deskLinearDone
+        let whereItStands = desk.moveWhereItStands && deskRun?.notes?.whereItStands.isEmpty == false
         let panes = openPaneFolders + savedPaneFolders()
         var landed: RunLandResult?
         await deskAction(id) {
-            landed = try await self.client.runLand(id, head: head, keepWorktree: keep, openPanes: panes)
+            landed = try await self.client.runLand(id, head: head, keepWorktree: keep, linearDone: linearDone,
+                                                   whereItStands: whereItStands, openPanes: panes)
         }
         guard let landed else { return }
         await reloadWorktrees()
@@ -116,12 +143,12 @@ extension AppModel {
         desk.shapeEdits[run.id] = edit.isEmpty ? nil : edit
     }
 
-    /// Starts the run with its draft and your edits (`loam run approve`), and shows the next run. After the core
-    /// refused a new setup command, this approval approves it.
+    /// Starts the run with its draft and your edits (`loam run approve`), and shows the next run. The desk shows
+    /// the setup command of the repo, so this approval approves it, as it does after the core refused a new one.
     public func approveDeskRun() async {
         guard let id = desk.runID, !desk.busy, !desk.drafting.contains(id) else { return }
         let edit = desk.currentEdit
-        let approveSetup = desk.needsSetupApproval
+        let approveSetup = desk.needsSetupApproval || desk.setup != nil
         await deskAction(id) {
             _ = try await self.client.runApprove(id, goal: edit.goal, checks: edit.checks, answers: edit.answers,
                                                  approveSetup: approveSetup)
@@ -189,12 +216,17 @@ extension AppModel {
         desk.file = nil
         desk.error = nil
         desk.rules = []
+        desk.setup = nil
+        desk.recurringTitle = nil
+        desk.linearDone = nil
+        desk.moveWhereItStands = true
         runStatus = nil
         guard let id else { return }
         // A draft has no work to read yet. The rules of its plot join its checks.
         if let run = runs.first(where: { $0.id == id }), run.state == .shaping {
             await readRunStatus(id)
             await readDeskRules(plot: run.plotID)
+            await readDeskApproval(run)
             return
         }
         do {
@@ -207,5 +239,28 @@ extension AppModel {
             desk.error = Self.message(for: error)
         }
         await readRunStatus(id)
+        if let run = runs.first(where: { $0.id == id }), run.source?.kind == "linear" {
+            await readDeskLinearUpdates()
+        }
+    }
+
+    /// Reads what an approval of the run does: the setup command of its repo, the run limits, the Linear updates
+    /// for a run from Linear, and the recurring run that shaped it. A failed read shows nothing.
+    private func readDeskApproval(_ run: Run) async {
+        if let plot = try? await client.show(plot: run.plotID), desk.runID == run.id {
+            let repo = run.shape?.repo ?? ""
+            let setup = (repo.isEmpty ? plot.repos.first(where: \.main) : plot.repos.first { $0.id == repo })?.setup ?? ""
+            desk.setup = setup.isEmpty ? nil : setup
+        }
+        if let limits = try? await client.runLimits() { desk.limits = limits }
+        if run.source?.kind == "linear" { await readDeskLinearUpdates() }
+        if let source = run.source, source.kind == "recurring",
+           let recurring = try? await client.recurringList(plot: run.plotID), desk.runID == run.id {
+            desk.recurringTitle = recurring.first { $0.id == source.key }?.title
+        }
+    }
+
+    private func readDeskLinearUpdates() async {
+        if let updates = try? await client.linearUpdates() { desk.linearUpdates = updates }
     }
 }
