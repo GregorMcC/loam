@@ -28,9 +28,9 @@ struct PanelRig {
 
     /// Writes `.claude.json` with trust for each folder in `trusted`.
     func trust(_ trusted: [String]) throws {
-        let projects = trusted.map { "\"\($0)\": {\"hasTrustDialogAccepted\": true}" }.joined(separator: ", ")
+        let projects = trusted.reduce(into: [String: Any]()) { $0[$1] = ["hasTrustDialogAccepted": true] }
         try FileManager.default.createDirectory(at: claudeJSON.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try "{\"projects\": {\(projects)}}".write(to: claudeJSON, atomically: true, encoding: .utf8)
+        try JSONSerialization.data(withJSONObject: ["projects": projects]).write(to: claudeJSON, options: .atomic)
     }
 
     init(outFolder: String) throws {
