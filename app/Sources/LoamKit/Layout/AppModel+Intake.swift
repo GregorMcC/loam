@@ -15,6 +15,7 @@ extension AppModel {
         guard case .intake(let id) = page else { return }
         do {
             let list = try await client.intake(plot: id)
+            noteIntakeRead(list)
             guard page == .intake(id) else { return }
             intake = list
         } catch {

@@ -5,7 +5,7 @@ public struct RunDraft: Equatable, Sendable {
     public var title: String
     public var goal = ""
     public var checks: [RunCheck] = []
-    public var maxTries = 3
+    public var maxTries = RunDraft.defaultTries
     /// The issue URL for `--link`, or nil.
     public var link: String?
     /// The ticket file for `--ticket`, or nil.
@@ -31,6 +31,9 @@ public struct RunDraft: Equatable, Sendable {
             repo = split ? nil : newValue
         }
     }
+
+    /// The tries of a new run.
+    public static let defaultTries = 3
 
     /// A draft that starts from the item: an issue gives `--link`, a map ticket gives `--ticket`.
     public init(item: IntakeItem) {

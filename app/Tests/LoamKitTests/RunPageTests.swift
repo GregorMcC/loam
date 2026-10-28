@@ -29,7 +29,7 @@ import Testing
         let (model, fake) = try model([("run_list", 0), ("run_status", 0)])
         await model.reloadRuns()
         #expect(model.runs.map(\.id) == ["runraaaaab"])
-        #expect(model.today.recent.map(\.plotName) == ["Runs"])
+        #expect(model.today.line.map(\.plotName) == ["Runs"])
         await model.openRun("runraaaaab")
         #expect(model.page == .run("runraaaaab"))
         #expect(model.runStatus?.events.map(\.detail) == ["starting", "running"])
