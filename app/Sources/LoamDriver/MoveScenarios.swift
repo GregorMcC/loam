@@ -67,8 +67,8 @@ extension Scenarios {
     /// Run 1: a Home tab of a shell and a session split. After `/clear`, ⌘J "Move to Alpha" moves it:
     /// the shell keeps its view and its process, and the session resumes its new ID in the plot with
     /// `LOAM_PLOT`. Then ⌘J "Move to New Plot…" asks for a name, asks first because a second Home
-    /// session is mid-turn, makes the plot Beta, and moves that tab there. That session has no
-    /// conversation, so it starts again with its ID.
+    /// session is mid-turn, makes the plot Beta, and moves that tab there. That session had a
+    /// prompt, so it has a conversation and resumes.
     static func moveToPlot(_ app: DriverApp) async throws {
         do { try await moveToPlotSteps(app) } catch { app.dumpAccessibility(); throw error }
     }
@@ -106,7 +106,8 @@ extension Scenarios {
         }
         let current = model.workspace.session(of: session)!.sessionID!
         try FileManager.default.removeItem(at: setup.invocationFile)
-        // Claude Code keeps the conversation of the session once it has a prompt.
+        // Claude Code keeps the conversation of the session once it has a prompt. The new ID has had
+        // none, so the file stands in for one, and the move resumes the session.
         try conversation(current, config: setup.claudeConfig)
 
         // 3. ⌘J "Move to Alpha". Alpha becomes active with the moved tab, and Home is empty.
@@ -166,10 +167,11 @@ extension Scenarios {
             return model.workspace.activeSpace == .plot(beta) && model.workspace.selectedTab(of: .plot(beta))?.id == second.id
         }
         try expect(model.workspace.tabs(of: .home).isEmpty, "Home still has the second tab")
-        try await app.waitUntil("the second session started again") {
-            setup.invocation()?.args.starts(with: ["--session-id", secondID]) == true
+        // The session had a prompt, so the fake claude wrote its conversation file, and it resumes.
+        try await app.waitUntil("the second session resumed") {
+            setup.invocation()?.args.starts(with: ["--resume", secondID]) == true
         }
-        Log.line("RESULT New Plot… asked first, then moved the tab to Beta, and the session started again with \(secondID)")
+        Log.line("RESULT New Plot… asked first, then moved the tab to Beta, and the session resumed \(secondID)")
 
         guard let moved = model.workspace.tabs(of: .plot(alpha)).first else { throw DriverFailure("Alpha lost the tab") }
         let saved = MoveSaved(plot: alpha, tree: moved.tree, session: session, sessionID: current)

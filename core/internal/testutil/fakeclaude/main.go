@@ -24,6 +24,14 @@
 //
 // The first SessionStart has source "resume" for --resume and "startup" otherwise.
 //
+// With CLAUDE_CONFIG_DIR set, the first turn of each session ID writes
+// projects/<folder>/<id>.jsonl there, as Claude Code writes the conversation
+// file at the first prompt. <folder> is the working folder with each "/" and
+// "." changed to "-". So after "/clear" the new ID has no file until its own
+// first turn. "/branch" keeps the conversation, so the new ID gets a file when
+// the old ID had one. Without CLAUDE_CONFIG_DIR it writes no file, so a test
+// never writes to the real ~/.claude.
+//
 // With LOAM_FAKE_CLAUDE_PROMPTS set to a file, each prompt line is added to
 // that file before its UserPromptSubmit, so a test sees what was sent.
 // LOAM_FAKE_CLAUDE_TITLES is a JSON object from the base name of the working
@@ -143,7 +151,13 @@ func session(args []string, cwd string) (eof bool) {
 		}
 		return strings.TrimSpace(in.Text()), true
 	}
+	// talked is true when the current ID has had a turn.
+	talked := false
 	startTurn := func() {
+		if !talked {
+			talked = true
+			writeConversation(cwd, id)
+		}
 		run("UserPromptSubmit", nil)
 		fmt.Println("fake claude: working")
 		time.Sleep(turn)
@@ -161,12 +175,15 @@ func session(args []string, cwd string) (eof bool) {
 			return false
 		case "/clear":
 			run("SessionEnd", nil)
-			id = newID()
+			id, talked = newID(), false
 			run("SessionStart", map[string]string{"source": "clear"})
 			fmt.Printf("fake claude: session %s\n", id)
 		case "/branch":
 			run("SessionEnd", nil)
 			id = newID()
+			if talked {
+				writeConversation(cwd, id)
+			}
 			run("SessionStart", map[string]string{"source": "fork"})
 			fmt.Printf("fake claude: session %s\n", id)
 		case "/permission":
@@ -216,6 +233,23 @@ func session(args []string, cwd string) (eof bool) {
 	}
 	run("SessionEnd", nil)
 	return true
+}
+
+// writeConversation writes the conversation file of the session in
+// CLAUDE_CONFIG_DIR. It writes nothing when CLAUDE_CONFIG_DIR is not set.
+func writeConversation(cwd, id string) {
+	root := os.Getenv("CLAUDE_CONFIG_DIR")
+	if root == "" {
+		return
+	}
+	dir := filepath.Join(root, "projects", strings.NewReplacer("/", "-", ".", "-").Replace(cwd))
+	err := os.MkdirAll(dir, 0o755)
+	if err == nil {
+		err = os.WriteFile(filepath.Join(dir, id+".jsonl"), []byte("{}\n"), 0o644)
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "fakeclaude: conversation:", err)
+	}
 }
 
 // recordPrompt adds the prompt to the file named in LOAM_FAKE_CLAUDE_PROMPTS.

@@ -70,6 +70,7 @@ func TestStartHomePicksASessionID(t *testing.T) {
 func TestStartHomeResume(t *testing.T) {
 	e := setup(t)
 	home := homeDir(t)
+	conversation(t, fixedID)
 	if out, err := e.run(t, "start", "--home", "--resume", fixedID); err != nil {
 		t.Fatalf("%v: %s", err, out)
 	}
@@ -88,6 +89,26 @@ func TestStartHomeResume(t *testing.T) {
 	}
 	if _, ok := inv.Env["LOAM_PLOT"]; ok {
 		t.Error("LOAM_PLOT in a resumed Home session")
+	}
+}
+
+// Ticket 103: a Home session that never had a prompt has no conversation, so --resume starts it
+// again with the same ID, in the home folder.
+func TestStartHomeResumeWithNoConversationStartsTheSession(t *testing.T) {
+	e := setup(t)
+	home := homeDir(t)
+	if out, err := e.run(t, "start", "--home", "--resume", fixedID); err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	inv := testutil.FakeClaudeInvocation(t)
+	if got := argValues(inv.Args, "--session-id"); !slices.Equal(got, []string{fixedID}) || slices.Contains(inv.Args, "--resume") {
+		t.Errorf("args %v, want --session-id %s and no --resume", inv.Args, fixedID)
+	}
+	if realpath(t, inv.Cwd) != realpath(t, home) {
+		t.Errorf("cwd %q, want the home folder %q", inv.Cwd, home)
+	}
+	if ok, err := e.store.IsSeeded(fixedID); err != nil || ok {
+		t.Errorf("a Home session has a session record: %v, %v", ok, err)
 	}
 }
 

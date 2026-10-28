@@ -69,13 +69,17 @@ type Invocation struct {
 // FakeClaude builds a fake `claude`, puts its folder first on PATH for the
 // test, and returns the folder. The fake writes its argv, env, and working
 // folder as JSON to the file that [FakeClaudeInvocation] reads. It then exits 0.
-// Call it after [Home] and before you run a command that starts claude.
+// It also points CLAUDE_CONFIG_DIR at a temp folder, so neither the fake, which
+// writes conversation files there, nor a loam resume, which reads them, reaches
+// the real ~/.claude. Call it after [Home] and before you run a command that
+// starts claude.
 func FakeClaude(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	build(t, "github.com/GregorMcC/loam/core/internal/testutil/fakeclaude", filepath.Join(dir, "claude"))
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("LOAM_FAKE_CLAUDE_OUT", filepath.Join(dir, "invocation.json"))
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
 	return dir
 }
 
