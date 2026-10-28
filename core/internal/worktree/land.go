@@ -239,6 +239,12 @@ type LandResult struct {
 	WorktreeNote    string `json:"worktree_note,omitempty"`
 	BranchDeleted   bool   `json:"branch_deleted"`
 	BranchNote      string `json:"branch_note,omitempty"`
+	// LandedRuns are the runs of the worktree that loam worktree land landed
+	// after the merge, and RunWarnings say what went wrong on the way, such
+	// as an update to Linear that failed. The caller fills them: Land leaves
+	// them empty.
+	LandedRuns  []store.Run `json:"landed_runs"`
+	RunWarnings []string    `json:"run_warnings"`
 }
 
 // Land merges the PR of a worktree of a plot on GitHub, then deletes the
@@ -281,7 +287,7 @@ func Land(ctx context.Context, s *store.Store, plotID, arg string, o LandOptions
 		return nil, &headChangedError{number: t.pr.Number, folder: filepath.Base(w.Path)}
 	}
 	res := &LandResult{Worktree: w, PR: t.pr, Stage: t.stage, Methods: []github.MergeMethod{}, Checks: []LandCheck{},
-		Auto: o.Auto, DryRun: o.DryRun}
+		Auto: o.Auto, DryRun: o.DryRun, LandedRuns: []store.Run{}, RunWarnings: []string{}}
 	// cleared says that this land cleared a stale land of another PR.
 	var cleared string
 	switch {

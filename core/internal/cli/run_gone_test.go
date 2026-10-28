@@ -2,6 +2,7 @@ package cli
 
 import (
 	"database/sql"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/GregorMcC/loam/core/internal/store"
 	"github.com/GregorMcC/loam/core/internal/testutil"
+	"github.com/GregorMcC/loam/core/internal/worktree"
 )
 
 // TAS-42: a run whose worktree is gone, such as after loam worktree land from
@@ -124,6 +126,38 @@ func TestWorktreeLandLandsTheRunsOfTheWorktree(t *testing.T) {
 	}
 	if !strings.Contains(out, "Landed the run Say hi.") {
 		t.Fatalf("output %s", out)
+	}
+}
+
+// With --json, the land says which runs it landed, and what went wrong on
+// the way: here Loam has no Linear key to move the issue of the run.
+func TestWorktreeLandJSONHasTheLandedRunsAndTheWarnings(t *testing.T) {
+	s, r, w := readyRun(t)
+	testutil.FakeLinear(t)
+	t.Setenv("LOAM_SECRETS_FILE", filepath.Join(t.TempDir(), "none.json"))
+	linearSource(t, s, r)
+	out, code := loam(t, "worktree", "land", "alpha", w.ID, "--json")
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+	var got worktree.LandResult
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	if len(got.LandedRuns) != 1 || got.LandedRuns[0].ID != r.ID || got.LandedRuns[0].State != store.RunLanded {
+		t.Fatalf("landed runs %+v", got.LandedRuns)
+	}
+	if len(got.RunWarnings) == 0 || !strings.Contains(strings.Join(got.RunWarnings, "\n"), "ENG-523") {
+		t.Fatalf("run warnings %q", got.RunWarnings)
+	}
+}
+
+// A dry run lands no run, and its JSON has empty lists.
+func TestWorktreeLandDryRunJSONHasEmptyRunLists(t *testing.T) {
+	_, _, w := readyRun(t)
+	out, code := loam(t, "worktree", "land", "alpha", w.ID, "--dry-run", "--json")
+	if code != 0 || !strings.Contains(out, `"landed_runs": []`) || !strings.Contains(out, `"run_warnings": []`) {
+		t.Fatalf("exit %d: %s", code, out)
 	}
 }
 

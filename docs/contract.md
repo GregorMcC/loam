@@ -442,7 +442,8 @@ The land result:
     { "name": "unpushed_commits", "state": "none", "blocks": false }
   ],
   "ready": true, "dry_run": false, "merged": true, "merge_later": false,
-  "remote_branch_deleted": true, "worktree_removed": true, "branch_deleted": true
+  "remote_branch_deleted": true, "worktree_removed": true, "branch_deleted": true,
+  "landed_runs": [], "run_warnings": []
 }
 ```
 
@@ -452,6 +453,7 @@ The land result:
 - `ready` is true when no check blocks. `merged` is true when GitHub says that the PR is merged. For a merged PR, `methods` and `default_method` are empty, and `checks` has `work_after_pr` only. `merge_later` is true when GitHub merges later, and when Loam cannot see the merge yet (`merge_note` says why).
 - `worktree` has the `land` that the worktree records after the land. It has no `land` after the tidy up of a merge, and after a removal. When the tidy up waits for open panes (step 6), it has the `land` that the land recorded.
 - `land_note` says that the worktree recorded a `land` of another PR (see below).
+- `landed_runs` are the runs of the worktree that the land landed after the merge, and `run_warnings` says what went wrong on the way. Both are always there. See [Land](#land) under Runs.
 - The notes `merge_note`, `remote_branch_note`, `worktree_note`, and `branch_note` say why a step did not happen. Each is left out when it does not apply.
 
 The checks of an open PR, in this order. A merged PR has the check `work_after_pr` only.
@@ -619,7 +621,7 @@ A tick also watches the PR of each run that is `ready` and has a `pr`. A merge o
 - `rule_offer` is there when a note is like a note on another run of the plot: they share at least 2 words, and at least half of all their words, when Loam leaves out short and common words. A note like the `note` of a rule of the plot gets no offer. `note` and `earlier` are the texts of the two notes, and `earlier_run_id` is the other run. The app offers to make the note a rule with `loam rule add`.
 - `run land` takes a run that is `ready` and has a `pr`. Loam checks the land first with a dry run. When the land can go on, Loam stops the session, because the land removes the worktree. A land that refuses keeps the session. Loam then lands the worktree as `loam worktree land` does, with the default merge method: `land` is the `worktree land` result. A merge makes the run `landed` ("Merged #25 with squash", event `land`), and its Linear issue moves to the first completed state (event `linear`). A run of a group moves it only after the last run of the group (see Linear). With a merge queue, the run stays `ready` ("#25 is in the merge queue of main"), and a tick lands it when GitHub merges. `--dry-run` changes nothing, and `land` is the plan.
 - A run whose worktree is gone reads its PR by number (see Ship, step 1) and calls no land. A merged PR makes the run `landed` ("#25 was merged on GitHub") and a closed PR makes it `stopped`. In both cases `land` is `null`. With `--dry-run`, `land` is `null` and `warnings` says what a land records. An open PR exits 2: Loam cannot merge a PR with no worktree.
-- `loam worktree land` also lands each run that works in the worktree and has not ended (`shipping` or `ready`), when the land merged the PR, so a land from the sidebar ends the run at once. The note is the one of `run land`. A run with a `pr` other than the merged one stays as it is. The text output adds the line "Landed the run <title>." The JSON output does not change.
+- `loam worktree land` also lands each run that works in the worktree and has not ended (`shipping` or `ready`), when the land merged the PR, so a land from the sidebar ends the run at once. The note is the one of `run land`. A run with a `pr` other than the merged one stays as it is. `landed_runs` holds each run that the land landed, and `run_warnings` says what went wrong on the way, such as an update to Linear that failed. Both are always there, and empty when the land landed no run. The text output adds the line "Landed the run <title>." for each run, and prints each warning on stderr. In the `land` of `run land`, both are empty: `run land` has its own `run` and `warnings`.
 - A run in another state, or with no PR, exits 2. A check that blocks the merge exits 16, and gh missing or signed out exits 17, as for `worktree land`.
 - `--keep-worktree` keeps the worktree after the merge.
 - `--no-linear-done` leaves the Linear issue where it is: this land does not move it to Done, and the `linear` event is "This land leaves ENG-523 where it is". It holds only for a land that merges now. When GitHub merges later, a run with a Linear issue gets a warning that the tick that lands the run follows the `done` switch.

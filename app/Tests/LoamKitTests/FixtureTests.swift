@@ -327,6 +327,14 @@ func decodeFixture(schema: String, data: Data) throws {
         withNote["land_note"] = "Loam cleared the land of PR #12 that the worktree recorded: the branch has PR #23 now."
         let stale = try d.decode(LandResult.self, from: JSONSerialization.data(withJSONObject: withNote))
         #expect(stale.landNote?.hasPrefix("Loam cleared the land of PR #12") == true)
+        #expect(land.landedRuns.isEmpty && land.runWarnings.isEmpty)
+        // A land that landed a run of the worktree lists it, and what went wrong on the way.
+        var withRun = try #require(JSONSerialization.jsonObject(with: Fixtures.data("worktree_land")) as? [String: Any])
+        let runLand = try #require(JSONSerialization.jsonObject(with: Fixtures.data("run_land")) as? [String: Any])
+        withRun["landed_runs"] = [try #require(runLand["run"])]
+        withRun["run_warnings"] = ["Loam could not move ENG-523 to Done: no Linear key"]
+        let landedRun = try d.decode(LandResult.self, from: JSONSerialization.data(withJSONObject: withRun))
+        #expect(landedRun.landedRuns.map(\.state) == [.landed] && landedRun.runWarnings.count == 1)
         let auto = try d.decode(LandResult.self, from: Fixtures.data("worktree_land_auto"))
         #expect(auto.mergeLater && !auto.worktreeRemoved)
         #expect(auto.worktree.land == PendingLand(pr: 23, method: "squash", auto: true, mergeQueue: false,

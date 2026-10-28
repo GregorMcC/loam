@@ -41,6 +41,7 @@
   ],
   "default_method": "squash",
   "dry_run": false,
+  "landed_runs": [],
   "merge_later": true,
   "merge_queue": false,
   "merged": false,
@@ -89,6 +90,7 @@
   },
   "ready": true,
   "remote_branch_deleted": false,
+  "run_warnings": [],
   "stage": "blocked",
   "unpushed": 0,
   "worktree": {

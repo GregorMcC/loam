@@ -22,7 +22,9 @@
     "merge_later",
     "remote_branch_deleted",
     "worktree_removed",
-    "branch_deleted"
+    "branch_deleted",
+    "landed_runs",
+    "run_warnings"
   ],
   "properties": {
     "worktree": {
@@ -119,6 +121,20 @@
     "branch_note": {
       "type": "string",
       "minLength": 1
+    },
+    "landed_runs": {
+      "description": "The runs of the worktree that loam worktree land landed after the merge. Empty in a dry run, and in the land of loam run land, which has its own run.",
+      "type": "array",
+      "items": {
+        "$ref": "defs.json#/$defs/run"
+      }
+    },
+    "run_warnings": {
+      "description": "What went wrong as Loam landed those runs, such as an update to Linear that failed. Empty in the land of loam run land, which has its own warnings.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
     }
   }
 }
