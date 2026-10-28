@@ -123,8 +123,8 @@ extension Scenarios {
     }
 
     /// Ticket 204: the Intake page of a plot with a GitHub repo and a map. The fake gh lists two issues, and the map
-    /// has two open tickets. A click on a ticket shows the start form, and Start run starts a run in the core and
-    /// shows its page. The origin is on GitHub over SSH, and a fake ssh serves the local bare repo, so no git command
+    /// has two open tickets. A click on a ticket shows its detail, and two checked issues show the bar. Start as a
+    /// chore opens the start form in a sheet, and Start run starts a run in the core and shows its page. The origin is on GitHub over SSH, and a fake ssh serves the local bare repo, so no git command
     /// reaches the network. `LOAM_DRIVER_FAKE_GH` names the fake gh.
     private static func intakeShotSteps(_ app: DriverApp) async throws {
         let fm = FileManager.default
@@ -134,7 +134,7 @@ extension Scenarios {
         let (rig, shotEnvironment, _) = try shotRig(app)
         let (repo, ssh) = try widgetsRepo(rig, onGitHub: true)
         let ghState = rig.root.appendingPathComponent("gh-state.json")
-        try #"{"issues": [{"number": 52, "title": "Paste a long prompt without a hang", "url": "https://github.com/example/widgets/issues/52", "labels": [], "updatedAt": "2026-10-22T09:00:00Z"}, {"number": 48, "title": "Install fails when the bin folder is missing", "url": "https://github.com/example/widgets/issues/48", "labels": [{"name": "bug"}], "updatedAt": "2026-10-20T10:00:00Z"}]}"#
+        try #"{"issues": [{"number": 52, "title": "Paste a long prompt without a hang", "url": "https://github.com/example/widgets/issues/52", "labels": [], "updatedAt": "2026-10-22T09:00:00Z", "createdAt": "2026-10-21T09:00:00Z", "body": "A paste of 4000 characters hangs the pane for a second.", "assignees": []}, {"number": 48, "title": "Install fails when the bin folder is missing", "url": "https://github.com/example/widgets/issues/48", "labels": [{"name": "bug"}], "updatedAt": "2026-10-20T10:00:00Z", "createdAt": "2026-10-18T10:00:00Z", "body": "The install script stops when ~/.local/bin is missing.", "assignees": []}]}"#
             .write(to: ghState, atomically: true, encoding: .utf8)
 
         // A map with two open tickets and one resolved ticket.
@@ -142,7 +142,8 @@ extension Scenarios {
         try fm.createDirectory(at: map.appendingPathComponent("issues"), withIntermediateDirectories: true)
         for (name, text) in [
             ("map.md", "# Build\n"),
-            ("issues/135-quit-during-a-merge.md", "Status: open\nBlocked by: none\n\n# Driver scenario: quit during a merge\n"),
+            ("issues/135-quit-during-a-merge.md",
+             "Status: open\nBlocked by: none\n\n# Driver scenario: quit during a merge\n\nQuit Loam while a merge runs. The quit waits for the merge.\n"),
             ("issues/136-sheet-in-full-screen.md", "Status: open\nBlocked by: 135\n\n# Driver scenario: a sheet in full screen\n"),
             ("issues/99-home-space.md", "Status: resolved\n\n# A Home space\n"),
         ] {
@@ -157,9 +158,12 @@ extension Scenarios {
         // The fake ssh serves the fetch of repo add, so it does not reach GitHub.
         try rig.loam(["repo", "add", plot, repo.path], extra: environment)
         try rig.loam(["link", "add", plot, "Build map", map.appendingPathComponent("map.md").path])
+        // A rule of the plot, which the detail lists under Claude reads first.
+        try rig.loam(["rule", "add", plot, "--name", "Views use LoamColor tokens", "--command", "true"])
         let host = try await app.launchApp(
             client: LoamClient(binary: rig.binary, environment: environment), state: rig.stateFile, terminals: true)
         app.runtime.applyWindowAppearance(to: host.window)
+        intakeFrameSize(host.window)
         let model = host.model
         try await app.waitUntil("the plot loads") { model.plots.count == 1 && model.workspace.activePlotID == plot }
 
@@ -177,9 +181,27 @@ extension Scenarios {
         try app.click("intake-filter-all")
         try await app.waitUntil("all items") { app.exists("intake-row-#52") }
 
-        // The start form of a ticket.
+        // The detail of a ticket, and two checked issues with the bar.
         try app.click("intake-row-map 135")
-        try await app.waitUntil("the detail shows") { app.exists("intake-detail") && app.exists("intake-start") }
+        try await app.waitUntil("the detail shows") {
+            app.exists("intake-detail") && app.exists("intake-chore") && app.exists("intake-when-shaped")
+                && app.exists("intake-reads-first") && app.exists("intake-text")
+        }
+        try app.click("intake-check-#52")
+        try app.click("intake-check-#48")
+        try await app.waitUntil("the bar shows") { app.text(of: "intake-batch-start") == "Shape 2 runs" }
+        await appearance(.darkAqua)
+        app.screenshot("intake-night")
+        await appearance(.aqua)
+        app.screenshot("intake-day")
+        await appearance(.darkAqua)
+        try app.click("intake-check-#52")
+        try app.click("intake-check-#48")
+        try await app.waitUntil("the bar goes") { !app.exists("intake-batch") }
+
+        // The start form of the ticket, in a sheet.
+        try app.click("intake-chore")
+        try await app.waitUntil("the start form") { app.exists("intake-start") && app.window.attachedSheet != nil }
         try app.fill("intake-goal", with: "A driver scenario quits Loam while a merge runs, and the quit waits.")
         try app.fill("intake-check-name-0", with: "Tests")
         try app.fill("intake-check-command-0", with: "true")
@@ -187,11 +209,8 @@ extension Scenarios {
         try await app.waitUntil("the Base picker shows") { app.exists("intake-base") }
         try confirm(model.runBases?.items.first?.title == "origin/main" && model.runBases?.first == nil,
                     "the bases are \(String(describing: model.runBases))")
-        await appearance(.darkAqua)
-        app.screenshot("intake-night")
-        await appearance(.aqua)
-        app.screenshot("intake-day")
-        await appearance(.darkAqua)
+        await app.sleep(0.5)
+        app.screenshot("intake-sheet-night", of: app.window.attachedSheet)
 
         try app.click("intake-start")
         try await app.waitUntil("the run page of the new run") {
@@ -208,10 +227,16 @@ extension Scenarios {
         try await app.waitUntil("the ticket has its run") {
             model.intake?.items.first { $0.key == "map 135" }?.runID == run.id
         }
+        // The row of the ticket goes last, with the station of its run and no check box.
+        try await app.waitUntil("the row shows its run") { !app.exists("intake-check-map 135") }
+        await app.sleep(0.5)
+        app.screenshot("intake-with-run-night")
 
         // TAS-21: a repo with no origin. The picker starts on the branch of the checkout, and the run starts from it.
         try git(repo, ["remote", "remove", "origin"])
         try app.click("intake-row-map 136")
+        try await app.waitUntil("the detail of the ticket") { app.exists("intake-chore") }
+        try app.click("intake-chore")
         try await app.waitUntil("the Base picker shows the branch") {
             app.exists("intake-start") && app.exists("intake-base") && model.runBases?.first == "main"
         }
@@ -264,6 +289,7 @@ extension Scenarios {
         let host = try await app.launchApp(
             client: LoamClient(binary: rig.binary, environment: environment), state: rig.stateFile, terminals: true)
         app.runtime.applyWindowAppearance(to: host.window)
+        intakeFrameSize(host.window)
         let model = host.model
         try await app.waitUntil("the plot loads") { model.plots.count == 3 }
         if model.workspace.activePlotID != plot {
@@ -319,15 +345,27 @@ extension Scenarios {
         try app.click("sidebar-intake")
         try await app.waitUntil("the Linear issues") { app.exists("intake-row-ENG-523") && app.exists("intake-row-ENG-525") }
         try confirm(app.exists("intake-filter-linear"), "no Linear filter")
+        try confirm(app.exists("intake-this-cycle"), "no This cycle chip")
         try app.click("intake-row-ENG-523")
-        try await app.waitUntil("the start form") { app.exists("intake-start") }
-        try app.fill("intake-goal", with: "A link row moves with a drag, and the order stays after a restart.")
+        try await app.waitUntil("the detail") { app.exists("intake-chore") && app.exists("intake-text") }
+        try app.click("intake-check-ENG-523")
+        try await app.waitUntil("the bar shows") { app.exists("intake-batch-start") }
         await app.sleep(0.5)
         app.screenshot("intake-linear-night")
         NSApp.appearance = NSAppearance(named: .aqua)
         await app.sleep(1)
         app.screenshot("intake-linear-day")
         NSApp.appearance = NSAppearance(named: .darkAqua)
+        try app.click("intake-check-ENG-523")
+        try await app.waitUntil("the bar goes") { !app.exists("intake-batch") }
+        // This cycle keeps only the issue in the active cycle.
+        try app.click("intake-this-cycle")
+        try await app.waitUntil("this cycle") { app.exists("intake-row-ENG-523") && !app.exists("intake-row-ENG-525") }
+        try app.click("intake-this-cycle")
+
+        try app.click("intake-chore")
+        try await app.waitUntil("the start form") { app.exists("intake-start") }
+        try app.fill("intake-goal", with: "A link row moves with a drag, and the order stays after a restart.")
 
         // The run moves the issue to In Progress, and its history says so.
         try app.click("intake-start")
@@ -340,6 +378,13 @@ extension Scenarios {
         await app.sleep(0.5)
         app.screenshot("linear-run-page")
         NSApp.appearance = nil
+    }
+
+    /// The Intake shots take the size of the design frame, 1440 by 900, or the screen when it is smaller.
+    static func intakeFrameSize(_ window: NSWindow) {
+        let screen = window.screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let size = NSSize(width: min(1440, screen.width), height: min(900, screen.height))
+        window.setFrame(NSRect(x: screen.minX, y: screen.maxY - size.height, width: size.width, height: size.height), display: true)
     }
 
     /// A repo, widgets, on branch main with one commit and a local bare origin, and Claude Code trusts it. A run
