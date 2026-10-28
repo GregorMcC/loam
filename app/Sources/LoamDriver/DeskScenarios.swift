@@ -167,7 +167,9 @@ extension Scenarios {
                         && app.exists("desk-risk") && app.exists("desk-where-it-stands"),
                         "the desk shows no ship notes: \(String(describing: model.runs.first?.notes))")
 
-        // ] shows the next file, and after the last file the first one again (TAS-49).
+        // ] shows the next file, and after the last file the first one again (TAS-49). SwiftUI takes the key of the hint at
+        // its next update after the desk shows, so a press at once can miss it, and then the wait never ends.
+        await app.sleep(0.5)
         try app.pressShortcut(letter: "]")
         try await app.waitUntil("] shows the next file") { model.desk.file == "search/match_test.go" }
         try app.pressShortcut(letter: "]")

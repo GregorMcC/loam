@@ -396,8 +396,13 @@ struct GeneralSettingsView: View {
             Section {
                 LabeledContent("Settings file") {
                     HStack {
+                        // A path has no spaces, so it would wrap at a hyphen and leave the lines uneven. It keeps one line and
+                        // cuts in the middle, and the tooltip holds all of it (TAS-35).
                         Text(model.display(model.file.url.path))
                             .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .help(model.display(model.file.url.path))
                             .textSelection(.enabled)
                         Button("Open") { openSettingsFile() }
                             .accessibilityIdentifier("settings-open-file")
@@ -425,7 +430,12 @@ struct GeneralSettingsView: View {
             }
             ForEach(model.settings.repoFolders, id: \.self) { folder in
                 HStack {
+                    // One line, cut in the middle, as the path of the settings file.
                     Label(folder, systemImage: "folder")
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .help(folder)
+                        .layoutPriority(1)
                     Spacer()
                     if !FileManager.default.fileExists(atPath: SettingsPath.expand(folder, home: NSHomeDirectory())) {
                         Text("Missing").foregroundStyle(.orange)

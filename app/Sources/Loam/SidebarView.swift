@@ -324,7 +324,10 @@ private struct TreeRow<Trailing: View>: View {
                 }
                 name
             }
+            // The list puts the disclosure arrow on the first baseline of the row, so that is the name's. An AppKit mark,
+            // such as the dot of the count badge, gives its top edge as its baseline and puts the arrow too high (TAS-35).
             trailing()
+                .alignmentGuide(.firstTextBaseline) { $0[.bottom] }
         }
         .frame(minHeight: 26)  // With the list's own padding, a row is about 30 pt.
         .contentShape(Rectangle())
@@ -821,13 +824,17 @@ private struct AttentionRow<Mark: View, Trailing: View>: View {
     }
 }
 
-/// The count on a fixed row that is not an alert: 12 pt, `ink-faint`.
+/// The count on a fixed row that is not an alert: 12 pt, `ink-faint`. It has the box of `NeedsYouCountBadge` with no
+/// fill, so the counts of the fixed rows line up in one column (TAS-35).
 private struct PlainCount: View {
     let count: Int
     var body: some View {
         Text("\(count)")
             .font(.system(size: 12)).monospacedDigit()
             .foregroundStyle(LoamColor.inkFaint)
+            .padding(.horizontal, 6)
+            .frame(minWidth: 18)
+            .fixedSize()
     }
 }
 
