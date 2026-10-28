@@ -53,6 +53,46 @@ extension AppModel {
         }
     }
 
+    /// The bar of the Intake page: `loam run shape` or `loam run start` for each draft, one after another. The page
+    /// stays, and each row shows its run. It stops at the first failure, and `runStartError` says why. It returns
+    /// how many runs it made. A chore that waits for its setup approval gets it when `runStartNeedsSetupApproval`.
+    public func startIntakeBatch(plot: String, drafts: [RunDraft], shape: Bool) async -> Int {
+        guard !isStartingRun else { return 0 }
+        let approve = runStartNeedsSetupApproval
+        isStartingRun = true
+        runStartError = nil
+        var made = 0
+        for var draft in drafts {
+            do {
+                if shape {
+                    _ = try await client.runShape(plot: plot, draft: draft)
+                } else {
+                    draft.approveSetup = approve
+                    _ = try await client.runStart(plot: plot, draft: draft)
+                }
+                made += 1
+            } catch {
+                runStartError = Self.message(for: error)
+                break
+            }
+        }
+        isStartingRun = false
+        await reloadRuns()
+        await reloadIntake()
+        return made
+    }
+
+    /// The rules of the plot, which every run reads and must pass, for the Intake page. A failed read gives none.
+    public func intakeRules(plot: String) async -> [Rule] {
+        (try? await client.ruleList(plot: plot)) ?? []
+    }
+
+    /// True when a run moves its Linear issue to In Progress as it starts (`loam linear updates`). Nil when the read
+    /// fails.
+    public func linearMovesToInProgress() async -> Bool? {
+        try? await client.linearUpdates().inProgress
+    }
+
     /// Reads the model and the effort that a run of the plot gets when it names none. A failed read leaves none.
     public func readRunDefaults(plot: String) async {
         runDefaults = try? await client.runDefaults(plot: plot)
