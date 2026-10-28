@@ -32,6 +32,8 @@ CI runs these checks on each PR (see `.github/workflows/ci.yml`):
 - `app-driver`: `swift test` with GhosttyKit, which also runs the driver tests. A failure in this check does not block a merge yet.
 - `lint`: shellcheck on `scripts/` and actionlint on the workflows.
 
+On a PR, the `changes` job reads the changed files, and CI skips each job that the change cannot affect. For example, a change to `site/` only runs `lint`.
+
 Run the same commands yourself before you push. CI does not replace them.
 
 In `core/`:
