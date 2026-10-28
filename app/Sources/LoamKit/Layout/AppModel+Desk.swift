@@ -233,7 +233,9 @@ extension AppModel {
             let diff = try await client.runDiff(id)
             guard desk.runID == id else { return }
             desk.diff = diff
-            desk.file = diff.files.first?.path
+            // The ship notes say which file to read first.
+            let notes = runs.first { $0.id == id }?.notes
+            desk.file = DeskContent.readOrder(diff.files, notes: notes).first?.file.path
         } catch {
             guard desk.runID == id else { return }
             desk.error = Self.message(for: error)
