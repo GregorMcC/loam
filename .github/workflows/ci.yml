@@ -45,7 +45,9 @@ jobs:
             exit 0
           }
           [ -n "$PR" ] || all
-          files=$(gh pr diff "$PR" --repo "$GITHUB_REPOSITORY" --name-only) || all
+          # The API gives each path as it is, and both paths of a rename.
+          files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" \
+            --jq '.[] | .filename, (.previous_filename // empty)') || all
           core=false app=false driver=false
           while IFS= read -r f; do
             case "$f" in
