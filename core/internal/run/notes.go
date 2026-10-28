@@ -58,16 +58,24 @@ func shipNotes(r store.Run, a shipAnswer, changed []string) *store.RunNotes {
 
 // riskFacts are the facts that Loam adds to the risk of a change, not
 // Claude: the changed files that the plan of the shape does not name, a
-// store migration in the diff, and changed dependency files.
+// store migration in the diff, and changed dependency files. The plan fact
+// is there only when the plan names a changed file, by its path or its base
+// name: most plans name no paths, and then every file would be out of it.
 func riskFacts(r store.Run, changed []string) []string {
 	var facts []string
 	if r.Shape != nil && len(r.Shape.Plan) > 0 {
 		plan := strings.ToLower(strings.Join(r.Shape.Plan, "\n"))
 		var out []string
+		named := false
 		for _, p := range changed {
-			if !strings.Contains(plan, strings.ToLower(p)) && !strings.Contains(plan, strings.ToLower(path.Base(p))) {
+			if strings.Contains(plan, strings.ToLower(p)) || strings.Contains(plan, strings.ToLower(path.Base(p))) {
+				named = true
+			} else {
 				out = append(out, p)
 			}
+		}
+		if !named {
+			out = nil
 		}
 		switch len(out) {
 		case 0:
@@ -105,22 +113,17 @@ func nameFiles(files []string) string {
 	return strings.Join(files[:factNames], ", ") + fmt.Sprintf(" and %d more", len(files)-factNames)
 }
 
-// migrationCode are the file types of a schema file that a store migration
-// lives in, such as schema.sql or Loam's own schema.go.
-var migrationCode = []string{".sql", ".go", ".rb", ".prisma", ".py", ".ts", ".js", ".swift", ".rs", ".kt", ".java"}
-
 // isMigration reports whether the path is a store migration: a path with a
-// folder or a file named for migrations, or a schema code file.
+// folder or a file named for migrations, such as db/migrations/0001.sql or
+// app/migrate.go. A file named schema is not one: it is as often a GraphQL
+// or an API schema.
 func isMigration(p string) bool {
-	lower := strings.ToLower(p)
-	for _, part := range strings.Split(lower, "/") {
+	for _, part := range strings.Split(strings.ToLower(p), "/") {
 		if strings.Contains(part, "migrat") {
 			return true
 		}
 	}
-	base := path.Base(lower)
-	ext := path.Ext(base)
-	return strings.TrimSuffix(base, ext) == "schema" && slices.Contains(migrationCode, ext)
+	return false
 }
 
 // dependencyFiles are the names of the files that pin the dependencies of a

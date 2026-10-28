@@ -39,13 +39,19 @@ func TestShipNotesKeepTheChangedFilesInTheOrderOfClaude(t *testing.T) {
 
 func TestRiskFactsNameFilesOutOfThePlanMigrationsAndDependencies(t *testing.T) {
 	r := store.Run{Shape: &store.RunShape{Plan: []string{"Change core/run/land.go.", "Add a test in land_test.go."}}}
-	changed := []string{"core/run/land.go", "core/run/land_test.go", "core/internal/store/schema.go", "go.sum", "app/Package.resolved"}
+	changed := []string{"core/run/land.go", "core/run/land_test.go", "db/migrations/0002_add.sql", "go.sum", "app/Package.resolved"}
 	want := []string{
-		"3 changed files are not in the plan: core/internal/store/schema.go, go.sum and app/Package.resolved.",
-		"The diff changes a store migration: core/internal/store/schema.go.",
+		"3 changed files are not in the plan: db/migrations/0002_add.sql, go.sum and app/Package.resolved.",
+		"The diff changes a store migration: db/migrations/0002_add.sql.",
 		"The diff changes dependency files: go.sum and app/Package.resolved.",
 	}
 	if got := riskFacts(r, changed); !slices.Equal(got, want) {
+		t.Fatalf("facts %q", got)
+	}
+	// A plan that names no changed file gets no plan fact, and a schema file
+	// is not a migration.
+	r = store.Run{Shape: &store.RunShape{Plan: []string{"Add the search field to the API.", "Test it."}}}
+	if got := riskFacts(r, []string{"graphql/schema.ts", "openapi/schema.py"}); len(got) != 0 {
 		t.Fatalf("facts %q", got)
 	}
 	// A run with no plan gets no plan fact, and a small change gets none.
@@ -56,8 +62,9 @@ func TestRiskFactsNameFilesOutOfThePlanMigrationsAndDependencies(t *testing.T) {
 
 func TestFileKinds(t *testing.T) {
 	for p, want := range map[string]bool{
-		"db/migrations/0001_init.sql": true, "core/internal/store/schema.go": true, "prisma/schema.prisma": true,
-		"contract/schema/defs.json": false, "schema.json": false, "app/migrate.go": true, "README.md": false,
+		"db/migrations/0001_init.sql": true, "core/internal/store/schema.go": false, "prisma/schema.prisma": false,
+		"graphql/schema.ts": false, "openapi/schema.py": false, "contract/schema/defs.json": false, "schema.json": false,
+		"app/migrate.go": true, "Migrations/V2.swift": true, "README.md": false,
 	} {
 		if isMigration(p) != want {
 			t.Errorf("isMigration(%q) is %v", p, !want)

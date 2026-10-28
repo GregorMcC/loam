@@ -594,8 +594,8 @@ The gate is the Stop hook of the session. Each time the session ends a turn, Loa
 
 Loam then checks the notes against the diff. It drops a file that the branch did not change, and adds each changed file that Claude left out, with the role "Also changed". A level that is not `low`, `medium`, or `high` is `medium`. Loam adds its own facts to the end of `risk.reasons`, not Claude:
 
-- the changed files that the plan of the shape does not name, such as "1 changed file is not in the plan: go.mod." A run with no plan gets no such fact;
-- a store migration in the diff: a path with a folder or file named for migrations, or a schema code file such as `schema.sql` or `schema.go`;
+- the changed files that the plan of the shape does not name, such as "1 changed file is not in the plan: go.mod." The fact is there only when the plan names at least one changed file, by its path or its base name. A run with no plan, or a plan that names no changed file, gets no such fact;
+- a store migration in the diff: a path with a folder or file whose name holds "migrat", such as `db/migrations/0002.sql` or `app/migrate.go`. A file named `schema` is not one;
 - changed dependency files: `go.mod`, `go.sum`, `Package.swift`, `Package.resolved`, `package.json`, and lock files such as `yarn.lock` or `package-lock.json`.
 
 Loam also looks for a PR template in the worktree as GitHub does: `pull_request_template.md` (or `.txt`, any case) in `.github/`, in the root, or in `docs/`, else the first file, by name, of a `PULL_REQUEST_TEMPLATE/` folder in one of them. With a template, the same call also asks for `{ "title", "body" }`, and the prompt holds the template. It asks Claude to fill each section, to follow the comments of the template, and to tick a checkbox only when a check proves it. The PR title is the title that Claude gives, else the title of the run. The body is the body that Claude gives, a blank line, and the footer: the issue line (`Closes #57` or `Linear: ENG-523`), the line about the other runs of a group, and "Loam opened this PR for a run whose checks passed." With no template, the PR has the title and the body described in step 4.
