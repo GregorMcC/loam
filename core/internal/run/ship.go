@@ -269,8 +269,9 @@ func (sh *shipper) push(ctx context.Context, repo github.Repo, w store.Worktree,
 		// A body that names no other repo is still a good body.
 		others, _ = groupRepos(sh.s, plot, r)
 	}
+	title, body := sh.prText(ctx, w, repo, others)
 	opened, err := sh.gh.CreatePR(ctx, repo, github.NewPR{
-		Head: w.Branch, Base: worktree.CompareBase(w), Title: r.Title, Body: prBody(r, repo, others),
+		Head: w.Branch, Base: worktree.CompareBase(w), Title: title, Body: body,
 	})
 	if err != nil {
 		return false, err
@@ -455,6 +456,14 @@ func prBody(r store.Run, repo github.Repo, others []string) string {
 		fmt.Fprintf(&b, "- %s: `%s`\n", c.Name, c.Command)
 	}
 	fmt.Fprintf(&b, "- %s\n", CommittedCheck)
+	b.WriteString(prFooter(r, repo, others))
+	return b.String()
+}
+
+// prFooter is the end of every PR body of Loam: the issue, the other runs of
+// the group, and who opened the PR. Each line follows a blank line.
+func prFooter(r store.Run, repo github.Repo, others []string) string {
+	var b strings.Builder
 	if src := r.Source; src != nil {
 		switch src.Kind {
 		case intake.Linear:

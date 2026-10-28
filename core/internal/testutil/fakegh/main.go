@@ -52,7 +52,7 @@
 //   - gh run rerun <id> --failed: does nothing, or fails as "rerun_refusals"
 //     says.
 //   - gh pr create --head <branch>: adds an open PR to "pulls", with the next
-//     free number, and prints its URL.
+//     free number, and prints its URL. The PR keeps its "title" and its "body".
 //   - gh run view <id> --log-failed: prints the log of "logs".
 //
 // LOAM_FAKE_GH_FAIL makes each call fail as gh does, with the exit code and
@@ -331,9 +331,14 @@ func rerun(st *state, id string) {
 
 // create opens a PR, as gh pr create does: it prints the URL of the PR.
 func create(st *state, args []string) {
-	var head, base, title string
+	var head, base, title, body string
 	for i := 0; i+1 < len(args); i++ {
 		switch args[i] {
+		case "--body-file":
+			if args[i+1] == "-" {
+				b, _ := io.ReadAll(os.Stdin)
+				body = string(b)
+			}
 		case "--head":
 			head = args[i+1]
 		case "--base":
@@ -353,7 +358,7 @@ func create(st *state, args []string) {
 	}
 	url := fmt.Sprintf("https://github.com/example/widgets/pull/%d", number)
 	st.Pulls = append(st.Pulls, map[string]any{
-		"number": number, "title": title, "url": url, "state": "OPEN", "headRefName": head,
+		"number": number, "title": title, "body": body, "url": url, "state": "OPEN", "headRefName": head,
 		"baseRefName": base, "headRefOid": st.head(head), "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN",
 	})
 	if !slices.Contains(st.Refs, head) {
