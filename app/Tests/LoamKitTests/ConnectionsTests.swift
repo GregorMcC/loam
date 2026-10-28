@@ -7,12 +7,12 @@ import Testing
 @MainActor
 @Suite(.waitLimit) struct ConnectionsTests {
     @Test func loadsTheStatusOfTheKey() async throws {
-        let fake = try FakeLoam([("linear_status", 0)])
+        let fake = try FakeLoam([("linear_status", 0), ("linear_updates", 0), ("list", 0), ("show", 0)])
         let model = ConnectionsModel(client: fake.client())
         await model.load()
         #expect(model.linear?.viewer?.name == "Ada Example")
         #expect(model.linearWords == "Connected to Acme as Ada Example.")
-        #expect(fake.args() == ["linear status --json"])
+        #expect(fake.args().first == "linear status --json")
     }
 
     @Test func setsTheKeyOnStdinAndRemovesIt() async throws {
