@@ -12,6 +12,8 @@ public struct RunBases: Equatable, Sendable {
     }
 
     public var plot: String
+    /// The ID of the repo whose branches these are.
+    public var repo = ""
     /// The first item is the base that the form starts on.
     public var items: [Item]
     /// The base that the form starts on. Nil is the default branch of origin.

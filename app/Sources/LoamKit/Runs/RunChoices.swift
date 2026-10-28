@@ -18,6 +18,17 @@ public enum RunChoices {
         [("low", "Low"), ("medium", "Medium"), ("high", "High"), ("xhigh", "Extra high"), ("max", "Max")]
             .map { Choice(value: $0.0, title: $0.1) }
 
+    /// The value of the Repo choice that has Claude split the issue across the repos of the plot (TAS-37).
+    public static let split = "split"
+
+    /// The choices of the Repo picker: each repo of the plot by its folder name, the main repo first. With two
+    /// repos or more, the last choice has Claude split the issue across them.
+    public static func repos(_ checkouts: [RepoCheckout]) -> [Choice] {
+        let ordered = checkouts.filter(\.isMain) + checkouts.filter { !$0.isMain }
+        let repos = ordered.map { Choice(value: $0.id, title: URL(fileURLWithPath: $0.path).lastPathComponent) }
+        return repos.count < 2 ? repos : repos + [Choice(value: split, title: "Claude splits it across the repos")]
+    }
+
     /// The title of the "" choice, which says what the default is: the plot default, or Claude Code's.
     public static func defaultTitle(_ value: String?, in choices: [Choice]) -> String {
         guard let value, !value.isEmpty else { return "Default" }

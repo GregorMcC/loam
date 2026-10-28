@@ -28,10 +28,12 @@ public struct IntakeItem: Codable, Equatable, Sendable, Identifiable {
     public var updatedAt: String
     /// The newest run that started from the item, or empty.
     public var runID: String
+    /// The ID of the plot repo of a GitHub issue. Empty for a Linear issue or a map ticket.
+    public var repo: String = ""
     public var id: String { url }
     public var isTicket: Bool { source == "map" }
     enum CodingKeys: String, CodingKey {
-        case source, key, title, status, priority, labels, url
+        case source, key, title, status, priority, labels, url, repo
         case updatedAt = "updated_at", runID = "run_id"
     }
 }

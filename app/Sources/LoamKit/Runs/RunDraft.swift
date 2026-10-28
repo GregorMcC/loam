@@ -18,10 +18,24 @@ public struct RunDraft: Equatable, Sendable {
     public var model = ""
     /// The level for `--effort`, or "" for the plot default.
     public var effort = ""
+    /// The repo for `--repo`, or nil for the main repo. A GitHub issue starts on its own repo.
+    public var repo: String?
+    /// True to have Claude split the issue across the repos of the plot (`run shape --split`). Shape only.
+    public var split = false
+
+    /// The value of the Repo picker: the repo, or `RunChoices.split`.
+    public var repoChoice: String {
+        get { split ? RunChoices.split : repo ?? "" }
+        set {
+            split = newValue == RunChoices.split
+            repo = split ? nil : newValue
+        }
+    }
 
     /// A draft that starts from the item: an issue gives `--link`, a map ticket gives `--ticket`.
     public init(item: IntakeItem) {
         title = item.title
         if item.isTicket { ticket = item.url } else { link = item.url }
+        repo = item.repo.isEmpty ? nil : item.repo
     }
 }

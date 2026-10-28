@@ -302,7 +302,21 @@ private struct IntakeDetail: View {
                 Text("Each check is a shell command that passes when it exits 0 in the worktree. The run is done when all pass and the work is committed.")
                     .loamText(LoamTheme.captionStyle, LoamColor.inkFaint)
             }
-            if let bases = model.runBases, bases.plot == plotID, !bases.items.isEmpty {
+            let repos = RunChoices.repos(model.repoCheckouts[plotID] ?? [])
+            if repos.count > 1 {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Repo").loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+                    Picker("Repo", selection: $draft.repoChoice) {
+                        ForEach(repos) { Text($0.title).tag($0.value) }
+                    }
+                    .labelsHidden()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .help("The repo that the run works in. Claude can split an issue that touches more than one repo into one run for each.")
+                    .accessibilityIdentifier("intake-repo")
+                }
+                .task(id: draft.repoChoice) { await readBases() }
+            }
+            if !draft.split, let bases = model.runBases, bases.plot == plotID, bases.repo == draft.repo, !bases.items.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Base").loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
                     Picker("Base", selection: $draft.base) {
@@ -324,8 +338,8 @@ private struct IntakeDetail: View {
             .accessibilityIdentifier("intake-tries")
             .task(id: plotID) {
                 await model.readRunDefaults(plot: plotID)
-                await model.readRunBases(plot: plotID)
-                if draft.base == nil, let first = model.runBases?.first { draft.base = first }
+                if draft.repo == nil, !draft.split { draft.repo = model.repoCheckouts[plotID]?.first(where: \.isMain)?.id }
+                await readBases()
             }
             if let error = model.runStartError {
                 Text(error).loamText(LoamTheme.captionStyle, LoamColor.rust).textSelection(.enabled)
@@ -336,6 +350,9 @@ private struct IntakeDetail: View {
                 if shaping {
                     Text("Claude is drafting the run. This takes a minute or two.")
                         .loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+                } else if draft.split {
+                    Text("Claude drafts one run for each repo that the issue touches.")
+                        .loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
                 }
                 Spacer()
                 Button("Shape with Claude") { shape() }
@@ -345,7 +362,8 @@ private struct IntakeDetail: View {
                     .accessibilityIdentifier("intake-shape")
                 Button(model.runStartNeedsSetupApproval ? "Approve the setup and start" : "Start run") { start() }
                     .loamPrimaryButton()
-                    .disabled(model.isStartingRun || draft.title.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(model.isStartingRun || draft.split || draft.title.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .help(draft.split ? "Only Claude can split a run across the repos. Use Shape with Claude." : "")
                     .accessibilityIdentifier("intake-start")
             }
         }
@@ -362,6 +380,15 @@ private struct IntakeDetail: View {
                 .loamFieldBox()
                 .accessibilityIdentifier(id)
         }
+    }
+
+    /// Reads the bases of the chosen repo, and starts the Base picker on its first base. A split has no base:
+    /// each run starts from the default branch of its repo.
+    private func readBases() async {
+        if draft.split { draft.base = nil }
+        guard !draft.split, let repo = draft.repo else { return }
+        await model.readRunBases(plot: plotID, repo: repo)
+        if model.runBases?.repo == draft.repo { draft.base = model.runBases?.first }
     }
 
     private func start() {

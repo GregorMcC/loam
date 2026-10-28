@@ -96,12 +96,14 @@ public struct RunShape: Codable, Equatable, Sendable {
     public var effort: String = ""
     /// What Claude drafts from when the run has no issue, such as the prompt of a recurring run.
     public var brief: String? = nil
+    /// True while a shape that splits the issue across repos has no draft yet.
+    public var split: Bool? = nil
 
     /// Claude has drafted the run, so you can approve it.
     public var isDrafted: Bool { draftedAt != nil }
 
     enum CodingKeys: String, CodingKey {
-        case assumptions, plan, size, repo, base, link, model, effort, brief
+        case assumptions, plan, size, repo, base, link, model, effort, brief, split
         case draftedAt = "drafted_at"
     }
 }
@@ -131,13 +133,15 @@ public struct Run: Codable, Equatable, Sendable, Identifiable {
     public var note: String
     public var createdAt: String
     public var updatedAt: String
+    /// The runs that Shape split from one issue, one for each repo, share this ID. Empty for a run alone.
+    public var groupID: String = ""
     /// The run waits on GitHub, so a tick can move it: it ships, or it is ready with a PR that GitHub can merge.
     public var waitsOnGitHub: Bool { state == .shipping || (state == .ready && pr != nil) }
 
     enum CodingKeys: String, CodingKey {
         case id, folder, title, goal, state, tries, source, pr, shape, note
         case plotID = "plot_id", worktreeID = "worktree_id", doneWhen = "done_when", maxTries = "max_tries"
-        case sessionID = "session_id", createdAt = "created_at", updatedAt = "updated_at"
+        case sessionID = "session_id", createdAt = "created_at", updatedAt = "updated_at", groupID = "group_id"
     }
 
     /// The short ID that `claude attach`, `logs`, and `stop` take: the start of the session ID.
@@ -182,9 +186,12 @@ public struct RunStatus: Codable, Equatable, Sendable {
 public struct RunResult: Codable, Equatable, Sendable {
     public var run: Run
     public var ruleOffer: RuleOffer?
+    /// Every run that a shape or a redraft made, the first one first. A split makes one for each repo. Nil for the
+    /// other commands.
+    public var runs: [Run]? = nil
 
     enum CodingKeys: String, CodingKey {
-        case run
+        case run, runs
         case ruleOffer = "rule_offer"
     }
 }

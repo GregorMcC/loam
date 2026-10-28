@@ -256,6 +256,7 @@ struct RunPageView: View {
                 .accessibilityIdentifier("run-page-back")
                 if let run {
                     RunHeader(run: run, plotName: model.plots.first { $0.id == run.plotID }?.name ?? "", model: model)
+                    RunGroupLinks(model: model, run: run)
                     if !run.note.isEmpty {
                         Text(run.note).loamText(LoamTheme.bodyStyle, LoamColor.ink).textSelection(.enabled)
                             .padding(LoamTheme.space4).frame(maxWidth: .infinity, alignment: .leading).loamCard()

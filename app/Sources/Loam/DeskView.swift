@@ -236,6 +236,7 @@ struct DeskItemHeader: View {
             }
             Text(run.title).loamText(LoamTheme.plotNameStyle).textSelection(.enabled)
                 .accessibilityIdentifier("desk-item-title")
+            RunGroupLinks(model: model, run: run)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, LoamTheme.space6)
@@ -250,6 +251,7 @@ struct DeskItemHeader: View {
         }
         var parts = [station, model.plots.first { $0.id == run.plotID }?.name ?? ""]
         if let source = run.source { parts.append(source.label) }
+        if !run.groupID.isEmpty { parts.append(model.repoName(of: run)) }
         if let pr = run.pr { parts.append("#\(pr.number)") }
         if let size = run.shape?.size, run.state == .shaping { parts.append(size) }
         if run.state != .shaping { parts.append("\(run.tries) of \(run.maxTries) tries used") }

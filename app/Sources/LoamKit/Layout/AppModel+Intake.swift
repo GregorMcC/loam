@@ -84,20 +84,24 @@ extension AppModel {
         return true
     }
 
-    /// Reads the bases of the main repo of the plot for the start form (TAS-21). A plot with no main repo, or a
-    /// failed read, has no bases, and the form shows no Base picker.
-    public func readRunBases(plot: String) async {
-        guard let repo = repoCheckouts[plot]?.first(where: \.isMain) else {
+    /// Reads the bases of a repo of the plot for the start form (TAS-21): the repo with the ID, or the main repo
+    /// for nil. A plot with no such repo, or a failed read, has no bases, and the form shows no Base picker.
+    public func readRunBases(plot: String, repo: String? = nil) async {
+        guard let checkout = repoCheckouts[plot]?.first(where: { repo == nil ? $0.isMain : $0.id == repo }) else {
             runBases = nil
             return
         }
-        await readRunBases(plot: plot, repo: repo.id, branch: repo.branch)
+        await readRunBases(plot: plot, repo: checkout.id, branch: checkout.branch)
     }
 
     func readRunBases(plot: String, repo: String, branch: String?) async {
         // The name is only for the dry run: no branch or worktree is made.
         let check = try? await client.worktreeCheck(plot: plot, repo: repo, name: "loam-run-base")
-        runBases = check.map { RunBases(plot: plot, check: $0, branch: branch) }
+        runBases = check.map {
+            var bases = RunBases(plot: plot, check: $0, branch: branch)
+            bases.repo = repo
+            return bases
+        }
     }
 
     /// `loam run start` from the Intake page. On success the run page shows the new run, and it returns true. On a
@@ -116,5 +120,20 @@ extension AppModel {
             runStartError = Self.message(for: error)
             return false
         }
+    }
+}
+
+extension AppModel {
+    /// The other runs of the group of the run, oldest first (TAS-37). A run alone has none.
+    public func groupRuns(of run: Run) -> [Run] {
+        guard !run.groupID.isEmpty else { return [] }
+        return runs.filter { $0.groupID == run.groupID && $0.id != run.id }.sorted { $0.createdAt < $1.createdAt }
+    }
+
+    /// The folder name of the repo that the run works in, or "" when the plot has no such repo.
+    public func repoName(of run: Run) -> String {
+        guard let repo = run.shape?.repo, !repo.isEmpty,
+              let checkout = repoCheckouts[run.plotID]?.first(where: { $0.id == repo }) else { return "" }
+        return URL(fileURLWithPath: checkout.path).lastPathComponent
     }
 }

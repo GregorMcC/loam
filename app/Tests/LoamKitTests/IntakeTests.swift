@@ -142,4 +142,53 @@ import Testing
         #expect(RunChoices.defaultTitle("", in: RunChoices.efforts) == "Default")
         #expect(RunChoices.defaultTitle("xhigh", in: RunChoices.efforts) == "Default (Extra high)")
     }
+
+    // MARK: Repo and split (TAS-37)
+
+    /// The Repo picker lists the main repo first, by folder name. With two repos or more, Claude can split the issue.
+    @Test func theRepoPickerListsTheReposAndTheSplit() {
+        let one = [RepoCheckout(id: "repoa", path: "/src/app", isMain: true)]
+        #expect(RunChoices.repos(one).map(\.title) == ["app"])
+        let two = [RepoCheckout(id: "repob", path: "/src/site", isMain: false), RepoCheckout(id: "repoa", path: "/src/app", isMain: true)]
+        #expect(RunChoices.repos(two).map(\.value) == ["repoa", "repob", RunChoices.split])
+    }
+
+    /// A GitHub issue starts on its own repo. The split choice clears the repo, and a repo choice clears the split.
+    @Test func theRepoChoiceSetsTheRepoOrTheSplit() {
+        var item = Self.item("github", url: "https://github.com/example/site/issues/3")
+        item.repo = "repob"
+        var draft = RunDraft(item: item)
+        #expect(draft.repo == "repob" && !draft.split && draft.repoChoice == "repob")
+        draft.repoChoice = RunChoices.split
+        #expect(draft.split && draft.repo == nil)
+        draft.repoChoice = "repoa"
+        #expect(!draft.split && draft.repo == "repoa")
+        #expect(RunDraft(item: Self.item("linear", url: "https://example.com/ENG-1")).repo == nil)
+    }
+
+    @Test func aRepoOrASplitGoesToTheCore() async throws {
+        let (model, fake) = try model([("run_start", 0), ("run_list", 0), ("run_status", 0), ("run_shape_split", 0)])
+        var draft = RunDraft(item: Self.item("map", url: "/maps/12.md"))
+        draft.repo = "repob"
+        #expect(await model.startRun(plot: "plotaaaaae", draft: draft))
+        #expect(fake.args().first == "run start --title Fix the login form --goal  --max-tries 3 --repo repob --ticket /maps/12.md "
+            + "--json -- plotaaaaae")
+        draft.repoChoice = RunChoices.split
+        _ = await model.shapeRun(plot: "plotaaaaae", draft: draft)
+        let shape = try #require(fake.args().first { $0.hasPrefix("run shape") })
+        #expect(shape.contains("--split") && !shape.contains("--repo"))
+    }
+
+    /// The runs of a split share a group, and each one links to the others.
+    @Test func theRunsOfASplitLinkToEachOther() throws {
+        let result = try JSONDecoder().decode(RunResult.self, from: Fixtures.data("run_shape_split"))
+        let runs = try #require(result.runs)
+        #expect(runs.count == 2 && Set(runs.map(\.groupID)) == [result.run.groupID])
+        let model = AppModel(client: try FakeLoam([]).client())
+        model.runs = runs
+        #expect(model.groupRuns(of: runs[0]).map(\.id) == [runs[1].id])
+        var alone = runs[0]
+        alone.groupID = ""
+        #expect(model.groupRuns(of: alone).isEmpty)
+    }
 }
