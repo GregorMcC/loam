@@ -462,7 +462,7 @@ private struct DeskIfYouApprove: View {
                 VStack(alignment: .leading, spacing: LoamTheme.space2) {
                     Text("The gate").deskHeading()
                     DeskWrap(spacing: 6) {
-                        ForEach(Array(checks.enumerated()), id: \.offset) { _, check in chip(check.command) }
+                        ForEach(Array(checks.enumerated()), id: \.offset) { _, check in chip(check.command).help(check.command) }
                         if !model.desk.rules.isEmpty {
                             let count = model.desk.rules.count
                             chip("+ \(count) rule \(count == 1 ? "check" : "checks")")
@@ -476,7 +476,9 @@ private struct DeskIfYouApprove: View {
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 22)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .clipped()
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("desk-if-you-approve")
     }
@@ -502,21 +504,23 @@ private struct DeskIfYouApprove: View {
         return Text(text).font(Font(NSFont(descriptor: code.fontDescriptor, size: 10.5) ?? code))
             .foregroundStyle(LoamColor.inkMuted)
             .lineLimit(1)
+            .truncationMode(.middle)
             .padding(.horizontal, 6).frame(height: 18)
             .background(LoamColor.inkFill, in: RoundedRectangle(cornerRadius: 4))
             .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(LoamColor.inkHairline))
     }
 }
 
-/// A row of views that wraps to the next line when the width runs out, aligned to the leading edge.
+/// A row of views that wraps to the next line when the width runs out, aligned to the leading edge. Each view gets
+/// the line width as its proposal and is never wider than it, so a view that cannot shrink is cut at the line.
 private struct DeskWrap: Layout {
     var spacing: CGFloat
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let lines = arrange(subviews, width: proposal.width ?? .infinity)
+        let lines = arrange(subviews, width: proposal.width)
         let width = lines.map(\.width).max() ?? 0
         let height = lines.reduce(0) { $0 + $1.height } + spacing * CGFloat(max(lines.count - 1, 0))
-        return CGSize(width: width, height: height)
+        return CGSize(width: min(width, proposal.width ?? .infinity), height: height)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
@@ -524,7 +528,7 @@ private struct DeskWrap: Layout {
         for line in arrange(subviews, width: bounds.width) {
             var x = bounds.minX
             for index in line.indices {
-                let size = subviews[index].sizeThatFits(.unspecified)
+                let size = size(of: subviews[index], width: bounds.width)
                 subviews[index].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
                 x += size.width + spacing
             }
@@ -534,12 +538,18 @@ private struct DeskWrap: Layout {
 
     private struct Line { var indices: [Int] = []; var width: CGFloat = 0; var height: CGFloat = 0 }
 
-    private func arrange(_ subviews: Subviews, width: CGFloat) -> [Line] {
+    /// The size of a view on a line of the width, or its ideal size when the width is open.
+    private func size(of subview: LayoutSubview, width: CGFloat?) -> CGSize {
+        let size = subview.sizeThatFits(ProposedViewSize(width: width, height: nil))
+        return CGSize(width: min(size.width, width ?? .infinity), height: size.height)
+    }
+
+    private func arrange(_ subviews: Subviews, width: CGFloat?) -> [Line] {
         var lines = [Line()]
         for index in subviews.indices {
-            let size = subviews[index].sizeThatFits(.unspecified)
+            let size = size(of: subviews[index], width: width)
             let last = lines.count - 1
-            if !lines[last].indices.isEmpty, lines[last].width + spacing + size.width > width { lines.append(Line()) }
+            if !lines[last].indices.isEmpty, lines[last].width + spacing + size.width > width ?? .infinity { lines.append(Line()) }
             let line = lines.count - 1
             lines[line].width = lines[line].indices.isEmpty ? size.width : lines[line].width + spacing + size.width
             lines[line].height = max(lines[line].height, size.height)

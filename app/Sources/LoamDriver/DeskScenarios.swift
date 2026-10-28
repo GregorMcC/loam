@@ -247,7 +247,7 @@ extension Scenarios {
         {"type": "result", "subtype": "success", "is_error": false, "result": "",
          "structured_output": {
           "goal": "A search for a link label finds its plot, and a title match ranks above a label match.",
-          "checks": [{"name": "Search tests", "command": "go test ./search/..."}, {"name": "Vet", "command": "go vet ./..."}],
+          "checks": [{"name": "Search tests", "command": "go test ./search/..."}, {"name": "Vet", "command": "go vet ./... && go test -race -count=1 -run 'TestSearch(Label|Title)Order' ./search/... ./internal/plotsearch/..."}],
           "assumptions": ["A label match counts for less than a title match, so titles stay first.",
                           "Repos have labels too, and the search matches them the same way."],
           "plan": ["Score the label of a link when its title does not match.", "Weight a label match below a title match.",
@@ -284,6 +284,15 @@ extension Scenarios {
                 && app.exists("desk-setup") && app.exists("desk-queue-\(model.desk.runID ?? "")")
         }
         await app.sleep(0.5)
+        // The second check command is wider than the "If you approve" column, and the column still holds the gate.
+        func frame(_ id: String) throws -> CGRect {
+            try AccessibilityProbe.shared.node(id)?.frame ?? { throw DriverFailure("no frame for \(id)") }()
+        }
+        let (column, rows, gate) = try (frame("desk-if-you-approve"), frame("desk-approve-rows"), frame("desk-gate"))
+        try confirmDesk(column.width <= 321, "the column is \(column.width) pt wide, not 320")
+        try confirmDesk(column.insetBy(dx: -1, dy: -1).contains(rows), "the rows go past the column: \(column) \(rows)")
+        try confirmDesk(column.minX - 1 <= gate.minX && gate.maxX <= column.maxX + 1,
+                        "the gate goes past the column: \(column) \(gate)")
         app.screenshot("desk-shape-night")
         await appearance(.aqua)
         app.screenshot("desk-shape-day")
