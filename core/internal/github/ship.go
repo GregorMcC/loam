@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path"
 	"strconv"
@@ -60,4 +61,36 @@ func (c *Client) FailedLog(ctx context.Context, repo Repo, runID int64, lines in
 		all = all[len(all)-lines:]
 	}
 	return strings.Join(all, "\n") + "\n", nil
+}
+
+// PRState is the state of a PR that [Client.ViewPR] read by number.
+type PRState struct {
+	Number int `json:"number"`
+	// State is OPEN, CLOSED, or MERGED.
+	State string `json:"state"`
+}
+
+// ViewPR reads the state of a PR by its number (gh pr view). It needs no
+// branch, so it works when the worktree of the PR is gone.
+func (c *Client) ViewPR(ctx context.Context, repo Repo, number int) (PRState, error) {
+	n := strconv.Itoa(number)
+	out, err := c.run(ctx, ghTimeout, nil, "pr", "view", n, "--repo", repo.flag(), "--json", "state,number")
+	if err != nil {
+		return PRState{}, readError(err)
+	}
+	var st PRState
+	if err := json.Unmarshal(out, &st); err != nil {
+		return PRState{}, fmt.Errorf("%w: gh gave an answer for PR #%s that Loam cannot read: %v", ErrOffline, n, err)
+	}
+	return st, nil
+}
+
+// PRRepo returns the repo of the URL of a PR, such as
+// https://github.com/owner/name/pull/45.
+func PRRepo(prURL string) (Repo, bool) {
+	i := strings.LastIndex(prURL, "/pull/")
+	if i < 0 {
+		return Repo{}, false
+	}
+	return ParseRepo(prURL[:i])
 }

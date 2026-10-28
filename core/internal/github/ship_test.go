@@ -73,3 +73,29 @@ func quote(s string) string {
 	}
 	return string(b)
 }
+
+func TestViewPRReadsTheStateByNumber(t *testing.T) {
+	testutil.Home(t)
+	testutil.FakeGH(t, `{"pulls": [{"number": 45, "state": "MERGED", "headRefName": "gone"}]}`)
+	st, err := client(t).ViewPR(context.Background(), widgets, 45)
+	if err != nil || st.Number != 45 || st.State != "MERGED" {
+		t.Fatalf("%+v %v", st, err)
+	}
+	args := testutil.FakeGHCalls(t)[0].Args
+	if i := slices.Index(args, "--json"); i < 0 || args[i+1] != "state,number" {
+		t.Errorf("args %q", args)
+	}
+	if _, err := client(t).ViewPR(context.Background(), widgets, 46); err == nil {
+		t.Fatal("no error for a PR that is not there")
+	}
+}
+
+func TestPRRepoReadsTheRepoOfAPRURL(t *testing.T) {
+	r, ok := github.PRRepo("https://github.com/example/widgets/pull/45")
+	if !ok || r != widgets {
+		t.Fatalf("%+v %v", r, ok)
+	}
+	if _, ok := github.PRRepo("https://example.com/example/widgets/pull/45"); ok {
+		t.Fatal("another host")
+	}
+}

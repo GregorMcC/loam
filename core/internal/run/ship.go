@@ -124,6 +124,9 @@ func (sh *shipper) ship(ctx context.Context) (bool, error) {
 	r := sh.r
 	w, err := sh.s.GetWorktree(r.WorktreeID)
 	if err != nil {
+		if r.PR != nil {
+			return sh.watchGone(ctx, true)
+		}
 		return sh.move(store.RunReady, "The worktree is gone, so Loam opens no PR")
 	}
 	repo, ok := worktree.GitHubRepo(w.Repo)
@@ -166,7 +169,10 @@ func (sh *shipper) ship(ctx context.Context) (bool, error) {
 // warning, because it needs nothing from a tick.
 func (sh *shipper) watch(ctx context.Context) (bool, error) {
 	w, err := sh.s.GetWorktree(sh.r.WorktreeID)
-	if err != nil || sh.ghErr != nil {
+	if err != nil {
+		return sh.watchGone(ctx, false)
+	}
+	if sh.ghErr != nil {
 		return false, nil
 	}
 	repo, ok := worktree.GitHubRepo(w.Repo)
@@ -179,6 +185,45 @@ func (sh *shipper) watch(ctx context.Context) (bool, error) {
 	}
 	moved, _, err := sh.ended(ctx, branches[w.Branch].PR)
 	return moved, err
+}
+
+// watchGone does the step for a run with a PR whose worktree is gone, such as
+// after loam worktree land removed it. It reads the PR by its number: a merge
+// lands the run, and a close stops it. An open PR leaves the run Ready, and
+// the note says to merge it or cancel the run. A run that cannot reach GitHub
+// waits, and in a Shipping run (ship is true) gh missing or signed out makes
+// it Ready.
+func (sh *shipper) watchGone(ctx context.Context, ship bool) (bool, error) {
+	pr := sh.r.PR
+	repo, ok := github.PRRepo(pr.URL)
+	switch {
+	case !ok:
+		if !ship {
+			return false, nil
+		}
+		return sh.move(store.RunReady, fmt.Sprintf("The worktree is gone, and Loam cannot read #%d", pr.Number))
+	case errors.Is(sh.ghErr, github.ErrGHMissing) || errors.Is(sh.ghErr, github.ErrSignedOut):
+		if !ship {
+			return false, nil
+		}
+		return sh.move(store.RunReady, "Loam could not read #"+fmt.Sprint(pr.Number)+": "+sh.ghErr.Error())
+	case sh.ghErr != nil:
+		if !ship {
+			return false, nil
+		}
+		return false, sh.ghErr
+	}
+	st, err := sh.gh.ViewPR(ctx, repo, pr.Number)
+	if err != nil {
+		return false, err
+	}
+	if moved, ended, err := sh.ended(ctx, &github.PR{Number: st.Number, State: st.State}); ended {
+		return moved, err
+	}
+	if !ship {
+		return false, nil
+	}
+	return sh.move(store.RunReady, fmt.Sprintf("The worktree is gone. Merge #%d on GitHub, or cancel the run", pr.Number))
 }
 
 // ended lands the run when pr is the run's PR and GitHub has merged it, and

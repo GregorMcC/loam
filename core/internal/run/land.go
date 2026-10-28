@@ -4,7 +4,9 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"strings"
 
+	"github.com/GregorMcC/loam/core/internal/github"
 	"github.com/GregorMcC/loam/core/internal/store"
 	"github.com/GregorMcC/loam/core/internal/worktree"
 )
@@ -47,6 +49,9 @@ func Land(ctx context.Context, s *store.Store, id string, o LandOptions) (*LandR
 		return nil, fmt.Errorf("the run has no PR, so Loam cannot merge it. Merge its branch yourself: %w", store.ErrInvalid)
 	}
 	res := &LandResult{Run: r, Warnings: []string{}}
+	if _, err := s.GetWorktree(r.WorktreeID); err != nil {
+		return landGone(ctx, s, r, o, res)
+	}
 	wo := worktree.LandOptions{Head: o.Head, KeepWorktree: o.KeepWorktree, OpenPanes: o.OpenPanes, DryRun: true}
 	plan, err := worktree.Land(ctx, s, r.PlotID, r.WorktreeID, wo)
 	if err != nil {
@@ -71,12 +76,8 @@ func Land(ctx context.Context, s *store.Store, id string, o LandOptions) (*LandR
 	pr := land.PR.Number
 	switch {
 	case land.Merged:
-		note := fmt.Sprintf("Merged #%d with %s", pr, land.Method)
-		if land.PR.State == "MERGED" {
-			note = fmt.Sprintf("#%d was merged on GitHub", pr)
-		}
 		var warnings []string
-		res.Run, _, warnings, err = landRun(ctx, s, r, note)
+		res.Run, _, warnings, err = landRun(ctx, s, r, MergedNote(land))
 		res.Warnings = append(res.Warnings, warnings...)
 		return res, err
 	case land.MergeQueue:
@@ -85,6 +86,74 @@ func Land(ctx context.Context, s *store.Store, id string, o LandOptions) (*LandR
 		res.Run, err = noteWhile(s, r, cmp.Or(land.MergeNote, fmt.Sprintf("GitHub merges #%d when it can", pr)))
 	}
 	return res, err
+}
+
+// MergedNote says how a land merged its PR, as the note of a run that it lands.
+func MergedNote(land *worktree.LandResult) string {
+	if land.PR.State == "MERGED" {
+		return fmt.Sprintf("#%d was merged on GitHub", land.PR.Number)
+	}
+	return fmt.Sprintf("Merged #%d with %s", land.PR.Number, land.Method)
+}
+
+// landGone lands a run whose worktree is gone, such as after loam worktree
+// land removed it. There is nothing to merge: Loam reads the PR by its number.
+// A merged PR lands the run, and a closed PR stops it. An open PR is an
+// error, because Loam cannot merge a PR with no worktree.
+func landGone(ctx context.Context, s *store.Store, r store.Run, o LandOptions, res *LandResult) (*LandResult, error) {
+	repo, ok := github.PRRepo(r.PR.URL)
+	if !ok {
+		return nil, fmt.Errorf("the worktree of the run is gone, and Loam cannot read the repo of #%d: %w", r.PR.Number, store.ErrInvalid)
+	}
+	gh, err := github.NewClient()
+	if err != nil {
+		return nil, err
+	}
+	st, err := gh.ViewPR(ctx, repo, r.PR.Number)
+	if err != nil {
+		return nil, err
+	}
+	if st.State == "OPEN" {
+		return nil, fmt.Errorf("the worktree of the run is gone, and #%d is open on GitHub. Merge it on GitHub, or cancel the run: %w", st.Number, store.ErrInvalid)
+	}
+	if o.DryRun {
+		res.Warnings = append(res.Warnings, fmt.Sprintf("The worktree is gone, and #%d is %s on GitHub. A land records that.", st.Number, strings.ToLower(st.State)))
+		return res, nil
+	}
+	sh := shipper{s: s, gh: gh, r: r}
+	_, _, err = sh.ended(ctx, &github.PR{Number: st.Number, State: st.State})
+	res.Run, res.Warnings = sh.r, append(res.Warnings, sh.warnings...)
+	return res, err
+}
+
+// LandWorktree lands each run of the plot that has not ended and works in the
+// worktree, after loam worktree land merged its PR. pr is the merged PR and
+// note says how it merged. It returns the runs that it landed, and what went
+// wrong on the way.
+func LandWorktree(ctx context.Context, s *store.Store, plotID, worktreeID string, pr int, note string) ([]store.Run, []string) {
+	runs, err := s.ListRuns(plotID)
+	if err != nil {
+		return nil, []string{err.Error()}
+	}
+	var landed []store.Run
+	var warnings []string
+	for _, r := range runs {
+		if r.WorktreeID != worktreeID || (r.State != store.RunShipping && r.State != store.RunReady) {
+			continue
+		}
+		// A run that has its own PR keeps it. Any other PR is the work of the worktree.
+		if r.PR != nil && r.PR.Number != pr {
+			continue
+		}
+		r, moved, w, err := landRun(ctx, s, r, note)
+		warnings = append(warnings, w...)
+		if err != nil {
+			warnings = append(warnings, err.Error())
+		} else if moved {
+			landed = append(landed, r)
+		}
+	}
+	return landed, warnings
 }
 
 // landRun marks the run Landed with the note while it is still in the state

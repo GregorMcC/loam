@@ -44,6 +44,8 @@
 //     in the queue. With --auto, the PR stays open, unless "auto_merges_clean"
 //     merges it. --match-head-commit must be the PR head.
 //   - gh pr update-branch <number>: a PR that is behind its base is clean.
+//   - gh pr view <number> --json state,number: prints the state and the number
+//     of the PR of "pulls" with that number, or fails as gh does.
 //   - gh issue list: prints "issues".
 //   - gh issue view <url>: prints the title and the body of the issue of
 //     "issues" with that URL, or fails as gh does for a missing issue.
@@ -126,6 +128,8 @@ func main() {
 		rest(st, args[1:])
 	case len(args) > 2 && args[0] == "pr" && args[1] == "merge":
 		merge(st, args[2:])
+	case len(args) > 2 && args[0] == "pr" && args[1] == "view":
+		view(st, args[2])
 	case len(args) > 2 && args[0] == "pr" && args[1] == "update-branch":
 		updateBranch(st, args[2])
 	case len(args) > 1 && args[0] == "issue" && args[1] == "list":
@@ -304,6 +308,17 @@ func merge(st *state, args []string) {
 		fmt.Printf("✓ Merged pull request example/widgets#%s\n", args[0])
 	}
 	st.write()
+}
+
+// view prints the state and the number of a PR, as gh pr view --json
+// state,number does.
+func view(st *state, number string) {
+	p := st.pull(number)
+	b, err := json.Marshal(map[string]any{"number": p["number"], "state": p["state"]})
+	if err != nil {
+		fail(2, "fakegh: "+err.Error())
+	}
+	fmt.Println(string(b))
 }
 
 // rerun runs the failed jobs of a run again, as gh run rerun --failed does.
