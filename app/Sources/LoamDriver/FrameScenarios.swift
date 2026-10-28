@@ -133,8 +133,7 @@ extension Scenarios {
         try rig.loam(["link", "add", plot, "Design chat", "https://claude.ai/chat/0123"])
         try rig.loam(["link", "add", plot, "Ghostty docs", "https://ghostty.org/docs"])
         try rig.loam(["link", "add", plot, "Repo folder", repo.path])
-        _ = try rig.newPlot("Client onboarding")
-        _ = try rig.newPlot("Release notes")
+        let others = [try rig.newPlot("Client onboarding"), try rig.newPlot("Release notes")]
 
 
         let host = try await app.launchApp(
@@ -272,8 +271,22 @@ extension Scenarios {
         try await app.waitUntil("its tree opens and the old one closes") {
             app.exists("pane-row-\(otherPane.uuidString)") && !app.exists("pane-row-\(worktreePane.uuidString)")
         }
-        try app.selectRow("plot-\(plot)")
+        // Map 74: a plot that gets its first pane while it is active closes when you leave it. Here the
+        // first plot becomes active in the same render as the pane, as in `readme-shots`. The list adds
+        // the plot row in that render, and a turn later it writes the state that it added the row with.
+        let empty = try others.first { host.model.workspace.tabs(of: .plot($0)).isEmpty } ?? { throw DriverFailure("no plot without panes") }()
+        host.model.activate(plot: empty)
+        await host.model.openShellTab()
+        let firstPane = try host.model.workspace.tabs(of: .plot(empty)).first?.focused ?? { throw DriverFailure("no pane in \(empty)") }()
+        host.model.activate(plot: plot)
         try await app.waitUntil("the first plot is active again") { host.model.workspace.activePlotID == plot }
+        try await app.waitUntil("the plot with its first pane shows a closed tree") {
+            AccessibilityProbe.shared.isDisclosing("plot-\(empty)") == false
+        }
+        // The write comes a turn after the list adds the row, so the tree must still be closed after it.
+        await app.sleep(0.5)
+        try check(AccessibilityProbe.shared.isDisclosing("plot-\(empty)") == false && !app.exists("pane-row-\(firstPane.uuidString)"),
+                  "the tree of the plot that got its first pane stays open")
         // A press on the main checkout row goes to its first pane.
         try await app.waitUntil("the tree opens again") { app.exists("main-checkout-\(plot)") }
         try app.click("main-checkout-\(plot)")

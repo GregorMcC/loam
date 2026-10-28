@@ -557,6 +557,14 @@ public struct SidebarDisclosure: Equatable, Sendable {
     public init() {}
 
     public func isOpen(_ space: Space) -> Bool { openSpaces.contains(space) }
+    /// Whether the space is open once `active` is the active space. The view reads this one: it renders
+    /// a new active space before `activeSpaceChanged` runs, and the list must add a plot that gets its
+    /// first pane in that render as closed. Else the list opens the plot later by a write (map 74).
+    public func isOpen(_ space: Space, active: Space?) -> Bool {
+        var next = self
+        next.activeSpaceChanged(to: active)
+        return next.isOpen(space)
+    }
     public func isOpen(checkout: String) -> Bool { !closedCheckouts.contains(checkout) }
     public func isOpen(tab: UUID) -> Bool { !closedTabs.contains(tab) }
 
@@ -573,8 +581,11 @@ public struct SidebarDisclosure: Equatable, Sendable {
         autoOpened = space
     }
 
-    /// You opened or closed the space. Your choice holds when the active space changes.
+    /// You opened or closed the space. Your choice holds when the active space changes. A write that
+    /// does not change the state is not a choice: the list writes `true` to a plot row that it adds as
+    /// open, and that must not keep the plot open when you leave it (map 74).
     public mutating func setSpace(_ space: Space, open: Bool) {
+        guard open != isOpen(space) else { return }
         if open { openSpaces.insert(space) } else { openSpaces.remove(space) }
         if space == autoOpened { autoOpened = nil }
     }

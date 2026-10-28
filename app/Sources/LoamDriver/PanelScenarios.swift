@@ -361,12 +361,19 @@ final class AccessibilityProbe {
     /// its own selection, so the list has none).
     func selectRow(_ id: String) -> Bool { press(id) }
 
-    /// Opens or closes the list row that holds the element, as its disclosure arrow does.
-    func discloseRow(_ id: String, open: Bool) -> Bool {
-        perform(id) { element in
-            let value = open ? kCFBooleanTrue : kCFBooleanFalse
-            return row(holding: element).map { AXUIElementSetAttributeValue($0, kAXDisclosingAttribute as CFString, value!) == .success } ?? false
+    /// Whether the list row that holds the element is open. Nil when no element has the identifier,
+    /// or its row has no disclosure arrow.
+    func isDisclosing(_ id: String) -> Bool? {
+        var open: Bool?
+        _ = perform(id) { element in
+            var value: CFTypeRef?
+            if let row = row(holding: element),
+               AXUIElementCopyAttributeValue(row, kAXDisclosingAttribute as CFString, &value) == .success {
+                open = value as? Bool
+            }
+            return true
         }
+        return open
     }
 
     /// The nearest `AXRow` ancestor of the element.
