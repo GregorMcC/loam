@@ -68,7 +68,7 @@ func init() {
 		c.Flags().StringVar(&sessionID, "session-id", "", "use this session UUID")
 		c.Flags().BoolVar(&plotFolder, "plot-folder", false, "start in the plot folder, not in a repo. Every repo is an added folder")
 		c.Flags().BoolVar(&home, "home", false, "start a session that belongs to no plot, in the home folder")
-		c.Flags().StringVar(&resume, "resume", "", "with --home: resume this Home session")
+		c.Flags().StringVar(&resume, "resume", "", "with --home: resume this Home session, or start it again with the same ID when it never had a prompt")
 		return c
 	})
 }

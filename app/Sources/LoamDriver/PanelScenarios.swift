@@ -54,6 +54,9 @@ struct PanelRig {
             "HOME": fakeHome.path,
             "LOAM_OPEN": fake.path,
             "LOAM_APP_STATE_DIR": root.appendingPathComponent("state").path,
+            // The fake claude writes the conversation files here, and `loam resume` reads them, so
+            // neither touches the real ~/.claude.
+            "CLAUDE_CONFIG_DIR": root.appendingPathComponent("claude-config").path,
         ]
     }
 

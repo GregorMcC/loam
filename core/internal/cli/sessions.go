@@ -64,6 +64,8 @@ func newResumeCmd() *cobra.Command {
 		Long: "Read the session record, change to its start folder, write the seed again, and run claude --resume.\n" +
 			"In a worktree, it runs the setup command first if setup has not succeeded.\n" +
 			"The command fails if the start folder is gone.\n" +
+			"A session that never had a prompt has no conversation file, so it runs claude --session-id\n" +
+			"with the same ID instead, which starts the session again.\n" +
 			"With --plot, a Home session, which has no record, gets a record in that plot first, with the\n" +
 			"home folder as its start folder. The app uses it to move a Home tab to a plot.",
 		Args: cobra.ExactArgs(1),

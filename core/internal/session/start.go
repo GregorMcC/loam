@@ -229,13 +229,15 @@ func Prepare(s *store.Store, o StartOptions) (*Plan, error) {
 }
 
 // PrepareResume prepares `claude --resume` for a session record. It uses the
-// stored start folder and the current plot. It adds no session record.
+// stored start folder and the current plot. It adds no session record. A
+// session that never had a prompt has no conversation to resume, so it starts
+// again with the same ID (ticket 103).
 func PrepareResume(s *store.Store, sessionID, loam string) (*Plan, error) {
 	rec, err := s.GetSession(sessionID)
 	if err != nil {
 		return nil, err
 	}
-	return prepareResume(s, rec, []string{"--resume", sessionID}, loam)
+	return prepareResume(s, rec, resumeOrStart(rec), loam)
 }
 
 // prepareResume prepares claude for the record, with idArgs to name the session.
@@ -334,7 +336,8 @@ type HomeOptions struct {
 // folders, and no LOAM_PLOT, but it keeps the pane hooks and the allow rules.
 // It adds no session record, because a record belongs to a plot. A resume
 // needs no record: the session always starts in the home folder, where
-// Claude Code finds it.
+// Claude Code finds it. A resume of a session that never had a prompt starts
+// it again with the same ID, as for PrepareResume.
 func PrepareHome(s *store.Store, o HomeOptions) (*Plan, error) {
 	if o.SessionID != "" && o.Resume != "" {
 		return nil, fmt.Errorf("--resume does not go with --session-id: %w", store.ErrInvalid)
@@ -367,7 +370,11 @@ func PrepareHome(s *store.Store, o HomeOptions) (*Plan, error) {
 	if err != nil {
 		return nil, err
 	}
-	return launch(s, dir, claude, id, []string{flag, id}, extra, nil, settings)
+	idArgs := []string{flag, id}
+	if o.Resume != "" {
+		idArgs = resumeOrStart(store.SessionRecord{SessionID: id})
+	}
+	return launch(s, dir, claude, id, idArgs, extra, nil, settings)
 }
 
 // refuseArchived fails for an archived plot. A session needs an active plot.

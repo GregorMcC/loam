@@ -290,14 +290,13 @@ enum Scenarios {
     }
 
     /// The spike's spam-naive scenario (ghostty-org/ghostty#14245): a pane sets
-    /// its title in a loop. A direct free hangs. The safe order closes it.
+    /// its title in a loop. A direct free hangs. The safe order closes it, right
+    /// after the first titles. libghostty can lose its exit report then, and the
+    /// close sees the exit on the terminal (ticket 135).
     static func spam(_ app: DriverApp) async throws {
         let a = try app.addPane("A", command: #"/bin/zsh -fc 'while :; do printf "\e]0;t%s\a" $RANDOM; done'"#)
         let b = try app.addPane("B", command: zsh)
         try await app.waitUntil("the title loop ran") { (app.runtime.actionCounts[GHOSTTY_ACTION_SET_TITLE.rawValue] ?? 0) > 100 }
-        // The loop floods the pane for a while before the close. A close right after the first titles waited the 5 s for the exit
-        // in 1 run of 3, and then forced it.
-        await app.sleep(3)
         Log.line("title actions so far: \(app.runtime.actionCounts[GHOSTTY_ACTION_SET_TITLE.rawValue] ?? 0)")
         app.screenshot("spam")
 
