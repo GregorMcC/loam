@@ -24,6 +24,7 @@ extension AppModel {
         guard let all = try? await client.runs() else { return }
         let place = deskQueue.firstIndex { $0.id == desk.runID }
         runs = all
+        if await openNewDraft() { return }
         if case .run(let id) = page { await readRunStatus(id) }
         if page == .desk { await followDeskQueue(from: place) }
     }

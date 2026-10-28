@@ -47,13 +47,14 @@ struct IntakeView: View {
                     }
                 }
                 .padding(LoamTheme.space8)
-                .frame(maxWidth: 960, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             if let item = list?.items.first(where: { $0.id == selected }) {
                 LoamColor.inkHairline.frame(width: 1)
                 IntakeDetail(model: model, plotID: plotID, item: item)
                     .id(item.id)
                     .frame(width: 360)
+                    .clipped()
             }
         }
         .accessibilityElement(children: .contain)
@@ -84,6 +85,11 @@ struct IntakeView: View {
                 if list.sources.isEmpty {
                     Text("This plot has no Linear link, no GitHub repo, and no map link, so it has no intake.")
                         .loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+                }
+                if !list.sources.isEmpty, !list.sources.contains(where: { $0.kind == "linear" }) {
+                    Text("To list Linear issues here, add the link of a Linear team or project to the plot.")
+                        .loamText(LoamTheme.captionStyle, LoamColor.inkFaint)
+                        .accessibilityIdentifier("intake-no-linear")
                 }
                 ForEach(Array(list.sources.enumerated()), id: \.offset) { _, source in
                     HStack(spacing: 6) {
@@ -230,6 +236,7 @@ private struct IntakeDetail: View {
                 }
             }
             .padding(LoamTheme.space6)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("intake-detail")
@@ -304,7 +311,7 @@ private struct IntakeDetail: View {
                         }
                     }
                     .labelsHidden()
-                    .fixedSize()
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .help("The branch that the worktree of the run starts from")
                     .accessibilityIdentifier("intake-base")
                 }

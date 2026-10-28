@@ -514,6 +514,22 @@ struct AttentionCycleTests {
         #expect(SidebarModel(plots: plots, workspace: empty, collapsed: false).selection == .plot("b"))
         #expect(SidebarModel(plots: plots, workspace: Workspace(), collapsed: false).selection == nil)
     }
+
+    /// On a page, you are on the page, not in the last pane: its fixed row is selected, and no row of the tree.
+    /// The desk and a run page belong to Today, and the recurring page to Intake.
+    @Test func aPageSelectsItsFixedRowAndNoPane() {
+        var s = sample()
+        s.ws.focus(s.fix2)
+        let pages: [(AppPage?, SidebarModel.PageRow?)] = [
+            (.today, .today), (.desk, .today), (.run("r1"), .today), (.intake("a"), .intake), (.recurring("a"), .intake),
+        ]
+        for (page, row) in pages {
+            let model = SidebarModel(plots: plots, workspace: s.ws, collapsed: false, page: page)
+            #expect(model.pageRow == row && model.selection == nil, "\(String(describing: page))")
+        }
+        let panes = SidebarModel(plots: plots, workspace: s.ws, collapsed: false, page: nil)
+        #expect(panes.pageRow == nil && panes.selection == .pane(s.fix2))
+    }
 }
 
 /// Ticket 71: which plots of the tree are open. By default only the active plot shows its panes (spec 8.1).

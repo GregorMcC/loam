@@ -160,6 +160,9 @@ public final class AppModel {
     public internal(set) var page: AppPage? { didSet { if page != oldValue { onWorkspaceChange?() } } }
     /// The run that the run page shows, with its history, as the core last read it.
     public internal(set) var runStatus: RunStatus?
+    /// A shape that the start form started and that has not ended. The desk opens on its run when the run shows
+    /// up, so you see Claude draft it.
+    var pendingShape: PendingShape?
     /// The intake that the Intake page shows, as the core last read it (ticket 204).
     public internal(set) var intake: IntakeList?
     /// Why the last run did not start, for the Intake page.
@@ -271,7 +274,8 @@ public final class AppModel {
         SidebarModel(
             plots: plots, workspace: workspace, collapsed: sidebarCollapsed,
             newChangeCounts: review.sidebarCounts(activePlot: workspace.activePlotID), worktrees: worktrees,
-            arriving: arrivingPanes(), repos: repoCheckouts, titles: terminalTitles, selectedWorktree: selectedWorktree)
+            arriving: arrivingPanes(), repos: repoCheckouts, titles: terminalTitles, selectedWorktree: selectedWorktree,
+            page: page)
     }
 
     /// ⌘I. Closing the panel marks the changes of the active plot as seen.

@@ -221,17 +221,24 @@ public struct SidebarModel: Equatable, Sendable {
     /// The count on the Ready to merge row.
     public var readyToMergeCount: Int { readyToMerge.count }
     /// Where you are: the selected worktree (⌘⇧L), else the focused pane of the active space, else the
-    /// active space. The list selects it.
+    /// active space. The list selects it. On a page, no row of the tree is selected.
     public let selection: RowID?
+
+    /// A fixed row at the top of the sidebar that a page belongs to.
+    public enum PageRow: Equatable, Sendable { case today, intake }
+    /// The fixed row of the page that the well shows, or nil while it shows the panes. The desk and a run page
+    /// belong to Today, and the recurring page to Intake.
+    public let pageRow: PageRow?
 
     /// `arriving`: the panes that just started to need you (`AppModel.arrivingPanes`).
     /// `repos`: the repos of each plot with their branches, main repo first (`AppModel.repoCheckouts`).
     /// A plot with no entry has no repos. `titles`: the titles that the terminals set (`AppModel.terminalTitles`).
     /// `selectedWorktree`: the worktree that ⌘⇧L selected (`AppModel.selectedWorktree`). It selects its row
-    /// only while it is a worktree of the active plot.
+    /// only while it is a worktree of the active plot. `page`: the page that the well shows (`AppModel.page`).
     public init(plots: [PlotSummary], workspace: Workspace, collapsed: Bool, newChangeCounts: [String: Int] = [:],
                 worktrees: [String: [WorktreeStatus]] = [:], arriving: Set<PaneID> = [],
-                repos: [String: [RepoCheckout]] = [:], titles: [PaneID: String] = [:], selectedWorktree: String? = nil) {
+                repos: [String: [RepoCheckout]] = [:], titles: [PaneID: String] = [:], selectedWorktree: String? = nil,
+                page: AppPage? = nil) {
         self.plots = plots
         var panesIn: [String: Int] = [:]
         for id in workspace.allPaneIDs {
@@ -299,7 +306,12 @@ public struct SidebarModel: Equatable, Sendable {
         let ghWorks = !statuses.contains(where: \.holdsGitHubNote)
         showsReadyToMerge = ghWorks && statuses.contains { $0.pr != nil }
         readyToMerge = showsReadyToMerge ? ordered.filter(\.isReadyToMerge) : []
-        selection = activeSpace.map { space -> RowID in
+        pageRow = switch page {
+        case nil: nil
+        case .today, .desk, .run: .today
+        case .intake, .recurring: .intake
+        }
+        selection = page != nil ? nil : activeSpace.map { space -> RowID in
             if let selectedWorktree, ordered.contains(where: { $0.id == selectedWorktree && $0.plotID == space.plotID }) {
                 return .worktree(selectedWorktree)
             }

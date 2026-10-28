@@ -669,14 +669,14 @@ private struct SidebarTop: View {
                 // Today (ticket 203): the runs of every plot. The count is the runs that need you. The row
                 // is a button even with no run, since Today explains how to start one.
                 AttentionRow(title: "Today", count: model.today.needsYouCount, id: "sidebar-today", alwaysOn: true,
-                             action: { model.showToday() }) {
+                             selected: sidebar.pageRow == .today, action: { model.showToday() }) {
                     Image(systemName: "sun.horizon").font(.system(size: 12, weight: .medium)).foregroundStyle(LoamColor.inkMuted)
                 } trailing: {
                     NeedsYouCountBadge(count: model.today.needsYouCount)
                 }
                 // Intake (ticket 204): the open issues and map tickets of the active plot.
                 AttentionRow(title: "Intake", count: 0, id: "sidebar-intake", alwaysOn: true,
-                             action: { Task { await model.showIntake() } }) {
+                             selected: sidebar.pageRow == .intake, action: { Task { await model.showIntake() } }) {
                     Image(systemName: "tray").font(.system(size: 12, weight: .medium)).foregroundStyle(LoamColor.inkMuted)
                 } trailing: {
                     EmptyView()
@@ -706,6 +706,8 @@ private struct AttentionRow<Mark: View, Trailing: View>: View {
     let count: Int
     let id: String
     var alwaysOn = false
+    /// True for the row of the page that the well shows: it draws the fill of a selected row of the tree.
+    var selected = false
     let action: () -> Void
     @ViewBuilder var mark: () -> Mark
     @ViewBuilder var trailing: () -> Trailing
@@ -717,13 +719,14 @@ private struct AttentionRow<Mark: View, Trailing: View>: View {
                 mark().frame(width: 16)
                 Text(title)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(LoamColor.inkMuted)
+                    .foregroundStyle(selected ? LoamColor.ink : LoamColor.inkMuted)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if count > 0 { trailing() }
             }
             .padding(.horizontal, 8)
             .frame(height: 28)
-            .background(hovering && (count > 0 || alwaysOn) ? LoamColor.inkFill : Color.clear, in: RoundedRectangle(cornerRadius: 7))
+            .background(selected ? LoamColor.inkSelected : hovering && (count > 0 || alwaysOn) ? LoamColor.inkFill : Color.clear,
+                        in: RoundedRectangle(cornerRadius: 7))
             .contentShape(RoundedRectangle(cornerRadius: 7))
         }
         .buttonStyle(.plain)
@@ -731,6 +734,7 @@ private struct AttentionRow<Mark: View, Trailing: View>: View {
         .onHover { hovering = $0 }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(count > 0 ? "\(title): \(count)" : title)
+        .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityIdentifier(id)
     }
 }

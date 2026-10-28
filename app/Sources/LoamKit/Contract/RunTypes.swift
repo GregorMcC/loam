@@ -166,6 +166,13 @@ public struct RunStartResult: Codable, Equatable, Sendable {
 public struct RunStatus: Codable, Equatable, Sendable {
     public var run: Run
     public var events: [RunEvent]
+
+    /// The steps of the draft that Claude makes now, or made last: the draft events after the last shape event,
+    /// which ends each draft.
+    public var draftSteps: [RunEvent] {
+        let start = events.lastIndex { $0.kind == "shape" }.map { $0 + 1 } ?? 0
+        return events[start...].filter { $0.kind == "draft" }
+    }
 }
 
 /// Output of `loam run stop` and `loam run send-back`: the run after the change. A send-back has a rule offer when

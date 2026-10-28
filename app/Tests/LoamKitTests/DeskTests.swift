@@ -125,6 +125,30 @@ import Testing
         return run
     }
 
+    /// The steps of the draft that Claude makes now: the draft events after the last shape event. The steps of an
+    /// earlier draft do not show again when you ask Claude to change it.
+    @Test func theDraftStepsAreTheStepsOfTheLastDraft() {
+        func event(_ id: Int, _ kind: String, _ detail: String) -> RunEvent {
+            RunEvent(id: id, runID: "s1", at: "2026-10-27T18:30:00Z", kind: kind, detail: detail)
+        }
+        var status = RunStatus(run: Self.shaping(), events: [event(1, "draft", "Read a.go"), event(2, "shape", "Claude drafted it")])
+        #expect(status.draftSteps.isEmpty)
+        status.events += [event(3, "draft", "Read b.go"), event(4, "state", "shaping"), event(5, "draft", "Wrote the draft")]
+        #expect(status.draftSteps.map(\.detail) == ["Read b.go", "Wrote the draft"])
+    }
+
+    /// Shape with Claude opens the desk on the new run as soon as the core records it, so you see Claude draft it.
+    @Test func aShapeOpensTheDeskOnItsRunWhenTheRunShowsUp() async throws {
+        let (model, _) = try model([("run_status", 0), ("rule_list", 0)])
+        model.pendingShape = AppModel.PendingShape(plot: "plotaaaaae", before: Set(model.runs.map(\.id)))
+        #expect(await model.openNewDraft() == false)
+        var draft = Self.shaping("s9")
+        draft.plotID = "plotaaaaae"
+        model.runs.insert(draft, at: 0)
+        #expect(await model.openNewDraft())
+        #expect(model.page == .desk && model.desk.runID == "s9" && model.pendingShape == nil)
+    }
+
     /// Nothing starts until you approve a draft, so Shaping comes first. A draft has no diff to read.
     @Test func shapingComesFirstAndShowsItsDraftWithNoDiff() async throws {
         let (model, fake) = try model([("run_status", 0), ("rule_list", 0)])

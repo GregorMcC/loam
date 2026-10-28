@@ -48,11 +48,15 @@ private struct DeskDraft: View {
         let edit = model.desk.currentEdit
         VStack(alignment: .leading, spacing: LoamTheme.space6) {
             if model.desk.drafting.contains(run.id) || (shape?.isDrafted != true && run.note == Self.draftingNote) {
-                HStack(spacing: LoamTheme.space2) {
-                    ProgressView().controlSize(.small)
-                    Text("Claude is drafting the run. This takes a minute or two.")
-                        .loamText(LoamTheme.bodyStyle, LoamColor.inkMuted)
+                VStack(alignment: .leading, spacing: LoamTheme.space3) {
+                    HStack(spacing: LoamTheme.space2) {
+                        ProgressView().controlSize(.small)
+                        Text("Claude is drafting the run. This takes a minute or two.")
+                            .loamText(LoamTheme.bodyStyle, LoamColor.inkMuted)
+                    }
+                    DraftSteps(steps: model.runStatus?.run.id == run.id ? model.runStatus?.draftSteps ?? [] : [])
                 }
+                .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("desk-drafting")
             } else if shape?.isDrafted != true {
                 Text(run.note.isEmpty ? "Claude has not drafted the run." : run.note)
@@ -189,6 +193,43 @@ private struct DeskDraft: View {
         model.answerDeskAssumption(i, answer)
         changing = nil
         field.wrappedValue = nil
+    }
+}
+
+/// The steps that Claude takes while it drafts, such as "Read window/frame.go", as they come. The last step is the
+/// one that Claude takes now. Only the last few show, so the card keeps its height.
+private struct DraftSteps: View {
+    let steps: [RunEvent]
+    static let shown = 8
+
+    var body: some View {
+        if !steps.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                if steps.count > Self.shown {
+                    Text("\(steps.count - Self.shown) earlier \(steps.count - Self.shown == 1 ? "step" : "steps")")
+                        .loamText(LoamTheme.captionStyle, LoamColor.inkFaint)
+                }
+                ForEach(steps.suffix(Self.shown)) { step in
+                    let now = step.id == steps.last?.id
+                    HStack(alignment: .firstTextBaseline, spacing: LoamTheme.space2) {
+                        Image(systemName: now ? "ellipsis" : "checkmark")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(now ? LoamColor.moss : LoamColor.inkFaint)
+                            .frame(width: 12)
+                        Text(step.detail)
+                            .loamText(LoamTheme.captionStyle, now ? LoamColor.ink : LoamColor.inkMuted)
+                            .lineLimit(1).truncationMode(.middle)
+                    }
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                }
+            }
+            .animation(.easeOut(duration: 0.2), value: steps.last?.id)
+            .padding(LoamTheme.space3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .loamCard()
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("desk-draft-steps")
+        }
     }
 }
 

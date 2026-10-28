@@ -28,23 +28,45 @@ extension AppModel {
         runStartError?.contains("--approve-setup") == true
     }
 
-    /// `loam run shape` from the Intake page: Claude drafts the run, and the desk shows the draft. On success it
+    /// `loam run shape` from the Intake page: Claude drafts the run, and the desk shows the draft. The desk opens
+    /// on the run as soon as the core records it, and shows each step of the draft as Claude takes it. On success it
     /// returns true. On a failure, `runStartError` says why, and the page stays. A draft that Claude could not make
     /// is no failure: the desk shows the run with the reason.
     public func shapeRun(plot: String, draft: RunDraft) async -> Bool {
         guard !isStartingRun else { return false }
         isStartingRun = true
         runStartError = nil
-        defer { isStartingRun = false }
+        pendingShape = PendingShape(plot: plot, before: Set(runs.map(\.id)))
+        defer {
+            isStartingRun = false
+            pendingShape = nil
+        }
         do {
             let result = try await client.runShape(plot: plot, draft: draft)
             await reloadRuns()
-            await openDesk(result.run.id)
+            // When the desk opened on the run while Claude drafted, you may have left it since: it stays left.
+            if pendingShape != nil { await openDesk(result.run.id) }
             return true
         } catch {
             runStartError = Self.message(for: error)
             return false
         }
+    }
+
+    /// A shape in progress: its plot, and the runs that were there before it.
+    struct PendingShape: Equatable {
+        var plot: String
+        var before: Set<String>
+    }
+
+    /// Opens the desk on the run of the pending shape when it is in the runs. It returns true when it did.
+    func openNewDraft() async -> Bool {
+        guard let pending = pendingShape,
+              let run = runs.first(where: { $0.plotID == pending.plot && $0.state == .shaping && !pending.before.contains($0.id) })
+        else { return false }
+        pendingShape = nil
+        await openDesk(run.id)
+        return true
     }
 
     /// Reads the bases of the main repo of the plot for the start form (TAS-21). A plot with no main repo, or a
