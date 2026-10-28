@@ -518,7 +518,7 @@ A run is one goal that a background Claude Code session (`claude --bg`) works on
   "id": "runraaaaab", "plot_id": "k3v9q2mxa7", "worktree_id": "wtreeaaaab", "folder": "/abs/path/of/worktree",
   "title": "Fix the login form", "goal": "The login form works on phones.",
   "done_when": [{ "name": "Go tests", "command": "go test ./..." }],
-  "state": "running", "tries": 1, "max_tries": 3,
+  "state": "running", "tries": 1, "max_tries": 3, "turns": 2,
   "source": { "kind": "github", "key": "#57", "url": "https://github.com/example/widgets/issues/57" },
   "pr": { "number": 147, "url": "https://github.com/example/widgets/pull/147" },
   "session_id": "c57ef956-3136-4e86-bfde-da8facfe0523", "note": "Try 1 failed: Go tests", "group_id": "",
@@ -528,6 +528,7 @@ A run is one goal that a background Claude Code session (`claude --bg`) works on
 
 - `state` is one of these:
   - `shaping`: it waits for you to approve its goal and checks.
+  - `queued`: it waits for a slot. The run limits or the week's usage hold its session, and `note` says why. A tick starts it when a slot is free. See [Limits, the queue, and usage](#limits-the-queue-and-usage).
   - `starting`: Loam is starting its session.
   - `running`: its session works, or the gate or CI sent failures back.
   - `shipping`: every check passed, and the repo is on GitHub. `loam run tick` pushes the branch, opens the PR, and reads CI.
@@ -538,6 +539,7 @@ A run is one goal that a background Claude Code session (`claude --bg`) works on
   - `landed`, `cancelled` (stopped by you), and `skipped` (a recurring run found no work).
 - `shaping`, `stopped`, and `limited` need you.
 - `tries` counts the failed gates and the CI failures. `max_tries` is 1 to 8, because Claude Code lets a session stop after 8 blocked stops in a row.
+- `turns` counts the turns that the session ended: the Stop hook adds 1 for each Stop, in any state. It is always there, and it is 0 before the first Stop.
 - `session_id` is empty until the SessionStart hook of the session records it. `claude --bg` picks its own session ID. `claude attach`, `logs`, and `stop` take its first 8 characters.
 - `pr` is the PR that Loam opened for the run, or the open PR of its branch that Loam found. It is left out before the run ships.
 - `source` is the issue of the worktree's link, or the map ticket that `--ticket` names (`kind` `map`, `key` such as `map 135`, `url` the path of the ticket file). It is left out when there is none.
@@ -551,12 +553,12 @@ The gate is the Stop hook of the session. Each time the session ends a turn, Loa
 | `loam run list [<plot>]` | An array of runs, newest first. It is `[]` when none exists. |
 | `loam run events [--since <time>] [--plot <plot>]` | `{ "events": [{ "run_id": "...", "plot_id": "...", "run_title": "...", "at": "...", "kind": "state", "detail": "running" }] }` |
 | `loam run status <run>` | `{ "run": {...}, "events": [{ "id": 1, "run_id": "...", "at": "...", "kind": "state", "detail": "running" }] }`. `kind` is `state`, `try`, `check`, `linear`, `ship`, `ci`, `review`, `note`, `land`, `shape`, or `draft`. |
-| `loam run stop <run>` | `{ "run": {...} }`. The run is `cancelled`. A run that has ended stays as it is. |
-| `loam run tick` | `{ "runs": [...], "warnings": ["..."] }`. `runs` are the runs that the tick moved. Both are `[]` when none. |
+| `loam run stop <run>` | `{ "run": {...} }`. The run is `cancelled`. A run that has ended stays as it is. A `queued` run is cancelled too. |
+| `loam run tick` | `{ "runs": [...], "warnings": ["..."] }`. `runs` are the runs that the tick moved or started. Both are `[]` when none. |
 
 `run events` lists the events of every run of every plot, or of the runs of one plot with `--plot`, newest first, at most 200. `--since` takes an RFC 3339 time and lists only the events after it. A time that does not parse gives exit code 2. `run_title` and `plot_id` are those of the run. `kind` is as in `run status`. The Today screen shows the list as "While you were away".
 
-`run start` uses the worktree that `--worktree` names, or makes it. With no `--worktree`, it makes a worktree with a name from the key of the link or the ticket, and the title. With no `--repo`, a new worktree is in the repo of the plot whose origin the `--link` is a GitHub issue of, else in the main repo. `--repo` always wins. `run shape` picks its repo in the same way. A run has `--link` or `--ticket`, not both (exit code 2). It refuses, with exit code 1, a folder that Claude Code does not trust: a background session cannot show the trust prompt. In git, Claude Code trusts a worktree when it trusts the main checkout of the repo. A setup command that you have not approved gives exit code 2 (`invalid`); `--approve-setup` approves it. When `claude --bg` fails, the run is `stopped` with the output in `note`, and the command exits 0.
+`run start` uses the worktree that `--worktree` names, or makes it. With no `--worktree`, it makes a worktree with a name from the key of the link or the ticket, and the title. With no `--repo`, a new worktree is in the repo of the plot whose origin the `--link` is a GitHub issue of, else in the main repo. `--repo` always wins. `run shape` picks its repo in the same way. A run has `--link` or `--ticket`, not both (exit code 2). It refuses, with exit code 1, a folder that Claude Code does not trust: a background session cannot show the trust prompt. In git, Claude Code trusts a worktree when it trusts the main checkout of the repo. A setup command that you have not approved gives exit code 2 (`invalid`); `--approve-setup` approves it. When `claude --bg` fails, the run is `stopped` with the output in `note`, and the command exits 0. When no slot is free, the run is `queued` with the reason in `note`, and the command exits 0 (see [Limits, the queue, and usage](#limits-the-queue-and-usage)).
 
 #### Ship
 
@@ -568,7 +570,7 @@ The gate is the Stop hook of the session. Each time the session ends a turn, Loa
 4. The head of the worktree is not the PR head: the tick runs `git push -u origin <branch>` when `origin/<branch>` is not the head. A failed push stops the run with the output in `note`. With no PR, it runs `gh pr create` with the title of the run, the base of the worktree, and a body with the goal, the Done when checks, and the issue (`Closes #57` for a GitHub issue, the key, such as `Linear: ENG-523`, for a Linear issue). With a PR template in the worktree, the body comes from the template instead (see below). For a run of a group, the body has one more line with the repos of the other runs of the issue, such as "The issue also has runs in example/docs." A repo on GitHub is `owner/name`, and another repo is its folder name. A cancelled run does not count. It names no local path and no Linear URL, because the repo can be public and the Linear workspace private. The events are `ship`: "Opened #12", or "Pushed the fix to #12". For a Linear issue, Loam attaches the PR to it (event `linear`). A failed attach is a warning.
 5. CI on the PR head:
    - No checks: the run waits 3 minutes after the push, then is `ready` ("No CI ran on #12").
-   - A failed check: the try counts. With tries left, the run is `running` and Loam sends the session a prompt with each failed check and the last 60 lines of its failed log (`gh run view <id> --log-failed`). Loam runs `claude stop` and then `claude --bg --resume <session ID> "<prompt>"` with no other flag, so the session wakes with its own options and hooks. The next gate that passes ships the fix to the same PR. With no tries left, the run is `stopped`.
+   - A failed check: the try counts. With tries left, the run is `running` (or `queued`, with the prompt, when no slot is free) and Loam sends the session a prompt with each failed check and the last 60 lines of its failed log (`gh run view <id> --log-failed`). Loam runs `claude stop` and then `claude --bg --resume <session ID> "<prompt>"` with no other flag, so the session wakes with its own options and hooks. The next gate that passes ships the fix to the same PR. With no tries left, the run is `stopped`.
    - Checks that run or wait: nothing changes.
    - All passed: the run is `ready` ("CI passed on #12: 14 of 14 checks").
 
@@ -639,6 +641,48 @@ A plot can have run defaults: a model and an effort. A run, a Shape run, and a r
 - With no flag, the command prints the defaults. A plot that has none prints empty strings for `model` and `effort`.
 - A flag sets that field and leaves the other. An empty value clears the field. The command prints the defaults after the change.
 - An `--effort` that is not a level exits 2.
+
+#### Limits, the queue, and usage
+
+The run limits hold for every run of every plot. There is one set, and it is not in the change log.
+
+```json
+{ "at_a_time": 3, "max_turns": 40, "hold_at": 80 }
+```
+
+- `at_a_time` is how many runs can hold a slot at once: 1 to 20. The default is 3. A run in `starting`, `running`, or `start_unknown` holds a slot. A run in `shipping` or `ready` does not: its session waits for CI or for you.
+- `max_turns` is how many turns a run can take. The default is 40. 0 means no limit.
+- `hold_at` is a percent of the 7-day usage of Claude Code: 0 to 100. The default is 80. 0 turns the hold off.
+
+The usage is the last usage that Claude Code reported to Loam. It is not in the change log. A write of it rewrites `loam.changed`, so the app must not run `usage --refresh` each time the change feed wakes it.
+
+```json
+{
+  "five_hour": { "utilization": 0.18, "resets_at": "2026-10-28T14:00:00Z" },
+  "seven_day": { "utilization": 0.41, "resets_at": "2026-11-01T09:00:00Z" },
+  "read_at": "2026-10-28T10:12:00Z"
+}
+```
+
+- `utilization` is the share of the window that is used, from 0 to 1. `resets_at` is when the window starts again.
+- A window is `null` until Claude Code reports it. `read_at` is `null` before the first report. All three keys are always there.
+
+| Command | Output |
+| :- | :- |
+| `loam run limits [--at-a-time <n>] [--max-turns <n>] [--hold-at <percent>]` | `{ "limits": {...} }` |
+| `loam usage [--refresh]` | `{ "usage": {...} }` |
+
+- With no flag, `run limits` prints the limits. A flag sets that limit and leaves the others. A value out of range exits 2.
+- Each path that starts or resumes the session of a run checks for a slot first: `run start`, `run approve`, a recurring chore, `run send-back`, and the CI failure that `run tick` sends back. The run goes to `queued` instead when:
+  1. `hold_at` is not 0, and the known 7-day `utilization` is at or over `hold_at` percent. `note` is such as "Held: the week's usage is at 82%, over the 80% limit". A 7-day window whose `resets_at` has passed is not known.
+  2. Else the other runs that hold a slot are `at_a_time` or more. `note` is such as "Waits for a slot: 3 of 3 runs are running".
+- A queued run keeps how it starts: a new session with the model and effort of the run, or a resume of its own session with your notes or the CI failure. A send-back that waits keeps its `review` and `note` events. A CI failure that waits counts its try at once.
+- `run tick`, and the tick that `loam tick` runs, start the queued runs, oldest first, while a slot is free and the usage is under the hold. A new session goes to `starting`, then `running`, as for `run start`. A resume goes to `running`. A run that still waits gets a new `note` only when the reason changed, so a tick that starts nothing writes nothing.
+- When the hold is on, a slot is free, a run waits, and the usage is more than 30 minutes old or was never read, the tick runs the probe first (see below). A probe that fails is a warning, and the tick uses the usage that it has.
+- The app counts the runs that are running and the runs that wait from `loam run list`: the states `starting`, `running`, and `start_unknown` hold a slot, and `queued` waits.
+- At each Stop of a `running` run, when the checks fail and `max_turns` is not 0 and `turns` reaches `max_turns`, the run is `stopped` with the note "Stopped after 40 turns, the limit for each run". No try counts. A Stop whose checks pass ships as always.
+- Loam records the usage from each `claude -p` call that it makes with `--output-format stream-json`: a Shape draft, and the probe. Claude Code reports it as a `rate_limit_event` line, whose `rate_limit_info.unifiedWindows` holds `five_hour` and `seven_day`, each with `utilization` and `resetsAt` in Unix seconds. A window that a report does not have keeps its last value.
+- `usage --refresh` runs the probe: `claude -p "Reply with ok" --model haiku --output-format stream-json --verbose --no-session-persistence --tools ""` in a new temp folder, for at most 60 seconds. It records the usage and prints it. A probe that fails, or that reports no usage, exits 1.
 
 #### Rules
 

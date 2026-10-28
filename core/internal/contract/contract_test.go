@@ -793,6 +793,31 @@ func scenario(t *testing.T) *harness {
 	h.run("error_run_defaults_bad_effort", "error", 2, "run", "defaults", "Runs", "--effort", "extreme")
 	h.run("run_defaults_clear", "run-defaults", 0, "run", "defaults", "Runs", "--model", "", "--effort", "")
 
+	// Run limits, the queue, and usage. Two runs hold a slot here: the
+	// approved run and the guide run that went back. With 2 at a time, a new
+	// run waits for a slot.
+	h.run("run_limits_get", "run-limits", 0, "run", "limits")
+	h.run("run_limits_set", "run-limits", 0, "run", "limits", "--at-a-time", "2", "--max-turns", "30", "--hold-at", "90")
+	h.run("error_run_limits_bad", "error", 2, "run", "limits", "--at-a-time", "21")
+	var queued struct {
+		Run struct{ ID, State string } `json:"run"`
+	}
+	parse(h.run("run_start_queued", "run-start", 0, "run", "start", "Runs", "--title", "Sort the plot list"), &queued)
+	if queued.Run.State != "queued" {
+		t.Fatalf("run start with no free slot: state %q", queued.Run.State)
+	}
+	if _, errOut, code := h.raw("run", "stop", queued.Run.ID); code != 0 {
+		t.Fatalf("run stop: exit %d: %s", code, errOut)
+	}
+	h.run("usage_none", "usage", 0, "usage")
+	// The fake claude prints the stream of the probe, as Claude Code does.
+	testutil.FakeClaudePrint(t, `{"type":"system","subtype":"init"}
+{"type":"rate_limit_event","rate_limit_info":{"status":"allowed","resetsAt":1793187600,"rateLimitType":"five_hour","overageStatus":"rejected","isUsingOverage":false,"unifiedWindows":{"five_hour":{"utilization":0.18,"resetsAt":1793187600,"status":"allowed"},"seven_day":{"utilization":0.41,"resetsAt":1793660400,"status":"allowed"}}}}
+{"type":"result","subtype":"success","is_error":false,"result":"ok"}
+`)
+	h.env = append(h.env, "LOAM_FAKE_CLAUDE_PRINT="+os.Getenv("LOAM_FAKE_CLAUDE_PRINT"))
+	h.run("usage_refresh", "usage", 0, "usage", "--refresh")
+
 	// Linked runs. A second repo joins the plot, and Claude splits one issue
 	// into a run in each repo. The two runs share a group.
 	docs, _ := testutil.GitRepoAt(t, filepath.Join(h.root, "docs.git"), filepath.Join(h.root, "repos", "docs"))

@@ -88,8 +88,10 @@ type StartResult struct {
 
 // Start makes or finds the worktree of the run, checks that Claude Code
 // trusts it, runs the setup command, records the run, and starts its
-// background session. A check that fails records nothing. When claude --bg
-// fails, the run is Stopped, with its output as the note.
+// background session. A check that fails records nothing. When no slot is
+// free, or the week's usage is at the hold, the run waits in Queued, and a
+// tick starts it later. When claude --bg fails, the run is Stopped, with its
+// output as the note.
 func Start(ctx context.Context, s *store.Store, o StartOptions) (*StartResult, error) {
 	plot, err := s.GetPlot(o.PlotID)
 	if err != nil {
@@ -120,6 +122,14 @@ func Start(ctx context.Context, s *store.Store, o StartOptions) (*StartResult, e
 	})
 	if err != nil {
 		return nil, err
+	}
+	slotted, err := s.TakeSlot(r.ID, &store.RunQueue{Model: o.Model, Effort: o.Effort}, noChange)
+	if err != nil {
+		return nil, stopAfter(s, r.ID, err)
+	}
+	if r = slotted; r.State == store.RunQueued {
+		res.Run = r
+		return res, nil
 	}
 	return launch(ctx, s, r, o, res)
 }
@@ -473,18 +483,19 @@ func Prompt(r store.Run, rules []store.Rule) string {
 }
 
 // Stop stops the background session of a run and marks the run Cancelled.
-// A Shaping run has no session, so Stop only cancels it. A run that has ended
-// stays as it is. When claude stop fails, for example
-// because the session is gone, the run is Cancelled anyway and the result
-// has a warning. When the run is the last of its group, and another run of
-// the group landed, its Linear issue moves to Done.
+// A Shaping run, and a Queued run that never started, have no session, so
+// Stop only cancels them. A run that has ended stays as it is. When claude
+// stop fails, for example because the session is gone, the run is Cancelled
+// anyway and the result has a warning. When the run is the last of its
+// group, and another run of the group landed, its Linear issue moves to
+// Done.
 func Stop(ctx context.Context, s *store.Store, id string) (store.Run, []string, error) {
 	r, err := s.GetRun(id)
 	if err != nil || r.State.Ended() {
 		return r, nil, err
 	}
 	var warnings []string
-	if r.State != store.RunShaping {
+	if r.State != store.RunShaping && (r.State != store.RunQueued || r.SessionID != "") {
 		if warning := stopSession(ctx, r); warning != "" {
 			warnings = append(warnings, warning)
 		}

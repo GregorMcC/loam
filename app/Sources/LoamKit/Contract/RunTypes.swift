@@ -1,8 +1,8 @@
 import Foundation
 
-/// Where a run is. `shaping`, `stopped`, and `limited` need you.
+/// Where a run is. `shaping`, `stopped`, and `limited` need you. `queued` waits for a slot.
 public enum RunState: String, Codable, Equatable, Sendable, CaseIterable {
-    case shaping, starting, running, shipping, ready, stopped, limited
+    case shaping, queued, starting, running, shipping, ready, stopped, limited
     case startUnknown = "start_unknown"
     case landed, cancelled, skipped
     /// A state that this app does not know.
@@ -25,6 +25,7 @@ public enum RunState: String, Codable, Equatable, Sendable, CaseIterable {
     public var words: String {
         switch self {
         case .shaping: "Shape"
+        case .queued: "Waits for a slot"
         case .starting: "Starting"
         case .running: "Running"
         case .shipping: "Shipping"
@@ -122,6 +123,8 @@ public struct Run: Codable, Equatable, Sendable, Identifiable {
     /// How many times the gate or CI failed.
     public var tries: Int
     public var maxTries: Int
+    /// How many turns the session ended: one for each Stop.
+    public var turns: Int = 0
     public var source: RunSource?
     /// The PR of the run. Nil before the run ships.
     public var pr: RunPR? = nil
@@ -139,7 +142,7 @@ public struct Run: Codable, Equatable, Sendable, Identifiable {
     public var waitsOnGitHub: Bool { state == .shipping || (state == .ready && pr != nil) }
 
     enum CodingKeys: String, CodingKey {
-        case id, folder, title, goal, state, tries, source, pr, shape, note
+        case id, folder, title, goal, state, tries, turns, source, pr, shape, note
         case plotID = "plot_id", worktreeID = "worktree_id", doneWhen = "done_when", maxTries = "max_tries"
         case sessionID = "session_id", createdAt = "created_at", updatedAt = "updated_at", groupID = "group_id"
     }

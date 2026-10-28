@@ -366,6 +366,27 @@ public struct LoamClient: Sendable {
         return one.defaults
     }
 
+    /// `loam run limits`: the limits of every run.
+    public func runLimits() async throws -> RunLimits {
+        let one: RunLimitsOne = try await read(["run", "limits"])
+        return one.limits
+    }
+
+    /// `loam run limits --at-a-time <n> --max-turns <n> --hold-at <percent>`: sets the limits of every run.
+    public func setRunLimits(_ limits: RunLimits) async throws -> RunLimits {
+        let one: RunLimitsOne = try await read(["run", "limits", "--at-a-time", String(limits.atATime),
+                                                "--max-turns", String(limits.maxTurns), "--hold-at", String(limits.holdAt)])
+        return one.limits
+    }
+
+    /// `loam usage`: the last usage that Claude Code reported. With `refresh`, `loam usage --refresh` asks Claude
+    /// Code now, with a small `claude -p` call. Do not refresh each time the change feed wakes the app: a refresh
+    /// writes the store.
+    public func usage(refresh: Bool = false) async throws -> Usage {
+        let one: UsageOne = try await read(refresh ? ["usage", "--refresh"] : ["usage"])
+        return one.usage
+    }
+
     /// `loam rule list [<plot>]`: the rules of the plot, or of every plot, oldest first.
     public func ruleList(plot: String? = nil) async throws -> [Rule] {
         let list: RuleList = try await read(["rule", "list"], positionals: plot.map { [$0] } ?? [])

@@ -59,9 +59,17 @@ import Testing
         #expect(recent.map(\.plotName) == ["Reporting", "Loam"])
     }
 
+    /// A run that finds no free slot waits in Queued, at the Run station, and the note says why.
+    @Test func aRunWithNoFreeSlotWaitsForASlot() throws {
+        let run = try JSONDecoder().decode(RunStartResult.self, from: Fixtures.data("run_start_queued")).run
+        #expect(run.state == .queued && run.state.words == "Waits for a slot" && run.state.station == .run)
+        #expect(!run.state.needsYou && !run.state.ended)
+        #expect(run.note == "Waits for a slot: 2 of 2 runs are running" && run.turns == 0)
+    }
+
     @Test func runStatesMapToTheStationsOfTheLine() {
         #expect(RunState.shaping.station == .shape)
-        #expect([RunState.starting, .running, .startUnknown].allSatisfy { $0.station == .run })
+        #expect([RunState.queued, .starting, .running, .startUnknown].allSatisfy { $0.station == .run })
         #expect(RunState.shipping.station == .ship)
         #expect(RunState.ready.station == .land)
         #expect([RunState.stopped, .limited].allSatisfy { $0.station == .stopped })

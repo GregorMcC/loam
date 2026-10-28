@@ -23,7 +23,7 @@ extension RunState {
     public var station: RunStation? {
         switch self {
         case .shaping: .shape
-        case .starting, .running, .startUnknown: .run
+        case .queued, .starting, .running, .startUnknown: .run
         case .shipping: .ship
         case .ready: .land
         case .stopped, .limited: .stopped

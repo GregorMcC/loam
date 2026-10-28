@@ -126,6 +126,7 @@
     "state": "ready",
     "title": "Tidy the README",
     "tries": 0,
+    "turns": 2,
     "updated_at": "2026-01-01T00:00:00Z",
     "worktree_id": "wtreaaaaat"
   },

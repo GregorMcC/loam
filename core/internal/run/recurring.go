@@ -218,8 +218,11 @@ func startRecurring(ctx context.Context, s *store.Store, rec store.Recurring, ou
 	if err != nil {
 		return nil, fmt.Sprintf("The run did not start: %v", err)
 	}
-	if res.Run.State == store.RunStopped {
+	switch res.Run.State {
+	case store.RunStopped:
 		return &res.Run, "The run stopped as it started: " + res.Run.Note
+	case store.RunQueued:
+		return &res.Run, res.Run.Note
 	}
 	return &res.Run, "Started a run"
 }

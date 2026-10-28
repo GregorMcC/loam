@@ -18,6 +18,7 @@
       "state": "shipping",
       "title": "Tidy the README",
       "tries": 0,
+      "turns": 1,
       "updated_at": "2026-01-01T00:00:00Z",
       "worktree_id": "wtreaaaaat"
     }

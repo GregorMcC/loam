@@ -182,7 +182,8 @@ type ApproveOptions struct {
 }
 
 // Approve starts a Shaping run with your edits to its draft: it makes the
-// worktree and starts the session, as [Start] does.
+// worktree and starts the session, as [Start] does. When no slot is free,
+// the run waits in Queued, as for [Start].
 func Approve(ctx context.Context, s *store.Store, id string, o ApproveOptions) (*StartResult, error) {
 	r, err := s.GetRun(id)
 	if err != nil {
@@ -214,7 +215,7 @@ func Approve(ctx context.Context, s *store.Store, id string, o ApproveOptions) (
 	if err != nil {
 		return nil, err
 	}
-	r, err = s.UpdateRun(r.ID, func(r *store.Run) error {
+	r, err = s.TakeSlot(r.ID, &store.RunQueue{Model: so.Model, Effort: so.Effort}, func(r *store.Run) error {
 		if r.State != store.RunShaping {
 			return fmt.Errorf("run %s is %s now: %w", r.ID, r.State, store.ErrInvalid)
 		}
@@ -236,6 +237,10 @@ func Approve(ctx context.Context, s *store.Store, id string, o ApproveOptions) (
 	if err != nil {
 		return nil, err
 	}
+	if r.State == store.RunQueued {
+		res.Run = r
+		return res, nil
+	}
 	return launch(ctx, s, r, so, res)
 }
 
@@ -255,7 +260,7 @@ func draftRun(ctx context.Context, s *store.Store, r store.Run, change string) (
 	if err != nil {
 		return nil, err
 	}
-	d, failure := askForDraft(ctx, r, change, others, draftSteps(s, r.ID))
+	d, failure := askForDraft(ctx, r, change, others, draftSteps(s, r.ID), usageRecorder(s))
 	r, err = s.UpdateRun(r.ID, func(r *store.Run) error {
 		if r.State != store.RunShaping || r.Shape == nil {
 			return nil
@@ -280,7 +285,7 @@ func draftRun(ctx context.Context, s *store.Store, r store.Run, change string) (
 // ID of r. A draft with a repo that the plot does not have, or with a repo
 // twice, fails as a whole, with the reason as the note of r.
 func splitRun(ctx context.Context, s *store.Store, plot store.Plot, r store.Run, change string) ([]store.Run, error) {
-	ds, failure := askForSplit(ctx, plot, r, change, draftSteps(s, r.ID))
+	ds, failure := askForSplit(ctx, plot, r, change, draftSteps(s, r.ID), usageRecorder(s))
 	var repos []store.Repo
 	if failure == "" {
 		repos, failure = splitRepos(plot, ds)
@@ -389,10 +394,11 @@ func shapeDetail(r store.Run, failure string) string {
 }
 
 // askForDraft has Claude draft one run in the folder of the run. others
-// name the repos of the other runs of its group.
-func askForDraft(ctx context.Context, r store.Run, change string, others []string, step func(string)) (draft, string) {
+// name the repos of the other runs of its group. step and usage are as for
+// [askClaude].
+func askForDraft(ctx context.Context, r store.Run, change string, others []string, step func(string), usage func(store.Usage)) (draft, string) {
 	prompt := func(ctx context.Context) string { return shapePrompt(ctx, r, change, others) }
-	out, failure := askClaude(ctx, r, nil, prompt, draftSchema, step)
+	out, failure := askClaude(ctx, r, nil, prompt, draftSchema, step, usage)
 	if failure != "" {
 		return draft{}, failure
 	}
@@ -406,7 +412,7 @@ func askForDraft(ctx context.Context, r store.Run, change string, others []strin
 // askForSplit has Claude draft one run for each repo of the plot that the
 // issue needs changes in. Claude runs in the folder of r, the main repo, and
 // reads the other repos too.
-func askForSplit(ctx context.Context, plot store.Plot, r store.Run, change string, step func(string)) ([]draft, string) {
+func askForSplit(ctx context.Context, plot store.Plot, r store.Run, change string, step func(string), usage func(store.Usage)) ([]draft, string) {
 	var dirs []string
 	for _, repo := range plot.Repos {
 		if repo.Path != r.Folder {
@@ -414,7 +420,7 @@ func askForSplit(ctx context.Context, plot store.Plot, r store.Run, change strin
 		}
 	}
 	prompt := func(ctx context.Context) string { return splitPrompt(ctx, plot, r, change) }
-	out, failure := askClaude(ctx, r, dirs, prompt, splitSchema, step)
+	out, failure := askClaude(ctx, r, dirs, prompt, splitSchema, step, usage)
 	if failure != "" {
 		return nil, failure
 	}
@@ -450,8 +456,10 @@ func cleanDraft(d draft) draft {
 // shape of schema, or why there is none. claude -p asks no trust question,
 // so as for a run, each folder must be one that Claude Code trusts. It
 // streams its output, and step gets each step that Claude takes, such as
-// "Read window/frame.go", as it takes it.
-func askClaude(ctx context.Context, r store.Run, dirs []string, prompt func(context.Context) string, schema string, step func(string)) (json.RawMessage, string) {
+// "Read window/frame.go", as it takes it. usage gets the usage that Claude
+// Code reports.
+func askClaude(ctx context.Context, r store.Run, dirs []string, prompt func(context.Context) string, schema string,
+	step func(string), usage func(store.Usage)) (json.RawMessage, string) {
 	for _, dir := range append([]string{r.Folder}, dirs...) {
 		if !claudebin.Trusted(dir) {
 			return nil, fmt.Sprintf("%v %s. Run claude in it once and choose Yes, then draft the run again", ErrUntrusted, dir)
@@ -486,7 +494,7 @@ func askClaude(ctx context.Context, r store.Run, dirs []string, prompt func(cont
 	if err := cmd.Start(); err != nil {
 		return nil, failureNote("claude -p failed", err, errOut.String())
 	}
-	res, readErr := readDraftStream(stdout, r.Folder, step)
+	res, readErr := readDraftStream(stdout, r.Folder, step, usage)
 	if err := cmd.Wait(); err != nil && !errors.Is(err, exec.ErrWaitDelay) {
 		if ctx.Err() != nil {
 			return nil, "claude -p did not answer in time"
@@ -513,8 +521,9 @@ type draftResult struct {
 }
 
 // readDraftStream reads the stream-json messages of claude -p. It gives each
-// step of an assistant message to step, and returns the result message.
-func readDraftStream(out io.Reader, folder string, step func(string)) (*draftResult, error) {
+// step of an assistant message to step, and the usage of each rate limit
+// event to usage. It returns the result message.
+func readDraftStream(out io.Reader, folder string, step func(string), usage func(store.Usage)) (*draftResult, error) {
 	dec := json.NewDecoder(out)
 	var res *draftResult
 	for {
@@ -543,6 +552,10 @@ func readDraftStream(out io.Reader, folder string, step func(string)) (*draftRes
 			res = &draftResult{}
 			if err := json.Unmarshal(raw, res); err != nil {
 				return nil, err
+			}
+		case "rate_limit_event":
+			if u, ok := parseUsage(raw); ok {
+				usage(u)
 			}
 		case "assistant":
 			for _, c := range msg.Message.Content {

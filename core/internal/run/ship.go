@@ -43,11 +43,13 @@ type TickResult struct {
 // opens its PR, and then reads CI on the PR. When CI passes, the run is
 // Ready. When CI fails, the run goes back to its session with the failed
 // logs, and the failure counts a try. Tick also watches the PR of each run
-// that is Ready: a merge on GitHub lands the run, and a close stops it. A
-// tick that waits on GitHub changes nothing, so the app and a timer can run
-// one as often as they like. Only one tick runs at a time: a second one
-// returns at once with nothing.
-func Tick(ctx context.Context, s *store.Store) (TickResult, error) {
+// that is Ready: a merge on GitHub lands the run, and a close stops it. Then
+// it starts the Queued runs, oldest first, while a slot is free and the
+// week's usage is under the hold. loam is the loam binary, for the hooks of
+// a new session. A tick that waits on GitHub or for a slot changes nothing,
+// so the app and a timer can run one as often as they like. Only one tick
+// runs at a time: a second one returns at once with nothing.
+func Tick(ctx context.Context, s *store.Store, loam string) (TickResult, error) {
 	res := TickResult{Runs: []store.Run{}, Warnings: []string{}}
 	unlock, ok, err := lockTick(s.Home())
 	if err != nil || !ok {
@@ -82,6 +84,9 @@ func Tick(ctx context.Context, s *store.Store) (TickResult, error) {
 			res.Runs = append(res.Runs, sh.r)
 		}
 	}
+	started, warnings := startQueued(ctx, s, loam)
+	res.Runs = append(res.Runs, started...)
+	res.Warnings = append(res.Warnings, warnings...)
 	return res, nil
 }
 
@@ -335,7 +340,8 @@ func (sh *shipper) passCI(note string) (bool, error) {
 }
 
 // failCI counts a try, and sends the failed logs back to the session. On the
-// last try, the run stops.
+// last try, the run stops. When no slot is free, the run waits in Queued with
+// the failed logs, and a later tick sends them.
 func (sh *shipper) failCI(ctx context.Context, repo github.Repo, pr *github.PR) (bool, error) {
 	r := sh.r
 	var names []string
@@ -350,9 +356,19 @@ func (sh *shipper) failCI(ctx context.Context, repo github.Repo, pr *github.PR) 
 		return sh.moveTry(store.RunStopped, fmt.Sprintf("%s after %s: %s", failed, count(r.Tries+1, "try"), strings.Join(names, ", ")))
 	}
 	prompt := ciPrompt(ctx, sh.gh, repo, r, pr)
-	moved, err := sh.moveTry(store.RunRunning, failed+": "+strings.Join(names, ", "))
-	if err != nil || !moved {
-		return moved, err // a run that you changed during the tick gets no prompt
+	from, moved := r.State, false
+	r, err := sh.s.TakeSlot(r.ID, &store.RunQueue{Resume: prompt}, func(r *store.Run) error {
+		if r.State == from { // you may have changed the run during the tick
+			r.State, r.Note, r.Tries, moved = store.RunRunning, failed+": "+strings.Join(names, ", "), r.Tries+1, true
+		}
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	sh.r = r
+	if !moved || r.State == store.RunQueued {
+		return moved, nil // a run that you changed gets no prompt, and a Queued run gets it from a later tick
 	}
 	if err := send(ctx, sh.r, prompt); err != nil {
 		note := "Could not send the CI failure to the session: " + err.Error()

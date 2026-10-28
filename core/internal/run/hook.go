@@ -56,12 +56,13 @@ func Hook(s *store.Store, runID string, in io.Reader, out, errOut io.Writer) int
 	return 0
 }
 
-// stopped is the gate. It runs the checks of a running run. When they pass,
-// the run goes to Ship when its repo is on GitHub, else to Ready. When they
-// fail, the try counts: the stop is blocked with
-// the failures as the reason, or the run is Stopped when it has no tries
-// left. A run that is not running lets the session stop: you may have typed
-// in it after it was Ready.
+// stopped is the gate. Each Stop counts a turn of the run. It runs the
+// checks of a running run. When they pass, the run goes to Ship when its repo
+// is on GitHub, else to Ready. When they fail, and the run has used the
+// turns that the run limits allow, the run is Stopped, and no try counts.
+// Else the try counts: the stop is blocked with the failures as the reason,
+// or the run is Stopped when it has no tries left. A run that is not running
+// lets the session stop: you may have typed in it after it was Ready.
 func stopped(s *store.Store, runID string, errOut io.Writer, logf func(string, ...any)) int {
 	r, err := s.GetRun(runID)
 	if err != nil {
@@ -69,7 +70,15 @@ func stopped(s *store.Store, runID string, errOut io.Writer, logf func(string, .
 		return 0
 	}
 	if r.State != store.RunRunning && r.State != store.RunStarting && r.State != store.RunStartUnknown {
+		if _, err := s.UpdateRun(runID, func(r *store.Run) error { r.Turns++; return nil }); err != nil {
+			logf("run %s: count the turn: %v", runID, err)
+		}
 		return 0
+	}
+	limits, err := s.GetRunLimits()
+	if err != nil {
+		logf("run %s: read the run limits: %v", runID, err)
+		limits.MaxTurns = 0 // a broken store does not stop the run
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), gateBudget)
 	g := gate(ctx, s, r, logf)
@@ -77,6 +86,7 @@ func stopped(s *store.Store, runID string, errOut io.Writer, logf func(string, .
 	ships := len(g.failed) == 0 && onGitHub(s, r)
 	block := false
 	r, err = s.UpdateRun(runID, func(r *store.Run) error {
+		r.Turns++
 		if r.State != store.RunRunning && r.State != store.RunStarting && r.State != store.RunStartUnknown {
 			return nil // stopped while the checks ran
 		}
@@ -85,6 +95,10 @@ func stopped(s *store.Store, runID string, errOut io.Writer, logf func(string, .
 			if !ships {
 				r.State, r.Note = store.RunReady, r.Note+". The repo has no GitHub origin, so Loam opens no PR"
 			}
+			return nil
+		}
+		if limits.MaxTurns > 0 && r.Turns >= limits.MaxTurns {
+			r.State, r.Note = store.RunStopped, "Stopped after "+count(r.Turns, "turn")+", the limit for each run"
 			return nil
 		}
 		r.Tries++
