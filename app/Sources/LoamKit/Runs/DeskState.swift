@@ -12,6 +12,18 @@ public struct DeskState: Equatable, Sendable {
     public var notes: [String: [DeskNote]] = [:]
     /// Keep the worktree after the merge.
     public var keepWorktree = false
+    /// Move the Linear issue to Done at the merge. Nil follows the Done switch of the Linear updates.
+    public var linearDone: Bool?
+    /// Move Where it stands of the plot on to the text of the ship notes at the merge.
+    public var moveWhereItStands = true
+    /// The run limits, read for a run in Shaping. Nil before the read, or when it failed.
+    public var limits: RunLimits?
+    /// The switches of the updates to Linear, read for a run from Linear. Nil before the read, or when it failed.
+    public var linearUpdates: LinearUpdates?
+    /// The setup command of the repo of the run in Shaping, or nil when the repo has none. An approval approves it.
+    public var setup: String?
+    /// The title of the recurring run that shaped the run in Shaping, or nil.
+    public var recurringTitle: String?
     /// Why the last send-back or merge failed.
     public var error: String?
     /// A send-back, a merge, or an approval runs.

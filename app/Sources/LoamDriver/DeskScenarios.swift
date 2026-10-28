@@ -119,9 +119,21 @@ extension Scenarios {
         const labelWeight = 0.8
 
         """)
+        // claude -p writes the ship notes when Loam opens the PR, as claude -p --output-format json does.
+        let notes = gh.rig.root.appendingPathComponent("ship-notes.json")
+        try #"""
+        {"type": "result", "subtype": "success", "is_error": false, "result": "",
+         "structured_output": {
+          "walkthrough": "Search now matches the label of a link when its title does not match. A label scores lower than a title, so a title match still comes first.",
+          "files": [{"path": "search/match.go", "role": "The rule"}, {"path": "search/match_test.go", "role": "Tests"}],
+          "risk": {"level": "low", "reasons": ["2 files, all in the search package. No store change. No new dependency."]},
+          "where_it_stands": "Plot search matches link labels. A title match still ranks first."}}
+        """#.write(to: notes, atomically: true, encoding: .utf8)
+        try printDraft(gh.rig, notes)
         let host = try await app.launchApp(
             client: LoamClient(binary: gh.rig.binary, environment: gh.environment), state: gh.rig.stateFile, terminals: true)
         app.runtime.applyWindowAppearance(to: host.window)
+        frameLikeTheDesign(host.window)
         let model = host.model
         try await app.waitUntil("the run ships") { model.runs.first?.state == .shipping }
         await model.tickRuns()
@@ -141,6 +153,10 @@ extension Scenarios {
         try await app.waitUntil("the desk shows the diff") {
             model.page == .desk && model.desk.runID == gh.id && app.exists("desk-file-search/match.go") && app.exists("desk-line-8")
         }
+        // The ship notes give the order of the files, the walkthrough, and the risk.
+        try confirmDesk(model.runs.first?.notes?.files.first?.role == "The rule" && app.exists("desk-walkthrough")
+                        && app.exists("desk-risk") && app.exists("desk-where-it-stands"),
+                        "the desk shows no ship notes: \(String(describing: model.runs.first?.notes))")
 
         // ] shows the next file.
         try app.type("]")
@@ -196,6 +212,13 @@ extension Scenarios {
         NSApp.appearance = nil
     }
 
+    /// Sizes the window as the design frames of the desk are: 1440 by 900, or the screen when it is smaller.
+    static func frameLikeTheDesign(_ window: NSWindow) {
+        let screen = window.screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let width = min(1440, screen.width), height = min(900, screen.height)
+        window.setFrame(NSRect(x: screen.minX, y: screen.maxY - height, width: width, height: height), display: true)
+    }
+
     /// Makes the claude of the shot rig print the file for claude -p, as claude -p --output-format json prints a
     /// draft. Other calls do what they did.
     static func printDraft(_ rig: PanelRig, _ draft: URL) throws {
@@ -216,7 +239,8 @@ extension Scenarios {
         let (rig, environment, _) = try shotRig(app)
         let (repo, _) = try widgetsRepo(rig, onGitHub: false)
         let plot = try rig.newPlot("Loam v1 build")
-        try rig.loam(["repo", "add", plot, repo.path], extra: environment)
+        // The repo has a setup command, so the approval approves it.
+        try rig.loam(["repo", "add", plot, repo.path, "--setup", "test -f README.md"], extra: environment)
         // claude -p prints the draft, as claude -p --output-format json does. Other calls do what they did.
         let draft = rig.root.appendingPathComponent("draft.json")
         try #"""
@@ -241,6 +265,7 @@ extension Scenarios {
         let host = try await app.launchApp(
             client: LoamClient(binary: rig.binary, environment: environment), state: rig.stateFile, terminals: true)
         app.runtime.applyWindowAppearance(to: host.window)
+        frameLikeTheDesign(host.window)
         let model = host.model
         func appearance(_ name: NSAppearance.Name) async {
             NSApp.appearance = NSAppearance(named: name)
@@ -256,6 +281,7 @@ extension Scenarios {
         try app.click("today-tile-shape")
         try await app.waitUntil("the desk shows the draft") {
             model.page == .desk && app.exists("desk-shape") && app.exists("desk-assumption-1") && app.exists("desk-plan")
+                && app.exists("desk-setup") && app.exists("desk-queue-\(model.desk.runID ?? "")")
         }
         await app.sleep(0.5)
         app.screenshot("desk-shape-night")

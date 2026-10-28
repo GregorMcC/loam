@@ -82,6 +82,27 @@ import Testing
 
     /// The merge can remove the worktree of the run, so the sidebar reads the worktrees again. The toast says
     /// what the merge did, as at the Land sheet.
+    /// When you merge: a run from Linear reads the Linear updates, and its issue moves to Done as the Done switch
+    /// says, unless you say no. Where it stands moves on to the text of the ship notes, unless you say no.
+    @Test func aMergeDoesWhatWhenYouMergeSays() async throws {
+        let (model, fake) = try model([("run_diff", 0), ("run_status", 0), ("linear_updates", 0), ("run_land", 0),
+                                       ("run_list", 0)])
+        model.runs[3].source = RunSource(kind: "linear", key: "ENG-517", url: "")
+        model.runs[3].notes = RunNotes(walkthrough: "Search matches labels.", files: [], risk: .init(level: "low", reasons: []),
+                                       whereItStands: "Search matches labels now.", writtenAt: "2026-10-27T16:00:00Z")
+        await model.openDesk()
+        #expect(fake.args().last == "linear updates --json")
+        #expect(model.deskLinearDone && model.desk.moveWhereItStands)
+        model.setDeskLinearDone(false)
+        await model.landDeskRun()
+        #expect(fake.args().dropFirst(3).first == "run land --head 1234512345123451234512345123451234512345 "
+            + "--no-linear-done --where-it-stands --json --actor app -- r1")
+
+        // The next item starts from the switch again.
+        await model.openDesk("r3")
+        #expect(model.desk.linearDone == nil && model.desk.moveWhereItStands)
+    }
+
     @Test func aMergeReadsTheWorktreesAgainAndSaysWhatItDid() async throws {
         let (model, fake) = try model([("run_diff", 0), ("run_status", 0), ("run_land", 0), ("run_list", 0),
                                        ("run_diff", 0), ("run_status", 0), ("worktree_list", 0)])
@@ -139,7 +160,7 @@ import Testing
 
     /// Shape with Claude opens the desk on the new run as soon as the core records it, so you see Claude draft it.
     @Test func aShapeOpensTheDeskOnItsRunWhenTheRunShowsUp() async throws {
-        let (model, _) = try model([("run_status", 0), ("rule_list", 0)])
+        let (model, _) = try model([("run_status", 0), ("rule_list", 0), ("show", 0), ("run_limits_get", 0)])
         model.pendingShape = AppModel.PendingShape(plot: "plotaaaaae", before: Set(model.runs.map(\.id)))
         #expect(await model.openNewDraft() == false)
         var draft = Self.shaping("s9")
@@ -151,19 +172,33 @@ import Testing
 
     /// Nothing starts until you approve a draft, so Shaping comes first. A draft has no diff to read.
     @Test func shapingComesFirstAndShowsItsDraftWithNoDiff() async throws {
-        let (model, fake) = try model([("run_status", 0), ("rule_list", 0)])
+        let (model, fake) = try model([("run_status", 0), ("rule_list", 0), ("show", 0), ("run_limits_get", 0)])
         model.runs.append(Self.shaping())
         #expect(model.deskQueue.map(\.id) == ["s1", "r1", "r3", "r2"])
         await model.openDesk()
         #expect(model.desk.runID == "s1" && model.desk.diff == nil && model.desk.error == nil)
         // The rules of the plot join the checks of the draft.
         #expect(model.desk.rules.map(\.name) == ["Short README"])
-        #expect(fake.args() == ["run status --json -- s1", "rule list --json -- plotaaaaae"])
+        #expect(fake.args() == ["run status --json -- s1", "rule list --json -- plotaaaaae", "show plotaaaaae --json",
+                                "run limits --json"])
+        // What an approval does: the limits of the run, and no setup command, as the repo has none.
+        #expect(model.desk.limits?.maxTurns == 40 && model.desk.setup == nil)
+    }
+
+    /// The desk shows the setup command of the repo under If you approve, so the approval approves it.
+    @Test func anApprovalApprovesTheSetupThatTheDeskShows() async throws {
+        let (model, fake) = try model([("run_status", 0), ("rule_list", 0), ("show", 0), ("run_limits_get", 0),
+                                       ("run_approve", 0), ("run_list", 0)])
+        model.runs.append(Self.shaping())
+        await model.openDesk()
+        model.desk.setup = "scripts/link-vendor.sh"
+        await model.approveDeskRun()
+        #expect(fake.args().dropFirst(4).first == "run approve --approve-setup --json -- s1")
     }
 
     /// The run of a Shaping row on Today opens at the desk, where you can approve it.
     @Test func aShapingRunOpensAtTheDesk() async throws {
-        let (model, _) = try model([("run_status", 0), ("rule_list", 0)])
+        let (model, _) = try model([("run_status", 0), ("rule_list", 0), ("show", 0), ("run_limits_get", 0)])
         model.runs.append(Self.shaping())
         await model.openRun("s1")
         #expect(model.page == .desk && model.desk.runID == "s1")
@@ -171,18 +206,18 @@ import Testing
 
     /// Only what you changed goes to the core: a goal that you set back to the draft is not sent.
     @Test func anApprovalSendsYourEditsOfTheDraft() async throws {
-        let (model, fake) = try model([("run_status", 0), ("rule_list", 0), ("run_approve", 0), ("run_list", 0)])
+        let (model, fake) = try model([("run_status", 0), ("rule_list", 0), ("show", 0), ("run_limits_get", 0), ("run_approve", 0), ("run_list", 0)])
         model.runs.append(Self.shaping())
         await model.openDesk()
         model.editDeskGoal("The run page shows the plan.")
         model.answerDeskAssumption(0, "  Bullets, not numbers. ")
         model.editDeskChecks([RunCheck(name: "All tests", command: "go test ./...")])
         await model.approveDeskRun()
-        #expect(fake.args().dropFirst(2).first == "run approve --goal The run page shows the plan. "
+        #expect(fake.args().dropFirst(4).first == "run approve --goal The run page shows the plan. "
             + "--check All tests=go test ./... --answer 1=Bullets, not numbers. --json -- s1")
         #expect(model.desk.error == nil && model.desk.shapeEdits["s1"] == nil)
 
-        let (again, fake2) = try self.model([("run_status", 0), ("rule_list", 0), ("run_approve", 0), ("run_list", 0)])
+        let (again, fake2) = try self.model([("run_status", 0), ("rule_list", 0), ("show", 0), ("run_limits_get", 0), ("run_approve", 0), ("run_list", 0)])
         again.runs.append(Self.shaping())
         await again.openDesk()
         again.editDeskGoal("The run page shows the plan.")
@@ -190,52 +225,52 @@ import Testing
         again.answerDeskAssumption(0, "Bullets.")
         again.answerDeskAssumption(0, "")
         await again.approveDeskRun()
-        #expect(fake2.args().dropFirst(2).first == "run approve --json -- s1")
+        #expect(fake2.args().dropFirst(4).first == "run approve --json -- s1")
     }
 
     /// When you remove every check of the draft, the run starts with no checks, not with the draft's.
     @Test func anApprovalWithNoChecksRemovesTheDraftedChecks() async throws {
-        let (model, fake) = try model([("run_status", 0), ("rule_list", 0), ("run_approve", 0), ("run_list", 0)])
+        let (model, fake) = try model([("run_status", 0), ("rule_list", 0), ("show", 0), ("run_limits_get", 0), ("run_approve", 0), ("run_list", 0)])
         model.runs.append(Self.shaping())
         await model.openDesk()
         model.editDeskChecks([])
         await model.approveDeskRun()
-        #expect(fake.args().dropFirst(2).first == "run approve --no-checks --json -- s1")
+        #expect(fake.args().dropFirst(4).first == "run approve --no-checks --json -- s1")
     }
 
     /// When the core refuses a new setup command, the next approval approves it, as at Intake.
     @Test func anApprovalThatTheSetupStopsOffersToApproveIt() async throws {
-        let (model, fake) = try model([("run_status", 0), ("rule_list", 0), ("run_approve", 0), ("run_list", 0)])
+        let (model, fake) = try model([("run_status", 0), ("rule_list", 0), ("show", 0), ("run_limits_get", 0), ("run_approve", 0), ("run_list", 0)])
         model.runs.append(Self.shaping())
         await model.openDesk()
         model.desk.error = "the setup command of web is new or changed: make. add --approve-setup to approve it"
         #expect(model.desk.needsSetupApproval)
         await model.approveDeskRun()
-        #expect(fake.args().dropFirst(2).first == "run approve --approve-setup --json -- s1")
+        #expect(fake.args().dropFirst(4).first == "run approve --approve-setup --json -- s1")
     }
 
     @Test func aChangeGoesToClaudeForANewDraft() async throws {
-        let (model, fake) = try model([("run_status", 0), ("rule_list", 0), ("run_shape", 0), ("run_list", 0),
+        let (model, fake) = try model([("run_status", 0), ("rule_list", 0), ("show", 0), ("run_limits_get", 0), ("run_shape", 0), ("run_list", 0),
                                        ("run_status", 0)])
         model.runs.append(Self.shaping())
         await model.openDesk()
         await model.redraftDeskRun(change: "  Add a check for the app. ")
-        #expect(fake.args().dropFirst(2).first == "run redraft --change Add a check for the app. --json -- s1")
+        #expect(fake.args().dropFirst(4).first == "run redraft --change Add a check for the app. --json -- s1")
         #expect(model.desk.drafting.isEmpty && model.desk.error == nil)
     }
 
     /// Not now cancels the run, and the desk shows the next item.
     @Test func notNowCancelsTheDraft() async throws {
-        let (model, fake) = try model([("run_status", 0), ("rule_list", 0), ("run_stop", 0), ("run_list", 0)])
+        let (model, fake) = try model([("run_status", 0), ("rule_list", 0), ("show", 0), ("run_limits_get", 0), ("run_stop", 0), ("run_list", 0)])
         model.runs.append(Self.shaping())
         await model.openDesk()
         await model.notNowDeskRun()
-        #expect(fake.args().dropFirst(2).first == "run stop --json -- s1")
+        #expect(fake.args().dropFirst(4).first == "run stop --json -- s1")
     }
 
     /// Shape with Claude at Intake drafts the run, then shows the draft at the desk.
     @Test func shapeWithClaudeOpensTheDraftAtTheDesk() async throws {
-        let (model, fake) = try model([("run_shape", 0), ("run_list", 0), ("run_status", 0), ("rule_list", 0)])
+        let (model, fake) = try model([("run_shape", 0), ("run_list", 0), ("run_status", 0), ("rule_list", 0), ("show", 0), ("run_limits_get", 0)])
         var draft = RunDraft(item: IntakeItem(source: "map", key: "map 12", title: "Show the plan on the run page",
                                               status: "", priority: "", labels: [],
                                               url: "/tmp/loam-contract/build/issues/12-run-page-plan.md",

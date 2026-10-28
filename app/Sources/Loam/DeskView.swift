@@ -137,7 +137,7 @@ private struct DeskRuleOfferCard: View {
     }
 }
 
-/// The top bar: where you are in the queue, and the buttons that move through it.
+/// The top bar: where you are in the queue, and Leave the desk.
 private struct DeskBar: View {
     let model: AppModel
     let queue: [Run]
@@ -145,37 +145,170 @@ private struct DeskBar: View {
 
     var body: some View {
         let index = queue.firstIndex { $0.id == model.desk.runID }
-        HStack(spacing: LoamTheme.space3) {
-            Text("The desk").loamText(LoamTheme.rowStyle)
+        HStack(spacing: 14) {
+            Text("The desk").loamText(LoamTheme.windowTitleStyle)
             if let index {
                 Text("\(index + 1) of \(queue.count)").loamText(LoamTheme.bodyStyle, LoamColor.inkMuted).monospacedDigit()
                 HStack(spacing: 4) {
                     ForEach(queue.indices, id: \.self) { i in
                         Capsule().fill(i == index ? LoamColor.ink : i < index ? LoamColor.inkMuted : LoamColor.inkKey)
-                            .frame(width: 24, height: 4)
+                            .frame(width: 28, height: 4)
                     }
                 }
                 .accessibilityHidden(true)
             }
             Spacer()
-            Button("Previous") { Task { await model.moveDesk(by: -1) } }
+            Button { model.leaveDesk() } label: {
+                HStack(spacing: LoamTheme.space2) {
+                    Text("Leave the desk")
+                    Keycap(text: "esc")
+                }
+            }
+            .loamSecondaryButton()
+            .keyboardShortcut(typing ? nil : .cancelAction)
+            .help("Back to Today (Esc)")
+            .accessibilityIdentifier("desk-leave")
+        }
+        .padding(.horizontal, 20)
+        .frame(height: 52)
+    }
+}
+
+/// The key hints at the right of the footer: Previous and Next, and on a run with work, Next file. Each one is a
+/// button, and its key works while no field has the focus.
+struct DeskNavHints: View {
+    let model: AppModel
+    let typing: Bool
+    /// The next file of the diff, or nil for a draft or the last file.
+    var nextFile: String?
+    var showsNextFile = false
+
+    var body: some View {
+        let queue = model.deskQueue
+        let index = queue.firstIndex { $0.id == model.desk.runID }
+        HStack(spacing: LoamTheme.space3) {
+            DeskHint(title: "Previous", key: "K") { Task { await model.moveDesk(by: -1) } }
                 .deskKey("k", typing: typing)
                 .disabled(index == nil || index == 0)
                 .help("Previous item (K)")
                 .accessibilityIdentifier("desk-previous")
-            Button("Next") { Task { await model.moveDesk(by: 1) } }
+            if showsNextFile {
+                DeskHint(title: "Next file", key: "]") { if let nextFile { model.showDeskFile(nextFile) } }
+                    .deskKey("]", typing: typing)
+                    .disabled(nextFile == nil)
+                    .help("Next file (])")
+                    .accessibilityIdentifier("desk-next-file")
+            }
+            DeskHint(title: showsNextFile ? "Next item" : "Next", key: "J") { Task { await model.moveDesk(by: 1) } }
                 .deskKey("j", typing: typing)
                 .disabled(index == nil || index == queue.count - 1)
                 .help("Next item (J)")
                 .accessibilityIdentifier("desk-next")
-            Button("Leave the desk") { model.leaveDesk() }
-                .keyboardShortcut(typing ? nil : .cancelAction)
-                .help("Back to Today (Esc)")
-                .accessibilityIdentifier("desk-leave")
         }
-        .loamSecondaryButton()
-        .padding(.horizontal, LoamTheme.space6)
-        .padding(.vertical, LoamTheme.space3)
+    }
+}
+
+/// A key hint that is a button: a caption and its keycap.
+private struct DeskHint: View {
+    let title: String
+    let key: String
+    let action: () -> Void
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Text(title).loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+                Keycap(text: key)
+            }
+            .opacity(isEnabled ? 1 : 0.5)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// The keycap in the primary button: the text of the button on a darker ground.
+struct DeskPrimaryKeycap: View {
+    let text: String
+    var body: some View {
+        Text(text)
+            .font(.system(size: 11.5, weight: .medium))
+            .frame(minWidth: 20, minHeight: 20)
+            .padding(.horizontal, 1)
+            .background(Color.black.opacity(0.15), in: RoundedRectangle(cornerRadius: 5))
+            .accessibilityHidden(true)
+    }
+}
+
+/// A button title with its keycap.
+struct DeskKeyLabel: View {
+    let title: String
+    let key: String
+    var primary = false
+
+    var body: some View {
+        HStack(spacing: LoamTheme.space2) {
+            Text(title)
+            if primary { DeskPrimaryKeycap(text: key) } else { Keycap(text: key) }
+        }
+    }
+}
+
+extension View {
+    /// The heading of a part of the desk, such as Goal or Evidence: semibold, in `ink-faint`.
+    func deskHeading() -> some View {
+        font(.system(size: 12, weight: .semibold)).foregroundStyle(LoamColor.inkFaint)
+    }
+}
+
+/// The queue at the left of a draft: the runs that wait, by station, with the run that the desk shows selected.
+/// A click shows a run.
+struct DeskQueue: View {
+    let model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: LoamTheme.space4) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: LoamTheme.space4) {
+                    ForEach(DeskContent.queue(model.deskQueue, plots: model.plots)) { group in
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(group.title).deskHeading().padding(.leading, 10).padding(.bottom, LoamTheme.space2)
+                            ForEach(group.rows) { row($0, station: group.station) }
+                        }
+                    }
+                }
+            }
+            Text("Shape comes first, so new runs can start while you read the rest.")
+                .loamText(LoamTheme.captionStyle, LoamColor.inkFaint)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 10)
+        }
+        .padding(.horizontal, LoamTheme.space3)
+        .padding(.vertical, LoamTheme.space4)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("desk-queue")
+    }
+
+    private func row(_ row: DeskContent.QueueRow, station: RunStation) -> some View {
+        let current = row.id == model.desk.runID
+        return Button { Task { await model.openDesk(row.id) } } label: {
+            HStack(alignment: .top, spacing: 9) {
+                AttentionDot(mark: station == .land ? .unread : .needs).frame(width: 8, height: 8).padding(.top, 5)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(row.title).loamText(current ? LoamTheme.rowStyle : LoamTheme.bodyStyle).lineLimit(2)
+                    Text(row.caption).loamText(LoamTheme.captionStyle, row.stopped ? LoamColor.rust : LoamColor.inkMuted)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.horizontal, 10).padding(.vertical, LoamTheme.space2)
+            .background(current ? LoamColor.inkSelected : .clear, in: RoundedRectangle(cornerRadius: 8))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("desk-queue-\(row.id)")
     }
 }
 
@@ -196,126 +329,137 @@ private struct DeskEmpty: View {
     }
 }
 
-/// One run at the desk: its header, its files, the diff of one file, the evidence, and the actions.
+/// One run with work at the desk: its header, its files in the order to read them, the diff of one file, the
+/// evidence, and the actions.
 private struct DeskItem: View {
     let model: AppModel
     let run: Run
     let field: FocusState<DeskField?>.Binding
 
     var body: some View {
+        let files = DeskContent.readOrder(model.desk.diff?.files ?? [], notes: run.notes)
         VStack(spacing: 0) {
             DeskItemHeader(model: model, run: run)
             Divider()
             HStack(spacing: 0) {
-                DeskFiles(model: model, typing: field.wrappedValue != nil)
-                    .frame(width: 200)
+                DeskFiles(model: model, run: run, files: files)
+                    .frame(width: 264)
                 Divider()
-                DeskDiff(model: model, field: field)
+                DeskDiff(model: model, files: files, field: field)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 Divider()
                 DeskEvidence(model: model, run: run, field: field)
-                    .frame(width: 260)
+                    .frame(width: 344)
             }
             Divider()
-            DeskActions(model: model, run: run)
+            DeskActions(model: model, run: run, nextFile: Self.next(files, after: model.desk.file), field: field)
         }
+    }
+
+    static func next(_ files: [DeskContent.ReadFile], after path: String?) -> String? {
+        guard let i = files.firstIndex(where: { $0.file.path == path }), i + 1 < files.count else { return nil }
+        return files[i + 1].file.path
     }
 }
 
-/// The station, plot, issue and PR of the run, and its title.
+/// The station, plot, issue and PR of the run, its title, and what each station did.
 struct DeskItemHeader: View {
     let model: AppModel
     let run: Run
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                AttentionDot(mark: run.state == .ready ? .unread : .needs).frame(width: 8, height: 8)
-                    .accessibilityHidden(true)
-                Text(context).loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+        let events = model.runStatus?.run.id == run.id ? model.runStatus?.events ?? [] : []
+        HStack(alignment: .bottom, spacing: LoamTheme.space4) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: LoamTheme.space2) {
+                    AttentionDot(mark: run.state == .ready ? .unread : .needs).frame(width: 8, height: 8)
+                        .accessibilityHidden(true)
+                    Text(DeskContent.context(run, plotName: model.plots.first { $0.id == run.plotID }?.name ?? "",
+                                             repoName: model.repoName(of: run), events: events))
+                        .loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+                }
+                Text(run.title).loamText(LoamTheme.plotNameStyle).textSelection(.enabled)
+                    .accessibilityIdentifier("desk-item-title")
+                RunGroupLinks(model: model, run: run)
             }
-            Text(run.title).loamText(LoamTheme.plotNameStyle).textSelection(.enabled)
-                .accessibilityIdentifier("desk-item-title")
-            RunGroupLinks(model: model, run: run)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 18) {
+                ForEach(DeskContent.stations(run, events: events), id: \.self) { station in
+                    Text(station).font(.system(size: 12)).foregroundStyle(LoamColor.inkMuted)
+                }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("desk-stations")
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, LoamTheme.space6)
-        .padding(.vertical, LoamTheme.space4)
-    }
-
-    private var context: String {
-        let station = switch run.state {
-        case .shaping: "Shape"
-        case .ready: "Land"
-        default: "Stopped"
-        }
-        var parts = [station, model.plots.first { $0.id == run.plotID }?.name ?? ""]
-        if let source = run.source { parts.append(source.label) }
-        if !run.groupID.isEmpty { parts.append(model.repoName(of: run)) }
-        if let pr = run.pr { parts.append("#\(pr.number)") }
-        if let size = run.shape?.size, run.state == .shaping { parts.append(size) }
-        if run.state != .shaping { parts.append("\(run.tries) of \(run.maxTries) tries used") }
-        return parts.filter { !$0.isEmpty }.joined(separator: " \u{00B7} ")
+        .padding(.top, LoamTheme.space4)
+        .padding(.bottom, LoamTheme.space3)
     }
 }
 
-/// The files of the diff, in the order of git. A click shows a file.
+/// The walkthrough that Claude wrote, and the files of the diff in the order to read them, with their roles. With
+/// no ship notes, the files go in the order of git. A click shows a file.
 private struct DeskFiles: View {
     let model: AppModel
-    let typing: Bool
+    let run: Run
+    let files: [DeskContent.ReadFile]
 
     var body: some View {
-        let files = model.desk.diff?.files ?? []
-        VStack(alignment: .leading, spacing: LoamTheme.space2) {
-            Text(summary(files)).loamLabel()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(files) { file in
-                        let notes = model.desk.currentNotes.filter { $0.file == file.path }.count
-                        Button { model.showDeskFile(file.path) } label: {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(file.path).loamText(LoamTheme.codeStyle).lineLimit(1).truncationMode(.head)
-                                Text(detail(file, notes: notes)).loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, LoamTheme.space2)
-                            .padding(.vertical, 6)
-                            .background(model.desk.file == file.path ? LoamColor.inkSelected : .clear,
-                                        in: RoundedRectangle(cornerRadius: LoamTheme.radiusSm))
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .help(file.oldPath.map { "Renamed from \($0)" } ?? file.path)
-                        .accessibilityIdentifier("desk-file-\(file.path)")
+        let ordered = run.notes != nil
+        ScrollView {
+            VStack(alignment: .leading, spacing: LoamTheme.space4) {
+                if let walkthrough = run.notes?.walkthrough, !walkthrough.isEmpty {
+                    VStack(alignment: .leading, spacing: LoamTheme.space1) {
+                        Text("Walkthrough \u{00B7} Claude wrote this").loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+                        Text(walkthrough).loamText(LoamTheme.bodyStyle).textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.horizontal, LoamTheme.space3).padding(.vertical, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .loamCard()
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("desk-walkthrough")
+                }
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(summary(ordered)).deskHeading().padding(.leading, LoamTheme.space2).padding(.bottom, LoamTheme.space2)
+                    ForEach(Array(files.enumerated()), id: \.element.id) { i, file in
+                        row(file, number: ordered ? i + 1 : nil)
                     }
                 }
             }
-            if let next = nextFile(files) {
-                Button("Next file") { model.showDeskFile(next) }
-                    .deskKey("]", typing: typing)
-                    .loamSecondaryButton()
-                    .help("Next file (])")
-                    .accessibilityIdentifier("desk-next-file")
-            }
+            .padding(.horizontal, LoamTheme.space3)
+            .padding(.vertical, LoamTheme.space4)
         }
-        .padding(LoamTheme.space4)
     }
 
-    private func summary(_ files: [RunDiff.File]) -> String {
-        let added = files.reduce(0) { $0 + $1.added }, deleted = files.reduce(0) { $0 + $1.deleted }
-        let count = files.count == 1 ? "1 file" : "\(files.count) files"
-        return "\(count) \u{00B7} +\(added) \u{2212}\(deleted)"
+    private func summary(_ ordered: Bool) -> String {
+        let all = files.map(\.file)
+        let lines = DeskContent.lineCounts(all)
+        return ordered ? "Read in this order \u{00B7} \(lines)" : "\(all.count == 1 ? "1 file" : "\(all.count) files") \u{00B7} \(lines)"
     }
 
-    private func detail(_ file: RunDiff.File, notes: Int) -> String {
-        var parts = [file.status.capitalized, "+\(file.added) \u{2212}\(file.deleted)"]
-        if notes > 0 { parts.append(notes == 1 ? "1 note" : "\(notes) notes") }
-        return parts.joined(separator: " \u{00B7} ")
-    }
-
-    private func nextFile(_ files: [RunDiff.File]) -> String? {
-        guard let i = files.firstIndex(where: { $0.path == model.desk.file }), i + 1 < files.count else { return nil }
-        return files[i + 1].path
+    private func row(_ file: DeskContent.ReadFile, number: Int?) -> some View {
+        let notes = model.desk.currentNotes.filter { $0.file == file.file.path }.count
+        return Button { model.showDeskFile(file.file.path) } label: {
+            HStack(alignment: .firstTextBaseline, spacing: LoamTheme.space2) {
+                if let number {
+                    Text("\(number)").loamText(LoamTheme.captionStyle, LoamColor.inkMuted).frame(width: 18, alignment: .leading)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(file.file.path).loamText(LoamTheme.codeStyle).lineLimit(1).truncationMode(.head)
+                    Text(DeskContent.fileCaption(file, notes: notes)).loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, LoamTheme.space2)
+            .padding(.vertical, 7)
+            .background(model.desk.file == file.file.path ? LoamColor.inkSelected : .clear,
+                        in: RoundedRectangle(cornerRadius: 7))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(file.file.oldPath.map { "Renamed from \($0)" } ?? file.file.path)
+        .accessibilityIdentifier("desk-file-\(file.file.path)")
     }
 }
 
@@ -323,6 +467,7 @@ private struct DeskFiles: View {
 /// show under their lines.
 private struct DeskDiff: View {
     let model: AppModel
+    let files: [DeskContent.ReadFile]
     @State private var editing: Int?
     let field: FocusState<DeskField?>.Binding
     @State private var draft = ""
@@ -331,13 +476,16 @@ private struct DeskDiff: View {
         let file = model.desk.diff?.files.first { $0.path == model.desk.file }
         VStack(alignment: .leading, spacing: 0) {
             if let file {
-                HStack {
-                    Text(file.path).loamText(LoamTheme.codeStyle)
+                HStack(spacing: 10) {
+                    Text(file.path).loamText(LoamTheme.codeStyle).lineLimit(1).truncationMode(.head)
+                    if let index = files.firstIndex(where: { $0.file.path == file.path }) {
+                        Text("\(index + 1) of \(files.count)").loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+                    }
                     Spacer()
                     Text("Click a line number to add a note").loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
                 }
-                .padding(.horizontal, LoamTheme.space4)
-                .padding(.vertical, LoamTheme.space2)
+                .padding(.horizontal, 14)
+                .frame(height: 36)
                 Divider()
                 // One axis only: a LazyVStack in a two-axis ScrollView has no width to fill. A long line wraps.
                 ScrollView {
@@ -380,7 +528,7 @@ private struct DeskDiff: View {
 
     private func lineRow(_ line: RunDiff.Line) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 0) {
-            Text(line.old.map(String.init) ?? "").frame(width: 40, alignment: .trailing)
+            Text(line.old.map(String.init) ?? "").frame(width: 34, alignment: .trailing)
             Group {
                 if let number = line.new {
                     Button(String(number)) { open(number) }
@@ -391,8 +539,8 @@ private struct DeskDiff: View {
                     Text("")
                 }
             }
-            .frame(width: 40, alignment: .trailing)
-            Text(marker(line.kind)).frame(width: 20)
+            .frame(width: 34, alignment: .trailing)
+            Text(marker(line.kind)).frame(width: 22)
                 .foregroundStyle(line.kind == .add ? LoamColor.moss : line.kind == .del ? LoamColor.rust : LoamColor.inkFaint)
             // The indent stays apart from the code, so a long line wraps under its code.
             let (indent, code) = line.indentAndCode
@@ -411,23 +559,28 @@ private struct DeskDiff: View {
     @ViewBuilder
     private func notes(_ path: String, _ number: Int) -> some View {
         ForEach(model.desk.currentNotes.filter { $0.file == path && $0.line == number }) { note in
-            HStack(alignment: .firstTextBaseline, spacing: LoamTheme.space2) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: LoamTheme.space2) {
+                    Text("Your note \u{00B7} line \(number)").loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+                    Spacer()
+                    Button("Remove") { model.removeDeskNote(note.id) }
+                        .buttonStyle(.plain)
+                        .loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+                }
                 Text(note.text).loamText(LoamTheme.bodyStyle).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                Button("Remove") { model.removeDeskNote(note.id) }
-                    .buttonStyle(.plain)
-                    .loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
             }
-            .padding(LoamTheme.space3)
-            .loamCard()
-            .padding(.leading, 100).padding(.trailing, LoamTheme.space4).padding(.vertical, 4)
+            .padding(.horizontal, 10).padding(.vertical, LoamTheme.space2)
+            .loamCard(radius: 8)
+            .padding(.leading, 82).padding(.trailing, 14).padding(.top, 4).padding(.bottom, 6)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("desk-note-\(number)")
         }
     }
 
     private func editor(_ path: String, _ number: Int) -> some View {
-        HStack(spacing: LoamTheme.space2) {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Your note \u{00B7} line \(number) \u{00B7} editing").loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
             TextField("Your note on line \(number)", text: $draft)
                 .textFieldStyle(.plain)
                 .loamText(LoamTheme.bodyStyle)
@@ -443,17 +596,22 @@ private struct DeskDiff: View {
                 .onSubmit { save(path, number) }
                 .accessibilityLabel("Note on line \(number)")
                 .accessibilityIdentifier("desk-note-field")
-            Button("Save") { save(path, number) }
-                .loamPrimaryButton()
-                .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
-                .accessibilityIdentifier("desk-note-save")
-            Button("Cancel") { editing = nil }
-                .keyboardShortcut(.cancelAction)
-                .loamSecondaryButton()
+            HStack(spacing: LoamTheme.space2) {
+                Spacer()
+                Button("Cancel") { editing = nil }
+                    .keyboardShortcut(.cancelAction)
+                    .loamSecondaryButton()
+                Button { save(path, number) } label: { DeskKeyLabel(title: "Save note", key: "\u{21A9}", primary: true) }
+                    .loamPrimaryButton()
+                    .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .accessibilityIdentifier("desk-note-save")
+            }
+            .controlSize(.small)
         }
-        .padding(LoamTheme.space3)
-        .loamFieldBox()
-        .padding(.leading, 100).padding(.trailing, LoamTheme.space4).padding(.vertical, 4)
+        .padding(.horizontal, 10).padding(.vertical, LoamTheme.space2)
+        .loamCard(radius: 8)
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(LoamColor.edge))
+        .padding(.leading, 82).padding(.trailing, 14).padding(.top, 4).padding(.bottom, 6)
     }
 
     private func message(_ text: String) -> some View {
@@ -500,8 +658,8 @@ private struct DiffRow: Identifiable {
     }
 }
 
-/// Why the run is at the desk: its note, the checks, the tries, CI, and what a merge does. A note on the whole
-/// run goes here too.
+/// Why the run is at the desk: why it stopped, the evidence, the risk, and what a merge does. A note on the
+/// whole run goes here too.
 private struct DeskEvidence: View {
     let model: AppModel
     let run: Run
@@ -510,31 +668,66 @@ private struct DeskEvidence: View {
 
     var body: some View {
         let events = model.runStatus?.run.id == run.id ? model.runStatus?.events ?? [] : []
+        let lines = DeskContent.evidence(run, events: events)
         ScrollView {
             VStack(alignment: .leading, spacing: LoamTheme.space4) {
-                if !run.note.isEmpty {
+                // The note of a ready run repeats the last line of the evidence, so only a stopped run shows it.
+                if run.state != .ready, !run.note.isEmpty {
                     Text(run.note).loamText(LoamTheme.bodyStyle).textSelection(.enabled)
-                        .padding(LoamTheme.space3).frame(maxWidth: .infinity, alignment: .leading).loamCard()
+                        .padding(.horizontal, LoamTheme.space3).padding(.vertical, 10)
+                        .frame(maxWidth: .infinity, alignment: .leading).loamCard()
                         .accessibilityIdentifier("desk-run-note")
                 }
-                section("Evidence") {
-                    row(run.doneWhen.isEmpty ? "Work committed" : "Done when \u{00B7} \(run.doneWhen.count + 1) checks",
-                        run.state == .ready ? "All passed" : "")
-                    row("Tries", "\(run.tries) of \(run.maxTries) used")
-                    ForEach(events.filter { ["ci", "ship", "linear", "review"].contains($0.kind) }.suffix(6)) { event in
-                        row(event.detail, ChangeRules.clock(event.at))
+                if !lines.isEmpty {
+                    section("Evidence") {
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(Array(lines.enumerated()), id: \.element.id) { i, line in
+                                if i > 0 { Rectangle().fill(LoamColor.inkHairline).frame(height: 1) }
+                                evidence(line)
+                            }
+                        }
                     }
+                    .accessibilityIdentifier("desk-evidence")
                 }
-                .accessibilityIdentifier("desk-evidence")
+                if let risk = run.notes?.risk {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Risk: \(risk.level)").font(.system(size: 12.5, weight: .semibold))
+                            .foregroundStyle(risk.level == "high" ? LoamColor.rust : LoamColor.ink)
+                        if !risk.reasons.isEmpty {
+                            Text(risk.reasons.joined(separator: " ")).loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .padding(.horizontal, LoamTheme.space3).padding(.vertical, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .loamCard()
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("desk-risk")
+                }
                 if run.state == .ready, run.pr != nil {
                     section("When you merge") {
-                        if let source = run.source, source.kind == "linear" {
-                            Text("Linear: \(source.key) moves to Done").loamText(LoamTheme.bodyStyle)
+                        VStack(alignment: .leading, spacing: LoamTheme.space2) {
+                            if let source = run.source, source.kind == "linear" {
+                                let off = model.desk.linearUpdates?.done == false
+                                Toggle("Linear: \(source.key) moves to Done", isOn: Binding(
+                                    get: { !off && model.deskLinearDone }, set: { model.setDeskLinearDone($0) }))
+                                    .disabled(off)
+                                    .help(off ? "The Done update to Linear is off in Settings" : "Move \(source.key) to Done")
+                                    .accessibilityIdentifier("desk-linear-done")
+                            }
+                            Toggle("Remove the worktree and branch", isOn: Binding(
+                                get: { !model.desk.keepWorktree }, set: { model.setDeskKeepWorktree(!$0) }))
+                                .help("The core keeps a worktree that has open panes")
+                                .accessibilityIdentifier("desk-remove-worktree")
+                            if let text = run.notes?.whereItStands, !text.isEmpty {
+                                Toggle("Move Where it stands on", isOn: Binding(
+                                    get: { model.desk.moveWhereItStands }, set: { model.setDeskMoveWhereItStands($0) }))
+                                    .help(text)
+                                    .accessibilityIdentifier("desk-where-it-stands")
+                            }
                         }
-                        Toggle("Keep the worktree", isOn: Binding(
-                            get: { model.desk.keepWorktree }, set: { model.setDeskKeepWorktree($0) }))
-                            .toggleStyle(.checkbox)
-                            .accessibilityIdentifier("desk-keep-worktree")
+                        .toggleStyle(.checkbox)
+                        .loamText(LoamTheme.bodyStyle)
                     }
                 }
                 section("A note on the whole run") {
@@ -558,66 +751,98 @@ private struct DeskEvidence: View {
                         .accessibilityIdentifier("desk-run-note-field")
                 }
             }
-            .padding(LoamTheme.space4)
+            .padding(.horizontal, 18)
+            .padding(.vertical, LoamTheme.space4)
         }
     }
 
     private func section(_ title: String, @ViewBuilder _ content: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: LoamTheme.space2) {
-            Text(title).loamLabel()
+            Text(title).deskHeading()
             content()
         }
         .accessibilityElement(children: .contain)
     }
 
-    private func row(_ text: String, _ detail: String) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(text).loamText(LoamTheme.bodyStyle)
-            Spacer(minLength: LoamTheme.space2)
-            Text(detail).loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+    /// One line of the evidence: a tick or a count, the title, and its caption.
+    private func evidence(_ line: DeskContent.EvidenceLine) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: LoamTheme.space2) {
+            Group {
+                switch line.mark {
+                case .tick: Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(LoamColor.moss)
+                case .count(let n): Text("\(n)").foregroundStyle(LoamColor.inkMuted)
+                case .none: Text("")
+                }
+            }
+            .font(.system(size: 12))
+            .frame(width: 16, alignment: .leading)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(line.title).font(.system(size: 12)).foregroundStyle(LoamColor.ink)
+                if !line.caption.isEmpty {
+                    Text(line.caption).loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .padding(.vertical, 6)
+        .accessibilityElement(children: .combine)
     }
 }
 
-/// Send back and Merge, and why the last one failed.
+/// Send back and Merge, why the last one failed, and the keys that move through the desk.
 private struct DeskActions: View {
     let model: AppModel
     let run: Run
+    let nextFile: String?
+    let field: FocusState<DeskField?>.Binding
 
     var body: some View {
+        let typing = field.wrappedValue != nil
         let notes = model.desk.currentNotes.count
-        HStack(spacing: LoamTheme.space3) {
-            Button(notes == 0 ? "Send back" : notes == 1 ? "Send back 1 note" : "Send back \(notes) notes") {
+        HStack(spacing: 10) {
+            Button {
                 Task { await model.sendBackDeskNotes() }
+            } label: {
+                DeskKeyLabel(title: notes == 0 ? "Send back" : notes == 1 ? "Send back 1 note" : "Send back \(notes) notes", key: "S")
             }
             .loamSecondaryButton()
+            .deskKey("s", typing: typing)
             .disabled(notes == 0 || model.desk.busy)
-            .help("Resume the run's session with your notes. The checks run again before the run comes back.")
+            .help("Resume the run's session with your notes. The checks run again before the run comes back. (S)")
             .accessibilityIdentifier("desk-send-back")
             if run.state == .ready, let pr = run.pr {
-                Button("Merge #\(pr.number)") { Task { await model.landDeskRun() } }
-                    .loamPrimaryButton()
-                    .keyboardShortcut(.return, modifiers: .command)
-                    .disabled(model.desk.busy || model.desk.diff == nil)
-                    .help("Merge the PR with the repo's default method (\u{2318}\u{21A9})")
-                    .accessibilityIdentifier("desk-merge")
+                Button { Task { await model.landDeskRun() } } label: {
+                    DeskKeyLabel(title: "Merge #\(pr.number)", key: "\u{2318}\u{21A9}", primary: true)
+                }
+                .loamPrimaryButton()
+                .keyboardShortcut(.return, modifiers: .command)
+                .disabled(model.desk.busy || model.desk.diff == nil)
+                .help("Merge the PR with the repo's default method (\u{2318}\u{21A9})")
+                .accessibilityIdentifier("desk-merge")
             }
             if model.desk.busy { ProgressView().controlSize(.small) }
-            if let error = model.desk.error {
-                Text(error).loamText(LoamTheme.captionStyle, LoamColor.rust).lineLimit(2).textSelection(.enabled)
-                    .accessibilityIdentifier("desk-error")
-            } else {
-                Text(hint).loamText(LoamTheme.captionStyle, LoamColor.inkMuted).lineLimit(2)
+            Group {
+                if let error = model.desk.error {
+                    Text(error).loamText(LoamTheme.captionStyle, LoamColor.rust).textSelection(.enabled)
+                        .accessibilityIdentifier("desk-error")
+                } else {
+                    Text(hint).loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+                }
             }
-            Spacer()
+            .lineLimit(2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, 6)
+            DeskNavHints(model: model, typing: typing, nextFile: nextFile, showsNextFile: true)
         }
-        .padding(.horizontal, LoamTheme.space6)
-        .padding(.vertical, LoamTheme.space3)
+        .controlSize(.large)
+        .padding(.horizontal, 20)
+        .frame(height: 64)
     }
 
     private var hint: String {
         run.state == .ready
-            ? "Send back resumes the session with your notes. The checks and CI run again before the run comes back."
+            ? "Send back resumes the run's session with your notes. The gate and CI run again before the run comes back to you."
             : "The run stopped. Send back resumes its session with your notes, with one more try if it used them all."
     }
 }

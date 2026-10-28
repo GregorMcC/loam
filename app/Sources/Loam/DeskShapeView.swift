@@ -1,9 +1,10 @@
 import LoamKit
 import SwiftUI
 
-/// A run in Shaping at the desk (ticket 207): Claude's draft of the goal, the checks, the assumptions and the plan.
-/// You edit the goal and the checks in place, keep or change each assumption, and then approve the run, ask Claude
-/// to change the draft, or leave it for now. A, C and N do the same while no field has the focus.
+/// A run in Shaping at the desk (ticket 207): the queue at the left, Claude's draft of the goal, the checks, the
+/// assumptions and the plan, and what an approval does. You edit the goal and the checks in place, keep or change
+/// each assumption, and then approve the run, ask Claude to change the draft, or leave it for now. A, C and N do the
+/// same while no field has the focus.
 struct DeskShape: View {
     let model: AppModel
     let run: Run
@@ -11,26 +12,49 @@ struct DeskShape: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            DeskItemHeader(model: model, run: run)
-            Divider()
             HStack(spacing: 0) {
+                DeskQueue(model: model)
+                    .frame(width: 280)
+                Divider()
                 ScrollView {
-                    DeskDraft(model: model, run: run, field: field)
-                        .padding(LoamTheme.space6)
-                        .frame(maxWidth: 720, alignment: .leading)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 18) {
+                        DeskShapeHeader(model: model, run: run)
+                        DeskDraft(model: model, run: run, field: field)
+                    }
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 22)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(LoamColor.bedrock)
                 Divider()
                 DeskIfYouApprove(model: model, run: run)
-                    .frame(width: 300)
+                    .frame(width: 320)
             }
             Divider()
             DeskShapeActions(model: model, run: run, field: field)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("desk-shape")
+    }
+}
+
+/// The station, plot and issue of the draft, when Claude shaped it and for which recurring run, and its title.
+private struct DeskShapeHeader: View {
+    let model: AppModel
+    let run: Run
+
+    var body: some View {
+        let events = model.runStatus?.run.id == run.id ? model.runStatus?.events ?? [] : []
+        VStack(alignment: .leading, spacing: 6) {
+            Text(DeskContent.context(run, plotName: model.plots.first { $0.id == run.plotID }?.name ?? "",
+                                     repoName: model.repoName(of: run), events: events,
+                                     recurringTitle: model.desk.recurringTitle))
+                .loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+                .accessibilityIdentifier("desk-context")
+            Text(run.title).loamText(LoamTheme.plotNameStyle).textSelection(.enabled)
+                .accessibilityIdentifier("desk-item-title")
+            RunGroupLinks(model: model, run: run)
+        }
     }
 }
 
@@ -46,7 +70,7 @@ private struct DeskDraft: View {
     var body: some View {
         let shape = run.shape
         let edit = model.desk.currentEdit
-        VStack(alignment: .leading, spacing: LoamTheme.space6) {
+        VStack(alignment: .leading, spacing: 18) {
             if model.desk.drafting.contains(run.id) || (shape?.isDrafted != true && run.note == Self.draftingNote) {
                 VStack(alignment: .leading, spacing: LoamTheme.space3) {
                     HStack(spacing: LoamTheme.space2) {
@@ -71,44 +95,33 @@ private struct DeskDraft: View {
                         .textFieldStyle(.plain)
                         .loamText(LoamTheme.briefStyle)
                         .lineLimit(1...6)
-                        .padding(.horizontal, 10).padding(.vertical, 8)
-                        .loamFieldBox()
+                        .padding(.horizontal, LoamTheme.space3).padding(.vertical, 9)
+                        .background(LoamColor.horizonB, in: RoundedRectangle(cornerRadius: 8))
+                        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(LoamColor.rule))
                         .focused(field, equals: .goal)
                         .onExitCommand { field.wrappedValue = nil }
                         .accessibilityLabel("Goal")
                         .accessibilityIdentifier("desk-goal")
                 }
-                section("Done when", edited: edit.checks != nil) {
-                    DeskChecks(model: model, run: run, field: field)
-                }
+                DeskChecks(model: model, run: run, field: field)
                 if let shape, !shape.assumptions.isEmpty {
-                    section("Assumptions", edited: !edit.answers.isEmpty) {
-                        VStack(alignment: .leading, spacing: 0) {
-                            ForEach(Array(shape.assumptions.enumerated()), id: \.offset) { i, assumption in
-                                if i > 0 { Divider() }
-                                assumptionRow(i, assumption.text, answer: edit.answers[i])
-                            }
-                        }
-                        .loamCard()
-                    }
+                    assumptions(shape.assumptions, answers: edit.answers)
                 }
-                if let shape, !shape.plan.isEmpty {
-                    section("Plan", edited: false) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            ForEach(Array(shape.plan.enumerated()), id: \.offset) { i, step in
-                                HStack(alignment: .firstTextBaseline, spacing: LoamTheme.space2) {
-                                    Text("\(i + 1).").loamText(LoamTheme.bodyStyle, LoamColor.inkMuted).monospacedDigit()
-                                        .frame(width: 20, alignment: .trailing)
-                                    Text(step).loamText(LoamTheme.bodyStyle).textSelection(.enabled)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                }
-                            }
-                            if !shape.size.isEmpty {
-                                Text(shape.size).loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
-                                    .padding(.top, LoamTheme.space1)
-                            }
+                if let shape, !shape.plan.isEmpty || !shape.size.isEmpty {
+                    HStack(alignment: .top, spacing: 18) {
+                        if !shape.plan.isEmpty {
+                            plan(shape.plan)
                         }
-                        .accessibilityIdentifier("desk-plan")
+                        if !shape.size.isEmpty {
+                            VStack(alignment: .leading, spacing: LoamTheme.space2) {
+                                Text("Size").deskHeading()
+                                Text(shape.size).loamText(LoamTheme.bodyStyle, LoamColor.inkMuted).textSelection(.enabled)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
+                            .accessibilityElement(children: .combine)
+                            .accessibilityIdentifier("desk-size")
+                        }
                     }
                 }
             }
@@ -122,7 +135,7 @@ private struct DeskDraft: View {
     private func section(_ title: String, edited: Bool, @ViewBuilder _ content: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: LoamTheme.space2) {
             HStack(spacing: LoamTheme.space2) {
-                Text(title).loamLabel()
+                Text(title).deskHeading()
                 if edited { Text("Edited").loamText(LoamTheme.captionStyle, LoamColor.inkMuted) }
             }
             content()
@@ -130,19 +143,62 @@ private struct DeskDraft: View {
         .accessibilityElement(children: .contain)
     }
 
+    private func plan(_ steps: [String]) -> some View {
+        VStack(alignment: .leading, spacing: LoamTheme.space2) {
+            Text("Plan \u{00B7} \(steps.count == 1 ? "1 step" : "\(steps.count) steps") \u{00B7} Claude wrote this").deskHeading()
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(Array(steps.enumerated()), id: \.offset) { i, step in
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("\(i + 1).").loamText(LoamTheme.bodyStyle, LoamColor.inkMuted).monospacedDigit()
+                            .frame(width: 18, alignment: .leading)
+                        Text(step).loamText(LoamTheme.bodyStyle, LoamColor.inkMuted).textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("desk-plan")
+    }
+
+    /// The assumptions of the draft as one card, each with Keep and Change.
+    private func assumptions(_ assumptions: [RunAssumption], answers: [Int: String]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: LoamTheme.space2) {
+                Text("Claude made \(assumptions.count == 1 ? "1 assumption" : "\(assumptions.count) assumptions")")
+                    .font(.system(size: 12.5, weight: .semibold)).foregroundStyle(LoamColor.ink)
+                if !answers.isEmpty { Text("Edited").loamText(LoamTheme.captionStyle, LoamColor.inkMuted) }
+            }
+            .padding(.bottom, 6)
+            ForEach(Array(assumptions.enumerated()), id: \.offset) { i, assumption in
+                if i > 0 { Rectangle().fill(LoamColor.inkHairline).frame(height: 1).padding(.vertical, LoamTheme.space2) }
+                assumptionRow(i, assumption.text, answer: answers[i])
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, LoamTheme.space3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .loamCard()
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("desk-assumptions")
+    }
+
     /// One assumption, with Keep and Change. A changed assumption shows what you want in its place.
     private func assumptionRow(_ i: Int, _ text: String, answer current: String?) -> some View {
         VStack(alignment: .leading, spacing: LoamTheme.space2) {
-            HStack(alignment: .firstTextBaseline, spacing: LoamTheme.space3) {
+            HStack(alignment: .top, spacing: 14) {
                 Text(text).loamText(LoamTheme.bodyStyle, current == nil ? LoamColor.ink : LoamColor.inkMuted)
                     .strikethrough(current != nil)
                     .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if changing != i {
                     // A kept assumption says so. A disabled Keep button read as broken.
                     if current == nil {
                         Label("Kept", systemImage: "checkmark")
                             .loamText(LoamTheme.captionStyle, LoamColor.moss)
+                            .padding(.top, 5)
                             .accessibilityIdentifier("desk-assumption-kept-\(i)")
                     } else {
                         Button("Keep") { model.answerDeskAssumption(i, "") }
@@ -150,7 +206,7 @@ private struct DeskDraft: View {
                             .help("Keep the assumption as Claude drafted it")
                             .accessibilityIdentifier("desk-assumption-keep-\(i)")
                     }
-                    Button("Change") {
+                    Button("Change\u{2026}") {
                         answer = current ?? ""
                         changing = i
                     }
@@ -184,7 +240,6 @@ private struct DeskDraft: View {
                     .accessibilityIdentifier("desk-assumption-answer-\(i)")
             }
         }
-        .padding(LoamTheme.space3)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("desk-assumption-\(i)")
     }
@@ -233,81 +288,114 @@ private struct DraftSteps: View {
     }
 }
 
-/// The checks of the draft: a name and a shell command each. Edit turns the rows into fields.
+/// The checks of the draft, numbered: a name and a shell command each. Edit on a check turns it into fields.
 private struct DeskChecks: View {
     let model: AppModel
     let run: Run
     let field: FocusState<DeskField?>.Binding
-    @State private var editing = false
+    @State private var editing: Int?
 
     var body: some View {
         let checks = model.desk.currentEdit.checks ?? run.doneWhen
-        VStack(alignment: .leading, spacing: 6) {
-            if editing {
-                ForEach(checks.indices, id: \.self) { i in
-                    HStack(spacing: 6) {
-                        TextField("Name", text: binding(i, \.name))
-                            .textFieldStyle(.plain).loamText(LoamTheme.bodyStyle)
-                            .padding(.horizontal, 8).frame(width: 120, height: 26).loamFieldBox()
-                            .focused(field, equals: .check)
-                            .accessibilityIdentifier("desk-check-name-\(i)")
-                        TextField("Command, such as go test ./...", text: binding(i, \.command))
-                            .textFieldStyle(.plain).loamText(LoamTheme.codeStyle)
-                            .padding(.horizontal, 8).frame(height: 26).loamFieldBox()
-                            .focused(field, equals: .check)
-                            .accessibilityIdentifier("desk-check-command-\(i)")
-                        Button { model.editDeskChecks(checks.enumerated().filter { $0.offset != i }.map(\.element)) } label: {
-                            Image(systemName: "minus.circle").foregroundStyle(LoamColor.inkMuted)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Remove the check")
-                    }
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: LoamTheme.space2) {
+                Text("Done when").deskHeading()
+                Text(caption(checks.count)).loamText(LoamTheme.captionStyle, LoamColor.inkFaint)
+                if model.desk.currentEdit.checks != nil { Text("Edited").loamText(LoamTheme.captionStyle, LoamColor.inkMuted) }
+                Spacer()
+                Button("Add a check") {
+                    model.editDeskChecks(checks + [RunCheck(name: "", command: "")])
+                    editing = checks.count
                 }
-                HStack(spacing: LoamTheme.space3) {
-                    Button("Add a check") { model.editDeskChecks(checks + [RunCheck(name: "", command: "")]) }
-                        .buttonStyle(.plain).loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
-                    Button("Done") {
-                        // A check needs a command. A check with no name takes its command as its name, as at Intake.
-                        model.editDeskChecks(checks.compactMap { check in
-                            let command = check.command.trimmingCharacters(in: .whitespaces)
-                            guard !command.isEmpty else { return nil }
-                            let name = check.name.trimmingCharacters(in: .whitespaces)
-                            return RunCheck(name: name.isEmpty ? command : name, command: command)
-                        })
-                        editing = false
-                        field.wrappedValue = nil
-                    }
-                    .loamSecondaryButton()
-                    .accessibilityIdentifier("desk-checks-done")
-                }
-            } else {
-                ForEach(Array(checks.enumerated()), id: \.offset) { _, check in
-                    HStack(alignment: .firstTextBaseline, spacing: LoamTheme.space3) {
-                        Text(check.name).loamText(LoamTheme.bodyStyle).frame(width: 140, alignment: .leading).lineLimit(1)
-                        Text(check.command).loamText(LoamTheme.codeStyle, LoamColor.inkMuted).textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
-                if !model.desk.rules.isEmpty {
-                    let count = model.desk.rules.count
-                    Text("+ \(count) rule \(count == 1 ? "check" : "checks")")
-                        .loamText(LoamTheme.bodyStyle, LoamColor.inkMuted)
-                        .help(model.desk.rules.map { "Rule: \($0.name)" }.joined(separator: "\n"))
-                        .accessibilityIdentifier("desk-rule-checks")
-                }
-                HStack(alignment: .firstTextBaseline, spacing: LoamTheme.space3) {
-                    Text("And the work is committed").loamText(LoamTheme.bodyStyle, LoamColor.inkMuted)
-                    Spacer()
-                    Button("Edit") { editing = true }
-                        .loamSecondaryButton()
-                        .accessibilityIdentifier("desk-checks-edit")
-                }
+                .buttonStyle(.plain).loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+                .accessibilityIdentifier("desk-checks-add")
+            }
+            .padding(.bottom, 2)
+            ForEach(checks.indices, id: \.self) { i in
+                if editing == i { editor(i, checks) } else { row(i, checks[i]) }
             }
         }
-        .padding(LoamTheme.space3)
-        .loamCard()
-        .onChange(of: run.id) { editing = false }
+        .onChange(of: run.id) { editing = nil }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("desk-checks")
+    }
+
+    private func caption(_ count: Int) -> String {
+        "\(count == 1 ? "1 check" : "\(count) checks") \u{00B7} and the work is committed"
+    }
+
+    private func row(_ i: Int, _ check: RunCheck) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            number(i)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(check.name).loamText(LoamTheme.bodyStyle)
+                Text(check.command).loamText(LoamTheme.codeStyle, LoamColor.inkMuted).textSelection(.enabled)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Button { editing = i } label: {
+                Text("Edit").underline().loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+            }
+            .buttonStyle(.plain)
+            .padding(.top, LoamTheme.space2)
+            .accessibilityIdentifier("desk-check-edit-\(i)")
+        }
+        .padding(.vertical, 9)
+        .overlay(alignment: .bottom) { Rectangle().fill(LoamColor.inkHairline).frame(height: 1) }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("desk-check-\(i)")
+    }
+
+    private func number(_ i: Int) -> some View {
+        Text("\(i + 1)").font(.system(size: 11)).foregroundStyle(LoamColor.inkMuted)
+            .frame(width: 20, height: 20)
+            .background(LoamColor.inkFill, in: Circle())
+            .overlay(Circle().strokeBorder(LoamColor.rule))
+            .padding(.top, 1)
+    }
+
+    private func editor(_ i: Int, _ checks: [RunCheck]) -> some View {
+        HStack(spacing: 6) {
+            number(i)
+            TextField("Name", text: binding(i, \.name))
+                .textFieldStyle(.plain).loamText(LoamTheme.bodyStyle)
+                .padding(.horizontal, 8).frame(width: 180, height: 26).loamFieldBox()
+                .focused(field, equals: .check)
+                .accessibilityIdentifier("desk-check-name-\(i)")
+            TextField("Command, such as go test ./...", text: binding(i, \.command))
+                .textFieldStyle(.plain).loamText(LoamTheme.codeStyle)
+                .padding(.horizontal, 8).frame(height: 26).loamFieldBox()
+                .focused(field, equals: .check)
+                .onSubmit { done() }
+                .accessibilityIdentifier("desk-check-command-\(i)")
+            Button { remove(i, checks) } label: {
+                Image(systemName: "minus.circle").foregroundStyle(LoamColor.inkMuted)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Remove the check")
+            Button("Done") { done() }
+                .loamSecondaryButton()
+                .accessibilityIdentifier("desk-checks-done")
+        }
+        .padding(.vertical, 6)
+    }
+
+    private func remove(_ i: Int, _ checks: [RunCheck]) {
+        model.editDeskChecks(checks.enumerated().filter { $0.offset != i }.map(\.element))
+        editing = nil
+        field.wrappedValue = nil
+    }
+
+    /// A check needs a command. A check with no name takes its command as its name, as at Intake.
+    private func done() {
+        let checks = model.desk.currentEdit.checks ?? run.doneWhen
+        model.editDeskChecks(checks.compactMap { check in
+            let command = check.command.trimmingCharacters(in: .whitespaces)
+            guard !command.isEmpty else { return nil }
+            let name = check.name.trimmingCharacters(in: .whitespaces)
+            return RunCheck(name: name.isEmpty ? command : name, command: command)
+        })
+        editing = nil
+        field.wrappedValue = nil
     }
 
     private func binding(_ i: Int, _ key: WritableKeyPath<RunCheck, String>) -> Binding<String> {
@@ -325,25 +413,69 @@ private struct DeskChecks: View {
     }
 }
 
-/// What happens when you approve: where the run works, its limits, and how it ends.
+/// What happens when you approve: the worktree and branch of the run, when it starts, its limits, the Linear
+/// update, the setup command of the repo, and the gate.
 private struct DeskIfYouApprove: View {
     let model: AppModel
     let run: Run
 
     var body: some View {
+        let name = model.deskWorktreeName(run)
+        let checks = model.desk.currentEdit.checks ?? run.doneWhen
         ScrollView {
-            VStack(alignment: .leading, spacing: LoamTheme.space3) {
-                Text("If you approve").loamLabel()
-                row("Worktree", "A new worktree and branch from \(base)")
-                row("Tries", "Up to \(run.maxTries)")
-                if let model = run.shape?.model, !model.isEmpty { row("Model", model) }
-                if let source = run.source, source.kind == "linear" {
-                    row("Linear", "\(source.key) moves to In Progress")
+            VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: LoamTheme.space2) {
+                    Text("If you approve").deskHeading()
+                    Grid(alignment: .topLeading, horizontalSpacing: 10, verticalSpacing: 9) {
+                        row("Worktree", Text(name).loamText(LoamTheme.codeStyle))
+                        row("Branch", VStack(alignment: .leading, spacing: 2) {
+                            Text(name).loamText(LoamTheme.codeStyle)
+                            Text("From \(base)").loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+                        })
+                        if let limits = model.desk.limits {
+                            row("Starts", text(DeskContent.starts(limits: limits, runs: model.runs.filter { $0.id != run.id })))
+                        }
+                        row("Limits", text(DeskContent.limits(model.desk.limits, maxTries: run.maxTries)))
+                        if let shapeModel = run.shape?.model, !shapeModel.isEmpty { row("Model", text(shapeModel)) }
+                        if let source = run.source, source.kind == "linear", model.desk.linearUpdates?.inProgress == true {
+                            row("Linear", text("\(source.key) moves to In Progress when the run starts"))
+                        }
+                    }
                 }
-                row("Setup", "The setup command of the repo runs first, if it has one")
-                row("Ships when", "The checks pass and the work is committed. Loam then pushes the branch and opens the PR.")
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("desk-approve-rows")
+                if let setup = model.desk.setup {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Setup in the worktree").deskHeading()
+                        Text(setup).loamText(LoamTheme.codeStyle, LoamColor.inkMuted).textSelection(.enabled)
+                            .padding(.horizontal, 10).padding(.vertical, LoamTheme.space2)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(LoamColor.inkFill, in: RoundedRectangle(cornerRadius: 8))
+                            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(LoamColor.inkHairline))
+                        Text("You approve it now, because nobody will be there to approve it later. Loam asks again if the command changes.")
+                            .loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("desk-setup")
+                }
+                VStack(alignment: .leading, spacing: LoamTheme.space2) {
+                    Text("The gate").deskHeading()
+                    DeskWrap(spacing: 6) {
+                        ForEach(Array(checks.enumerated()), id: \.offset) { _, check in chip(check.command) }
+                        if !model.desk.rules.isEmpty {
+                            let count = model.desk.rules.count
+                            chip("+ \(count) rule \(count == 1 ? "check" : "checks")")
+                                .help(model.desk.rules.map { "Rule: \($0.name)" }.joined(separator: "\n"))
+                                .accessibilityIdentifier("desk-rule-checks")
+                        }
+                    }
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("desk-gate")
             }
-            .padding(LoamTheme.space4)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 22)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("desk-if-you-approve")
@@ -354,15 +486,71 @@ private struct DeskIfYouApprove: View {
         return base.isEmpty ? "the default branch" : base
     }
 
-    private func row(_ title: String, _ text: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title).loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
-            Text(text).loamText(LoamTheme.bodyStyle).fixedSize(horizontal: false, vertical: true)
+    private func text(_ text: String) -> some View {
+        Text(text).font(.system(size: 12)).foregroundStyle(LoamColor.ink).fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func row(_ title: String, _ value: some View) -> some View {
+        GridRow {
+            Text(title).font(.system(size: 12)).foregroundStyle(LoamColor.inkMuted).frame(width: 76, alignment: .leading)
+            value.frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private func chip(_ text: String) -> some View {
+        let code = LoamTheme.font(LoamTheme.codeStyle)
+        return Text(text).font(Font(NSFont(descriptor: code.fontDescriptor, size: 10.5) ?? code))
+            .foregroundStyle(LoamColor.inkMuted)
+            .lineLimit(1)
+            .padding(.horizontal, 6).frame(height: 18)
+            .background(LoamColor.inkFill, in: RoundedRectangle(cornerRadius: 4))
+            .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(LoamColor.inkHairline))
     }
 }
 
-/// Approve and next, Ask Claude to change it, and Not now. Ask opens a field for your change.
+/// A row of views that wraps to the next line when the width runs out, aligned to the leading edge.
+private struct DeskWrap: Layout {
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let lines = arrange(subviews, width: proposal.width ?? .infinity)
+        let width = lines.map(\.width).max() ?? 0
+        let height = lines.reduce(0) { $0 + $1.height } + spacing * CGFloat(max(lines.count - 1, 0))
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for line in arrange(subviews, width: bounds.width) {
+            var x = bounds.minX
+            for index in line.indices {
+                let size = subviews[index].sizeThatFits(.unspecified)
+                subviews[index].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+                x += size.width + spacing
+            }
+            y += line.height + spacing
+        }
+    }
+
+    private struct Line { var indices: [Int] = []; var width: CGFloat = 0; var height: CGFloat = 0 }
+
+    private func arrange(_ subviews: Subviews, width: CGFloat) -> [Line] {
+        var lines = [Line()]
+        for index in subviews.indices {
+            let size = subviews[index].sizeThatFits(.unspecified)
+            let last = lines.count - 1
+            if !lines[last].indices.isEmpty, lines[last].width + spacing + size.width > width { lines.append(Line()) }
+            let line = lines.count - 1
+            lines[line].width = lines[line].indices.isEmpty ? size.width : lines[line].width + spacing + size.width
+            lines[line].height = max(lines[line].height, size.height)
+            lines[line].indices.append(index)
+        }
+        return lines
+    }
+}
+
+/// Approve and next, Ask Claude to change it, and Not now, with the keys that move through the desk. Ask opens a
+/// field for your change.
 private struct DeskShapeActions: View {
     let model: AppModel
     let run: Run
@@ -399,26 +587,30 @@ private struct DeskShapeActions: View {
                         .accessibilityIdentifier("desk-change-send")
                     Button("Cancel") { cancelAsk() }.loamSecondaryButton()
                 }
+                .padding(.top, LoamTheme.space3)
             }
-            HStack(spacing: LoamTheme.space3) {
-                Button(model.desk.needsSetupApproval ? "Approve the setup and start" : "Approve and next") {
-                    Task { await model.approveDeskRun() }
+            HStack(spacing: 10) {
+                Button { Task { await model.approveDeskRun() } } label: {
+                    DeskKeyLabel(title: model.desk.needsSetupApproval ? "Approve the setup and start" : "Approve and next",
+                                 key: "A", primary: true)
                 }
                 .loamPrimaryButton()
                 .deskKey("a", typing: typing)
                 .disabled(!drafted || drafting || model.desk.busy)
                 .help("Start the run with the draft and your edits (A)")
                 .accessibilityIdentifier("desk-approve")
-                Button(drafted ? "Ask Claude to change it" : "Ask Claude again") {
+                Button {
                     change = ""
                     asking = true
+                } label: {
+                    DeskKeyLabel(title: drafted ? "Ask Claude to change it" : "Ask Claude again", key: "C")
                 }
                 .loamSecondaryButton()
                 .deskKey("c", typing: typing)
                 .disabled(drafting || asking)
                 .help("Claude drafts the run again with your change (C)")
                 .accessibilityIdentifier("desk-ask")
-                Button("Not now") { Task { await model.notNowDeskRun() } }
+                Button { Task { await model.notNowDeskRun() } } label: { DeskKeyLabel(title: "Not now", key: "N") }
                     .loamSecondaryButton()
                     .deskKey("n", typing: typing)
                     .disabled(drafting || model.desk.busy)
@@ -428,15 +620,14 @@ private struct DeskShapeActions: View {
                 if let error = model.desk.error {
                     Text(error).loamText(LoamTheme.captionStyle, LoamColor.rust).lineLimit(2).textSelection(.enabled)
                         .accessibilityIdentifier("desk-error")
-                } else {
-                    Text("Nothing starts until you approve. J and K move through the desk.")
-                        .loamText(LoamTheme.captionStyle, LoamColor.inkMuted).lineLimit(2)
                 }
                 Spacer()
+                DeskNavHints(model: model, typing: typing)
             }
+            .frame(height: 64)
         }
-        .padding(.horizontal, LoamTheme.space6)
-        .padding(.vertical, LoamTheme.space3)
+        .controlSize(.large)
+        .padding(.horizontal, 20)
         .onChange(of: run.id) { cancelAsk() }
     }
 
