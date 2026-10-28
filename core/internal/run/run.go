@@ -90,7 +90,8 @@ type StartResult struct {
 // trusts it, runs the setup command, records the run, and starts its
 // background session. A check that fails records nothing. When no slot is
 // free, or the week's usage is at the hold, the run waits in Queued, and a
-// tick starts it later. When claude --bg fails, the run is Stopped, with its
+// tick starts it later. A usage that is stale is probed first (see
+// [usageForHold]). When claude --bg fails, the run is Stopped, with its
 // output as the note.
 func Start(ctx context.Context, s *store.Store, o StartOptions) (*StartResult, error) {
 	plot, err := s.GetPlot(o.PlotID)
@@ -123,6 +124,7 @@ func Start(ctx context.Context, s *store.Store, o StartOptions) (*StartResult, e
 	if err != nil {
 		return nil, err
 	}
+	usageForHold(ctx, s)
 	slotted, err := s.TakeSlot(r.ID, &store.RunQueue{Model: o.Model, Effort: o.Effort}, noChange)
 	if err != nil {
 		return nil, stopAfter(s, r.ID, err)

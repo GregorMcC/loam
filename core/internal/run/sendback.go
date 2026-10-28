@@ -59,9 +59,10 @@ type RuleOffer struct {
 // SendBack resumes the session of a run that waits for you, Ready to land or
 // Stopped, with your notes. The run goes back to Running, and then round the
 // gate and Ship again. When no slot is free, the run waits in Queued with
-// the notes, and a tick sends them. A note is not a failure, so it uses no
-// try. A run that has used all its tries gets one more, up to the limit of
-// tries. Each note is a note event of the run.
+// the notes, and a tick sends them. A usage that is stale is probed first
+// (see [usageForHold]). A note is not a failure, so it uses no try. A run
+// that has used all its tries gets one more, up to the limit of tries. Each
+// note is a note event of the run.
 // When a note is like one that you sent back on another run of the plot, and
 // no rule came from such a note, the offer says so.
 func SendBack(ctx context.Context, s *store.Store, id string, notes []Note) (store.Run, *RuleOffer, error) {
@@ -89,6 +90,7 @@ func sendBack(ctx context.Context, s *store.Store, id string, notes []Note) (sto
 	from, sent := r.State, false
 	note := "Sent back with " + count(len(notes), "note")
 	prompt := notesPrompt(r, notes)
+	usageForHold(ctx, s)
 	r, err = s.TakeSlot(id, &store.RunQueue{Resume: prompt}, func(r *store.Run) error {
 		if r.State != from {
 			return nil

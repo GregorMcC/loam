@@ -117,6 +117,16 @@ func usageStale(u store.Usage, now time.Time) bool {
 	return u.ReadAt == nil || now.Sub(*u.ReadAt) > UsageMaxAge
 }
 
+// usageForHold probes the usage before a run of yours takes a slot, when the
+// hold is on and the usage is stale, as [probeStale] decides. Loam tries at
+// most one probe in [UsageMaxAge], so an action of yours costs at most one.
+// A probe that fails leaves the stored usage, and the hold decides from it.
+func usageForHold(ctx context.Context, s *store.Store) {
+	if l, err := s.GetRunLimits(); err == nil && l.HoldAt > 0 {
+		probeStale(ctx, s)
+	}
+}
+
 // probeStale probes the usage when Loam read it more than [UsageMaxAge] ago,
 // and no probe was tried in that time. It returns a warning when it cannot
 // read the usage.

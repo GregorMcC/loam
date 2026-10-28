@@ -183,7 +183,8 @@ type ApproveOptions struct {
 
 // Approve starts a Shaping run with your edits to its draft: it makes the
 // worktree and starts the session, as [Start] does. When no slot is free,
-// the run waits in Queued, as for [Start].
+// the run waits in Queued, and a usage that is stale is probed first, as
+// for [Start].
 func Approve(ctx context.Context, s *store.Store, id string, o ApproveOptions) (*StartResult, error) {
 	r, err := s.GetRun(id)
 	if err != nil {
@@ -215,6 +216,7 @@ func Approve(ctx context.Context, s *store.Store, id string, o ApproveOptions) (
 	if err != nil {
 		return nil, err
 	}
+	usageForHold(ctx, s)
 	r, err = s.TakeSlot(r.ID, &store.RunQueue{Model: so.Model, Effort: so.Effort}, func(r *store.Run) error {
 		if r.State != store.RunShaping {
 			return fmt.Errorf("run %s is %s now: %w", r.ID, r.State, store.ErrInvalid)

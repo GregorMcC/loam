@@ -76,9 +76,13 @@ func shapeRuns(t *testing.T, args ...string) shapeOut {
 	return got
 }
 
+// printCalls returns the claude -p calls, besides the usage probes (see
+// [usageProbes]): a run start probes a usage that Loam never read.
 func printCalls(t *testing.T) [][]string {
 	t.Helper()
-	return slices.DeleteFunc(testutil.FakeClaudeCalls(t), func(c []string) bool { return !slices.Contains(c, "-p") })
+	return slices.DeleteFunc(testutil.FakeClaudeCalls(t), func(c []string) bool {
+		return !slices.Contains(c, "-p") || slices.Contains(c, "Reply with ok")
+	})
 }
 
 func TestRunShapeSplitMakesALinkedRunInEachRepo(t *testing.T) {

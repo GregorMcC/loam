@@ -127,19 +127,35 @@ func TestRunStopCancelsAQueuedRunWithNoSession(t *testing.T) {
 	}
 }
 
+// usageProbes counts the usage probes that Loam made.
+func usageProbes(t *testing.T) int {
+	t.Helper()
+	n := 0
+	for _, c := range testutil.FakeClaudeCalls(t) {
+		if slices.Contains(c, "-p") && slices.Contains(c, "Reply with ok") {
+			n++
+		}
+	}
+	return n
+}
+
 func TestRunStartIsHeldByTheWeeksUsageUntilAProbeSaysOtherwise(t *testing.T) {
 	s, _ := runCLI(t)
-	// Loam read the usage an hour ago: 82% of the week.
-	read := time.Now().Add(-time.Hour)
-	if _, err := s.RecordUsage(store.Usage{SevenDay: &store.UsageWindow{Utilization: 0.82, ResetsAt: read.Add(48 * time.Hour)}}, read); err != nil {
+	// Loam read the usage just now: 82% of the week.
+	now := time.Now()
+	if _, err := s.RecordUsage(store.Usage{SevenDay: &store.UsageWindow{Utilization: 0.82, ResetsAt: now.Add(48 * time.Hour)}}, now); err != nil {
 		t.Fatal(err)
 	}
 	r := startRun(t, "Say hi")
-	if r.State != store.RunQueued || r.Note != "Held: the week's usage is at 82%, over the 80% limit" {
-		t.Fatalf("%+v", r)
+	if r.State != store.RunQueued || r.Note != "Held: the week's usage is at 82%, over the 80% limit" || usageProbes(t) != 0 {
+		t.Fatalf("%d probes, %+v", usageProbes(t), r)
 	}
-	// The usage is older than 30 minutes, so the tick probes it. Claude Code
-	// says 41%, and the run starts.
+	// An hour later, the usage is older than 30 minutes, so the tick probes
+	// it. Claude Code says 41%, and the run starts.
+	read := now.Add(-time.Hour)
+	if _, err := s.RecordUsage(store.Usage{}, read); err != nil {
+		t.Fatal(err)
+	}
 	testutil.FakeClaudePrint(t, `{"type":"rate_limit_event","rate_limit_info":{"unifiedWindows":{"seven_day":{"utilization":0.41,"resetsAt":`+
 		jsonInt(read.Add(48*time.Hour).Unix())+`}}}}
 {"type":"result","subtype":"success","is_error":false,"result":"ok"}
@@ -163,16 +179,57 @@ func TestRunStartIsHeldByTheWeeksUsageUntilAProbeSaysOtherwise(t *testing.T) {
 	}
 }
 
+// A run that you start probes a usage older than 30 minutes before it takes
+// a slot, so it does not wait on a reading from hours ago.
+func TestRunStartProbesAStaleUsageFirst(t *testing.T) {
+	s, _ := runCLI(t)
+	read := time.Now().Add(-3 * time.Hour)
+	if _, err := s.RecordUsage(store.Usage{SevenDay: &store.UsageWindow{Utilization: 0.82, ResetsAt: read.Add(48 * time.Hour)}}, read); err != nil {
+		t.Fatal(err)
+	}
+	testutil.FakeClaudePrint(t, `{"type":"rate_limit_event","rate_limit_info":{"unifiedWindows":{"seven_day":{"utilization":0.41,"resetsAt":`+
+		jsonInt(read.Add(48*time.Hour).Unix())+`}}}}
+{"type":"result","subtype":"success","is_error":false,"result":"ok"}
+`)
+	if r := startRun(t, "Say hi"); r.State != store.RunRunning || usageProbes(t) != 1 {
+		t.Fatalf("%d probes, %+v", usageProbes(t), r)
+	}
+	if u, _ := s.GetUsage(); u.SevenDay.Utilization != 0.41 {
+		t.Fatalf("usage %+v", u)
+	}
+}
+
+// A probe that fails leaves the stored usage, and the run is held by it. The
+// next action and the next tick do not probe again within 30 minutes.
+func TestRunStartWithAFailedProbeUsesTheStoredUsage(t *testing.T) {
+	s, _ := runCLI(t)
+	read := time.Now().Add(-3 * time.Hour)
+	if _, err := s.RecordUsage(store.Usage{SevenDay: &store.UsageWindow{Utilization: 0.82, ResetsAt: read.Add(48 * time.Hour)}}, read); err != nil {
+		t.Fatal(err)
+	}
+	testutil.FakeClaudePrint(t, `{"type":"result","subtype":"success","is_error":false,"result":"ok"}`)
+	r := startRun(t, "Say hi")
+	if r.State != store.RunQueued || r.Note != "Held: the week's usage is at 82%, over the 80% limit" || usageProbes(t) != 1 {
+		t.Fatalf("%d probes, %+v", usageProbes(t), r)
+	}
+	if r := startRun(t, "Say bye"); r.State != store.RunQueued || usageProbes(t) != 1 {
+		t.Fatalf("%d probes, %+v", usageProbes(t), r)
+	}
+	if got := tick(t); len(got.Warnings) != 0 || usageProbes(t) != 1 {
+		t.Fatalf("%d probes, %+v", usageProbes(t), got)
+	}
+}
+
 // A probe that fails does not run again on the next tick: Loam waits 30
 // minutes after each probe that it tries.
 func TestRunTickTriesOneUsageProbeIn30Minutes(t *testing.T) {
 	s, _ := runCLI(t)
 	setLimits(t, "--at-a-time", "1")
-	first := startRun(t, "Say hi")
-	read := time.Now().Add(-time.Hour)
-	if _, err := s.RecordUsage(store.Usage{SevenDay: &store.UsageWindow{Utilization: 0.82, ResetsAt: read.Add(48 * time.Hour)}}, read); err != nil {
+	now := time.Now()
+	if _, err := s.RecordUsage(store.Usage{SevenDay: &store.UsageWindow{Utilization: 0.5, ResetsAt: now.Add(48 * time.Hour)}}, now); err != nil {
 		t.Fatal(err)
 	}
+	first := startRun(t, "Say hi")
 	queued := startRun(t, "Say bye")
 	if queued.State != store.RunQueued {
 		t.Fatalf("%+v", queued)
@@ -180,15 +237,12 @@ func TestRunTickTriesOneUsageProbeIn30Minutes(t *testing.T) {
 	if _, _, err := lrRun(t, "", "run", "stop", first.ID); err != nil {
 		t.Fatal(err)
 	}
-	probes := func() int {
-		n := 0
-		for _, c := range printCalls(t) {
-			if slices.Contains(c, "Reply with ok") {
-				n++
-			}
-		}
-		return n
+	// An hour later, the usage is 82%, and older than 30 minutes.
+	read := now.Add(-time.Hour)
+	if _, err := s.RecordUsage(store.Usage{SevenDay: &store.UsageWindow{Utilization: 0.82, ResetsAt: now.Add(48 * time.Hour)}}, read); err != nil {
+		t.Fatal(err)
 	}
+	probes := func() int { return usageProbes(t) }
 	before := probes()
 	// Claude Code reports no usage, so the probe fails.
 	testutil.FakeClaudePrint(t, `{"type":"result","subtype":"success","is_error":false,"result":"ok"}`)
