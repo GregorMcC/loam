@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="440" viewBox="0 0 1200 440" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" role="img" aria-labelledby="line-title line-desc">
+  <title id="line-title">The line: Intake, Shape, Run, Ship, Land</title>
+  <desc id="line-desc">A run moves through five stations from left to right. You decide at Shape and at Land. At Run, a failed check goes back to the session as its next try. At Ship, a CI failure sends the run back to Run.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#c99a62"/>
+    </marker>
+    <style>
+      text { white-space: pre; }
+      .mono { font-family: 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; }
+      .t { fill: #e6e3dc; }
+      .dim { fill: #a39d92; }
+      .faint { fill: #7a746b; }
+      .loam { fill: #d8a86c; }
+      .amber { fill: #f1b04c; }
+      .green { fill: #9ccc86; }
+      .h { font-weight: 600; }
+      .card { fill: #24211d; stroke: #3d372f; }
+      .decide { fill: #3b2c14; stroke: #f1b04c; }
+      .pill { fill: #2c2823; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="440" rx="24" fill="#191714"/>
+
+  <!-- You decide marks, above Shape and Land -->
+  <rect x="310" y="94" width="120" height="26" rx="13" class="decide"/>
+  <text x="370" y="111.5" text-anchor="middle" font-size="12" class="amber h">You decide</text>
+  <rect x="1000" y="94" width="120" height="26" rx="13" class="decide"/>
+  <text x="1060" y="111.5" text-anchor="middle" font-size="12" class="amber h">You decide</text>
+
+  <!-- the gate loop, above Run -->
+  <path d="M650 130 C 650 66, 550 66, 550 124" fill="none" stroke="#c99a62" stroke-width="2" stroke-dasharray="6 6" marker-end="url(#arrow)"/>
+  <rect x="490" y="34" width="220" height="28" rx="14" class="pill"/>
+  <text x="600" y="53" text-anchor="middle" font-size="12" class="t">Checks fail → next try</text>
+
+  <!-- stations -->
+  <rect x="40" y="136" width="200" height="190" rx="14" class="card" stroke-width="1"/>
+  <text x="60" y="164" font-size="11" class="faint mono" letter-spacing="1.2">1</text>
+  <text x="60" y="190" font-size="18" class="t h">Intake</text>
+  <g font-size="12.5" class="dim">
+    <text x="60" y="218">Open GitHub and Linear</text>
+    <text x="60" y="236">issues, and map tickets.</text>
+    <text x="60" y="260">You pick a feature to</text>
+    <text x="60" y="278">shape or a chore to run.</text>
+  </g>
+  <text x="60" y="308" font-size="11.5" class="faint mono">Open issues</text>
+
+  <rect x="270" y="136" width="200" height="190" rx="14" class="card" stroke-width="1"/>
+  <text x="290" y="164" font-size="11" class="faint mono" letter-spacing="1.2">2</text>
+  <text x="290" y="190" font-size="18" class="t h">Shape</text>
+  <g font-size="12.5" class="dim">
+    <text x="290" y="218">Claude drafts the goal,</text>
+    <text x="290" y="236">a plan, and the Done</text>
+    <text x="290" y="254">when checks.</text>
+    <text x="290" y="278">You approve or change it.</text>
+  </g>
+  <text x="290" y="308" font-size="11.5" class="amber mono">Shaping</text>
+
+  <rect x="500" y="136" width="200" height="190" rx="14" class="card" stroke-width="1"/>
+  <text x="520" y="164" font-size="11" class="faint mono" letter-spacing="1.2">3</text>
+  <text x="520" y="190" font-size="18" class="t h">Run</text>
+  <g font-size="12.5" class="dim">
+    <text x="520" y="218">A background session</text>
+    <text x="520" y="236">works in its worktree.</text>
+    <text x="520" y="260">The gate runs your</text>
+    <text x="520" y="278">checks at each stop.</text>
+  </g>
+  <text x="520" y="308" font-size="11.5" class="loam mono">Running</text>
+
+  <rect x="730" y="136" width="200" height="190" rx="14" class="card" stroke-width="1"/>
+  <text x="750" y="164" font-size="11" class="faint mono" letter-spacing="1.2">4</text>
+  <text x="750" y="190" font-size="18" class="t h">Ship</text>
+  <g font-size="12.5" class="dim">
+    <text x="750" y="218">Loam pushes the branch,</text>
+    <text x="750" y="236">opens the PR, and</text>
+    <text x="750" y="254">reads CI. Claude writes</text>
+    <text x="750" y="272">the ship notes.</text>
+  </g>
+  <text x="750" y="308" font-size="11.5" class="loam mono">Shipping</text>
+
+  <rect x="960" y="136" width="200" height="190" rx="14" class="card" stroke-width="1"/>
+  <text x="980" y="164" font-size="11" class="faint mono" letter-spacing="1.2">5</text>
+  <text x="980" y="190" font-size="18" class="t h">Land</text>
+  <g font-size="12.5" class="dim">
+    <text x="980" y="218">Read the walkthrough,</text>
+    <text x="980" y="236">the diff, and the risk.</text>
+    <text x="980" y="260">Send it back with notes,</text>
+    <text x="980" y="278">or merge it.</text>
+  </g>
+  <text x="980" y="308" font-size="11.5" class="green mono">Ready</text>
+
+  <!-- arrows between stations -->
+  <line x1="243" y1="231" x2="266" y2="231" stroke="#c99a62" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <line x1="473" y1="231" x2="496" y2="231" stroke="#c99a62" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <line x1="703" y1="231" x2="726" y2="231" stroke="#c99a62" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <line x1="933" y1="231" x2="956" y2="231" stroke="#c99a62" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+  <!-- the CI loop, below Ship and Run -->
+  <path d="M830 332 C 830 404, 600 404, 600 338" fill="none" stroke="#c99a62" stroke-width="2" stroke-dasharray="6 6" marker-end="url(#arrow)"/>
+  <rect x="605" y="372" width="220" height="28" rx="14" class="pill"/>
+  <text x="715" y="391" text-anchor="middle" font-size="12" class="t">CI fails → back to Run</text>
+</svg>
