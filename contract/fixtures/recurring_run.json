@@ -13,6 +13,7 @@
       "sat"
     ],
     "done_when": [],
+    "effort": "",
     "id": "recuaaaaac",
     "if_asleep": "skip",
     "kind": "shape",
@@ -53,6 +54,7 @@
       "base": "",
       "brief": "Shape a run for each new bug.",
       "drafted_at": "2026-01-01T00:00:00Z",
+      "effort": "",
       "link": "",
       "model": "",
       "plan": [

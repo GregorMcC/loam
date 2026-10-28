@@ -546,7 +546,7 @@ The gate is the Stop hook of the session. Each time the session ends a turn, Loa
 
 | Command | Output |
 | :- | :- |
-| `loam run start <plot> --title <text> [--goal <text>] [--check <name>=<command>]... [--worktree <name>] [--repo <repo>] [--base <branch>] [--link <link-id or URL> \| --ticket <file>] [--max-tries <n>] [--model <model>] [--approve-setup]` | `{ "run": {...}, "worktree": {...} }` |
+| `loam run start <plot> --title <text> [--goal <text>] [--check <name>=<command>]... [--worktree <name>] [--repo <repo>] [--base <branch>] [--link <link-id or URL> \| --ticket <file>] [--max-tries <n>] [--model <model>] [--effort <level>] [--approve-setup]` | `{ "run": {...}, "worktree": {...} }` |
 | `loam run list [<plot>]` | An array of runs, newest first. It is `[]` when none exists. |
 | `loam run status <run>` | `{ "run": {...}, "events": [{ "id": 1, "run_id": "...", "at": "...", "kind": "state", "detail": "running" }] }`. `kind` is `state`, `try`, `check`, `linear`, `ship`, `ci`, `review`, `note`, `land`, `shape`, or `draft`. |
 | `loam run stop <run>` | `{ "run": {...} }`. The run is `cancelled`. A run that has ended stays as it is. |
@@ -590,7 +590,7 @@ A tick also watches the PR of each run that is `ready` and has a `pr`. A merge o
 
 | Command | Output |
 | :- | :- |
-| `loam run shape <plot> --title <text> [--repo <repo>] [--base <branch>] [--link <link> \| --ticket <file>] [--max-tries <n>] [--model <model>]` | `{ "run": { ..., "state": "shaping", "shape": { "assumptions": [{ "text": "...", "answer": "" }], "plan": ["..."], "size": "...", "drafted_at": "...", "repo": "repoaaaaag", "base": "", "link": "", "model": "" } } }` |
+| `loam run shape <plot> --title <text> [--repo <repo>] [--base <branch>] [--link <link> \| --ticket <file>] [--max-tries <n>] [--model <model>] [--effort <level>]` | `{ "run": { ..., "state": "shaping", "shape": { "assumptions": [{ "text": "...", "answer": "" }], "plan": ["..."], "size": "...", "drafted_at": "...", "repo": "repoaaaaag", "base": "", "link": "", "model": "", "effort": "" } } }` |
 | `loam run redraft <run> [--change <text>]` | `{ "run": { ... } }` |
 | `loam run approve <run> [--goal <text>] [--check <name>=<command>]... [--no-checks] [--answer <n>=<text>]... [--approve-setup]` | `{ "run": { ... }, "worktree": { ... } }`, as for `run start` |
 
@@ -600,6 +600,24 @@ A tick also watches the PR of each run that is `ready` and has a `pr`. A merge o
 - `run approve` takes a `shaping` run that has a draft. Loam makes the worktree, as `run start` does with the `repo`, `base`, and `link` of the shape, and starts the session. `--goal` and `--check` replace the draft's, and `--no-checks` removes the draft's checks (it exits 2 with `--check`). `--answer` sets the `answer` of an assumption, by number from 1. The session prompt holds the assumptions, with your answer in place of an assumption that you changed, and the plan. A run in another state, a run with no draft, or an answer to no assumption exits 2.
 - `run stop` on a `shaping` run cancels it, with no `claude stop`.
 - The `shape` of a run that a recurring run shaped has a `brief`: the prompt of the recurring run and what its precheck printed. Claude drafts from it, as from the text of an issue.
+
+#### Model, effort, and run defaults
+
+`run start`, `run shape`, and `recurring add` take `--model <model>` and `--effort <level>`. The level is `low`, `medium`, `high`, `xhigh`, or `max`. Loam passes them to Claude Code as `--model` and `--effort`: to the session of the run, and for `run shape` also to `claude -p`, which drafts the run. `run approve` starts the session with the model and effort of the shape. An empty value passes no flag, so Claude Code uses its own setting. A level that is not in the list exits 2, and the message lists the levels.
+
+A plot can have run defaults: a model and an effort. A run, a Shape run, and a recurring run that fires use the default of the plot for the model or the effort that it leaves empty. A flag or a field that is set wins. Loam fills the value when it starts or shapes the run, so a change of the defaults does not change a run that exists. Run defaults are not in the change log. Deleting a plot deletes its run defaults.
+
+```json
+{ "plot_id": "k3v9q2mxa7", "model": "opus", "effort": "high" }
+```
+
+| Command | Output |
+| :- | :- |
+| `loam run defaults <plot> [--model <model>] [--effort <level>]` | `{ "defaults": {...} }` |
+
+- With no flag, the command prints the defaults. A plot that has none prints empty strings for `model` and `effort`.
+- A flag sets that field and leaves the other. An empty value clears the field. The command prints the defaults after the change.
+- An `--effort` that is not a level exits 2.
 
 #### Rules
 
@@ -628,7 +646,7 @@ A recurring run starts on a timetable, such as weekdays at 06:30, when its prech
   "id": "recuaaaaab", "plot_id": "k3v9q2mxa7", "title": "Bump Go dependencies", "prompt": "Bump the Go modules that have updates.",
   "kind": "chore", "days": ["mon", "tue", "wed", "thu", "fri"], "at": "02:00",
   "precheck": "go list -m -u all | grep -q '\\['", "if_asleep": "once", "repo": "",
-  "done_when": [{ "name": "Go tests", "command": "go test ./..." }], "max_tries": 3, "model": "",
+  "done_when": [{ "name": "Go tests", "command": "go test ./..." }], "max_tries": 3, "model": "", "effort": "",
   "next_at": "2026-10-29T02:00:00Z", "last_at": "2026-10-28T02:00:00Z",
   "last_note": "Skipped, because the precheck found no work (exit 1)", "last_run_id": "runraaaaab",
   "created_at": "2026-10-01T09:00:00Z"
@@ -637,7 +655,7 @@ A recurring run starts on a timetable, such as weekdays at 06:30, when its prech
 
 | Command | Output |
 | :- | :- |
-| `loam recurring add <plot> --title <text> --prompt <text> --kind shape\|chore --days <days> --at <HH:MM> [--precheck <command>] [--if-asleep once\|skip] [--repo <repo>] [--check <name>=<command>]... [--max-tries <n>] [--model <model>] [--approve-setup]` | `{ "recurring": {...} }` |
+| `loam recurring add <plot> --title <text> --prompt <text> --kind shape\|chore --days <days> --at <HH:MM> [--precheck <command>] [--if-asleep once\|skip] [--repo <repo>] [--check <name>=<command>]... [--max-tries <n>] [--model <model>] [--effort <level>] [--approve-setup]` | `{ "recurring": {...} }` |
 | `loam recurring list [<plot>]` | `{ "recurring": [...] }`, the next due first |
 | `loam recurring rm <recurring>` | `{ "recurring": {...} }`, the one that it removed. Its runs stay. |
 | `loam recurring run <recurring>` | `{ "recurring": {...}, "run": {...}, "note": "..." }`: it starts the run now, as a tick does. `next_at` stays. |

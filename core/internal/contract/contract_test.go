@@ -784,6 +784,12 @@ func scenario(t *testing.T) *harness {
 	h.run("rule_list", "rule-list", 0, "rule", "list", "Runs")
 	h.run("rule_rm", "rule", 0, "rule", "rm", rule.Rule.ID)
 	h.run("error_rule_add_no_command", "error", 2, "rule", "add", "Runs", "--name", "Short README")
+
+	// Run defaults: the model and effort of the runs of a plot.
+	h.run("run_defaults_get", "run-defaults", 0, "run", "defaults", "Runs")
+	h.run("run_defaults_set", "run-defaults", 0, "run", "defaults", "Runs", "--model", "opus", "--effort", "high")
+	h.run("error_run_defaults_bad_effort", "error", 2, "run", "defaults", "Runs", "--effort", "extreme")
+	h.run("run_defaults_clear", "run-defaults", 0, "run", "defaults", "Runs", "--model", "", "--effort", "")
 	return h
 }
 

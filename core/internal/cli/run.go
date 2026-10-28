@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"os"
@@ -30,7 +31,7 @@ func newRunCmd() *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
-	c.AddCommand(newRunStartCmd(), newRunShapeCmd(), newRunRedraftCmd(), newRunApproveCmd(), newRunListCmd(), newRunStatusCmd(), newRunStopCmd(), newRunDiffCmd(), newRunSendBackCmd(), newRunLandCmd(), newRunTickCmd(), newRunHookCmd())
+	c.AddCommand(newRunStartCmd(), newRunShapeCmd(), newRunRedraftCmd(), newRunApproveCmd(), newRunListCmd(), newRunStatusCmd(), newRunStopCmd(), newRunDiffCmd(), newRunSendBackCmd(), newRunLandCmd(), newRunTickCmd(), newRunHookCmd(), newRunDefaultsCmd())
 	return c
 }
 
@@ -38,7 +39,7 @@ func newRunStartCmd() *cobra.Command {
 	var o run.StartOptions
 	var checks []string
 	c := &cobra.Command{
-		Use:   "start <plot> --title <text> [--goal <text>] [--check <name>=<command>]... [--worktree <name>] [--repo <repo>] [--base <branch>] [--link <link-id or URL> | --ticket <file>] [--max-tries <n>] [--model <model>] [--approve-setup]",
+		Use:   "start <plot> --title <text> [--goal <text>] [--check <name>=<command>]... [--worktree <name>] [--repo <repo>] [--base <branch>] [--link <link-id or URL> | --ticket <file>] [--max-tries <n>] [--model <model>] [--effort <level>] [--approve-setup]",
 		Short: "Start a run in a worktree of a plot",
 		Long: "Start a run. Loam uses the worktree that --worktree names, or makes it. With no --worktree, Loam makes a new worktree with a name from the link key and the title.\n" +
 			"--check adds one Done when check: a name, \"=\", and a shell command that passes when it exits 0 in the worktree. Give it once for each check.\n" +
@@ -91,7 +92,8 @@ func newRunStartCmd() *cobra.Command {
 	f.StringVar(&o.Link, "link", "", "the link that the work starts from: a link ID of the plot, or the URL of an issue")
 	f.StringVar(&o.Ticket, "ticket", "", "the ticket of a wayfinder map that the work starts from: the path of its file, as loam intake list gives it")
 	f.IntVar(&o.MaxTries, "max-tries", store.DefaultMaxTries, "how many times the checks can fail before the run stops")
-	f.StringVar(&o.Model, "model", "", "the Claude model of the session (default: your Claude Code setting)")
+	f.StringVar(&o.Model, "model", "", "the Claude model of the session (default: the run defaults of the plot, then your Claude Code setting)")
+	f.StringVar(&o.Effort, "effort", "", "the effort level of the session: "+strings.Join(store.Efforts, ", ")+" (default: the run defaults of the plot, then your Claude Code setting)")
 	f.BoolVar(&o.ApproveSetup, "approve-setup", false, "approve the setup command of the repo when it is new or changed")
 	c.MarkFlagRequired("title")
 	return c
@@ -100,7 +102,7 @@ func newRunStartCmd() *cobra.Command {
 func newRunShapeCmd() *cobra.Command {
 	var o run.ShapeOptions
 	c := &cobra.Command{
-		Use:   "shape <plot> --title <text> [--repo <repo>] [--base <branch>] [--link <link-id or URL> | --ticket <file>] [--max-tries <n>] [--model <model>]",
+		Use:   "shape <plot> --title <text> [--repo <repo>] [--base <branch>] [--link <link-id or URL> | --ticket <file>] [--max-tries <n>] [--model <model>] [--effort <level>]",
 		Short: "Have Claude draft a run, for you to approve",
 		Long: "Record a run in Shaping and have Claude draft it: the goal, the Done when checks, the assumptions that the issue does not settle, a plan, and a size. " +
 			"Claude reads the repo and the issue in print mode (claude -p) with read-only tools, and changes nothing.\n" +
@@ -132,7 +134,8 @@ func newRunShapeCmd() *cobra.Command {
 	f.StringVar(&o.Link, "link", "", "the link that the work starts from: a link ID of the plot, or the URL of an issue")
 	f.StringVar(&o.Ticket, "ticket", "", "the ticket of a wayfinder map that the work starts from: the path of its file, as loam intake list gives it")
 	f.IntVar(&o.MaxTries, "max-tries", store.DefaultMaxTries, "how many times the checks can fail before the run stops")
-	f.StringVar(&o.Model, "model", "", "the Claude model of the draft and of the session (default: your Claude Code setting)")
+	f.StringVar(&o.Model, "model", "", "the Claude model of the draft and of the session (default: the run defaults of the plot, then your Claude Code setting)")
+	f.StringVar(&o.Effort, "effort", "", "the effort level of the draft and of the session: "+strings.Join(store.Efforts, ", ")+" (default: the run defaults of the plot, then your Claude Code setting)")
 	c.MarkFlagRequired("title")
 	return c
 }
@@ -554,3 +557,50 @@ func printRun(out io.Writer, r store.Run) {
 type exitCode int
 
 func (e exitCode) Error() string { return fmt.Sprintf("exit code %d", int(e)) }
+
+func newRunDefaultsCmd() *cobra.Command {
+	var model, effort string
+	c := &cobra.Command{
+		Use:   "defaults <plot> [--model <model>] [--effort <level>]",
+		Short: "Show or set the model and effort that runs of a plot use",
+		Long: "A run, a Shape run, and a recurring run of the plot use these defaults when they name no model or effort. Empty means your Claude Code setting.\n" +
+			"With no flag, this shows the defaults. A flag sets that default, and an empty value clears it. Run defaults are not in the change log.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := openStore()
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+			p, err := resolvePlot(s, args[0])
+			if err != nil {
+				return err
+			}
+			d, err := s.GetRunDefaults(p.ID)
+			if err != nil {
+				return err
+			}
+			f := cmd.Flags()
+			if f.Changed("model") || f.Changed("effort") {
+				if f.Changed("model") {
+					d.Model = model
+				}
+				if f.Changed("effort") {
+					d.Effort = effort
+				}
+				if d, err = s.SetRunDefaults(d); err != nil {
+					return err
+				}
+			}
+			if JSON(cmd) {
+				return printJSON(cmd, map[string]any{"defaults": d})
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "model: %s\neffort: %s\n", cmp.Or(d.Model, "(Claude Code setting)"), cmp.Or(d.Effort, "(Claude Code setting)"))
+			return nil
+		},
+	}
+	f := c.Flags()
+	f.StringVar(&model, "model", "", "set the default model; empty clears it")
+	f.StringVar(&effort, "effort", "", "set the default effort level ("+strings.Join(store.Efforts, ", ")+"); empty clears it")
+	return c
+}

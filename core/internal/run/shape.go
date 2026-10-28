@@ -64,6 +64,7 @@ type ShapeOptions struct {
 	Ticket   string
 	MaxTries int
 	Model    string
+	Effort   string
 	// Brief is what Claude drafts the run from when it has no issue, such as
 	// the prompt of a recurring run. Source is then the source of the run.
 	Brief  string
@@ -87,6 +88,9 @@ func Shape(ctx context.Context, s *store.Store, o ShapeOptions) (store.Run, erro
 	if title == "" {
 		return store.Run{}, fmt.Errorf("a run needs a title: %w", store.ErrInvalid)
 	}
+	if o.Model, o.Effort, err = withDefaults(s, plot.ID, o.Model, o.Effort); err != nil {
+		return store.Run{}, err
+	}
 	source, err := ticketSource(o.Ticket, o.Link)
 	if err != nil {
 		return store.Run{}, err
@@ -108,7 +112,7 @@ func Shape(ctx context.Context, s *store.Store, o ShapeOptions) (store.Run, erro
 	r, err := s.AddRun(store.Run{
 		PlotID: plot.ID, Folder: repo.Path, Title: title, State: store.RunShaping, MaxTries: o.MaxTries,
 		Source: source, Note: draftingNote,
-		Shape: &store.RunShape{Repo: repo.ID, Base: o.Base, Link: o.Link, Model: o.Model, Brief: strings.TrimSpace(o.Brief)},
+		Shape: &store.RunShape{Repo: repo.ID, Base: o.Base, Link: o.Link, Model: o.Model, Effort: o.Effort, Brief: strings.TrimSpace(o.Brief)},
 	})
 	if err != nil {
 		return store.Run{}, err
@@ -169,7 +173,7 @@ func Approve(ctx context.Context, s *store.Store, id string, o ApproveOptions) (
 		return nil, err
 	}
 	so := StartOptions{PlotID: r.PlotID, Title: r.Title, Repo: r.Shape.Repo, Base: r.Shape.Base, Link: r.Shape.Link,
-		MaxTries: r.MaxTries, Model: r.Shape.Model, ApproveSetup: o.ApproveSetup, Loam: o.Loam}
+		MaxTries: r.MaxTries, Model: r.Shape.Model, Effort: r.Shape.Effort, ApproveSetup: o.ApproveSetup, Loam: o.Loam}
 	var ticket *store.RunSource
 	if r.Source != nil && r.Source.Kind == intake.Map {
 		ticket = r.Source
@@ -262,6 +266,9 @@ func askForDraft(ctx context.Context, r store.Run, change string, step func(stri
 		"--no-session-persistence", "--tools", "Read,Grep,Glob"}
 	if r.Shape.Model != "" {
 		args = append(args, "--model", r.Shape.Model)
+	}
+	if r.Shape.Effort != "" {
+		args = append(args, "--effort", r.Shape.Effort)
 	}
 	cmd := exec.CommandContext(ctx, claude, args...)
 	cmd.Dir = r.Folder

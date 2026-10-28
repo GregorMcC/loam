@@ -404,10 +404,25 @@
         "updated_at": { "$ref": "#/$defs/time" }
       }
     },
+    "effort": {
+      "description": "An effort level of Claude Code, or empty for the Claude Code setting.",
+      "enum": ["", "low", "medium", "high", "xhigh", "max"]
+    },
+    "runDefaults": {
+      "description": "The model and the effort that a run of a plot uses when it names none (loam run defaults).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plot_id", "model", "effort"],
+      "properties": {
+        "plot_id": { "$ref": "#/$defs/id" },
+        "model": { "description": "The Claude model, or empty for the Claude Code setting.", "type": "string" },
+        "effort": { "$ref": "#/$defs/effort" }
+      }
+    },
     "runShape": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["assumptions", "plan", "size", "repo", "base", "link", "model"],
+      "required": ["assumptions", "plan", "size", "repo", "base", "link", "model", "effort"],
       "properties": {
         "assumptions": {
           "description": "The choices that Claude made and the issue does not settle.",
@@ -429,6 +444,7 @@
         "base": { "description": "The branch that the worktree's branch starts from, or empty for the default branch of origin.", "type": "string" },
         "link": { "description": "The link that the work starts from, as loam run start --link takes it, or empty.", "type": "string" },
         "model": { "description": "The Claude model of the draft and of the session, or empty for the Claude Code setting.", "type": "string" },
+        "effort": { "description": "The effort level of the draft and of the session, or empty for the Claude Code setting.", "$ref": "#/$defs/effort" },
         "brief": { "description": "What Claude drafts from when the run has no issue, such as the prompt of a recurring run. It is left out when it is empty.", "type": "string" }
       }
     },
@@ -436,7 +452,7 @@
       "description": "A run that starts on a timetable (loam recurring add).",
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "plot_id", "title", "prompt", "kind", "days", "at", "precheck", "if_asleep", "repo", "done_when", "max_tries", "model", "next_at", "last_note", "last_run_id", "created_at"],
+      "required": ["id", "plot_id", "title", "prompt", "kind", "days", "at", "precheck", "if_asleep", "repo", "done_when", "max_tries", "model", "effort", "next_at", "last_note", "last_run_id", "created_at"],
       "properties": {
         "id": { "$ref": "#/$defs/id" },
         "plot_id": { "$ref": "#/$defs/id" },
@@ -451,6 +467,7 @@
         "done_when": { "type": "array", "items": { "$ref": "#/$defs/runCheck" } },
         "max_tries": { "type": "integer", "minimum": 1, "maximum": 8 },
         "model": { "type": "string" },
+        "effort": { "$ref": "#/$defs/effort" },
         "next_at": { "$ref": "#/$defs/time" },
         "last_at": { "description": "When a tick last took it. It is left out before the first time.", "$ref": "#/$defs/time" },
         "last_note": { "description": "What the last tick did, for a person to read.", "type": "string" },

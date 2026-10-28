@@ -112,11 +112,13 @@ type RunShape struct {
 	// has none.
 	DraftedAt *time.Time `json:"drafted_at,omitempty"`
 	// Repo, Base, and Link say how the run's worktree is made when you
-	// approve it, as for loam run start. Model is the model of the session.
-	Repo  string `json:"repo"`
-	Base  string `json:"base"`
-	Link  string `json:"link"`
-	Model string `json:"model"`
+	// approve it, as for loam run start. Model and Effort are those of the
+	// draft and of the session.
+	Repo   string `json:"repo"`
+	Base   string `json:"base"`
+	Link   string `json:"link"`
+	Model  string `json:"model"`
+	Effort string `json:"effort"`
 	// Brief is what Claude drafts from when the run has no issue, such as
 	// the prompt of a recurring run.
 	Brief string `json:"brief,omitempty"`

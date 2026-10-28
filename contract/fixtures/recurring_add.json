@@ -17,6 +17,7 @@
         "name": "Go tests"
       }
     ],
+    "effort": "",
     "id": "recuaaaaab",
     "if_asleep": "once",
     "kind": "chore",

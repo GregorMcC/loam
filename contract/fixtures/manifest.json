@@ -1320,5 +1320,59 @@
     ],
     "exit_code": 2,
     "schema": "error"
+  },
+  {
+    "name": "run_defaults_get",
+    "args": [
+      "run",
+      "defaults",
+      "Runs",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "run-defaults"
+  },
+  {
+    "name": "run_defaults_set",
+    "args": [
+      "run",
+      "defaults",
+      "Runs",
+      "--model",
+      "opus",
+      "--effort",
+      "high",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "run-defaults"
+  },
+  {
+    "name": "error_run_defaults_bad_effort",
+    "args": [
+      "run",
+      "defaults",
+      "Runs",
+      "--effort",
+      "extreme",
+      "--json"
+    ],
+    "exit_code": 2,
+    "schema": "error"
+  },
+  {
+    "name": "run_defaults_clear",
+    "args": [
+      "run",
+      "defaults",
+      "Runs",
+      "--model",
+      "",
+      "--effort",
+      "",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "run-defaults"
   }
 ]

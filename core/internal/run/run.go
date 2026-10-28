@@ -66,7 +66,10 @@ type StartOptions struct {
 	// recurring run.
 	Source   *store.RunSource
 	MaxTries int
-	Model    string
+	// Model and Effort are those of the session. Empty means the run defaults
+	// of the plot, then the Claude Code setting.
+	Model  string
+	Effort string
 	// ApproveSetup approves the setup command of the repo when it is new or
 	// changed. A run has no terminal to ask on.
 	ApproveSetup bool
@@ -98,6 +101,9 @@ func Start(ctx context.Context, s *store.Store, o StartOptions) (*StartResult, e
 	if title == "" {
 		return nil, fmt.Errorf("a run needs a title: %w", store.ErrInvalid)
 	}
+	if o.Model, o.Effort, err = withDefaults(s, plot.ID, o.Model, o.Effort); err != nil {
+		return nil, err
+	}
 	ticket, err := ticketSource(o.Ticket, o.Link)
 	if err != nil {
 		return nil, err
@@ -115,6 +121,20 @@ func Start(ctx context.Context, s *store.Store, o StartOptions) (*StartResult, e
 		return nil, err
 	}
 	return launch(ctx, s, r, o, res)
+}
+
+// withDefaults checks the effort of a run and fills the model and the effort
+// that it leaves empty from the run defaults of the plot. Start and Shape
+// use it, so a run from the CLI and a recurring run get the same defaults.
+func withDefaults(s *store.Store, plotID, model, effort string) (string, string, error) {
+	if err := store.CheckEffort(effort); err != nil {
+		return "", "", err
+	}
+	d, err := s.GetRunDefaults(plotID)
+	if err != nil {
+		return "", "", err
+	}
+	return cmp.Or(model, d.Model), cmp.Or(effort, d.Effort), nil
 }
 
 // ticketSource returns the source of a run from the file of a ticket of a
@@ -162,7 +182,7 @@ func launch(ctx context.Context, s *store.Store, r store.Run, o StartOptions, re
 	if err != nil {
 		return nil, stopAfter(s, r.ID, err)
 	}
-	plan, err := session.PrepareRun(s, r, Prompt(r, rules), o.Loam, o.Model)
+	plan, err := session.PrepareRun(s, r, Prompt(r, rules), o.Loam, o.Model, o.Effort)
 	if err != nil {
 		return nil, stopAfter(s, r.ID, err)
 	}

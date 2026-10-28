@@ -208,6 +208,16 @@ CREATE TABLE rules (
 );
 CREATE INDEX rules_plot ON rules(plot_id, created_at);
 `,
+	// 14: effort of runs, and the model and effort that a plot defaults to.
+	`
+ALTER TABLE recurring ADD COLUMN effort TEXT NOT NULL DEFAULT '';
+CREATE TABLE run_defaults (
+  plot_id TEXT PRIMARY KEY REFERENCES plots(id),
+  model TEXT NOT NULL DEFAULT '',
+  effort TEXT NOT NULL DEFAULT '',
+  updated_at INTEGER NOT NULL
+);
+`,
 }
 
 // SchemaVersion is the schema version of this binary.

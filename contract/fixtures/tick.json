@@ -20,6 +20,7 @@
             "name": "Go tests"
           }
         ],
+        "effort": "",
         "id": "recuaaaaab",
         "if_asleep": "once",
         "kind": "chore",
@@ -77,6 +78,7 @@
           "sat"
         ],
         "done_when": [],
+        "effort": "",
         "id": "recuaaaaac",
         "if_asleep": "skip",
         "kind": "shape",

@@ -35,7 +35,7 @@ func newRecurringAddCmd() *cobra.Command {
 	var checks []string
 	var approve bool
 	c := &cobra.Command{
-		Use:   "add <plot> --title <text> --prompt <text> --kind shape|chore --days <days> --at <HH:MM> [--precheck <command>] [--if-asleep once|skip] [--repo <repo>] [--check <name>=<command>]... [--max-tries <n>] [--model <model>] [--approve-setup]",
+		Use:   "add <plot> --title <text> --prompt <text> --kind shape|chore --days <days> --at <HH:MM> [--precheck <command>] [--if-asleep once|skip] [--repo <repo>] [--check <name>=<command>]... [--max-tries <n>] [--model <model>] [--effort <level>] [--approve-setup]",
 		Short: "Add a run that starts on a timetable",
 		Long: "Add a recurring run to a plot. --days is daily, weekdays, weekends, or days such as mon,wed,fri. --at is the time on the clock of the Mac.\n" +
 			"--precheck is a shell command that runs in the repo: the run starts only when it exits 0, and Claude gets what it prints.\n" +
@@ -86,7 +86,8 @@ func newRecurringAddCmd() *cobra.Command {
 	f.StringVar(&r.Repo, "repo", "", "the repo of the runs (default: the main repo)")
 	f.StringArrayVar(&checks, "check", nil, "a Done when check of a chore, as <name>=<command>")
 	f.IntVar(&r.MaxTries, "max-tries", store.DefaultMaxTries, "how many times the checks can fail before a run stops")
-	f.StringVar(&r.Model, "model", "", "the Claude model of the runs (default: your Claude Code setting)")
+	f.StringVar(&r.Model, "model", "", "the Claude model of the runs (default: the run defaults of the plot, then your Claude Code setting)")
+	f.StringVar(&r.Effort, "effort", "", "the effort level of the runs: "+strings.Join(store.Efforts, ", ")+" (default: the run defaults of the plot, then your Claude Code setting)")
 	f.BoolVar(&approve, "approve-setup", false, "approve the setup command of the repo now, for a chore")
 	for _, name := range []string{"title", "prompt", "kind", "days", "at"} {
 		c.MarkFlagRequired(name)

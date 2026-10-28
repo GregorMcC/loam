@@ -25,7 +25,7 @@ func RunSessionName(runID string) string { return "loam-run-" + runID }
 // because nobody answers its prompts. It starts nothing and records no
 // session: the SessionStart hook of the run records it, because claude --bg
 // picks its own session ID.
-func PrepareRun(s *store.Store, r store.Run, prompt, loam, model string) (*Plan, error) {
+func PrepareRun(s *store.Store, r store.Run, prompt, loam, model, effort string) (*Plan, error) {
 	plot, err := s.GetPlot(r.PlotID)
 	if err != nil {
 		return nil, err
@@ -40,6 +40,9 @@ func PrepareRun(s *store.Store, r store.Run, prompt, loam, model string) (*Plan,
 	lead := []string{"--bg", "--name", RunSessionName(r.ID), "--permission-mode", "auto"}
 	if model != "" {
 		lead = append(lead, "--model", model)
+	}
+	if effort != "" {
+		lead = append(lead, "--effort", effort)
 	}
 	plan, err := build(s, plot, r.Folder, claude, "run-"+r.ID, lead, loam, runSettings(r.ID))
 	if err != nil {

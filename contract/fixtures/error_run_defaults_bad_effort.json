@@ -1,0 +1,7 @@
+{
+  "error": {
+    "exit_code": 2,
+    "kind": "invalid",
+    "message": "\"extreme\" is not an effort level: use low, medium, high, xhigh, max: invalid input"
+  }
+}

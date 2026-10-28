@@ -203,7 +203,7 @@ func startRecurring(ctx context.Context, s *store.Store, rec store.Recurring, ou
 	}
 	if rec.Kind == store.RecurringShape {
 		r, err := Shape(ctx, s, ShapeOptions{PlotID: rec.PlotID, Title: rec.Title, Repo: rec.Repo, MaxTries: rec.MaxTries,
-			Model: rec.Model, Brief: brief, Source: recurringSource(rec)})
+			Model: rec.Model, Effort: rec.Effort, Brief: brief, Source: recurringSource(rec)})
 		if err != nil {
 			return nil, fmt.Sprintf("Claude could not shape a run: %v", err)
 		}
@@ -213,7 +213,7 @@ func startRecurring(ctx context.Context, s *store.Store, rec store.Recurring, ou
 		return &r, "Claude drafted a run for your approval"
 	}
 	res, err := Start(ctx, s, StartOptions{PlotID: rec.PlotID, Title: rec.Title, Goal: brief, DoneWhen: rec.DoneWhen,
-		Repo: rec.Repo, MaxTries: rec.MaxTries, Model: rec.Model, Source: recurringSource(rec), Loam: loam})
+		Repo: rec.Repo, MaxTries: rec.MaxTries, Model: rec.Model, Effort: rec.Effort, Source: recurringSource(rec), Loam: loam})
 	if err != nil {
 		return nil, fmt.Sprintf("The run did not start: %v", err)
 	}

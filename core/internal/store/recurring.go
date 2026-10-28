@@ -66,6 +66,7 @@ type Recurring struct {
 	DoneWhen []Check `json:"done_when"`
 	MaxTries int     `json:"max_tries"`
 	Model    string  `json:"model"`
+	Effort   string  `json:"effort"`
 	// NextAt is the next time that it is due.
 	NextAt time.Time `json:"next_at"`
 	// LastAt, LastNote and LastRunID say what the last tick that took it
@@ -115,7 +116,7 @@ func (r *Recurring) check() error {
 	if r.MaxTries < 1 || r.MaxTries > MaxTriesLimit {
 		return fmt.Errorf("a run has 1 to %d tries: %w", MaxTriesLimit, ErrInvalid)
 	}
-	return nil
+	return CheckEffort(r.Effort)
 }
 
 // clock reads a time of day, HH:MM.
@@ -202,9 +203,9 @@ func (s *Store) AddRecurring(r Recurring, now time.Time) (Recurring, error) {
 	if err != nil {
 		return Recurring{}, err
 	}
-	if err := tx.exec(`INSERT INTO recurring(`+recurringCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '', '', ?)`,
+	if err := tx.exec(`INSERT INTO recurring(`+recurringCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '', '', ?)`,
 		r.ID, r.PlotID, r.Title, r.Prompt, r.Kind, strings.Join(r.Days, ","), r.At, r.Precheck, r.IfAsleep, r.Repo,
-		string(checks), r.MaxTries, r.Model, r.NextAt.UnixMilli(), r.CreatedAt.UnixMilli()); err != nil {
+		string(checks), r.MaxTries, r.Model, r.Effort, r.NextAt.UnixMilli(), r.CreatedAt.UnixMilli()); err != nil {
 		return Recurring{}, err
 	}
 	return r, tx.commit()
@@ -305,7 +306,7 @@ func (s *Store) RecordRecurring(id string, at time.Time, note, runID string) err
 	return tx.commit()
 }
 
-const recurringCols = `id, plot_id, title, prompt, kind, days, at, precheck, if_asleep, repo, done_when, max_tries, model,
+const recurringCols = `id, plot_id, title, prompt, kind, days, at, precheck, if_asleep, repo, done_when, max_tries, model, effort,
   next_at, last_at, last_note, last_run_id, created_at`
 
 func scanRecurring(sc interface{ Scan(...any) error }) (Recurring, error) {
@@ -313,7 +314,7 @@ func scanRecurring(sc interface{ Scan(...any) error }) (Recurring, error) {
 	var days, checks string
 	var next, last, created int64
 	err := sc.Scan(&r.ID, &r.PlotID, &r.Title, &r.Prompt, &r.Kind, &days, &r.At, &r.Precheck, &r.IfAsleep, &r.Repo,
-		&checks, &r.MaxTries, &r.Model, &next, &last, &r.LastNote, &r.LastRunID, &created)
+		&checks, &r.MaxTries, &r.Model, &r.Effort, &next, &last, &r.LastNote, &r.LastRunID, &created)
 	if err != nil {
 		return Recurring{}, err
 	}
