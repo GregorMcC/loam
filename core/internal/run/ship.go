@@ -470,7 +470,7 @@ func send(ctx context.Context, r store.Run, prompt string) error {
 	ctx, cancel := context.WithTimeout(ctx, startTimeout)
 	defer cancel()
 	// A session that has already stopped makes this fail, which is fine.
-	exec.CommandContext(ctx, claude, "stop", sessionRef(r)).Run()
+	_ = exec.CommandContext(ctx, claude, "stop", sessionRef(r)).Run()
 	cmd := exec.CommandContext(ctx, claude, "--bg", "--resume", r.SessionID, prompt)
 	cmd.Dir = r.Folder
 	cmd.WaitDelay = time.Second

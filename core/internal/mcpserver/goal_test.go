@@ -44,7 +44,9 @@ func TestCreateWorktreeWithGoalAndLink(t *testing.T) {
 		t.Fatal(err)
 	}
 	linkID := res.Plot.Links[0].ID
-	json.Unmarshal([]byte(e.ok("create_worktree", map[string]any{"name": "eng-482", "link": linkID})), &c)
+	if err := json.Unmarshal([]byte(e.ok("create_worktree", map[string]any{"name": "eng-482", "link": linkID})), &c); err != nil {
+		t.Fatal(err)
+	}
 	want = store.WorktreeLink{Target: linearIssue, Label: "Link kinds for Figma", Key: "ENG-482", LinkID: linkID}
 	if c.Worktree.Link == nil || *c.Worktree.Link != want {
 		t.Fatalf("%+v %+v", c.Worktree, c.Worktree.Link)
@@ -53,7 +55,9 @@ func TestCreateWorktreeWithGoalAndLink(t *testing.T) {
 	if out := e.fail("create_worktree", map[string]any{"name": "bad", "link": "https://github.com/example/widgets/pull/57"}); !strings.Contains(out, "issue") {
 		t.Fatalf("%s", out)
 	}
-	json.Unmarshal([]byte(e.ok("create_worktree", map[string]any{"name": "long", "goal": strings.Repeat("word ", 24)})), &c)
+	if err := json.Unmarshal([]byte(e.ok("create_worktree", map[string]any{"name": "long", "goal": strings.Repeat("word ", 24)})), &c); err != nil {
+		t.Fatal(err)
+	}
 	if len(c.Warnings) != 1 || c.Warnings[0] != "The goal has 24 words. The soft limit is 20 words. Shorten it." {
 		t.Fatalf("warnings %q", c.Warnings)
 	}
@@ -73,7 +77,9 @@ func TestSetWorktreeGoal(t *testing.T) {
 	e := setup(t, opts{plotEnv: "ALPHA", session: "sess-env"})
 	withGitRepo(t, e)
 	var c createdWorktree
-	json.Unmarshal([]byte(e.ok("create_worktree", map[string]any{"name": "fix-login"})), &c)
+	if err := json.Unmarshal([]byte(e.ok("create_worktree", map[string]any{"name": "fix-login"})), &c); err != nil {
+		t.Fatal(err)
+	}
 	id := c.Worktree.ID
 
 	// create_worktree counts as a read of the new worktree.
@@ -162,7 +168,9 @@ func TestGetPlotKeepsTheGoalVersionThatClaudeRead(t *testing.T) {
 	e := setup(t, opts{plotEnv: "ALPHA"})
 	withGitRepo(t, e)
 	var c createdWorktree
-	json.Unmarshal([]byte(e.ok("create_worktree", map[string]any{"name": "fix-login", "goal": "Mine"})), &c)
+	if err := json.Unmarshal([]byte(e.ok("create_worktree", map[string]any{"name": "fix-login", "goal": "Mine"})), &c); err != nil {
+		t.Fatal(err)
+	}
 	e.ok("list_worktrees", nil)
 	if _, err := e.s.Apply(store.Change{PlotID: e.plot.ID, Actor: store.Actor{Kind: store.ActorApp},
 		Edits: []store.Edit{{Op: store.OpSetGoal, Item: store.WorktreeItem(c.Worktree.ID), Value: "Theirs"}}}); err != nil {

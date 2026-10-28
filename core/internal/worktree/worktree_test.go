@@ -298,7 +298,9 @@ func TestInspectShowsEachCheck(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(w.Path, "scratch.txt"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(filepath.Join(w.Path, "README.md"), []byte("changed\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(w.Path, "README.md"), []byte("changed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if st := worktree.Inspect(w); st.Changed != 2 {
 		t.Fatalf("changed %d", st.Changed)
 	}
@@ -404,7 +406,9 @@ func TestRemoveRefusesUnsafeWorktreesUnlessForced(t *testing.T) {
 		return worktree.Remove(e.s, e.plot.ID, w.ID, worktree.RemoveOptions{Force: force})
 	}
 
-	os.WriteFile(filepath.Join(w.Path, "scratch.txt"), []byte("x"), 0o644)
+	if err := os.WriteFile(filepath.Join(w.Path, "scratch.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := rm(false); !errors.Is(err, worktree.ErrUnsafe) || !strings.Contains(err.Error(), "uncommitted") {
 		t.Fatalf("dirty: %v", err)
 	}
@@ -420,7 +424,9 @@ func TestRemoveRefusesUnsafeWorktreesUnlessForced(t *testing.T) {
 		t.Fatal("record removed")
 	}
 	// Forced: it goes, with the dirty file and the unpushed commit.
-	os.WriteFile(filepath.Join(w.Path, "more.txt"), []byte("x"), 0o644)
+	if err := os.WriteFile(filepath.Join(w.Path, "more.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	res, err := rm(true)
 	if err != nil {
 		t.Fatal(err)
@@ -444,7 +450,9 @@ func TestRemoveRefusesUnsafeWorktreesUnlessForced(t *testing.T) {
 func TestRemoveDryRunRefusesUncommittedChanges(t *testing.T) {
 	e := setup(t)
 	w := e.create("work", "").Worktree
-	os.WriteFile(filepath.Join(w.Path, "scratch.txt"), []byte("x"), 0o644)
+	if err := os.WriteFile(filepath.Join(w.Path, "scratch.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := worktree.Remove(e.s, e.plot.ID, w.ID, worktree.RemoveOptions{DryRun: true}); !errors.Is(err, worktree.ErrUnsafe) ||
 		!strings.Contains(err.Error(), "uncommitted") {
 		t.Fatalf("dirty: %v", err)
@@ -468,7 +476,9 @@ func TestRemoveRefusalsGiveDetails(t *testing.T) {
 	e := setup(t)
 	w := e.create("work", "").Worktree
 	commit(t, w.Path, "f.txt", "f\n")
-	os.WriteFile(filepath.Join(w.Path, "scratch.txt"), []byte("x"), 0o644)
+	if err := os.WriteFile(filepath.Join(w.Path, "scratch.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	details := func(err error) any {
 		var d interface{ ErrorDetails() any }
 		if !errors.As(err, &d) {
@@ -538,7 +548,9 @@ func TestRemoveRefusesWhilePanesAreOpen(t *testing.T) {
 	}
 	// A pane in a subfolder counts. Force does not skip this check.
 	sub := filepath.Join(w.Path, "sub")
-	os.MkdirAll(sub, 0o755)
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if err := rm(true, sub); !errors.Is(err, worktree.ErrPanesOpen) {
 		t.Fatalf("flag: %v", err)
 	}
@@ -558,7 +570,9 @@ func TestRemoveRefusesWhilePanesAreOpen(t *testing.T) {
 	}
 	// Panes in other folders do not block. The name of a sibling folder is not a match.
 	state = `{"panes":[{"plot_id":"x","folder":"` + w.Path + `-2"},{"plot_id":"x","folder":"` + e.repo + `"}]}`
-	os.WriteFile(filepath.Join(appDir, "state.json"), []byte(state), 0o644)
+	if err := os.WriteFile(filepath.Join(appDir, "state.json"), []byte(state), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := rm(false, e.repo); err != nil {
 		t.Fatal(err)
 	}
@@ -570,12 +584,16 @@ func TestOpenPanes(t *testing.T) {
 	if err != nil || len(got) != 0 {
 		t.Fatalf("missing file: %v %v", got, err)
 	}
-	os.WriteFile(filepath.Join(home, "state.json"), []byte(`{"panes":[{"plot_id":"p","folder":"/a"},{"plot_id":"p","folder":""}]}`), 0o644)
+	if err := os.WriteFile(filepath.Join(home, "state.json"), []byte(`{"panes":[{"plot_id":"p","folder":"/a"},{"plot_id":"p","folder":""}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	got, err = worktree.OpenPanes(home, []string{"/b"})
 	if err != nil || len(got) != 2 || got[0].Folder != "/a" || got[1].Folder != "/b" {
 		t.Fatalf("%+v %v", got, err)
 	}
-	os.WriteFile(filepath.Join(home, "state.json"), []byte(`{not json`), 0o644)
+	if err := os.WriteFile(filepath.Join(home, "state.json"), []byte(`{not json`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := worktree.OpenPanes(home, nil); err == nil || !strings.Contains(err.Error(), "state.json") {
 		t.Fatalf("want an error that names state.json: %v", err)
 	}

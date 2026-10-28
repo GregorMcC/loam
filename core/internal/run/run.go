@@ -282,7 +282,8 @@ func moveLinearIssue(ctx context.Context, s *store.Store, r store.Run, to, stays
 
 // stopAfter marks a recorded run Stopped by err, and returns err.
 func stopAfter(s *store.Store, id string, err error) error {
-	s.UpdateRun(id, func(r *store.Run) error {
+	// A failed record still returns err, the cause that the caller needs.
+	_, _ = s.UpdateRun(id, func(r *store.Run) error {
 		r.State, r.Note = store.RunStopped, err.Error()
 		return nil
 	})

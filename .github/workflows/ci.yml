@@ -1,0 +1,132 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A new push to a pull request stops its older run. Runs on main all finish.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # The Xcode that the README asks for. The macos-26 image has it.
+  XCODE: /Applications/Xcode_26.5.app
+  GOLANGCI_LINT_VERSION: v2.15.0
+  GOVULNCHECK_VERSION: v1.9.0
+  ACTIONLINT_VERSION: v1.7.12
+
+jobs:
+  # Loam runs on macOS only, and some core tests skip on other systems.
+  core:
+    runs-on: macos-26
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: core
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # go.mod sets the lowest Go. Releases build with the latest Go, so the tests do too.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          check-latest: true
+          cache-dependency-path: core/go.sum
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "gofmt changes these files. Run gofmt -w on them:"
+            echo "$unformatted"
+            exit 1
+          fi
+      - run: go vet ./...
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+          working-directory: core
+      - run: go test ./...
+      - name: govulncheck
+        run: go run "golang.org/x/vuln/cmd/govulncheck@$GOVULNCHECK_VERSION" ./...
+
+  # The LoamKit tests. Without GhosttyKit, the package builds no terminal and no driver.
+  app:
+    runs-on: macos-26
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: sudo xcode-select -s "$XCODE"
+      - run: swift test
+
+  # The driver tests need GhosttyKit and a window session. This job is not a
+  # required check until it passes on the hosted runners from run to run.
+  app-driver:
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: sudo xcode-select -s "$XCODE"
+      # The driver tests build the loam CLI and the fakes with Go.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          check-latest: true
+          cache-dependency-path: core/go.sum
+      - id: ghosttykit
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/Library/Caches/Loam/ghosttykit
+          key: ghosttykit-${{ hashFiles('ghostty.pin', 'scripts/build-ghosttykit.sh') }}
+      - name: Install the Metal Toolchain
+        if: steps.ghosttykit.outputs.cache-hit != 'true'
+        run: xcodebuild -downloadComponent MetalToolchain
+      # With a cache hit, the script only links app/vendor to the cache.
+      - run: scripts/build-ghosttykit.sh
+      # Save the cache now, so a failed test run does not build GhosttyKit again.
+      - if: steps.ghosttykit.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/Library/Caches/Loam/ghosttykit
+          key: ${{ steps.ghosttykit.outputs.cache-primary-key }}
+      - name: swift test
+        working-directory: app
+        env:
+          # Each driver scenario writes its log and screenshots to a folder here.
+          TMPDIR: ${{ runner.temp }}
+        run: swift test --manifest-cache none
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: driver-output
+          path: ${{ runner.temp }}/loam-driver-*
+          retention-days: 7
+
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache: false
+      # The image has shellcheck. actionlint runs it on the run steps too.
+      - name: shellcheck
+        run: shellcheck scripts/*.sh
+      - name: actionlint
+        run: go run "github.com/rhysd/actionlint/cmd/actionlint@$ACTIONLINT_VERSION"

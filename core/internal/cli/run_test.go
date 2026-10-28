@@ -182,7 +182,9 @@ func TestRunStartRefusesASetupCommandThatYouHaveNotApproved(t *testing.T) {
 		t.Fatal(err)
 	}
 	var got runStartOut
-	json.Unmarshal([]byte(out), &got)
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatal(err)
+	}
 	if got.Worktree.Name != "fix-the-thing" {
 		t.Fatalf("worktree %q", got.Worktree.Name)
 	}
@@ -201,7 +203,9 @@ func TestRunHookRecordsTheSessionOfARun(t *testing.T) {
 		t.Fatal(err)
 	}
 	var got runStartOut
-	json.Unmarshal([]byte(out), &got)
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatal(err)
+	}
 	const id = "c57ef956-3136-4e86-bfde-da8facfe0523"
 	in := `{"hook_event_name":"SessionStart","session_id":"` + id + `","source":"startup","cwd":"` + got.Run.Folder + `"}`
 	if _, _, err := lrRun(t, in, "run", "hook", got.Run.ID); err != nil {

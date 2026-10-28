@@ -295,7 +295,9 @@ func TestHookClearIgnoresUnseededSession(t *testing.T) {
 func TestHookStartupAddsNoRecord(t *testing.T) {
 	e := setup(t)
 	p := e.plot(t, store.PlotInput{Name: "Alpha"})
-	e.store.AddSession(store.SessionRecord{SessionID: "s-old", PlotID: p.ID, StartFolder: "/x"})
+	if err := e.store.AddSession(store.SessionRecord{SessionID: "s-old", PlotID: p.ID, StartFolder: "/x"}); err != nil {
+		t.Fatal(err)
+	}
 	env := map[string]string{"CLAUDE_PID": "4242", "LOAM_PLOT": p.ID}
 	runHook(t, `{"session_id":"s-old","source":"startup"}`, env)
 	runHook(t, `{"session_id":"s-other","source":"startup"}`, env)
@@ -307,7 +309,9 @@ func TestHookStartupAddsNoRecord(t *testing.T) {
 func TestHookResumeOfKnownSessionKeepsRecord(t *testing.T) {
 	e := setup(t)
 	p := e.plot(t, store.PlotInput{Name: "Alpha"})
-	e.store.AddSession(store.SessionRecord{SessionID: "s1", PlotID: p.ID, StartFolder: "/orig"})
+	if err := e.store.AddSession(store.SessionRecord{SessionID: "s1", PlotID: p.ID, StartFolder: "/orig"}); err != nil {
+		t.Fatal(err)
+	}
 	runHook(t, `{"session_id":"s1","source":"resume","cwd":"/elsewhere"}`, map[string]string{"CLAUDE_PID": "5", "LOAM_PLOT": p.ID})
 	if rec, _ := e.store.GetSession("s1"); rec.StartFolder != "/orig" {
 		t.Errorf("record changed: %+v", rec)

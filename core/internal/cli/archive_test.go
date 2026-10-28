@@ -177,8 +177,12 @@ func TestDeleteMovesFolderToTrashAndPrintsClaudeFiles(t *testing.T) {
 		}
 	}
 	settings := filepath.Join(s.Home(), "sessions", "11111111-2222-4333-8444-555555555555.json")
-	os.MkdirAll(filepath.Dir(settings), 0o755)
-	os.WriteFile(settings, []byte("{}"), 0o644)
+	if err := os.MkdirAll(filepath.Dir(settings), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(settings, []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	out, _, err := lrRun(t, "", "delete", "Alpha")
 	if err != nil {

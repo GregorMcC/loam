@@ -326,7 +326,7 @@ func (h *harness) pane(name, schema, stdin string) {
 		}
 		defer c.Close()
 		var b bytes.Buffer
-		b.ReadFrom(c)
+		_, _ = b.ReadFrom(c) // The test reads what arrived before the close.
 		lines <- b.Bytes()
 	}()
 	cmd := exec.Command(h.bin, "hook")

@@ -292,7 +292,9 @@ func TestRunStartWithInProgressOffLeavesTheIssue(t *testing.T) {
 		t.Fatalf("%v %s", err, errOut)
 	}
 	var res runStartOut
-	json.Unmarshal([]byte(out), &res)
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatal(err)
+	}
 	if len(linearCalls(f, "issueUpdate")) != 0 {
 		t.Fatalf("calls %+v", f.Calls())
 	}

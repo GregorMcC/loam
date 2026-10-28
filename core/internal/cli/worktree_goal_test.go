@@ -42,7 +42,9 @@ func TestWorktreeNewWithGoalAndLink(t *testing.T) {
 		t.Fatal(err)
 	}
 	var added struct{ Link store.Link }
-	json.Unmarshal([]byte(out), &added)
+	if err := json.Unmarshal([]byte(out), &added); err != nil {
+		t.Fatal(err)
+	}
 
 	// A link ID copies the plot link.
 	out, _, err = lrRun(t, "", "worktree", "new", "alpha", repo, "eng-482", "--goal", "Link kinds for Figma", "--link", added.Link.ID, "--json")

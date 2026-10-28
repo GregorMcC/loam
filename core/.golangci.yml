@@ -1,0 +1,22 @@
+version: "2"
+
+linters:
+  exclusions:
+    presets:
+      # Unchecked errors from Close, fmt.Fprint and the like.
+      - std-error-handling
+  settings:
+    staticcheck:
+      # The golangci-lint defaults, with two more checks off.
+      checks:
+        - all
+        - -ST1000
+        - -ST1003
+        - -ST1016
+        - -ST1020
+        - -ST1021
+        - -ST1022
+        # Error strings are sentences that a person reads, so they start with a capital.
+        - -ST1005
+        # "!(a && b)" often reads better than its De Morgan form.
+        - -QF1001

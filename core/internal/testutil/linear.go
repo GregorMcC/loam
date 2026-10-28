@@ -94,16 +94,19 @@ func FakeLinear(t *testing.T) *FakeLinearServer {
 
 // ServeHTTP answers one request as Linear does.
 func (f *FakeLinearServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// A failed write shows in the client under test, so the fake ignores it.
+	reply := func(body string) { _, _ = io.WriteString(w, body) }
+	replyJSON := func(v any) { _ = json.NewEncoder(w).Encode(v) }
 	if r.Header.Get("Authorization") != LinearKey {
 		w.WriteHeader(http.StatusUnauthorized)
-		io.WriteString(w, `{"errors":[{"message":"Authentication required, not authenticated"}]}`)
+		reply(`{"errors":[{"message":"Authentication required, not authenticated"}]}`)
 		return
 	}
 	var req struct {
 		Query     string         `json:"query"`
 		Variables map[string]any `json:"variables"`
 	}
-	json.NewDecoder(r.Body).Decode(&req)
+	_ = json.NewDecoder(r.Body).Decode(&req) // A bad body gets the unknown-query answer.
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, LinearCall{Query: req.Query, Variables: req.Variables})
@@ -116,7 +119,7 @@ func (f *FakeLinearServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			var f struct {
 				Team struct{ Key struct{ Eq string } }
 			}
-			json.Unmarshal(b, &f)
+			_ = json.Unmarshal(b, &f)
 			team = f.Team.Key.Eq
 		}
 		nodes := []map[string]any{}
@@ -125,29 +128,29 @@ func (f *FakeLinearServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				nodes = append(nodes, n)
 			}
 		}
-		json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"viewer": map[string]any{"id": "user-ada"},
+		replyJSON(map[string]any{"data": map[string]any{"viewer": map[string]any{"id": "user-ada"},
 			"issues": map[string]any{"nodes": nodes}}})
 	case strings.Contains(req.Query, "issues("):
-		io.WriteString(w, `{"data":{"viewer":{"id":"user-ada"},"issues":{"nodes":[
+		reply(`{"data":{"viewer":{"id":"user-ada"},"issues":{"nodes":[
 			{"identifier":"ENG-523","title":"Plot panel: drag a link to reorder it","url":"https://linear.app/acme/issue/ENG-523/plot-panel-drag",
 			 "priorityLabel":"High","updatedAt":"2026-10-20T10:00:00.000Z","createdAt":"2026-10-01T09:30:00.000Z",
 			 "description":"A link in the plot panel moves to a new place when you drag it.","branchName":"ada/eng-523-plot-panel-drag",
 			 "cycle":{"isActive":true},"assignee":{"id":"user-ada","name":"Ada Example"},
-			 "state":{"name":"`+state+`","type":"`+stateType+`"},"projectMilestone":{"name":"Beta","sortOrder":2},
+			 "state":{"name":"` + state + `","type":"` + stateType + `"},"projectMilestone":{"name":"Beta","sortOrder":2},
 			 "labels":{"nodes":[{"name":"Feature"}]}},
 			{"identifier":"ENG-525","title":"Settings: choose the worktree folder","url":"https://linear.app/acme/issue/ENG-525/settings",
 			 "priorityLabel":"No priority","updatedAt":"2026-10-19T10:00:00.000Z","createdAt":"2026-10-02T11:00:00.000Z",
 			 "description":null,"branchName":"ada/eng-525-settings","cycle":null,"assignee":{"id":"user-bob","name":"Bob Example"},
 			 "state":{"name":"Backlog","type":"backlog"},"projectMilestone":{"name":"Alpha","sortOrder":1},"labels":{"nodes":[]}}]}}}`)
 	case strings.Contains(req.Query, "viewer"):
-		io.WriteString(w, `{"data":{"viewer":{"name":"Ada Example","email":"ada@example.com"},"organization":{"name":"Acme"}}}`)
+		reply(`{"data":{"viewer":{"name":"Ada Example","email":"ada@example.com"},"organization":{"name":"Acme"}}}`)
 	case strings.Contains(req.Query, "attachmentLinkURL"):
-		io.WriteString(w, `{"data":{"attachmentLinkURL":{"success":true}}}`)
+		reply(`{"data":{"attachmentLinkURL":{"success":true}}}`)
 	case strings.Contains(req.Query, "commentCreate"):
-		io.WriteString(w, `{"data":{"commentCreate":{"success":true}}}`)
+		reply(`{"data":{"commentCreate":{"success":true}}}`)
 	case strings.Contains(req.Query, "issueUpdate"):
 		f.stateID, _ = req.Variables["state"].(string)
-		io.WriteString(w, `{"data":{"issueUpdate":{"success":true}}}`)
+		reply(`{"data":{"issueUpdate":{"success":true}}}`)
 	case strings.Contains(req.Query, "description") && os.Getenv("LOAM_FAKE_LINEAR_ISSUES") != "":
 		issue := map[string]any{}
 		for _, n := range fileIssues() {
@@ -155,9 +158,9 @@ func (f *FakeLinearServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				issue = map[string]any{"title": n["title"], "description": n["description"]}
 			}
 		}
-		json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"issue": issue}})
+		replyJSON(map[string]any{"data": map[string]any{"issue": issue}})
 	case strings.Contains(req.Query, "description"):
-		io.WriteString(w, `{"data":{"issue":{"title":"Plot panel: drag a link to reorder it",
+		reply(`{"data":{"issue":{"title":"Plot panel: drag a link to reorder it",
 			"description":"A link in the plot panel moves to a new place when you drag it."}}}`)
 	case strings.Contains(req.Query, "issue(id"):
 		if os.Getenv("LOAM_FAKE_LINEAR_ISSUES") != "" {
@@ -165,11 +168,11 @@ func (f *FakeLinearServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			stateType = "unstarted"
 		}
 		to, _ := req.Variables["type"].(string)
-		io.WriteString(w, `{"data":{"issue":{"state":{"type":"`+stateType+`"},
-			"team":{"states":{"nodes":`+cmp.Or(fakeStates[to], "[]")+`}}}}}`)
+		reply(`{"data":{"issue":{"state":{"type":"` + stateType + `"},
+			"team":{"states":{"nodes":` + cmp.Or(fakeStates[to], "[]") + `}}}}}`)
 	default:
 		w.WriteHeader(http.StatusBadRequest)
-		io.WriteString(w, `{"errors":[{"message":"fake Linear: unknown query"}]}`)
+		reply(`{"errors":[{"message":"fake Linear: unknown query"}]}`)
 	}
 }
 
@@ -178,7 +181,7 @@ func (f *FakeLinearServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func fileIssues() []map[string]any {
 	var nodes []map[string]any
 	if b, err := os.ReadFile(os.Getenv("LOAM_FAKE_LINEAR_ISSUES")); err == nil {
-		json.Unmarshal(b, &nodes)
+		_ = json.Unmarshal(b, &nodes)
 	}
 	return nodes
 }

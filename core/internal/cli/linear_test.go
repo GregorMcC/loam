@@ -94,7 +94,9 @@ func TestRunStartMovesItsLinearIssueToInProgress(t *testing.T) {
 		t.Fatalf("%v %s", err, errOut)
 	}
 	var res runStartOut
-	json.Unmarshal([]byte(out), &res)
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatal(err)
+	}
 	if src := res.Run.Source; src == nil || src.Kind != "linear" || src.Key != "ENG-523" {
 		t.Fatalf("source %+v", src)
 	}
@@ -125,7 +127,9 @@ func TestRunStartGoesOnWhenLinearFails(t *testing.T) {
 		t.Fatalf("%v %s", err, errOut)
 	}
 	var res runStartOut
-	json.Unmarshal([]byte(out), &res)
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatal(err)
+	}
 	if res.Run.State != "running" {
 		t.Fatalf("state %s", res.Run.State)
 	}

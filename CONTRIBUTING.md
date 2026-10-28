@@ -25,12 +25,21 @@ The issue lets us agree on the change before you write it. A bug fix, a test, or
 
 ## Build and test
 
-No automatic check runs on a PR. Run these commands yourself before you push.
+CI runs these checks on each PR (see `.github/workflows/ci.yml`):
+
+- `core`: gofmt, `go vet`, [golangci-lint](https://golangci-lint.run), `go test` and [govulncheck](https://go.dev/doc/security/vuln/) in `core/`.
+- `app`: `swift test` without GhosttyKit, which runs the LoamKit tests.
+- `app-driver`: `swift test` with GhosttyKit, which also runs the driver tests. A failure in this check does not block a merge yet.
+- `lint`: shellcheck on `scripts/` and actionlint on the workflows.
+
+Run the same commands yourself before you push. CI does not replace them.
 
 In `core/`:
 
 ```sh
+gofmt -l .
 go vet ./...
+golangci-lint run
 go test ./...
 ```
 

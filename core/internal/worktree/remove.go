@@ -182,7 +182,7 @@ func Remove(s *store.Store, plotID, arg string, o RemoveOptions) (*RemoveResult,
 	}
 
 	if st.Missing {
-		git(w.Repo, "worktree", "prune")
+		_, _ = git(w.Repo, "worktree", "prune")
 	} else {
 		args := []string{"worktree", "remove"}
 		if o.Force {

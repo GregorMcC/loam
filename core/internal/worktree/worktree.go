@@ -227,9 +227,10 @@ func Create(s *store.Store, o CreateOptions) (*CreateResult, error) {
 		Goal: o.Goal, Link: n.link})
 	if err != nil {
 		// Undo the git steps; the record failed. The new branch holds no work yet.
-		git(repo.Path, "worktree", "remove", "--force", dest)
+		// The undo is best effort: the record error is the one to report.
+		_, _ = git(repo.Path, "worktree", "remove", "--force", dest)
 		if made {
-			git(repo.Path, "branch", "-D", o.Name)
+			_, _ = git(repo.Path, "branch", "-D", o.Name)
 		}
 		return nil, err
 	}

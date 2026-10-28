@@ -31,7 +31,9 @@ func TestShipNotesKeepTheChangedFilesInTheOrderOfClaude(t *testing.T) {
 	// The JSON has arrays, not null.
 	b, _ := json.Marshal(shipNotes(store.Run{}, shipAnswer{}, nil))
 	var m map[string]any
-	json.Unmarshal(b, &m)
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatal(err)
+	}
 	if m["files"] == nil || m["risk"].(map[string]any)["reasons"] == nil {
 		t.Fatalf("json %s", b)
 	}
@@ -92,8 +94,12 @@ func TestShipTextSchemaAsksForTheTemplateOnlyWithOne(t *testing.T) {
 	var with, without struct {
 		Required []string `json:"required"`
 	}
-	json.Unmarshal([]byte(shipTextSchema(true)), &with)
-	json.Unmarshal([]byte(shipTextSchema(false)), &without)
+	if err := json.Unmarshal([]byte(shipTextSchema(true)), &with); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(shipTextSchema(false)), &without); err != nil {
+		t.Fatal(err)
+	}
 	if !slices.Contains(with.Required, "body") || slices.Contains(without.Required, "title") || !slices.Contains(without.Required, "where_it_stands") {
 		t.Fatalf("with %v without %v", with.Required, without.Required)
 	}
