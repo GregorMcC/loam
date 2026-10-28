@@ -27,6 +27,7 @@ struct SidebarView: View {
         VStack(spacing: 0) {
             SidebarTop(model: model, sidebar: sidebar)
             tree(sidebar)
+            SidebarCard(model: model)
         }
     }
 
@@ -670,16 +671,17 @@ private struct SidebarTop: View {
                 // is a button even with no run, since Today explains how to start one.
                 AttentionRow(title: "Today", count: model.today.needsYouCount, id: "sidebar-today", alwaysOn: true,
                              selected: sidebar.pageRow == .today, action: { model.showToday() }) {
-                    Image(systemName: "sun.horizon").font(.system(size: 12, weight: .medium)).foregroundStyle(LoamColor.inkMuted)
+                    Image(systemName: "calendar").font(.system(size: 12, weight: .medium)).foregroundStyle(LoamColor.inkMuted)
                 } trailing: {
                     NeedsYouCountBadge(count: model.today.needsYouCount)
                 }
-                // Intake (ticket 204): the open issues and map tickets of the active plot.
-                AttentionRow(title: "Intake", count: 0, id: "sidebar-intake", alwaysOn: true,
+                // Intake (ticket 204): the open issues and map tickets of the active plot. The count is the open
+                // items of every plot that the app has read.
+                AttentionRow(title: "Intake", count: model.intakeCount, id: "sidebar-intake", alwaysOn: true,
                              selected: sidebar.pageRow == .intake, action: { Task { await model.showIntake() } }) {
                     Image(systemName: "tray").font(.system(size: 12, weight: .medium)).foregroundStyle(LoamColor.inkMuted)
                 } trailing: {
-                    EmptyView()
+                    PlainCount(count: model.intakeCount)
                 }
                 // Ship state, not an alert: the symbol is `ink-muted` and the count is plain (ADR 0007).
                 if sidebar.showsReadyToMerge {
@@ -696,6 +698,77 @@ private struct SidebarTop: View {
         .padding(.horizontal, 10)
         .padding(.top, 4)
         .padding(.bottom, 2)
+    }
+}
+
+/// The card at the bottom of the sidebar. On Today: the runs that hold a slot, the usage of the week, the next
+/// recurring run, and when the week resets. On the Intake page: when the app last read each source of the plot. The
+/// other pages have no card.
+private struct SidebarCard: View {
+    let model: AppModel
+
+    var body: some View {
+        switch model.page {
+        case .today: runs
+        case .intake(let plot): sources(plot)
+        default: EmptyView()
+        }
+    }
+
+    private var runs: some View {
+        let data = model.todayData
+        let card = TodayWords.runsCard(runs: model.runs, limits: data.limits, usage: data.usage,
+                                       recurring: data.recurring, now: model.now())
+        return box {
+            row("Running", card.running)
+            if let usage = card.usage {
+                row("Usage this week", usage)
+                GeometryReader { geometry in
+                    LoamColor.inkMuted.frame(width: geometry.size.width * card.usageFraction)
+                        .clipShape(RoundedRectangle(cornerRadius: 2))
+                }
+                .frame(height: 4)
+                .background(LoamColor.inkKey, in: RoundedRectangle(cornerRadius: 2))
+                .accessibilityHidden(true)
+            }
+            if let footer = card.footer {
+                Text(footer).font(.system(size: 11)).foregroundStyle(LoamColor.inkFaint)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .accessibilityIdentifier("sidebar-runs-card")
+    }
+
+    @ViewBuilder
+    private func sources(_ plot: String) -> some View {
+        if let read = model.todayData.intake[plot], !read.list.sources.isEmpty {
+            let rows = TodayWords.sourcesCard(read.list, reads: model.todayData.sourceReads[plot] ?? [:], now: model.now())
+            box {
+                ForEach(rows, id: \.label) { row($0.label, $0.value) }
+            }
+            .accessibilityIdentifier("sidebar-sources-card")
+        }
+    }
+
+    private func row(_ label: String, _ value: String) -> some View {
+        HStack {
+            Text(label).foregroundStyle(LoamColor.inkMuted)
+            Spacer(minLength: 8)
+            Text(value).foregroundStyle(LoamColor.ink).monospacedDigit()
+        }
+        .font(.system(size: 12))
+        .lineLimit(1)
+    }
+
+    private func box<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 7, content: content)
+            .padding(EdgeInsets(top: 10, leading: 10, bottom: 11, trailing: 10))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(LoamColor.inkFill, in: RoundedRectangle(cornerRadius: LoamTheme.radiusMd))
+            .overlay(RoundedRectangle(cornerRadius: LoamTheme.radiusMd).strokeBorder(LoamColor.inkHairline))
+            .padding(.horizontal, 10)
+            .padding(.bottom, 10)
+            .accessibilityElement(children: .combine)
     }
 }
 
