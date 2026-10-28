@@ -319,6 +319,26 @@ struct FakeLoam {
         #expect(fake.args() == ["setup --check --json"])
     }
 
+    /// The limits of every run: a read, and a write that passes each limit.
+    @Test func runLimitsReadAndSet() async throws {
+        let fake = try FakeLoam([("run_limits_get", 0), ("run_limits_set", 0)])
+        let client = fake.client()
+        #expect(try await client.runLimits() == RunLimits(atATime: 3, maxTurns: 40, holdAt: 80))
+        let set = try await client.setRunLimits(RunLimits(atATime: 2, maxTurns: 30, holdAt: 90))
+        #expect(set == RunLimits(atATime: 2, maxTurns: 30, holdAt: 90))
+        #expect(fake.args() == ["run limits --json", "run limits --at-a-time 2 --max-turns 30 --hold-at 90 --json"])
+    }
+
+    /// The usage is a read. Before the first report, its windows and its time are nil.
+    @Test func usageReadsTheLastReportOrRefreshes() async throws {
+        let fake = try FakeLoam([("usage_none", 0), ("usage_refresh", 0)])
+        let none = try await fake.client().usage()
+        #expect(none.fiveHour == nil && none.sevenDay == nil && none.readAt == nil)
+        let fresh = try await fake.client().usage(refresh: true)
+        #expect(fresh.fiveHour?.utilization == 0.18 && fresh.sevenDay?.utilization == 0.41 && fresh.readAt != nil)
+        #expect(fake.args() == ["usage --json", "usage --refresh --json"])
+    }
+
     @Test func loamHomeIsPassedToTheProcess() async throws {
         let fake = try FakeLoam([("version", 0)])
         // Replace the script with one that prints the env.
