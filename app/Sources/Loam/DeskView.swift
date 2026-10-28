@@ -461,9 +461,17 @@ private struct DeskFiles: View {
 private struct DeskDiff: View {
     let model: AppModel
     let files: [DeskContent.ReadFile]
-    @State private var editing: Int?
+    /// The line whose note field shows. It names its file, so the field never shows on another file for a turn.
+    @State private var editing: NoteLine?
+    /// The line whose note field is closing: its focus loop stops.
+    @State private var closing: NoteLine?
     let field: FocusState<DeskField?>.Binding
     @State private var draft = ""
+
+    private struct NoteLine: Equatable {
+        let path: String
+        let number: Int
+    }
 
     var body: some View {
         let file = model.desk.diff?.files.first { $0.path == model.desk.file }
@@ -492,10 +500,10 @@ private struct DeskDiff: View {
                                 Text(header).loamText(LoamTheme.codeStyle, LoamColor.inkFaint)
                                     .padding(.horizontal, LoamTheme.space4).padding(.vertical, 6)
                             case .line(let line):
-                                lineRow(line)
+                                lineRow(file.path, line)
                                 if let number = line.new {
                                     notes(file.path, number)
-                                    if editing == number { editor(file.path, number) }
+                                    if editing == NoteLine(path: file.path, number: number) { editor(file.path, number) }
                                 }
                             }
                         }
@@ -519,12 +527,12 @@ private struct DeskDiff: View {
         .accessibilityIdentifier("desk-diff")
     }
 
-    private func lineRow(_ line: RunDiff.Line) -> some View {
+    private func lineRow(_ path: String, _ line: RunDiff.Line) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 0) {
             Text(line.old.map(String.init) ?? "").frame(width: 34, alignment: .trailing)
             Group {
                 if let number = line.new {
-                    Button(String(number)) { open(number) }
+                    Button(String(number)) { open(path, number) }
                         .buttonStyle(.plain)
                         .help("Add a note on line \(number)")
                         .accessibilityIdentifier("desk-line-\(number)")
@@ -581,7 +589,7 @@ private struct DeskDiff: View {
                 // The field is new, so the focus goes to it once it shows, not when the click opens it. SwiftUI can drop
                 // a first try, as in the sheet for a new worktree, so it tries a few times.
                 .task {
-                    for _ in 0..<5 where field.wrappedValue != .line {
+                    for _ in 0..<5 where field.wrappedValue != .line && closing != NoteLine(path: path, number: number) {
                         field.wrappedValue = .line
                         try? await Task.sleep(for: .milliseconds(30))
                     }
@@ -620,9 +628,15 @@ private struct DeskDiff: View {
         }
     }
 
-    private func open(_ number: Int) {
-        draft = ""
-        editing = editing == number ? nil : number
+    /// A click on a line number: it opens the note field there, closes it when it shows there, or moves it there.
+    private func open(_ path: String, _ number: Int) {
+        let line = NoteLine(path: path, number: number)
+        guard editing != nil else {
+            draft = ""
+            editing = line
+            return
+        }
+        closeEditor(then: editing == line ? nil : line)
     }
 
     private func save(_ path: String, _ number: Int) {
@@ -631,14 +645,18 @@ private struct DeskDiff: View {
         closeEditor()
     }
 
-    /// Closes the note field. The focus leaves the field first, and the field goes on the next turn: when SwiftUI
-    /// removes a field that has the focus, no key of the desk works until the page draws again (TAS-52). A save does
-    /// not need this, as Return ends the edit first, but it takes the same path.
-    private func closeEditor() {
-        guard let closing = editing else { return }
+    /// Closes the note field, and opens it on `next` when you give one. The focus leaves the field first, and the
+    /// field goes on the next turn: when SwiftUI removes a field that has the focus, no key of the desk works until the
+    /// page draws again (TAS-52). A save does not need this, as Return ends the edit first, but it takes the same path.
+    private func closeEditor(then next: NoteLine? = nil) {
+        guard let line = editing else { return }
+        closing = line
         if field.wrappedValue == .line { field.wrappedValue = nil }
         Task { @MainActor in
-            if editing == closing { editing = nil }
+            closing = nil
+            guard editing == line else { return }
+            if next != nil { draft = "" }
+            editing = next
         }
     }
 }

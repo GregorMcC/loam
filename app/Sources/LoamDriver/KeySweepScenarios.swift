@@ -64,7 +64,7 @@ final class KeySweep {
         await app.sleep(0.3)
     }
 
-    /// A real click on the middle of the element: a mouse down and up on the event queue.
+    /// A real click on the middle of an element of the main window: a mouse down and up on the event queue.
     func click(_ id: String) async throws {
         AccessibilityProbe.shared.rescan()
         try await app.waitUntil("\(id) stands in the window") { app.windowPoint(of: id) != nil }
@@ -259,6 +259,39 @@ extension Scenarios {
             settingsWindow()?.close()
             host.window.makeKeyAndOrderFront(nil)
             await app.sleep(0.3)
+        }
+        // A sheet over Settings has the keys: ⌘W closes nothing, not Settings and not a pane.
+        await sweep.check(s, "⌘, Settings again", ",", .command) { settingsWindow() != nil }
+        if let settings = settingsWindow() {
+            let alert = NSAlert()
+            alert.messageText = "A sheet over Settings"
+            alert.addButton(withTitle: "OK")
+            alert.beginSheetModal(for: settings) { _ in }
+            for _ in 0..<20 where !(alert.window.isKeyWindow) {
+                NSApp.activate(ignoringOtherApps: true)
+                await app.sleep(0.15)
+            }
+            let count = panes()
+            sweep.post("w", .command)
+            await app.sleep(1)
+            sweep.expect("Sheet over Settings", "⌘W closes no pane and leaves Settings open",
+                         alert.window.isKeyWindow && panes() == count && settingsWindow() != nil)
+            settings.endSheet(alert.window)
+            // A sheet of Loam on the main window does not turn Close off in Settings.
+            _ = model.openNewWorktree(plot: plot)
+            try await app.waitUntil("the New worktree sheet shows") { app.exists("new-worktree-sheet") }
+            for _ in 0..<20 where !settings.isKeyWindow {
+                NSApp.activate(ignoringOtherApps: true)
+                settings.makeKeyAndOrderFront(nil)
+                await app.sleep(0.15)
+            }
+            await sweep.check("Settings over a Loam sheet", "⌘W closes Settings", "w", .command, timeout: 3) {
+                settingsWindow() == nil && panes() == count
+            }
+            settingsWindow()?.close()
+            host.window.makeKeyAndOrderFront(nil)
+            await app.sleep(0.3)
+            await sweep.check("New worktree sheet", "Esc closes", "\u{1B}") { !app.exists("new-worktree-sheet") }
         }
 
         // ⌘N asks for a plot name in a sheet, and Esc cancels it.

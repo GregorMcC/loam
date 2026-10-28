@@ -59,6 +59,23 @@ extension Scenarios {
         let f0 = model.desk.file
         await sweep.check(d, "] after a click on Cancel", "]") { model.desk.file != f0 }
         if model.desk.file != f0 { await sweep.check(d, "] back", "]") { model.desk.file == f0 } }
+        // A second click on the line closes the note. A click on another line moves it, and Esc closes it there.
+        try await sweep.click("desk-line-6")
+        try? await app.waitUntil("the note field on line 6 has the keys", timeout: 3) { app.fieldWithTheKeys() == "Note on line 6" }
+        try await sweep.click("desk-line-6")
+        try? await app.waitUntil("the note on line 6 closes", timeout: 3) { !app.exists("desk-note-field") }
+        let f1 = model.desk.file
+        await sweep.check(d, "] after a second click on the line", "]") { model.desk.file != f1 }
+        if model.desk.file != f1 { await sweep.check(d, "] back", "]") { model.desk.file == f1 } }
+        try await sweep.click("desk-line-6")
+        try? await app.waitUntil("the note field on line 6 has the keys", timeout: 3) { app.fieldWithTheKeys() == "Note on line 6" }
+        try await sweep.click("desk-line-7")
+        try? await app.waitUntil("the note field moves to line 7", timeout: 3) { app.fieldWithTheKeys() == "Note on line 7" }
+        sweep.expect(d, "A click on another line moves the note field", app.fieldWithTheKeys() == "Note on line 7")
+        await sweep.check(d, "Esc closes the moved note", "\u{1B}") { !app.exists("desk-note-field") }
+        let f2 = model.desk.file
+        await sweep.check(d, "] after the moved note closes", "]") { model.desk.file != f2 }
+        if model.desk.file != f2 { await sweep.check(d, "] back", "]") { model.desk.file == f2 } }
 
         // A note on line 8: ↩ saves it. Esc cancels a note on line 3.
         try await sweep.click("desk-line-8")
