@@ -64,21 +64,54 @@ extension Scenarios {
                               link: "https://github.com/example/widgets/issues/57")
         let gate = try start(plot, "Add the export button", checks: ["Tests=false"], maxTries: 1)
         let limit = try start(other, "Weekly revenue report", checks: ["Report=true"])
-        let running = try start(plot, "Rename the settings keys", checks: ["Tests=true"])
-        let cancelled = try start(other, "Tidy the old charts", checks: [])
-        for (n, run) in [ready, gate, limit, running, cancelled].enumerated() {
+        for (n, run) in [ready, gate, limit].enumerated() {
             try hook(run, ["hook_event_name": "SessionStart", "session_id": session(n + 1), "source": "startup"])
         }
         try hook(ready, ["hook_event_name": "Stop", "session_id": session(1)])
         try hook(gate, ["hook_event_name": "Stop", "session_id": session(2)])
         try hook(limit, ["hook_event_name": "StopFailure", "session_id": session(3), "error": "rate_limit"])
+        // The three runs above hold no slot now, so the next two start at once.
+        let running = try start(plot, "Rename the settings keys", checks: ["Tests=true"])
+        let cancelled = try start(other, "Tidy the old charts", checks: [])
+        for (n, run) in [running, cancelled].enumerated() {
+            try hook(run, ["hook_event_name": "SessionStart", "session_id": session(n + 4), "source": "startup"])
+        }
         try rig.loam(["run", "stop", cancelled], extra: extra)
+        // One run at a time: the run that runs holds the slot, so a new run waits for it.
+        try rig.loam(["run", "limits", "--at-a-time", "1"], extra: extra)
+        let queued = try start(plot, "Show the branch in the tab", checks: ["Tests=true"])
+
+        // The intake of the plot: a map with two open tickets.
+        let map = rig.root.appendingPathComponent("maps/build")
+        try fm.createDirectory(at: map.appendingPathComponent("issues"), withIntermediateDirectories: true)
+        for (name, text) in [
+            ("map.md", "# Build\n"),
+            ("issues/135-quit-during-a-merge.md", "Status: open\n\n# Driver scenario: quit during a merge\n"),
+            ("issues/136-sheet-in-full-screen.md", "Status: open\n\n# Driver scenario: a sheet in full screen\n"),
+        ] {
+            try text.write(to: map.appendingPathComponent(name), atomically: true, encoding: .utf8)
+        }
+        try rig.loam(["link", "add", plot, "Build map", map.appendingPathComponent("map.md").path])
+        // A recurring run at 22:00 every day, for the next recurring run in the sidebar.
+        try rig.loam(["recurring", "add", other, "--title", "Weekly revenue report", "--prompt", "Write the weekly report.",
+                      "--kind", "chore", "--days", "daily", "--at", "22:00", "--check", "Report=true"], extra: extra)
+        // The usage probe of Today asks claude -p, and this claude reports 41% of the week, which resets in 4 days.
+        let claude = rig.root.appendingPathComponent("bin/claude")
+        let resets = Int(Date().addingTimeInterval(4 * 24 * 3600).timeIntervalSince1970)
+        let report = #"{"type":"rate_limit_event","rate_limit_info":{"status":"allowed","unifiedWindows":{"seven_day":{"utilization":0.41,"resetsAt":RESETS}}}}"#
+            .replacingOccurrences(of: "RESETS", with: String(resets))
+        let script = try String(contentsOf: claude, encoding: .utf8)
+            .replacingOccurrences(of: "#!/bin/sh\n", with: "#!/bin/sh\nif [ \"$1\" = -p ]; then echo '\(report)'; exit 0; fi\n")
+        try script.write(to: claude, atomically: true, encoding: .utf8)
 
         let host = try await app.launchApp(
             client: LoamClient(binary: rig.binary, environment: environment), state: rig.stateFile, terminals: true)
         app.runtime.applyWindowAppearance(to: host.window)
+        // The size of the frame of Today in the design.
+        host.window.setFrame(NSRect(x: 40, y: 40, width: 1440, height: 900), display: true)
         let model = host.model
-        try await app.waitUntil("the runs load") { model.runs.count == 5 }
+        try await app.waitUntil("the runs load") { model.runs.count == 6 }
+        try confirm(model.runs.first { $0.id == queued }?.state == .queued, "the new run does not wait for a slot")
         try confirm(model.today.needsYouCount == 2, "Today counts \(model.today.needsYouCount) runs that need you")
         try await app.waitUntil("the Today row counts 2") { app.text(of: "sidebar-today")?.contains("2") == true }
 
@@ -90,22 +123,39 @@ extension Scenarios {
         // Today, from its sidebar row.
         try app.click("sidebar-today")
         try await app.waitUntil("Today shows") { model.page == .today && app.exists("today") }
-        try confirm(app.exists("today-needs-you") && app.exists("today-line-\(plot)") && app.exists("today-line-\(other)"),
-                    "Today has no Needs you section or line rows")
-        try confirm(app.exists("run-row-\(gate)") && app.exists("run-row-\(cancelled)"), "a run row is missing")
+        try confirm(app.exists("today-line-\(plot)") && app.exists("today-line-\(other)"), "Today has no line rows")
+        // A chip for each run on the line. A cancelled run left the line.
+        try confirm([ready, gate, limit, running, queued].allSatisfy { app.exists("today-chip-\($0)") } && !app.exists("today-chip-\(cancelled)"),
+                    "the chips are not the runs on the line")
+        // What Today reads: the intake of the map, the limits, the usage, the recurring run, and the events.
+        try await app.waitUntil("Today reads its data") {
+            model.todayData.intake[plot]?.list.items.count == 2 && model.todayData.limits?.atATime == 1
+                && model.todayData.usage?.sevenDay != nil && !model.todayData.recurring.isEmpty
+                && !model.todayData.awayEvents.isEmpty
+        }
+        try await app.waitUntil("the caption") { app.text(of: "today-caption")?.contains("1 of 1 running \u{00B7} 1 waits for a slot") == true }
+        try await app.waitUntil("the Intake row counts 2") { app.text(of: "sidebar-intake")?.contains("2") == true }
+        try await app.waitUntil("the sidebar card") { app.text(of: "sidebar-runs-card")?.contains("41%") == true }
+        try confirm(app.exists("today-limits") && app.text(of: "action-bar-plot") == "Today", "no limits, or the bar does not name Today")
         await appearance(.darkAqua)
         app.screenshot("today-night")
         await appearance(.aqua)
         app.screenshot("today-day")
 
-        // The page of the run that the gate stopped: its note, its state, and its history.
+        // The chip of a run at the desk opens the desk on it.
         await appearance(.darkAqua)
-        try app.click("run-row-\(gate)")
+        try app.click("today-chip-\(gate)")
+        try await app.waitUntil("the desk shows the run") { model.page == .desk && model.desk.runID == gate }
+        model.showToday()
+        try await app.waitUntil("Today shows again") { model.page == .today && app.exists("today-chip-\(limit)") }
+
+        // A run that a limit stopped is not at the desk: its chip opens its page, with its state and its history.
+        try app.click("today-chip-\(limit)")
         try await app.waitUntil("the run page shows") {
-            model.page == .run(gate) && model.runStatus?.run.id == gate && app.exists("run-page-history")
+            model.page == .run(limit) && model.runStatus?.run.id == limit && app.exists("run-page-history")
         }
         try confirm(app.text(of: "run-page-state")?.contains("Stopped") == true, "the state is \(app.text(of: "run-page-state") ?? "none")")
-        try confirm(app.exists("run-page-note") && app.exists("run-page-watch"), "the note or Watch is missing")
+        try confirm(app.exists("run-page-watch"), "Watch is missing")
         app.screenshot("run-page-night")
         await appearance(.aqua)
         app.screenshot("run-page-day")
@@ -176,6 +226,10 @@ extension Scenarios {
         try await app.waitUntil("the intake shows") { model.page == .intake(plot) && app.exists("intake-row-map 135") }
         try confirm(app.exists("intake-row-#52") && app.exists("intake-row-#48") && app.exists("intake-row-map 136")
                     && !app.exists("intake-row-map 99"), "the rows are not the open issues and tickets")
+        // The bar names the page and the plot, and the sidebar card says when the app read each source.
+        try confirm(app.text(of: "action-bar-plot") == "Intake" && app.text(of: "action-bar-pane") == "Loam v1 build",
+                    "the bar does not name the Intake page")
+        try await app.waitUntil("the sources card") { app.text(of: "sidebar-sources-card")?.contains("Read just now") == true }
         try app.click("intake-filter-map")
         try await app.waitUntil("the map filter") { !app.exists("intake-row-#52") && app.exists("intake-row-map 136") }
         try app.click("intake-filter-all")
@@ -445,13 +499,13 @@ extension Scenarios {
         // Today shows the run at Ship.
         await appearance(.darkAqua)
         try app.click("sidebar-today")
-        try await app.waitUntil("Today shows") { model.page == .today && app.exists("run-row-\(run)") }
+        try await app.waitUntil("Today shows") { model.page == .today && app.exists("today-chip-\(run)") }
         app.screenshot("ship-today-shipping")
 
         // A tick pushes the branch and opens #1.
         await model.tickRuns()
         try await app.waitUntil("the run has its PR") { model.runs.first?.pr?.number == 1 }
-        try app.click("run-row-\(run)")
+        try app.click("today-chip-\(run)")
         try await app.waitUntil("the run page shows #1") {
             model.runStatus?.run.id == run && app.exists("run-page-pr")
                 && model.runStatus?.events.contains { $0.detail == "Opened #1" } == true

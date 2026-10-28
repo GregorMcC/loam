@@ -158,7 +158,15 @@ public final class AppModel {
     var runTicks: Task<Void, Never>?
     /// The page that the well shows in place of the tabs and panes: Today or a run. Nil shows the panes.
     /// A move to a space or a pane closes it.
-    public internal(set) var page: AppPage? { didSet { if page != oldValue { onWorkspaceChange?() } } }
+    public internal(set) var page: AppPage? {
+        didSet {
+            guard page != oldValue else { return }
+            if oldValue == .today { leftToday() }
+            onWorkspaceChange?()
+        }
+    }
+    /// What Today reads besides the runs.
+    public internal(set) var todayData = TodayData()
     /// The run that the run page shows, with its history, as the core last read it.
     public internal(set) var runStatus: RunStatus?
     /// A shape that the start form started and that has not ended. The desk opens on its run when the run shows

@@ -15,9 +15,6 @@ public enum AppPage: Equatable, Sendable {
 }
 
 extension AppModel {
-    /// What Today shows, from the runs and the plots.
-    public var today: TodayContent { TodayContent(runs: runs, plots: plots) }
-
     /// Reads the runs of every plot. A failed read keeps the last list. The run page reads its run
     /// again, so its history follows the gate. The desk follows its queue.
     public func reloadRuns() async {
@@ -26,6 +23,7 @@ extension AppModel {
         runs = all
         if await openNewDraft() { return }
         if case .run(let id) = page { await readRunStatus(id) }
+        if page == .today { await readAwayEvents() }
         if page == .desk { await followDeskQueue(from: place) }
     }
 
