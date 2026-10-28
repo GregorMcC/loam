@@ -251,6 +251,9 @@ extension Scenarios {
 
         let (rig, shotEnvironment, _) = try shotRig(app)
         let (repo, _) = try widgetsRepo(rig, onGitHub: false)
+        let website = try rig.newPlot("Website")
+        try rig.loam(["link", "add", website, "Website in Linear", "https://linear.app/acme/project/website-redesign-8f3a2b1c9d0e/overview"])
+        _ = try rig.newPlot("Release notes")
         let plot = try rig.newPlot("Loam v1 build")
         try rig.loam(["repo", "add", plot, repo.path])
         try rig.loam(["link", "add", plot, "ENG team", "https://linear.app/acme/team/ENG/active"])
@@ -262,7 +265,11 @@ extension Scenarios {
             client: LoamClient(binary: rig.binary, environment: environment), state: rig.stateFile, terminals: true)
         app.runtime.applyWindowAppearance(to: host.window)
         let model = host.model
-        try await app.waitUntil("the plot loads") { model.plots.count == 1 && model.workspace.activePlotID == plot }
+        try await app.waitUntil("the plot loads") { model.plots.count == 3 }
+        if model.workspace.activePlotID != plot {
+            try app.click("plot-\(plot)")
+            try await app.waitUntil("the plot is active") { model.workspace.activePlotID == plot }
+        }
         NSApp.appearance = NSAppearance(named: .darkAqua)
 
         // Settings > Connections: no key, then a key that Linear takes.
@@ -281,8 +288,31 @@ extension Scenarios {
         try await app.waitUntil("Save is on") { AccessibilityProbe.shared.isEnabled("settings-linear-save") }
         try app.click("settings-linear-save")
         try await app.waitUntil("the key is taken") { model.connections.linearWords == "Connected to Acme as Ada Example." }
+        try await app.waitUntil("the mask") { app.exists("settings-linear-mask") && model.connections.scopeRows.count == 3 }
+        try confirm(model.connections.scopeRows.map(\.scope).contains("WEB team") == false, "a project link reads as a team")
+        try confirm(model.connections.scopeRows.map(\.scope).contains("Website redesign project"), "no project scope")
+        // A switch is saved through the core.
+        try app.click("settings-update-walkthrough")
+        try await app.waitUntil("the walkthrough switch") { model.connections.updates?.walkthroughComment == true }
         await app.sleep(0.5)
         app.screenshot("connections", of: settingsWindow())
+        // Disconnect asks in place, and Cancel keeps the key.
+        try app.click("settings-linear-disconnect")
+        try await app.waitUntil("the confirm") { app.exists("settings-linear-remove-cancel") }
+        app.screenshot("connections-confirm", of: settingsWindow())
+        try app.click("settings-linear-remove-cancel")
+        try await app.waitUntil("the confirm is gone") { !app.exists("settings-linear-remove-cancel") }
+        try confirm(model.connections.linear?.connected == true, "Cancel removed the key")
+
+        // The Runs tab.
+        if let index = tabs.tabViewItems.firstIndex(where: { ($0.identifier as? String) == "Runs" }) {
+            tabs.selectedTabViewItemIndex = index
+            try await app.waitUntil("the limits") { model.runsSettings.limits != nil && app.exists("settings-runs-at-a-time") }
+            await app.sleep(0.5)
+            app.screenshot("runs-settings", of: settingsWindow())
+        } else {
+            throw DriverFailure("the settings window has no Runs tab")
+        }
         settingsWindow()?.close()
 
         // Intake lists the issues of the team.
