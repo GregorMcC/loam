@@ -3,6 +3,7 @@ package run
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -54,8 +55,13 @@ func Land(ctx context.Context, s *store.Store, id string, o LandOptions) (*LandR
 		return nil, fmt.Errorf("the run has no PR, so Loam cannot merge it. Merge its branch yourself: %w", store.ErrInvalid)
 	}
 	res := &LandResult{Run: r, Warnings: []string{}}
-	if _, err := s.GetWorktree(r.WorktreeID); err != nil {
+	// Only a worktree that the store does not have is gone. A busy store is
+	// an error: it must not land the run.
+	switch _, err := s.GetWorktree(r.WorktreeID); {
+	case errors.Is(err, store.ErrNotFound):
 		return landGone(ctx, s, r, o, res)
+	case err != nil:
+		return nil, err
 	}
 	wo := worktree.LandOptions{Head: o.Head, KeepWorktree: o.KeepWorktree, OpenPanes: o.OpenPanes, DryRun: true}
 	plan, err := worktree.Land(ctx, s, r.PlotID, r.WorktreeID, wo)

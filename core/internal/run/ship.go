@@ -126,15 +126,18 @@ type shipper struct {
 
 // ship does the next step of the run. It returns true when the run record
 // changed. An error leaves the run as it is, for the next tick: GitHub may
-// be out of reach.
+// be out of reach, or the store may be busy. Only a worktree that the store
+// does not have is gone.
 func (sh *shipper) ship(ctx context.Context) (bool, error) {
 	r := sh.r
 	w, err := sh.s.GetWorktree(r.WorktreeID)
-	if err != nil {
-		if r.PR != nil {
-			return sh.watchGone(ctx, true)
-		}
+	switch {
+	case errors.Is(err, store.ErrNotFound) && r.PR != nil:
+		return sh.watchGone(ctx, true)
+	case errors.Is(err, store.ErrNotFound):
 		return sh.move(store.RunReady, "The worktree is gone, so Loam opens no PR")
+	case err != nil:
+		return false, err
 	}
 	repo, ok := worktree.GitHubRepo(w.Repo)
 	if !ok {
@@ -173,11 +176,15 @@ func (sh *shipper) ship(ctx context.Context) (bool, error) {
 
 // watch lands a Ready run when GitHub has merged its PR, and stops it when
 // GitHub has closed its PR. A run that cannot reach GitHub waits with no
-// warning, because it needs nothing from a tick.
+// warning, because it needs nothing from a tick. A store that cannot read
+// the worktree is an error, not a worktree that is gone.
 func (sh *shipper) watch(ctx context.Context) (bool, error) {
 	w, err := sh.s.GetWorktree(sh.r.WorktreeID)
-	if err != nil {
+	switch {
+	case errors.Is(err, store.ErrNotFound):
 		return sh.watchGone(ctx, false)
+	case err != nil:
+		return false, err
 	}
 	if sh.ghErr != nil {
 		return false, nil

@@ -1,6 +1,9 @@
 package cli
 
 import (
+	"database/sql"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -132,6 +135,54 @@ func TestWorktreeLandLandsAShippingRunToo(t *testing.T) {
 		t.Fatalf("exit %d: %s", code, out)
 	}
 	if got, _ := s.GetRun(r.ID); got.State != store.RunLanded {
+		t.Fatalf("run %+v", got)
+	}
+}
+
+// breakWorktrees renames the worktrees table of the store, so each read of a
+// worktree fails with an error that is not [store.ErrNotFound], as a busy or
+// locked store does.
+func breakWorktrees(t *testing.T) {
+	t.Helper()
+	db, err := sql.Open("sqlite", filepath.Join(os.Getenv("LOAM_HOME"), "loam.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`ALTER TABLE worktrees RENAME TO worktrees_away`); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A store that cannot read the worktree does not make the run Ready as if
+// the worktree were gone: the run waits for the next tick.
+func TestRunTickKeepsAShippingRunWhenTheStoreCannotReadItsWorktree(t *testing.T) {
+	s, r, _ := shipRun(t, "3")
+	breakWorktrees(t)
+	res := tick(t)
+	if len(res.Runs) != 0 || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "worktrees") {
+		t.Fatalf("%+v", res)
+	}
+	if got, _ := s.GetRun(r.ID); got.State != store.RunShipping {
+		t.Fatalf("run %+v", got)
+	}
+}
+
+// Nor does it land a Ready run whose PR GitHub merged, in a tick or in run
+// land.
+func TestARunWhoseWorktreeTheStoreCannotReadDoesNotLand(t *testing.T) {
+	s, r, w := readyRun(t)
+	setGitHub(t, strings.Replace(ciState(w.Branch, testutil.Git(t, r.Folder, "rev-parse", "HEAD"), "SUCCESS"),
+		`"state": "OPEN"`, `"state": "MERGED"`, 1))
+	breakWorktrees(t)
+	res := tick(t)
+	if len(res.Runs) != 0 || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "worktrees") {
+		t.Fatalf("tick %+v", res)
+	}
+	if _, code, out := runLand(t, r.ID); code == 0 || !strings.Contains(out, "worktrees") {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+	if got, _ := s.GetRun(r.ID); got.State != store.RunReady {
 		t.Fatalf("run %+v", got)
 	}
 }
