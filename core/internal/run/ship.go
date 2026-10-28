@@ -305,8 +305,10 @@ func (sh *shipper) push(ctx context.Context, repo github.Repo, w store.Worktree,
 }
 
 // prDraft returns the PR text of the run for the commit head: the draft that
-// the run saved, or a new one that it saves now. It returns nil when the run
-// moved on while Claude wrote the text.
+// the run saved, or a new one that it saves now. Only text with Claude's
+// notes is saved: Loam's own text, when Claude could not write, is not, so
+// the next try asks Claude again. It returns nil when the run moved on while
+// Claude wrote the text.
 func (sh *shipper) prDraft(ctx context.Context, repo github.Repo, w store.Worktree, head string) (*store.RunPRDraft, error) {
 	if d := sh.r.PRDraft; d != nil && d.Head == head {
 		return d, nil
@@ -320,6 +322,9 @@ func (sh *shipper) prDraft(ctx context.Context, repo github.Repo, w store.Worktr
 	}
 	title, body, notes := sh.prText(ctx, w, repo, others, where)
 	d := &store.RunPRDraft{Head: head, Title: title, Body: body, Notes: notes}
+	if notes == nil {
+		return d, nil
+	}
 	moved, err := sh.update(func(r *store.Run) { r.PRDraft = d })
 	if !moved || err != nil {
 		return nil, err

@@ -150,6 +150,27 @@ func TestRunTickOpensThePRWithTheSavedTextAfterAFailedCreate(t *testing.T) {
 	}
 }
 
+// Text that Loam wrote because Claude could not is not saved: after a failed
+// create, the next tick asks Claude again.
+func TestRunTickAsksClaudeAgainAfterAFailedCreateWithNoNotes(t *testing.T) {
+	s, r, w := shipRun(t, "3")
+	trustFolder(t, r.Folder, w.Repo)
+	testutil.FakeClaudePrint(t, `{"type":"result","subtype":"success","is_error":false,"result":"not JSON"}`)
+	setGitHub(t, `{"create_refusal": "Something went wrong"}`)
+	if got := tick(t); len(got.Warnings) != 1 || len(printCalls(t)) != 1 {
+		t.Fatalf("first tick %+v, %d claude -p calls", got, len(printCalls(t)))
+	}
+	if r, _ := s.GetRun(r.ID); r.PRDraft != nil {
+		t.Fatalf("Loam saved its own text: %+v", r.PRDraft)
+	}
+	testutil.FakeClaudePrint(t, notesAnswer)
+	setGitHub(t, `{}`)
+	got := tick(t)
+	if len(got.Runs) != 1 || got.Runs[0].Notes == nil || len(printCalls(t)) != 2 {
+		t.Fatalf("second tick %+v, %d claude -p calls", got, len(printCalls(t)))
+	}
+}
+
 func TestRunTickWithNoNotesSaysWhy(t *testing.T) {
 	s, r, w := shipRun(t, "3")
 	trustFolder(t, r.Folder, w.Repo)

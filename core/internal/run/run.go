@@ -112,6 +112,7 @@ func Start(ctx context.Context, s *store.Store, o StartOptions) (*StartResult, e
 	if err != nil {
 		return nil, err
 	}
+	usageForHold(ctx, s) // before Loam makes anything, so a probe that is cut short leaves nothing
 	res := &StartResult{}
 	wt, err := prepare(s, plot, o, title, ticket, res)
 	if err != nil {
@@ -124,7 +125,6 @@ func Start(ctx context.Context, s *store.Store, o StartOptions) (*StartResult, e
 	if err != nil {
 		return nil, err
 	}
-	usageForHold(ctx, s)
 	slotted, err := s.TakeSlot(r.ID, &store.RunQueue{Model: o.Model, Effort: o.Effort}, noChange)
 	if err != nil {
 		return nil, stopAfter(s, r.ID, err)

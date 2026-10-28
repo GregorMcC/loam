@@ -3,6 +3,7 @@ package run
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -123,14 +124,19 @@ func stopped(s *store.Store, runID string, errOut io.Writer, logf func(string, .
 }
 
 // onGitHub reports whether Loam can ship the run: it works in a worktree of
-// a repo whose origin is on GitHub.
+// a repo whose origin is on GitHub. A store that cannot read the worktree
+// now sends the run to Ship anyway: Ship reads the worktree again, and moves
+// a run whose repo is not on GitHub to Ready.
 func onGitHub(s *store.Store, r store.Run) bool {
 	if r.WorktreeID == "" {
 		return false
 	}
 	w, err := s.GetWorktree(r.WorktreeID)
-	if err != nil {
+	switch {
+	case errors.Is(err, store.ErrNotFound):
 		return false
+	case err != nil:
+		return true
 	}
 	_, ok := worktree.GitHubRepo(w.Repo)
 	return ok

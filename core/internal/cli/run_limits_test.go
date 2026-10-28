@@ -199,6 +199,23 @@ func TestRunStartProbesAStaleUsageFirst(t *testing.T) {
 	}
 }
 
+// With no slot free the run waits anyway, so a start does not probe.
+func TestRunStartWithNoFreeSlotDoesNotProbe(t *testing.T) {
+	s, _ := runCLI(t)
+	setLimits(t, "--at-a-time", "1", "--hold-at", "0")
+	if r := startRun(t, "Say hi"); r.State != store.RunRunning {
+		t.Fatalf("%+v", r)
+	}
+	setLimits(t, "--hold-at", "80")
+	read := time.Now().Add(-3 * time.Hour)
+	if _, err := s.RecordUsage(store.Usage{SevenDay: &store.UsageWindow{Utilization: 0.41, ResetsAt: read.Add(48 * time.Hour)}}, read); err != nil {
+		t.Fatal(err)
+	}
+	if r := startRun(t, "Say bye"); r.State != store.RunQueued || usageProbes(t) != 0 {
+		t.Fatalf("%d probes, %+v", usageProbes(t), r)
+	}
+}
+
 // A probe that fails leaves the stored usage, and the run is held by it. The
 // next action and the next tick do not probe again within 30 minutes.
 func TestRunStartWithAFailedProbeUsesTheStoredUsage(t *testing.T) {

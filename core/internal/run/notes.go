@@ -113,17 +113,22 @@ func nameFiles(files []string) string {
 	return strings.Join(files[:factNames], ", ") + fmt.Sprintf(" and %d more", len(files)-factNames)
 }
 
+// storeSchemas are the base names of the files that hold the schema of a
+// store, such as Prisma's schema.prisma or Rails' db/schema.rb.
+var storeSchemas = []string{"schema.prisma", "schema.rb", "schema.sql", "structure.sql"}
+
 // isMigration reports whether the path is a store migration: a path with a
 // folder or a file named for migrations, such as db/migrations/0001.sql or
-// app/migrate.go. A file named schema is not one: it is as often a GraphQL
-// or an API schema.
+// app/migrate.go, or a store schema file in [storeSchemas]. Another file
+// named schema is not one: it is as often a GraphQL or an API schema.
 func isMigration(p string) bool {
-	for _, part := range strings.Split(strings.ToLower(p), "/") {
+	lower := strings.ToLower(p)
+	for _, part := range strings.Split(lower, "/") {
 		if strings.Contains(part, "migrat") {
 			return true
 		}
 	}
-	return false
+	return slices.Contains(storeSchemas, path.Base(lower))
 }
 
 // dependencyFiles are the names of the files that pin the dependencies of a

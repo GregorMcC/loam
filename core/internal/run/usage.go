@@ -118,13 +118,30 @@ func usageStale(u store.Usage, now time.Time) bool {
 }
 
 // usageForHold probes the usage before a run of yours takes a slot, when the
-// hold is on and the usage is stale, as [probeStale] decides. Loam tries at
+// hold is on, a slot is free, and the usage is stale, as [probeStale] decides. Loam tries at
 // most one probe in [UsageMaxAge], so an action of yours costs at most one.
 // A probe that fails leaves the stored usage, and the hold decides from it.
 func usageForHold(ctx context.Context, s *store.Store) {
-	if l, err := s.GetRunLimits(); err == nil && l.HoldAt > 0 {
-		probeStale(ctx, s)
+	l, err := s.GetRunLimits()
+	if err != nil || l.HoldAt == 0 {
+		return
 	}
+	// With no slot free the run waits anyway, so a probe cannot change it.
+	if runs, err := s.ListRuns(""); err != nil || holdingSlots(runs) >= l.AtATime {
+		return
+	}
+	probeStale(ctx, s)
+}
+
+// holdingSlots counts the runs that hold a slot.
+func holdingSlots(runs []store.Run) int {
+	n := 0
+	for _, r := range runs {
+		if r.State.HoldsSlot() {
+			n++
+		}
+	}
+	return n
 }
 
 // probeStale probes the usage when Loam read it more than [UsageMaxAge] ago,

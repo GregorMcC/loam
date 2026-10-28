@@ -62,7 +62,8 @@ func TestRiskFactsNameFilesOutOfThePlanMigrationsAndDependencies(t *testing.T) {
 
 func TestFileKinds(t *testing.T) {
 	for p, want := range map[string]bool{
-		"db/migrations/0001_init.sql": true, "core/internal/store/schema.go": false, "prisma/schema.prisma": false,
+		"db/migrations/0001_init.sql": true, "core/internal/store/schema.go": false, "prisma/schema.prisma": true,
+		"db/schema.rb": true, "db/structure.sql": true,
 		"graphql/schema.ts": false, "openapi/schema.py": false, "contract/schema/defs.json": false, "schema.json": false,
 		"app/migrate.go": true, "Migrations/V2.swift": true, "README.md": false,
 	} {
