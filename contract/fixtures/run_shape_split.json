@@ -13,6 +13,7 @@
     "id": "runraaaaaj",
     "max_tries": 3,
     "note": "",
+    "notes": null,
     "plot_id": "plotaaaaae",
     "session_id": "",
     "shape": {
@@ -55,6 +56,7 @@
       "id": "runraaaaaj",
       "max_tries": 3,
       "note": "",
+      "notes": null,
       "plot_id": "plotaaaaae",
       "session_id": "",
       "shape": {
@@ -96,6 +98,7 @@
       "id": "runraaaaai",
       "max_tries": 3,
       "note": "",
+      "notes": null,
       "plot_id": "plotaaaaae",
       "session_id": "",
       "shape": {

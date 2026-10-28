@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/GregorMcC/loam/core/internal/github"
+	"github.com/GregorMcC/loam/core/internal/intake"
 	"github.com/GregorMcC/loam/core/internal/store"
 	"github.com/GregorMcC/loam/core/internal/worktree"
 )
@@ -22,6 +23,9 @@ type LandOptions struct {
 	OpenPanes []string
 	// DryRun changes nothing. The result is the plan.
 	DryRun bool
+	// NoLinearDone leaves the Linear issue where it is: this land does not
+	// move it to Done. It holds only for a land that merges now.
+	NoLinearDone bool
 }
 
 // LandResult says what a land of a run did.
@@ -32,7 +36,8 @@ type LandResult struct {
 }
 
 // Land merges the PR of a run that is Ready to land, as loam worktree land
-// does, and the run is Landed. Its Linear issue moves to Done. The session
+// does, and the run is Landed. Its Linear issue moves to Done, unless
+// [LandOptions.NoLinearDone] says not to. The session
 // of the run stops first, because the land removes its worktree, but only
 // when a dry run finds that the land can go on. When
 // GitHub merges later, with a merge queue, the run stays Ready, and a tick
@@ -77,13 +82,17 @@ func Land(ctx context.Context, s *store.Store, id string, o LandOptions) (*LandR
 	switch {
 	case land.Merged:
 		var warnings []string
-		res.Run, _, warnings, err = landRun(ctx, s, r, MergedNote(land))
+		res.Run, _, warnings, err = landRun(ctx, s, r, MergedNote(land), !o.NoLinearDone)
 		res.Warnings = append(res.Warnings, warnings...)
 		return res, err
 	case land.MergeQueue:
 		res.Run, err = noteWhile(s, r, fmt.Sprintf("#%d is in the merge queue of %s", pr, land.PR.Base))
 	default:
 		res.Run, err = noteWhile(s, r, cmp.Or(land.MergeNote, fmt.Sprintf("GitHub merges #%d when it can", pr)))
+	}
+	if o.NoLinearDone && r.Source != nil && r.Source.Kind == intake.Linear {
+		res.Warnings = append(res.Warnings, fmt.Sprintf(
+			"GitHub merges #%d later. The tick that lands the run then moves its Linear issue to Done when that update to Linear is on", pr))
 	}
 	return res, err
 }
@@ -120,7 +129,7 @@ func landGone(ctx context.Context, s *store.Store, r store.Run, o LandOptions, r
 		res.Warnings = append(res.Warnings, fmt.Sprintf("The worktree is gone, and #%d is %s on GitHub. A land records that.", st.Number, strings.ToLower(st.State)))
 		return res, nil
 	}
-	sh := shipper{s: s, gh: gh, r: r}
+	sh := shipper{s: s, gh: gh, r: r, noLinearDone: o.NoLinearDone}
 	_, _, err = sh.ended(ctx, &github.PR{Number: st.Number, State: st.State})
 	res.Run, res.Warnings = sh.r, append(res.Warnings, sh.warnings...)
 	return res, err
@@ -145,7 +154,7 @@ func LandWorktree(ctx context.Context, s *store.Store, plotID, worktreeID string
 		if r.PR != nil && r.PR.Number != pr {
 			continue
 		}
-		r, moved, w, err := landRun(ctx, s, r, note)
+		r, moved, w, err := landRun(ctx, s, r, note, true)
 		warnings = append(warnings, w...)
 		if err != nil {
 			warnings = append(warnings, err.Error())
@@ -157,10 +166,12 @@ func LandWorktree(ctx context.Context, s *store.Store, plotID, worktreeID string
 }
 
 // landRun marks the run Landed with the note while it is still in the state
-// that r has, and records the note as a "land" event. Its Linear issue moves
-// to Done, for a run of a group when no other run of the group is left (see
-// [finishLinearIssue]). It returns false when the run had moved on.
-func landRun(ctx context.Context, s *store.Store, r store.Run, note string) (store.Run, bool, []string, error) {
+// that r has, and records the note as a "land" event. With done, its Linear
+// issue moves to Done, for a run of a group when no other run of the group is
+// left (see [finishLinearIssue]). The issue gets the walkthrough of the run
+// as a comment when that update is on (see [commentWalkthrough]). It returns
+// false when the run had moved on.
+func landRun(ctx context.Context, s *store.Store, r store.Run, note string, done bool) (store.Run, bool, []string, error) {
 	from, moved := r.State, false
 	r, err := s.UpdateRun(r.ID, func(cur *store.Run) error {
 		if cur.State == from {
@@ -175,7 +186,17 @@ func landRun(ctx context.Context, s *store.Store, r store.Run, note string) (sto
 	if err := s.AddRunEvent(r.ID, "land", note); err != nil {
 		warnings = append(warnings, err.Error())
 	}
-	if warning := finishLinearIssue(ctx, s, r); warning != "" {
+	switch {
+	case done:
+		if warning := finishLinearIssue(ctx, s, r); warning != "" {
+			warnings = append(warnings, warning)
+		}
+	case r.Source != nil && r.Source.Kind == intake.Linear:
+		if err := s.AddRunEvent(r.ID, "linear", "This land leaves "+r.Source.Key+" where it is"); err != nil {
+			warnings = append(warnings, err.Error())
+		}
+	}
+	if warning := commentWalkthrough(ctx, s, r); warning != "" {
 		warnings = append(warnings, warning)
 	}
 	return r, true, warnings, nil

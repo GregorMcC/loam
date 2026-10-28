@@ -77,10 +77,11 @@ func joinAnd(names []string) string {
 	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
 }
 
-// finishLinearIssue moves the Linear issue of a run that has ended to Done.
-// A run of a group moves it only when every other run of the group has ended
-// as Landed or Cancelled, and one run of the group landed. While a run of
-// the group has not landed, a run that lands records why the issue stays.
+// finishLinearIssue moves the Linear issue of a run that has ended to Done,
+// when that update to Linear is on. A run of a group moves it only when
+// every other run of the group has ended as Landed or Cancelled, and one run
+// of the group landed. While a run of the group has not landed, a run that
+// lands records why the issue stays.
 func finishLinearIssue(ctx context.Context, s *store.Store, r store.Run) string {
 	if r.Source == nil || r.Source.Kind != intake.Linear {
 		return ""
@@ -111,6 +112,10 @@ func finishLinearIssue(ctx context.Context, s *store.Store, r store.Run) string 
 		return ""
 	case waiting > 0 || !landed:
 		return ""
+	}
+	if off, warning := linearUpdateOff(s, r, "move "+r.Source.Key+" to Done",
+		func(u store.LinearUpdates) bool { return u.Done }); off {
+		return warning
 	}
 	return moveLinearIssue(ctx, s, r, "Done", "has ended", (*linear.Client).Finish)
 }

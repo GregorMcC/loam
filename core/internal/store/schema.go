@@ -244,6 +244,20 @@ CREATE TABLE usage (
   read_at INTEGER NOT NULL
 );
 `,
+	// 17: the ship notes of a run, as JSON, or NULL when it has none. And the
+	// switches for the updates that Loam makes to Linear: one row, for every
+	// plot. Neither is in the change log.
+	`
+ALTER TABLE runs ADD COLUMN notes TEXT;
+CREATE TABLE linear_updates (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  in_progress INTEGER NOT NULL,
+  attach_pr INTEGER NOT NULL,
+  done INTEGER NOT NULL,
+  walkthrough_comment INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+`,
 }
 
 // SchemaVersion is the schema version of this binary.

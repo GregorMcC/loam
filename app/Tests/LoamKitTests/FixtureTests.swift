@@ -74,6 +74,7 @@ func decodeFixture(schema: String, data: Data) throws {
     case "tick-status": _ = try d.decode(TickStatus.self, from: data)
     case "intake-list": _ = try d.decode(IntakeList.self, from: data)
     case "linear-status", "linear-key": _ = try d.decode(LinearStatus.self, from: data)
+    case "linear-updates": _ = try d.decode(LinearUpdatesOne.self, from: data)
     default: Issue.record("No Swift type for schema \(schema)")
     }
 }
@@ -107,6 +108,18 @@ func decodeFixture(schema: String, data: Data) throws {
         #expect(shape.plan.count == 2 && shape.size == "About 60 lines in the app." && shape.isDrafted)
         let approved = try JSONDecoder().decode(RunStartResult.self, from: Fixtures.data("run_approve")).run
         #expect(approved.shape?.assumptions.first?.answer == "The plan shows as steps with checkboxes.")
+    }
+
+    /// A run that Loam shipped has the ship notes that Claude wrote, and a run before its PR has none.
+    @Test func aShippedRunDecodesItsNotes() throws {
+        let landed = try JSONDecoder().decode(RunLandResult.self, from: Fixtures.data("run_land")).run
+        let notes = try #require(landed.notes)
+        #expect(notes.walkthrough == "The README says what Loam is. It was a title alone.")
+        #expect(notes.files == [RunNotes.File(path: "README.md", role: "What you see")])
+        #expect(notes.risk.level == "low" && notes.risk.reasons == ["One file.", "No store change."])
+        #expect(notes.whereItStands == "The README says what Loam is. Next: the guide." && !notes.writtenAt.isEmpty)
+        let started = try JSONDecoder().decode(RunStartResult.self, from: Fixtures.data("run_start")).run
+        #expect(started.notes == nil)
     }
 
     /// Ticket 209: a send-back whose note is like an earlier note offers a rule.

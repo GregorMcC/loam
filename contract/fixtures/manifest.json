@@ -1012,6 +1012,30 @@
     "schema": "linear-status"
   },
   {
+    "name": "linear_updates",
+    "args": [
+      "linear",
+      "updates",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "linear-updates"
+  },
+  {
+    "name": "linear_updates_set",
+    "args": [
+      "linear",
+      "updates",
+      "--walkthrough",
+      "on",
+      "--done",
+      "off",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "linear-updates"
+  },
+  {
     "name": "intake_list",
     "args": [
       "intake",
@@ -1109,6 +1133,8 @@
       "run",
       "land",
       "runraaaaac",
+      "--where-it-stands",
+      "--no-linear-done",
       "--json"
     ],
     "exit_code": 0,

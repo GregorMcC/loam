@@ -663,6 +663,13 @@ func scenario(t *testing.T) *harness {
 	h.run("linear_status_none", "linear-status", 0, "linear", "status")
 	h.runInput("linear_key_set", "linear-key", testutil.LinearKey+"\n", 0, "linear", "key", "set")
 	h.run("linear_status", "linear-status", 0, "linear", "status")
+	// The switches for the updates to Linear, and a set of two of them. The
+	// raw call puts the defaults back.
+	h.run("linear_updates", "linear-updates", 0, "linear", "updates")
+	h.run("linear_updates_set", "linear-updates", 0, "linear", "updates", "--walkthrough", "on", "--done", "off")
+	if _, errOut, code := h.raw("linear", "updates", "--walkthrough", "off", "--done", "on"); code != 0 {
+		t.Fatalf("linear updates: exit %d: %s", code, errOut)
+	}
 	if _, errOut, code := h.raw("link", "add", "Runs", "ENG team", "https://linear.app/acme/team/ENG/active"); code != 0 {
 		t.Fatalf("link add: exit %d: %s", code, errOut)
 	}
@@ -698,6 +705,13 @@ func scenario(t *testing.T) *harness {
 	testutil.Git(t, tidy.Run.Folder, "commit", "-qam", "Tidy the README")
 	h.tokens[testutil.Git(t, tidy.Run.Folder, "rev-parse", "HEAD")] = runHead
 	hook("Stop")
+	// Before it opens the PR, the tick has claude -p write the ship notes.
+	testutil.FakeClaudePrint(t, `{"type": "result", "subtype": "success", "is_error": false, "result": "",
+ "structured_output": {"walkthrough": "The README says what Loam is. It was a title alone.",
+  "files": [{"path": "README.md", "role": "What you see"}],
+  "risk": {"level": "low", "reasons": ["One file.", "No store change."]},
+  "where_it_stands": "The README says what Loam is. Next: the guide."}}`)
+	h.env = append(h.env, "LOAM_FAKE_CLAUDE_PRINT="+os.Getenv("LOAM_FAKE_CLAUDE_PRINT"))
 	h.run("run_tick", "run-tick", 0, "run", "tick")
 
 	// Land (ticket 207). CI passes on #25, so a tick makes the run Ready. A
@@ -715,7 +729,7 @@ func scenario(t *testing.T) *harness {
 		t.Fatalf("run tick: exit %d: %s", code, errOut)
 	}
 	h.run("run_land_dry_run", "run-land", 0, "run", "land", tidy.Run.ID, "--dry-run")
-	h.run("run_land", "run-land", 0, "run", "land", tidy.Run.ID)
+	h.run("run_land", "run-land", 0, "run", "land", tidy.Run.ID, "--where-it-stands", "--no-linear-done")
 	h.run("error_run_land_not_ready", "error", 2, "run", "land", started.Run.ID)
 
 	// Shape (ticket 207). The fake claude prints a draft for claude -p. A

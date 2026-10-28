@@ -383,7 +383,7 @@
     "run": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "plot_id", "worktree_id", "folder", "title", "goal", "done_when", "state", "tries", "max_tries", "turns", "session_id", "note", "group_id", "created_at", "updated_at"],
+      "required": ["id", "plot_id", "worktree_id", "folder", "title", "goal", "done_when", "state", "tries", "max_tries", "turns", "session_id", "note", "group_id", "notes", "created_at", "updated_at"],
       "properties": {
         "id": { "$ref": "#/$defs/id" },
         "plot_id": { "$ref": "#/$defs/id" },
@@ -402,8 +402,44 @@
         "session_id": { "description": "The Claude Code session of the run. It is empty until the session starts.", "type": "string" },
         "note": { "description": "Why the run is in its state, such as the failed checks.", "type": "string" },
         "group_id": { "description": "The group of the runs that one split shape made for one issue, one in each repo: the ID of the first run. Empty for a run alone.", "anyOf": [{ "$ref": "#/$defs/id" }, { "const": "" }] },
+        "notes": {
+          "description": "The ship notes that Claude wrote when Loam opened the PR. Null before Loam opens the PR, and when Claude wrote none.",
+          "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/runNotes" }]
+        },
         "created_at": { "$ref": "#/$defs/time" },
         "updated_at": { "$ref": "#/$defs/time" }
+      }
+    },
+    "runNotes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["walkthrough", "files", "risk", "where_it_stands", "written_at"],
+      "properties": {
+        "walkthrough": { "description": "What changed and why, in 2 to 4 plain sentences.", "type": "string", "minLength": 1 },
+        "files": {
+          "description": "Each changed file once, in the order that a reviewer should read them.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "role"],
+            "properties": {
+              "path": { "type": "string", "minLength": 1 },
+              "role": { "description": "The role of the file in the change, in 1 to 4 words, such as Tests.", "type": "string" }
+            }
+          }
+        },
+        "risk": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["level", "reasons"],
+          "properties": {
+            "level": { "enum": ["low", "medium", "high"] },
+            "reasons": { "description": "Short sentences: Claude's first, then the facts that Loam adds.", "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "where_it_stands": { "description": "A new Where it stands for the plot, moved on by this change.", "type": "string" },
+        "written_at": { "$ref": "#/$defs/time" }
       }
     },
     "effort": {
@@ -583,6 +619,18 @@
           ]
         },
         "error": { "description": "Why Linear did not answer a stored key, or empty.", "type": "string" }
+      }
+    },
+    "linearUpdates": {
+      "description": "The switches for the updates that Loam makes to the Linear issue of a run. They hold for every plot.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["in_progress", "attach_pr", "done", "walkthrough_comment"],
+      "properties": {
+        "in_progress": { "description": "When a run starts, move the issue to In Progress.", "type": "boolean" },
+        "attach_pr": { "description": "When Loam opens the PR, attach it to the issue.", "type": "boolean" },
+        "done": { "description": "When a run lands, move the issue to Done.", "type": "boolean" },
+        "walkthrough_comment": { "description": "When a run lands, add its walkthrough to the issue as a comment.", "type": "boolean" }
       }
     }
   }

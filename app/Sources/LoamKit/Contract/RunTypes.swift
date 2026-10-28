@@ -109,6 +109,36 @@ public struct RunShape: Codable, Equatable, Sendable {
     }
 }
 
+/// The ship notes of a run: what Claude wrote about the change when Loam opened its PR. The Land screen shows them.
+public struct RunNotes: Codable, Equatable, Sendable {
+    /// What changed and why, in 2 to 4 plain sentences.
+    public var walkthrough: String
+    /// Each changed file once, in the order that a reviewer should read them.
+    public var files: [File]
+    public var risk: Risk
+    /// A new Where it stands for the plot: the text that it had, moved on by this change.
+    public var whereItStands: String
+    public var writtenAt: String
+
+    /// One changed file, with its role in the change in 1 to 4 words, such as "Tests".
+    public struct File: Codable, Equatable, Sendable {
+        public var path: String
+        public var role: String
+    }
+
+    /// How risky the change is, and why. Loam adds its own facts after the reasons of Claude.
+    public struct Risk: Codable, Equatable, Sendable {
+        /// low, medium, or high.
+        public var level: String
+        public var reasons: [String]
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case walkthrough, files, risk
+        case whereItStands = "where_it_stands", writtenAt = "written_at"
+    }
+}
+
 /// One goal that a background Claude Code session works on in a worktree, until its checks pass.
 public struct Run: Codable, Equatable, Sendable, Identifiable {
     public var id: String
@@ -138,11 +168,13 @@ public struct Run: Codable, Equatable, Sendable, Identifiable {
     public var updatedAt: String
     /// The runs that Shape split from one issue, one for each repo, share this ID. Empty for a run alone.
     public var groupID: String = ""
+    /// The ship notes that Claude wrote when Loam opened the PR. Nil before that, and when Claude wrote none.
+    public var notes: RunNotes? = nil
     /// The run waits on GitHub, so a tick can move it: it ships, or it is ready with a PR that GitHub can merge.
     public var waitsOnGitHub: Bool { state == .shipping || (state == .ready && pr != nil) }
 
     enum CodingKeys: String, CodingKey {
-        case id, folder, title, goal, state, tries, turns, source, pr, shape, note
+        case id, folder, title, goal, state, tries, turns, source, pr, shape, note, notes
         case plotID = "plot_id", worktreeID = "worktree_id", doneWhen = "done_when", maxTries = "max_tries"
         case sessionID = "session_id", createdAt = "created_at", updatedAt = "updated_at", groupID = "group_id"
     }

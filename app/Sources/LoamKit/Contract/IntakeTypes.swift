@@ -73,3 +73,25 @@ public struct LinearStatus: Codable, Equatable, Sendable {
     /// Why Linear did not answer a stored key, or empty.
     public var error: String
 }
+
+/// The switches for the updates that Loam makes to the Linear issue of a run. They hold for every plot.
+public struct LinearUpdates: Codable, Equatable, Sendable {
+    /// When a run starts, move the issue to In Progress.
+    public var inProgress: Bool
+    /// When the PR opens, attach it to the issue.
+    public var attachPR: Bool
+    /// When you land a run, move the issue to Done.
+    public var done: Bool
+    /// When you land a run, add its walkthrough to the issue as a comment.
+    public var walkthroughComment: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case done
+        case inProgress = "in_progress", attachPR = "attach_pr", walkthroughComment = "walkthrough_comment"
+    }
+}
+
+/// Output of `loam linear updates`.
+public struct LinearUpdatesOne: Codable, Equatable, Sendable {
+    public var updates: LinearUpdates
+}
