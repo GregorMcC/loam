@@ -279,7 +279,7 @@ public final class AppModel {
             plots: plots, workspace: workspace, collapsed: sidebarCollapsed,
             newChangeCounts: review.sidebarCounts(activePlot: workspace.activePlotID), worktrees: worktrees,
             arriving: arrivingPanes(), repos: repoCheckouts, titles: terminalTitles, selectedWorktree: selectedWorktree,
-            page: page)
+            page: page, runWorktrees: Set(runs.filter { !$0.state.ended && !$0.worktreeID.isEmpty }.map(\.worktreeID)))
     }
 
     /// ⌘I. Closing the panel marks the changes of the active plot as seen.

@@ -235,10 +235,11 @@ public struct SidebarModel: Equatable, Sendable {
     /// A plot with no entry has no repos. `titles`: the titles that the terminals set (`AppModel.terminalTitles`).
     /// `selectedWorktree`: the worktree that ⌘⇧L selected (`AppModel.selectedWorktree`). It selects its row
     /// only while it is a worktree of the active plot. `page`: the page that the well shows (`AppModel.page`).
+    /// `runWorktrees`: the worktrees of the runs that have not ended.
     public init(plots: [PlotSummary], workspace: Workspace, collapsed: Bool, newChangeCounts: [String: Int] = [:],
                 worktrees: [String: [WorktreeStatus]] = [:], arriving: Set<PaneID> = [],
                 repos: [String: [RepoCheckout]] = [:], titles: [PaneID: String] = [:], selectedWorktree: String? = nil,
-                page: AppPage? = nil) {
+                page: AppPage? = nil, runWorktrees: Set<String> = []) {
         self.plots = plots
         var panesIn: [String: Int] = [:]
         for id in workspace.allPaneIDs {
@@ -305,7 +306,8 @@ public struct SidebarModel: Equatable, Sendable {
         let statuses = plots.flatMap { worktrees[$0.id] ?? [] }
         let ghWorks = !statuses.contains(where: \.holdsGitHubNote)
         showsReadyToMerge = ghWorks && statuses.contains { $0.pr != nil }
-        readyToMerge = showsReadyToMerge ? ordered.filter(\.isReadyToMerge) : []
+        // A worktree of a run that has not ended lands at the desk, with its run.
+        readyToMerge = showsReadyToMerge ? ordered.filter { $0.isReadyToMerge && !runWorktrees.contains($0.id) } : []
         pageRow = switch page {
         case nil: nil
         case .today, .desk, .run: .today
