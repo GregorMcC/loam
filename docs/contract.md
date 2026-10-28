@@ -549,9 +549,12 @@ The gate is the Stop hook of the session. Each time the session ends a turn, Loa
 | :- | :- |
 | `loam run start <plot> --title <text> [--goal <text>] [--check <name>=<command>]... [--worktree <name>] [--repo <repo>] [--base <branch>] [--link <link-id or URL> \| --ticket <file>] [--max-tries <n>] [--model <model>] [--effort <level>] [--approve-setup]` | `{ "run": {...}, "worktree": {...} }` |
 | `loam run list [<plot>]` | An array of runs, newest first. It is `[]` when none exists. |
+| `loam run events [--since <time>] [--plot <plot>]` | `{ "events": [{ "run_id": "...", "plot_id": "...", "run_title": "...", "at": "...", "kind": "state", "detail": "running" }] }` |
 | `loam run status <run>` | `{ "run": {...}, "events": [{ "id": 1, "run_id": "...", "at": "...", "kind": "state", "detail": "running" }] }`. `kind` is `state`, `try`, `check`, `linear`, `ship`, `ci`, `review`, `note`, `land`, `shape`, or `draft`. |
 | `loam run stop <run>` | `{ "run": {...} }`. The run is `cancelled`. A run that has ended stays as it is. |
 | `loam run tick` | `{ "runs": [...], "warnings": ["..."] }`. `runs` are the runs that the tick moved. Both are `[]` when none. |
+
+`run events` lists the events of every run of every plot, or of the runs of one plot with `--plot`, newest first, at most 200. `--since` takes an RFC 3339 time and lists only the events after it. A time that does not parse gives exit code 2. `run_title` and `plot_id` are those of the run. `kind` is as in `run status`. The Today screen shows the list as "While you were away".
 
 `run start` uses the worktree that `--worktree` names, or makes it. With no `--worktree`, it makes a worktree with a name from the key of the link or the ticket, and the title. With no `--repo`, a new worktree is in the repo of the plot whose origin the `--link` is a GitHub issue of, else in the main repo. `--repo` always wins. `run shape` picks its repo in the same way. A run has `--link` or `--ticket`, not both (exit code 2). It refuses, with exit code 1, a folder that Claude Code does not trust: a background session cannot show the trust prompt. In git, Claude Code trusts a worktree when it trusts the main checkout of the repo. A setup command that you have not approved gives exit code 2 (`invalid`); `--approve-setup` approves it. When `claude --bg` fails, the run is `stopped` with the output in `note`, and the command exits 0.
 
@@ -700,7 +703,7 @@ The intake of a plot is the work that it can start runs from: the open issues of
 
 | Command | Output |
 | :- | :- |
-| `loam intake list <plot>` | `{ "plot_id": "...", "sources": [{ "kind": "github", "label": "example/widgets", "error": "" }], "items": [{ "source": "github", "key": "#57", "title": "...", "status": "Open", "priority": "", "labels": ["bug"], "url": "https://github.com/example/widgets/issues/57", "updated_at": "...", "run_id": "runraaaaab" }] }` |
+| `loam intake list <plot>` | `{ "plot_id": "...", "sources": [{ "kind": "github", "label": "example/widgets", "error": "" }], "items": [{ "source": "github", "key": "#57", "title": "...", "status": "Open", "priority": "", "labels": ["bug"], "url": "https://github.com/example/widgets/issues/57", "updated_at": "...", "run_id": "runraaaaab", "repo": "repoaaaaab", "text": "...", "branch": "", "created_at": "...", "in_cycle": false, "assigned_to_me": false }] }` |
 
 - The items are the Linear issues first, then the GitHub issues, each the newest change first (at most 100 for each link or repo), then the map tickets in number order. A Linear issue is open while its state is not completed or canceled.
 - `status` is for a person to read: the Linear state, such as `Todo`, `Open`, or `Blocked by 135` for a ticket.
@@ -708,6 +711,12 @@ The intake of a plot is the work that it can start runs from: the open issues of
 - `url` is what `loam run start` takes: `--link` for an issue, `--ticket` for a ticket.
 - `run_id` is the newest run with the item as its `source`, or empty.
 - `repo` is the ID of the repo of the plot that a GitHub issue belongs to. It is empty for a Linear issue and a ticket. `run start` and `run shape` with that `--link` use that repo.
+- `text` is the first 1200 characters of the Linear description or the GitHub body, trimmed. For a ticket it is the text of the file after its `# Title` line. It is empty when there is none.
+- `branch` is the branch name that Linear gives the issue. It is empty for a GitHub issue and a ticket.
+- `created_at` is when the issue was made (RFC 3339). For a ticket it is the change time of the file.
+- `in_cycle` is true for a Linear issue in the active cycle of its team, else false.
+- `assigned_to_me` is true when the Linear assignee is the person of the Linear key, or when the assignees of a GitHub issue include the user of `gh` (`gh api user`, read once for a list). It is false for a ticket.
+- All five fields are always there.
 - A source that Loam cannot read, such as a repo when `gh` is missing or rate-limited, or a Linear link with no API key, has its `error`, and the other sources still show. The command exits 0.
 
 ### Linear

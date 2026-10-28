@@ -26,7 +26,7 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["source", "key", "title", "status", "priority", "labels", "url", "updated_at", "run_id", "repo"],
+        "required": ["source", "key", "title", "status", "priority", "labels", "url", "updated_at", "run_id", "repo", "text", "branch", "created_at", "in_cycle", "assigned_to_me"],
         "properties": {
           "source": { "enum": ["linear", "github", "map"] },
           "key": { "description": "ENG-523, #48, owner/repo#48, or map 135. It is the key of a run that starts from the item.", "type": "string", "minLength": 1 },
@@ -37,7 +37,12 @@
           "url": { "description": "The web page of an issue, for run start --link, or the path of a ticket file, for run start --ticket.", "type": "string", "minLength": 1 },
           "updated_at": { "description": "The last change in Linear or on GitHub, or empty for a ticket.", "type": "string" },
           "run_id": { "description": "The newest run that started from the item, or empty.", "anyOf": [{ "$ref": "defs.json#/$defs/id" }, { "const": "" }] },
-          "repo": { "description": "The ID of the repo of the plot that a GitHub issue belongs to. Empty for a Linear issue and a ticket.", "anyOf": [{ "$ref": "defs.json#/$defs/id" }, { "const": "" }] }
+          "repo": { "description": "The ID of the repo of the plot that a GitHub issue belongs to. Empty for a Linear issue and a ticket.", "anyOf": [{ "$ref": "defs.json#/$defs/id" }, { "const": "" }] },
+          "text": { "description": "The first 1200 characters of the Linear description or the GitHub body, trimmed. For a ticket, the text of the file after its title line. Empty for none.", "type": "string", "maxLength": 1200 },
+          "branch": { "description": "The branch name that Linear gives the issue. Empty for a GitHub issue and a ticket.", "type": "string" },
+          "created_at": { "description": "When the issue was made (RFC 3339). For a ticket, the change time of the file.", "type": "string" },
+          "in_cycle": { "description": "True for a Linear issue in the active cycle of its team.", "type": "boolean" },
+          "assigned_to_me": { "description": "True when the Linear assignee is the person of the key, or the GitHub assignees include the gh user. False for a ticket.", "type": "boolean" }
         }
       }
     }

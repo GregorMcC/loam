@@ -5,7 +5,6 @@
 package wayfinder
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -14,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 )
 
@@ -33,6 +33,10 @@ type Ticket struct {
 	Path string
 	// Closed is true for a ticket whose status is resolved, done, or closed.
 	Closed bool
+	// Text is the text of the file after the title line, trimmed.
+	Text string
+	// Modified is when the file last changed.
+	Modified time.Time
 }
 
 // closedStatuses are the statuses of a ticket that needs no more work.
@@ -75,11 +79,14 @@ func ReadTicket(path string) (Ticket, error) {
 	if filepath.Base(filepath.Dir(path)) != "issues" || filepath.Ext(path) != ".md" {
 		return Ticket{}, fmt.Errorf("%s is not a .md file in an issues folder", path)
 	}
-	f, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return Ticket{}, err
 	}
-	defer f.Close()
+	info, err := os.Stat(path)
+	if err != nil {
+		return Ticket{}, err
+	}
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return Ticket{}, err
@@ -89,13 +96,14 @@ func ReadTicket(path string) (Ticket, error) {
 	if i := strings.IndexFunc(stem, func(r rune) bool { return !unicode.IsDigit(r) }); i > 0 {
 		number = stem[:i]
 	}
-	t := Ticket{Number: number, Key: "map " + number, Path: abs}
+	t := Ticket{Number: number, Key: "map " + number, Path: abs, Modified: info.ModTime()}
 	var status string
-	sc := bufio.NewScanner(f)
-	for sc.Scan() {
-		line := sc.Text()
+	lines := strings.Split(string(data), "\n")
+	for n, line := range lines {
+		line = strings.TrimSuffix(line, "\r")
 		if title, ok := strings.CutPrefix(line, "# "); ok {
 			t.Title = strings.TrimSpace(title)
+			t.Text = strings.TrimSpace(strings.Join(lines[n+1:], "\n"))
 			break
 		}
 		key, value, ok := strings.Cut(line, ":")
@@ -111,9 +119,6 @@ func ReadTicket(path string) (Ticket, error) {
 				t.BlockedBy = value
 			}
 		}
-	}
-	if err := sc.Err(); err != nil {
-		return Ticket{}, err
 	}
 	if t.Title == "" {
 		return Ticket{}, fmt.Errorf("%s has no title line", path)

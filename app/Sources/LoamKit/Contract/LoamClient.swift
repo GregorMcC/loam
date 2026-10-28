@@ -105,6 +105,15 @@ public struct LoamClient: Sendable {
         try await read(["run", "status"], positionals: [id])
     }
 
+    /// `loam run events`: the events of the runs, newest first, at most 200. `since` is an RFC 3339 time and
+    /// keeps only the events after it. `plot` keeps only the runs of that plot.
+    public func runEvents(plot: String? = nil, since: String? = nil) async throws -> RunEventFeed {
+        var args = ["run", "events"]
+        if let plot { args += ["--plot", plot] }
+        if let since { args += ["--since", since] }
+        return try await read(args)
+    }
+
     // MARK: Writes (all with `--actor app`)
 
     public func new(name: String) async throws -> Plot {

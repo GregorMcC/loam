@@ -162,6 +162,26 @@ public struct RunEvent: Codable, Equatable, Sendable, Identifiable {
     enum CodingKeys: String, CodingKey { case id, at, kind, detail, runID = "run_id" }
 }
 
+/// One line of the history of a run, with its run and its plot. It comes from `loam run events`.
+public struct RunFeedEvent: Codable, Equatable, Sendable {
+    public var runID: String
+    public var plotID: String
+    public var runTitle: String
+    public var at: String
+    /// The kind of a run event, such as state or ship.
+    public var kind: String
+    public var detail: String
+    enum CodingKeys: String, CodingKey {
+        case at, kind, detail
+        case runID = "run_id", plotID = "plot_id", runTitle = "run_title"
+    }
+}
+
+/// Output of `loam run events`: the newest event first.
+public struct RunEventFeed: Codable, Equatable, Sendable {
+    public var events: [RunFeedEvent]
+}
+
 /// Output of `loam run start`.
 public struct RunStartResult: Codable, Equatable, Sendable {
     public var run: Run

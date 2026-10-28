@@ -633,6 +633,8 @@ func scenario(t *testing.T) *harness {
 		"--goal", "The login form works on phones.", "--check", "Go tests=go test ./...",
 		"--link", "https://github.com/example/widgets/issues/57"), &started)
 	h.run("run_list", "run-list", 0, "run", "list", "Runs")
+	h.run("run_events", "run-events", 0, "run", "events")
+	h.run("run_events_plot_since", "run-events", 0, "run", "events", "--plot", "Runs", "--since", "2020-01-01T00:00:00Z")
 	// The intake of the plot: the issues of its GitHub repo, from the fake gh,
 	// and the tickets of a map in its links. Issue 57 has the run above.
 	tickets := filepath.Join(h.root, "build", "issues")

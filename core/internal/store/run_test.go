@@ -2,8 +2,10 @@ package store_test
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/GregorMcC/loam/core/internal/store"
 )
@@ -195,5 +197,48 @@ func TestDeletePlotRemovesItsRuns(t *testing.T) {
 	}
 	if ev, err := s.RunEvents(kept.ID); err != nil || len(ev) != 1 {
 		t.Fatalf("events of the kept run: %+v %v", ev, err)
+	}
+}
+
+func TestRunFeedListsTheEventsOfEveryPlotNewestFirst(t *testing.T) {
+	s := openStore(t)
+	a, b := newPlot(t, s, "A"), newPlot(t, s, "B")
+	ra, rb := addTestRun(t, s, a.ID), addTestRun(t, s, b.ID)
+	if err := s.AddRunEvent(ra.ID, "note", "first note"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddRunEvent(rb.ID, "ship", "Opened #12"); err != nil {
+		t.Fatal(err)
+	}
+	all, err := s.RunFeed("", time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Each run starts with a state event, so the feed has four.
+	if len(all) != 4 || all[0].RunID != rb.ID || all[0].Detail != "Opened #12" || all[0].PlotID != b.ID ||
+		all[0].RunTitle != rb.Title || all[1].Detail != "first note" {
+		t.Fatalf("all %+v", all)
+	}
+	one, err := s.RunFeed(a.ID, time.Time{})
+	if err != nil || len(one) != 2 || one[0].RunID != ra.ID {
+		t.Fatalf("one %+v %v", one, err)
+	}
+	none, err := s.RunFeed("", time.Now().Add(time.Minute))
+	if err != nil || len(none) != 0 || none == nil {
+		t.Fatalf("since %+v %v", none, err)
+	}
+}
+
+func TestRunFeedKeepsAtMostTwoHundredEvents(t *testing.T) {
+	s := openStore(t)
+	r := addTestRun(t, s, newPlot(t, s, "A").ID)
+	for i := 0; i < store.FeedLimit+5; i++ {
+		if err := s.AddRunEvent(r.ID, "note", fmt.Sprint("note ", i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.RunFeed("", time.Time{})
+	if err != nil || len(got) != store.FeedLimit || got[0].Detail != fmt.Sprint("note ", store.FeedLimit+4) {
+		t.Fatalf("%d events, first %q, %v", len(got), got[0].Detail, err)
 	}
 }

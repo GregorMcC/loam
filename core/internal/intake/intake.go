@@ -5,6 +5,9 @@ package intake
 
 import (
 	"context"
+	"slices"
+	"strings"
+	"time"
 
 	"github.com/GregorMcC/loam/core/internal/github"
 	"github.com/GregorMcC/loam/core/internal/gitremote"
@@ -52,6 +55,31 @@ type Item struct {
 	// Repo is the ID of the repo of the plot that a GitHub issue belongs
 	// to, or "" for a Linear issue and a ticket.
 	Repo string `json:"repo"`
+	// Text is the first 1200 characters of the description, the body, or the
+	// ticket text after its title line, or "".
+	Text string `json:"text"`
+	// Branch is the branch name that Linear gives the issue, or "".
+	Branch string `json:"branch"`
+	// CreatedAt is when the issue was made, or the change time of a ticket
+	// file.
+	CreatedAt string `json:"created_at"`
+	// InCycle is true for a Linear issue in the active cycle of its team.
+	InCycle bool `json:"in_cycle"`
+	// AssignedToMe is true for an issue that is assigned to the person of
+	// the Linear key or the gh user. It is false for a ticket.
+	AssignedToMe bool `json:"assigned_to_me"`
+}
+
+// textLimit is how many characters of text an item keeps.
+const textLimit = 1200
+
+// clip trims the text and keeps its first textLimit characters.
+func clip(text string) string {
+	text = strings.TrimSpace(text)
+	if r := []rune(text); len(r) > textLimit {
+		text = strings.TrimSpace(string(r[:textLimit]))
+	}
+	return text
 }
 
 // Result is the intake of a plot.
@@ -98,11 +126,15 @@ func List(ctx context.Context, s *store.Store, plotID string) (*Result, error) {
 		for _, i := range list {
 			res.Items = append(res.Items, Item{
 				Source: Linear, Key: i.Key, Title: i.Title, Status: i.State, Priority: i.Priority,
-				Labels: i.Labels, URL: i.URL, UpdatedAt: i.UpdatedAt,
+				Labels: i.Labels, URL: i.URL, UpdatedAt: i.UpdatedAt, Text: clip(i.Description), Branch: i.Branch,
+				CreatedAt: i.CreatedAt, InCycle: i.InCycle, AssignedToMe: i.AssignedToMe,
 			})
 		}
 	}
 	client, clientErr := github.NewClient()
+	// The gh user is read once, at the first repo with an issue.
+	var login string
+	loginRead := false
 	seen := map[github.Repo]bool{}
 	for _, r := range plot.Repos {
 		web, ok := gitremote.Origin(r.Path)
@@ -125,9 +157,14 @@ func List(ctx context.Context, s *store.Store, plotID string) (*Result, error) {
 		}
 		res.Sources = append(res.Sources, src)
 		for _, i := range list {
+			if !loginRead && len(i.Assignees) > 0 {
+				loginRead = true
+				login, _ = client.Login(ctx)
+			}
 			res.Items = append(res.Items, Item{
 				Source: GitHub, Key: linkkind.IssueKey(i.URL, web), Title: i.Title, Status: "Open",
 				Labels: i.Labels, URL: i.URL, UpdatedAt: i.UpdatedAt, Repo: r.ID,
+				Text: clip(i.Body), CreatedAt: i.CreatedAt, AssignedToMe: login != "" && slices.Contains(i.Assignees, login),
 			})
 		}
 	}
@@ -145,6 +182,7 @@ func List(ctx context.Context, s *store.Store, plotID string) (*Result, error) {
 		for _, t := range tickets {
 			res.Items = append(res.Items, Item{
 				Source: Map, Key: t.Key, Title: t.Title, Status: t.Status, Labels: []string{}, URL: t.Path,
+				Text: clip(t.Text), CreatedAt: t.Modified.UTC().Format(time.RFC3339),
 			})
 		}
 	}

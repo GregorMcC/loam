@@ -1,7 +1,8 @@
 {
+  "login": "ada",
   "issues": [
-    {"number": 61, "title": "Show the plan on the run page", "url": "https://github.com/example/widgets/issues/61", "labels": [{"name": "feature"}], "updatedAt": "2026-01-01T00:00:00Z"},
-    {"number": 57, "title": "The login form breaks on phones", "url": "https://github.com/example/widgets/issues/57", "labels": [{"name": "bug"}], "updatedAt": "2026-01-01T00:00:00Z"}
+    {"number": 61, "title": "Show the plan on the run page", "url": "https://github.com/example/widgets/issues/61", "labels": [{"name": "feature"}], "updatedAt": "2026-01-01T00:00:00Z", "createdAt": "2026-01-01T00:00:00Z", "body": "", "assignees": []},
+    {"number": 57, "title": "The login form breaks on phones", "url": "https://github.com/example/widgets/issues/57", "labels": [{"name": "bug"}], "updatedAt": "2026-01-01T00:00:00Z", "createdAt": "2026-01-01T00:00:00Z", "body": "The form overflows at 320 pixels.", "assignees": [{"login": "ada"}]}
   ],
   "rerun_refusals": {"302": "Unable to retry this workflow run because it was created over a month ago"},
   "repository": {"mergeCommitAllowed": false, "squashMergeAllowed": true, "rebaseMergeAllowed": true, "viewerDefaultMergeMethod": "SQUASH"},

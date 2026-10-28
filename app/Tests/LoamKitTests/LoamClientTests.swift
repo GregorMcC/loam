@@ -132,6 +132,26 @@ struct FakeLoam {
         #expect(fake.args() == ["worktree list plotaaaaab --json", "worktree list --json"])
     }
 
+    /// The Today screen reads the events of every run, or of one plot after a time.
+    @Test func runEventsAreAReadWithOptionalFilters() async throws {
+        let fake = try FakeLoam([("run_events", 0), ("run_events_plot_since", 0)])
+        let all = try await fake.client().runEvents()
+        #expect(!all.events.isEmpty)
+        let some = try await fake.client().runEvents(plot: "plotaaaaae", since: "2026-01-01T00:00:00Z")
+        #expect(some.events.first?.plotID == "plotaaaaae")
+        #expect(fake.args() == ["run events --json", "run events --plot plotaaaaae --since 2026-01-01T00:00:00Z --json"])
+    }
+
+    /// The Intake screen reads the text, branch, time, cycle, and assignee of each item.
+    @Test func intakeItemsCarryTheNewFields() async throws {
+        let fake = try FakeLoam([("intake_list", 0)])
+        let list = try await fake.client().intake(plot: "Runs")
+        let linear = try #require(list.items.first { $0.source == "linear" })
+        #expect(!linear.text.isEmpty && !linear.branch.isEmpty && !linear.createdAt.isEmpty)
+        #expect(list.items.contains { $0.inCycle && $0.assignedToMe })
+        #expect(fake.args() == ["intake list --json -- Runs"])
+    }
+
     @Test func changesSinceIsARead() async throws {
         let fake = try FakeLoam([("changes_since", 0)])
         let changes = try await fake.client().changes(since: 7)
