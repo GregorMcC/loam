@@ -61,8 +61,13 @@ func makeMainMenu(target: MainWindowController) -> NSMenu {
     file.addItem(.separator())
     ghostty(file, "Close", "close_surface")
 
-    // Nil targets: the focused pane handles these.
+    // Nil targets: the focused pane or field handles these. A terminal pane has no Undo, Redo or Cut, so the items are
+    // off there, and ⌘Z goes on to the terminal (TAS-52).
     let edit = submenu("Edit")
+    edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+    edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+    edit.addItem(.separator())
+    edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
     edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
     edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
     edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")

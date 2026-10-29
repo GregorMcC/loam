@@ -140,6 +140,8 @@ extension MainWindowController: NSMenuItemValidation {
     /// The menu bar and the actions menu agree on what can run (`ActionMenu.isAvailable`).
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         guard let command = (menuItem.representedObject as? MenuCommand)?.command else { return true }
+        // In another window, Close acts on that window, whatever shows in this one.
+        if command == .closePane, let front = otherKeyWindow { return Self.canClose(front) }
         // Under a sheet only the commands of the app are on (ticket 128), also ⌘W.
         guard commandAllowed(command) else { return false }
         // ⌘W with no pane closes the window (`closePane`), so the menu bar keeps it enabled.

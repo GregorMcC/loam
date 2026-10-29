@@ -605,7 +605,24 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     /// Every menu item that carries a `MenuCommand`.
     @objc func performCommand(_ sender: NSMenuItem) {
         guard let item = sender.representedObject as? MenuCommand else { return }
+        if item.command == .closePane, let front = otherKeyWindow {
+            if Self.canClose(front) { front.performClose(sender) }
+            return
+        }
         perform(item.command)
+    }
+
+    /// The key window when it is another window of the app, or a sheet on another window: Settings, for one. Close acts
+    /// on that window and leaves the panes alone (TAS-52). Nil when this window or a sheet on it has the keys.
+    var otherKeyWindow: NSWindow? {
+        guard let key = NSApp.keyWindow, (key.sheetParent ?? key) !== window else { return nil }
+        return key
+    }
+
+    /// Close is on for a window with a close button. A sheet has none, so Close is off while a sheet is key, as AppKit
+    /// has it for a document window.
+    static func canClose(_ window: NSWindow) -> Bool {
+        window.sheetParent == nil && window.styleMask.contains(.closable)
     }
 
     // MARK: Commands
