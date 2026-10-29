@@ -51,6 +51,9 @@
 //   - gh pr view <number> --json state,number: prints the state and the number
 //     of the PR of "pulls" with that number, or fails as gh does.
 //   - gh issue list: prints "issues".
+//   - gh issue create --repo <repo> --title <text>: adds an issue to "issues",
+//     with the next free number, and prints its URL. The issue keeps its
+//     "title" and its "body".
 //   - gh issue view <url>: prints the title and the body of the issue of
 //     "issues" with that URL, or fails as gh does for a missing issue.
 //   - gh run rerun <id> --failed: does nothing, or fails as "rerun_refusals"
@@ -140,6 +143,8 @@ func main() {
 		updateBranch(st, args[2])
 	case len(args) > 1 && args[0] == "issue" && args[1] == "list":
 		issues(st)
+	case len(args) > 1 && args[0] == "issue" && args[1] == "create":
+		createIssue(st, args[2:])
 	case len(args) > 2 && args[0] == "issue" && args[1] == "view":
 		issue(st, args[2])
 	case len(args) > 2 && args[0] == "run" && args[1] == "rerun":
@@ -377,6 +382,38 @@ func create(st *state, args []string) {
 	if !slices.Contains(st.Refs, head) {
 		st.Refs = append(st.Refs, head)
 	}
+	st.write()
+	fmt.Println(url)
+}
+
+// createIssue opens an issue, as gh issue create does: it prints the URL of
+// the issue.
+func createIssue(st *state, args []string) {
+	var repo, title, body string
+	for i := 0; i+1 < len(args); i++ {
+		switch args[i] {
+		case "--repo":
+			repo = strings.TrimPrefix(args[i+1], "github.com/")
+		case "--title":
+			title = args[i+1]
+		case "--body-file":
+			if args[i+1] == "-" {
+				b, _ := io.ReadAll(os.Stdin)
+				body = string(b)
+			}
+		}
+	}
+	if repo == "" || title == "" {
+		fail(1, "fakegh: issue create needs --repo and --title")
+	}
+	number := 1
+	for _, i := range st.Issues {
+		if n, ok := i["number"].(float64); ok && int(n) >= number {
+			number = int(n) + 1
+		}
+	}
+	url := fmt.Sprintf("https://github.com/%s/issues/%d", repo, number)
+	st.Issues = append(st.Issues, map[string]any{"number": number, "title": title, "body": body, "url": url})
 	st.write()
 	fmt.Println(url)
 }

@@ -26,6 +26,22 @@
       "base": "",
       "drafted_at": "2026-01-01T00:00:00Z",
       "effort": "",
+      "follow_ups": [
+        {
+          "body": "The run page of the app does not show the plan yet.",
+          "filed": {
+            "key": "ENG-601",
+            "url": "https://linear.app/acme/issue/ENG-601/follow-up"
+          },
+          "kept": true,
+          "target": {
+            "kind": "linear",
+            "label": "ENG team",
+            "url": "https://linear.app/acme/team/ENG/active"
+          },
+          "title": "Show the plan in the app"
+        }
+      ],
       "link": "",
       "model": "",
       "plan": [

@@ -85,10 +85,63 @@ public struct RunAssumption: Codable, Equatable, Sendable {
     }
 }
 
+/// Work that a draft leaves out on purpose. On approve, Loam files each kept follow-up as an issue at its target.
+public struct RunFollowUp: Codable, Equatable, Sendable {
+    public var title: String
+    public var body: String
+    public var target: Target
+    /// True until you drop the follow-up.
+    public var kept: Bool
+    /// The issue that Loam made, once approve filed the follow-up.
+    public var filed: Filed? = nil
+    /// Why Loam could not file the follow-up, or could not link it to the issue of the run.
+    public var error: String? = nil
+
+    /// The tracker where Loam files the issue.
+    public struct Target: Codable, Equatable, Sendable {
+        /// linear or github.
+        public var kind: String
+        /// The Linear project, or the GitHub repo as owner/name.
+        public var label: String
+        public var url: String? = nil
+
+        public init(kind: String, label: String, url: String? = nil) {
+            self.kind = kind
+            self.label = label
+            self.url = url
+        }
+
+        /// Where the issue goes, for a person: "Linear, Roadmap" or "GitHub, example/widgets".
+        public var words: String { "\(kind == "linear" ? "Linear" : "GitHub"), \(label)" }
+    }
+
+    /// The issue that Loam made: a Linear key such as ENG-523, or owner/name#57 for GitHub.
+    public struct Filed: Codable, Equatable, Sendable {
+        public var key: String
+        public var url: String
+
+        public init(key: String, url: String) {
+            self.key = key
+            self.url = url
+        }
+    }
+
+    public init(title: String, body: String = "", target: Target, kept: Bool = true, filed: Filed? = nil, error: String? = nil) {
+        self.title = title
+        self.body = body
+        self.target = target
+        self.kept = kept
+        self.filed = filed
+        self.error = error
+    }
+}
+
 /// The draft of a run that started in Shaping: what Claude made of the issue besides the goal and the checks, and
 /// how the run starts when you approve it (ticket 207).
 public struct RunShape: Codable, Equatable, Sendable {
     public var assumptions: [RunAssumption]
+    /// The work that the draft leaves out on purpose.
+    public var followUps: [RunFollowUp] = []
     public var plan: [String]
     public var size: String
     /// When Claude finished the last draft. Nil while the run has no draft.
@@ -109,7 +162,28 @@ public struct RunShape: Codable, Equatable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case assumptions, plan, size, repo, base, link, model, effort, brief, split
+        case followUps = "follow_ups"
         case draftedAt = "drafted_at"
+    }
+}
+
+// In an extension, so RunShape keeps its memberwise init.
+extension RunShape {
+    /// A core from before follow-ups leaves out `follow_ups`, which decodes as none.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        assumptions = try c.decode([RunAssumption].self, forKey: .assumptions)
+        followUps = try c.decodeIfPresent([RunFollowUp].self, forKey: .followUps) ?? []
+        plan = try c.decode([String].self, forKey: .plan)
+        size = try c.decode(String.self, forKey: .size)
+        draftedAt = try c.decodeIfPresent(String.self, forKey: .draftedAt)
+        repo = try c.decode(String.self, forKey: .repo)
+        base = try c.decode(String.self, forKey: .base)
+        link = try c.decode(String.self, forKey: .link)
+        model = try c.decode(String.self, forKey: .model)
+        effort = try c.decodeIfPresent(String.self, forKey: .effort) ?? ""
+        brief = try c.decodeIfPresent(String.self, forKey: .brief)
+        split = try c.decodeIfPresent(Bool.self, forKey: .split)
     }
 }
 

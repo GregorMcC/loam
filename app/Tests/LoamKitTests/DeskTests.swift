@@ -246,6 +246,24 @@ import Testing
         #expect(fake2.args().dropFirst(4).first == "run approve --json -- s1")
     }
 
+    /// A follow-up is kept until you drop it. A drop goes to the core by number from 1, and a drop that you take back is not sent.
+    @Test func aDroppedFollowUpGoesToTheCoreAsADrop() async throws {
+        let (model, fake) = try model([("run_status", 0), ("rule_list", 0), ("show", 0), ("run_limits_get", 0), ("run_approve", 0), ("run_list", 0)])
+        var run = Self.shaping()
+        let target = RunFollowUp.Target(kind: "linear", label: "Roadmap")
+        run.shape?.followUps = [RunFollowUp(title: "A picker", target: target), RunFollowUp(title: "Docs", target: target)]
+        model.runs.append(run)
+        await model.openDesk()
+        model.setDeskFollowUp(1, kept: false)
+        model.setDeskFollowUp(0, kept: false)
+        model.setDeskFollowUp(0, kept: true)
+        model.setDeskFollowUp(5, kept: false)
+        #expect(model.desk.currentEdit.droppedFollowUps == [1])
+        await model.approveDeskRun()
+        #expect(fake.args().dropFirst(4).first == "run approve --drop-follow-up 2 --json -- s1")
+        #expect(model.desk.shapeEdits["s1"] == nil)
+    }
+
     /// When you remove every check of the draft, the run starts with no checks, not with the draft's.
     @Test func anApprovalWithNoChecksRemovesTheDraftedChecks() async throws {
         let (model, fake) = try model([("run_status", 0), ("rule_list", 0), ("show", 0), ("run_limits_get", 0), ("run_approve", 0), ("run_list", 0)])

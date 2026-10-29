@@ -738,6 +738,7 @@ func scenario(t *testing.T) *harness {
  "structured_output": {"goal": "The run page shows the plan of the run.",
   "checks": [{"name": "Go tests", "command": "go test ./..."}],
   "assumptions": ["The plan shows as a numbered list."],
+  "follow_ups": [{"title": "Show the plan in the app", "body": "The run page of the app does not show the plan yet.", "target": ""}],
   "plan": ["Read the plan from the run.", "Show it on the run page."],
   "size": "About 60 lines in the app."}}`)
 	h.env = append(h.env, "LOAM_FAKE_CLAUDE_PRINT="+os.Getenv("LOAM_FAKE_CLAUDE_PRINT"))
@@ -748,8 +749,15 @@ func scenario(t *testing.T) *harness {
 		"--ticket", filepath.Join(tickets, "12-run-page-plan.md")), &shaped)
 	h.run("run_redraft", "run-shape", 0, "run", "redraft", shaped.Run.ID, "--change", "Add a check for a run with no plan")
 	h.run("error_run_approve_no_assumption", "error", 2, "run", "approve", shaped.Run.ID, "--answer", "5=No")
+	// The approve files the follow-up in Linear, so the key is back for it.
+	if err := os.WriteFile(secrets, []byte(`{"linear-api-key":"`+testutil.LinearKey+`"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	h.run("run_approve", "run-start", 0, "run", "approve", shaped.Run.ID,
 		"--goal", "The run page shows the plan of the run, or says that it has none.", "--answer", "1=The plan shows as steps with checkboxes.")
+	if err := os.WriteFile(secrets, []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	// Recurring runs and loam tick (ticket 208). Both are due daily at the
 	// same time, so they list in the order that they were added. The chore's
@@ -859,9 +867,9 @@ func scenario(t *testing.T) *harness {
 	testutil.FakeClaudePrint(t, fmt.Sprintf(`{"type": "result", "subtype": "success", "is_error": false, "result": "",
  "structured_output": {"runs": [
   {"repo": %q, "goal": "The app names the setting Plan view.", "checks": [{"name": "Go tests", "command": "go test ./..."}],
-   "assumptions": ["The docs can say the new name before the app ships it."], "plan": ["Rename the setting."], "size": "About 20 lines."},
+   "assumptions": ["The docs can say the new name before the app ships it."], "follow_ups": [], "plan": ["Rename the setting."], "size": "About 20 lines."},
   {"repo": %q, "goal": "The docs name the setting Plan view.", "checks": [{"name": "Docs", "command": "grep -q 'Plan view' README.md"}],
-   "assumptions": [], "plan": ["Rename the setting in the README."], "size": "One line."}]}}`, repoIDs[gitRepo], repoIDs[docs]))
+   "assumptions": [], "follow_ups": [], "plan": ["Rename the setting in the README."], "size": "One line."}]}}`, repoIDs[gitRepo], repoIDs[docs]))
 	h.env = append(h.env, "LOAM_FAKE_CLAUDE_PRINT="+os.Getenv("LOAM_FAKE_CLAUDE_PRINT"))
 	var split struct {
 		Runs []struct {

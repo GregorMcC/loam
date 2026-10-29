@@ -174,11 +174,13 @@ func newRunApproveCmd() *cobra.Command {
 	var checks, answers []string
 	var noChecks bool
 	c := &cobra.Command{
-		Use:   "approve <run> [--goal <text>] [--check <name>=<command>]... [--no-checks] [--answer <n>=<text>]... [--approve-setup]",
+		Use:   "approve <run> [--goal <text>] [--check <name>=<command>]... [--no-checks] [--answer <n>=<text>]... [--drop-follow-up <n>]... [--approve-setup]",
 		Short: "Start a Shaping run with your edits to its draft",
 		Long: "Start a Shaping run: Loam makes its worktree and starts its session, as loam run start does.\n" +
 			"--goal replaces the drafted goal. --check replaces the drafted checks: give it once for each check. --no-checks removes the drafted checks. " +
-			"--answer changes assumption <n> (from 1) to your text. An assumption with no answer stays as Claude made it.",
+			"--answer changes assumption <n> (from 1) to your text. An assumption with no answer stays as Claude made it.\n" +
+			"Loam files each follow-up of the draft as an issue, and --drop-follow-up <n> (from 1) drops follow-up <n> instead. " +
+			"A follow-up that Loam cannot file is a warning, and the run starts anyway.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if cmd.Flags().Changed("goal") {
@@ -230,6 +232,7 @@ func newRunApproveCmd() *cobra.Command {
 	f.StringArrayVar(&checks, "check", nil, "a Done when check, as <name>=<command>, in place of the drafted checks (repeatable)")
 	f.BoolVar(&noChecks, "no-checks", false, "remove the drafted checks: the run is done when its work is committed")
 	f.StringArrayVar(&answers, "answer", nil, "your answer to an assumption, as <n>=<text> (repeatable)")
+	f.IntSliceVar(&o.DropFollowUps, "drop-follow-up", nil, "drop follow-up <n> of the draft, so Loam files no issue for it (repeatable)")
 	f.BoolVar(&o.ApproveSetup, "approve-setup", false, "approve the setup command of the repo when it is new or changed")
 	return c
 }

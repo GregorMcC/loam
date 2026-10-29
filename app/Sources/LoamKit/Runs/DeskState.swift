@@ -71,10 +71,12 @@ public struct ShapeEdit: Equatable, Sendable {
     public var checks: [RunCheck]?
     /// What you want in place of an assumption, by its index.
     public var answers: [Int: String] = [:]
+    /// The follow-ups that you dropped, by index. Loam files each other follow-up as an issue.
+    public var droppedFollowUps: Set<Int> = []
 
     public init() {}
 
-    public var isEmpty: Bool { goal == nil && checks == nil && answers.isEmpty }
+    public var isEmpty: Bool { goal == nil && checks == nil && answers.isEmpty && droppedFollowUps.isEmpty }
 }
 
 /// One note of yours on the work of a run: on a line of a file, or on the whole run.

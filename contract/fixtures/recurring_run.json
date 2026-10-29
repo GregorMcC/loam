@@ -57,6 +57,18 @@
       "brief": "Shape a run for each new bug.",
       "drafted_at": "2026-01-01T00:00:00Z",
       "effort": "",
+      "follow_ups": [
+        {
+          "body": "The run page of the app does not show the plan yet.",
+          "kept": true,
+          "target": {
+            "kind": "linear",
+            "label": "ENG team",
+            "url": "https://linear.app/acme/team/ENG/active"
+          },
+          "title": "Show the plan in the app"
+        }
+      ],
       "link": "",
       "model": "",
       "plan": [

@@ -583,7 +583,7 @@ func prBody(r store.Run, repo github.Repo, others []string) string {
 }
 
 // prFooter is the end of every PR body of Loam: the issue, the other runs of
-// the group, and who opened the PR. Each line follows a blank line.
+// the group, the follow-ups, and who opened the PR. Each line follows a blank line.
 func prFooter(r store.Run, repo github.Repo, others []string) string {
 	var b strings.Builder
 	if src := r.Source; src != nil {
@@ -599,6 +599,7 @@ func prFooter(r store.Run, repo github.Repo, others []string) string {
 	if len(others) > 0 {
 		fmt.Fprintf(&b, "\nThe issue also has runs in %s.\n", joinAnd(others))
 	}
+	b.WriteString(prFollowUps(r, repo))
 	b.WriteString("\nLoam opened this PR for a run whose checks passed.\n")
 	return b.String()
 }

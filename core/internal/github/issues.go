@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path"
 	"strconv"
 	"strings"
 )
@@ -91,4 +92,37 @@ func (c *Client) IssueText(ctx context.Context, url string) (string, error) {
 		return "", fmt.Errorf("%w: gh gave an answer that Loam cannot read: %v", ErrOffline, err)
 	}
 	return strings.TrimSpace(issue.Title + "\n\n" + issue.Body), nil
+}
+
+// NewIssue is an issue for [Client.CreateIssue] to open.
+type NewIssue struct {
+	Title string
+	// Body is Markdown.
+	Body string
+}
+
+// OpenedIssue is an issue that [Client.CreateIssue] opened.
+type OpenedIssue struct {
+	Number int
+	URL    string
+}
+
+// CreateIssue opens an issue in the repo (gh issue create).
+func (c *Client) CreateIssue(ctx context.Context, repo Repo, n NewIssue) (OpenedIssue, error) {
+	out, err := c.run(ctx, ghActionTimeout, []byte(n.Body), "issue", "create", "--repo", repo.flag(),
+		"--title", n.Title, "--body-file", "-")
+	if err != nil {
+		return OpenedIssue{}, actionError(err, "open an issue")
+	}
+	// gh prints the URL of the issue last.
+	words := strings.Fields(string(out))
+	if len(words) == 0 {
+		return OpenedIssue{}, fmt.Errorf("%w: gh opened an issue, but printed no URL", ErrOffline)
+	}
+	url := words[len(words)-1]
+	number, err := strconv.Atoi(path.Base(url))
+	if err != nil {
+		return OpenedIssue{}, fmt.Errorf("%w: gh printed %q, which is not the URL of an issue", ErrOffline, url)
+	}
+	return OpenedIssue{Number: number, URL: url}, nil
 }

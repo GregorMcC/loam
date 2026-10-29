@@ -116,6 +116,9 @@ type RunShape struct {
 	// Assumptions are the choices that Claude made and the issue does not
 	// settle. You keep each one or change it.
 	Assumptions []Assumption `json:"assumptions"`
+	// FollowUps are the work that the draft leaves out on purpose. Each one
+	// becomes an issue when you approve the run, unless you drop it.
+	FollowUps []FollowUp `json:"follow_ups"`
 	// Plan is the steps that Claude means to take.
 	Plan []string `json:"plan"`
 	// Size is Claude's estimate of the change, in one sentence.
@@ -137,6 +140,46 @@ type RunShape struct {
 	// Split is true while a shape with --split has no draft yet, so a
 	// redraft splits the issue across the repos again.
 	Split bool `json:"split,omitempty"`
+}
+
+// The kinds of the target of a follow-up.
+const (
+	TargetLinear = "linear"
+	TargetGitHub = "github"
+)
+
+// FollowUp is work that a draft leaves out on purpose, such as "A picker in
+// the app". On approve, Loam files it as an issue at its target.
+type FollowUp struct {
+	Title string `json:"title"`
+	Body  string `json:"body"`
+	// Target is where Loam files the issue.
+	Target FollowUpTarget `json:"target"`
+	// Kept is true until you drop the follow-up.
+	Kept bool `json:"kept"`
+	// Filed is the issue that Loam made for it, or nil while there is none.
+	Filed *FiledIssue `json:"filed,omitempty"`
+	// Error is why Loam could not file it, or empty.
+	Error string `json:"error,omitempty"`
+}
+
+// FollowUpTarget is the tracker where a follow-up becomes an issue.
+type FollowUpTarget struct {
+	// Kind is linear or github.
+	Kind string `json:"kind"`
+	// Label is for a person: the Linear project, or the GitHub repo.
+	Label string `json:"label"`
+	// URL is the Linear project or team page, or the web page of the GitHub
+	// repo. It is empty for the project of the Linear issue that the run
+	// started from.
+	URL string `json:"url,omitempty"`
+}
+
+// FiledIssue is the issue that Loam made for a follow-up. A Linear key is
+// such as ENG-523. A GitHub key is owner/name#57.
+type FiledIssue struct {
+	Key string `json:"key"`
+	URL string `json:"url"`
 }
 
 // Assumption is one choice of a draft that the issue does not settle.
@@ -636,6 +679,7 @@ func (sh *RunShape) clone() *RunShape {
 	}
 	c := *sh
 	c.Assumptions = append([]Assumption{}, sh.Assumptions...)
+	c.FollowUps = append([]FollowUp{}, sh.FollowUps...)
 	c.Plan = append([]string{}, sh.Plan...)
 	if sh.DraftedAt != nil {
 		at := *sh.DraftedAt

@@ -105,9 +105,19 @@ func decodeFixture(schema: String, data: Data) throws {
         #expect(run.state == .shaping && run.worktreeID.isEmpty)
         let shape = try #require(run.shape)
         #expect(shape.assumptions == [RunAssumption(text: "The plan shows as a numbered list.", answer: "")])
+        let followUp = try #require(shape.followUps.first)
+        #expect(followUp.title == "Show the plan in the app" && followUp.kept && followUp.filed == nil && followUp.target.kind == "linear")
         #expect(shape.plan.count == 2 && shape.size == "About 60 lines in the app." && shape.isDrafted)
         let approved = try JSONDecoder().decode(RunStartResult.self, from: Fixtures.data("run_approve")).run
         #expect(approved.shape?.assumptions.first?.answer == "The plan shows as steps with checkboxes.")
+        #expect(approved.shape?.followUps.first?.filed?.key == "ENG-601" && approved.shape?.followUps.first?.error == nil)
+    }
+
+    /// A core from before follow-ups sends a shape with no `follow_ups`, which decodes as none.
+    @Test func aShapeWithNoFollowUpsDecodes() throws {
+        let json = #"{"assumptions": [], "plan": [], "size": "", "repo": "r", "base": "", "link": "", "model": "", "effort": ""}"#
+        let shape = try JSONDecoder().decode(RunShape.self, from: Data(json.utf8))
+        #expect(shape.followUps.isEmpty && shape.draftedAt == nil)
     }
 
     /// A run that Loam shipped has the ship notes that Claude wrote, and a run before its PR has none.

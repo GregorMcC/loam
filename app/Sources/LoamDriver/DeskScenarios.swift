@@ -330,8 +330,10 @@ extension Scenarios {
     }
 
     /// Ticket 207: Shape. Claude drafts a run from a map ticket, and the run waits on the Shape tile. The tile
-    /// opens the desk on the draft. You change an assumption, typed, and the keys of the desk type into the field.
-    /// A approves the run, which starts with your change, and the desk is empty.
+    /// opens the desk on the draft. The draft has two follow-ups, and you drop one and keep it again. You change an
+    /// assumption, typed, and the keys of the desk type into the field. You drop the second follow-up, and A
+    /// approves the run, which starts with your change, and the desk is empty. The plot has no GitHub origin, so the
+    /// kept follow-up cannot be filed: the run starts anyway, and a toast says so.
     private static func shapeShotSteps(_ app: DriverApp) async throws {
         let (rig, environment, _) = try shotRig(app)
         let (repo, _) = try widgetsRepo(rig, onGitHub: false)
@@ -347,6 +349,8 @@ extension Scenarios {
           "checks": [{"name": "Search tests", "command": "go test ./search/..."}, {"name": "Vet", "command": "go vet ./... && go test -race -count=1 -run 'TestSearch(Label|Title)Order' ./search/... ./internal/plotsearch/..."}],
           "assumptions": ["A label match counts for less than a title match, so titles stay first.",
                           "Repos have labels too, and the search matches them the same way."],
+          "follow_ups": [{"title": "Search the notes of a link too", "body": "The search matches the label of a link, not its note.", "target": ""},
+                         {"title": "Show the matched label in the results", "body": "A result does not say which label matched.", "target": ""}],
           "plan": ["Score the label of a link when its title does not match.", "Weight a label match below a title match.",
                    "Add tests for a label match and for the order of the results."],
           "size": "About 80 lines in one package."}}
@@ -378,7 +382,7 @@ extension Scenarios {
         try app.click("today-tile-shape")
         try await app.waitUntil("the desk shows the draft") {
             model.page == .desk && app.exists("desk-shape") && app.exists("desk-assumption-1") && app.exists("desk-plan")
-                && app.exists("desk-setup") && app.exists("desk-queue-\(model.desk.runID ?? "")")
+                && app.exists("desk-followup-1") && app.exists("desk-setup") && app.exists("desk-queue-\(model.desk.runID ?? "")")
         }
         await app.sleep(0.5)
         // The second check command is wider than the "If you approve" column, and the column still holds the gate.
@@ -394,6 +398,24 @@ extension Scenarios {
         await appearance(.aqua)
         app.screenshot("desk-shape-day")
         await appearance(.darkAqua)
+
+        // The follow-ups show their target, and a toggle keeps or drops each one.
+        try confirmDesk(app.exists("desk-followups") && app.exists("desk-followup-kept-0") && app.exists("desk-followup-kept-1")
+                        && app.exists("desk-approve-followups"), "the desk does not show the follow-ups as kept")
+        try confirmDesk(model.runs.first?.shape?.followUps.count == 2 && model.desk.currentEdit.droppedFollowUps.isEmpty,
+                        "the draft has no follow-ups, or one is dropped already")
+        try app.click("desk-followup-drop-1")
+        try await app.waitUntil("the follow-up shows as dropped") {
+            app.exists("desk-followup-dropped-1") && model.desk.currentEdit.droppedFollowUps == [1]
+        }
+        await app.sleep(0.5)
+        app.screenshot("desk-shape-followups-night")
+        try app.click("desk-followup-keep-1")
+        try await app.waitUntil("the follow-up is kept again") {
+            app.exists("desk-followup-kept-1") && model.desk.currentEdit.droppedFollowUps.isEmpty
+        }
+        try app.click("desk-followup-drop-1")
+        try await app.waitUntil("the follow-up is dropped for the approval") { model.desk.currentEdit.droppedFollowUps == [1] }
 
         // Change the second assumption, typed. A, C, N, J and K type into the field, and the desk stays.
         try app.click("desk-assumption-change-1")
@@ -417,6 +439,11 @@ extension Scenarios {
         let run = model.runs.first
         try confirmDesk(run?.shape?.assumptions.last?.answer == answer && run?.worktreeID.isEmpty == false,
                         "the run started without the change: \(String(describing: run))")
+        // The dropped follow-up files nothing. The kept one could not be filed, and the run started anyway.
+        let followUps = run?.shape?.followUps ?? []
+        try confirmDesk(followUps.count == 2 && followUps[1].kept == false && followUps[1].filed == nil && followUps[1].error == nil
+                        && followUps[0].kept && followUps[0].filed == nil && followUps[0].error != nil,
+                        "the follow-ups are not as the approval leaves them: \(followUps)")
         NSApp.appearance = nil
     }
 }

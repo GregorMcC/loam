@@ -3,6 +3,7 @@ package testutil
 import (
 	"cmp"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -28,7 +29,9 @@ type LinearCall struct {
 // to the viewer, Ada Example. ENG-525 is in milestone Alpha, which comes
 // before Beta, and assigned to Bob Example. An update moves ENG-523 to the state that it names, such as In
 // Progress or Done, an attachment link and a comment succeed, and
-// ENG-523 has a description. It is an
+// ENG-523 has a description. A query for the home of an issue, a project,
+// or a team gets ids, an issueCreate makes the next issue (ENG-601, ENG-602,
+// and so on), and a relation succeeds. It is an
 // [http.Handler], so the fakelinear command can serve it for the app's
 // driver too.
 //
@@ -45,6 +48,8 @@ type FakeLinearServer struct {
 	calls []LinearCall
 	// stateID is the state that the last update of ENG-523 set. Empty is Todo.
 	stateID string
+	// made counts the issues that issueCreate made.
+	made int
 }
 
 // fakeStates are the workflow states of the team, by type, out of position
@@ -112,6 +117,19 @@ func (f *FakeLinearServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.calls = append(f.calls, LinearCall{Query: req.Query, Variables: req.Variables})
 	state, stateType := fakeStateOf(f.stateID)
 	switch {
+	case strings.Contains(req.Query, "HomeOfIssue"):
+		reply(`{"data":{"issue":{"id":"id-` + fmt.Sprint(req.Variables["id"]) + `","team":{"id":"team-eng"},"project":{"id":"project-loam"}}}}`)
+	case strings.Contains(req.Query, "HomeOfProject"):
+		reply(`{"data":{"projects":{"nodes":[{"id":"project-loam","teams":{"nodes":[{"id":"team-eng"}]}}]}}}`)
+	case strings.Contains(req.Query, "HomeOfTeam"):
+		reply(`{"data":{"teams":{"nodes":[{"id":"team-eng"}]}}}`)
+	case strings.Contains(req.Query, "issueCreate"):
+		f.made++
+		key := fmt.Sprintf("ENG-%d", 600+f.made)
+		replyJSON(map[string]any{"data": map[string]any{"issueCreate": map[string]any{"success": true,
+			"issue": map[string]any{"id": "id-" + key, "identifier": key, "url": "https://linear.app/acme/issue/" + key + "/follow-up"}}}})
+	case strings.Contains(req.Query, "issueRelationCreate"):
+		reply(`{"data":{"issueRelationCreate":{"success":true}}}`)
 	case strings.Contains(req.Query, "issues(") && os.Getenv("LOAM_FAKE_LINEAR_ISSUES") != "":
 		// The key of a team filter: {"team": {"key": {"eq": "SHOP"}}}. A project filter gets every node.
 		var team string
