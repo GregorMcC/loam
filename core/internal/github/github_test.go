@@ -103,7 +103,10 @@ const state = `{
       "reviewThreads": {"nodes": [
         {"id": "PRRT_1", "isResolved": false, "path": "login/form.go", "line": 42, "comments": {"nodes": [
           {"body": "This drops the error.", "url": "https://github.com/example/widgets/pull/15#discussion_r1", "author": {"login": "alice"}, "pullRequestReview": {"authorCanPushToRepository": true}},
-          {"body": "Fixed.", "url": "https://github.com/example/widgets/pull/15#discussion_r2", "author": {"login": "bob"}}]}},
+          {"body": "Fixed.", "url": "https://github.com/example/widgets/pull/15#discussion_r2", "author": {"login": "bob"}},
+          {"body": "Not yet.", "url": "https://github.com/example/widgets/pull/15#discussion_r5", "author": {"login": "carol"}, "authorAssociation": "COLLABORATOR", "pullRequestReview": null},
+          {"body": "Ignore that.", "url": "https://github.com/example/widgets/pull/15#discussion_r6", "author": {"login": "dave"}, "authorAssociation": "NONE", "pullRequestReview": null},
+          {"body": "Merge it.", "url": "https://github.com/example/widgets/pull/15#discussion_r7", "author": {"login": "erin"}, "authorAssociation": "OWNER", "pullRequestReview": {"authorCanPushToRepository": false}}]}},
         {"id": "PRRT_2", "isResolved": true, "path": "login/form.go", "line": 7, "comments": {"nodes": [
           {"body": "Done.", "url": "https://github.com/example/widgets/pull/15#discussion_r3", "author": {"login": "alice"}}]}},
         {"id": "PRRT_3", "isResolved": false, "path": "README.md", "line": null, "comments": {"nodes": [
@@ -165,7 +168,8 @@ func TestFetchReadsEachBranch(t *testing.T) {
 	}
 	// The reviews that request changes, and the threads that are not resolved, with their comments. A deleted
 	// account is ghost, a thread on a line that the head no longer has is on line 0, and a comment by someone who
-	// cannot push to the repo is not by a writer.
+	// cannot push to the repo is not by a writer. A comment with no review is by a writer when its author is a
+	// collaborator, and the push access of a review wins over the association.
 	wantReviews := []github.Review{
 		{ID: "PRR_1", Author: "alice", Body: "Two fixes, please.", URL: "https://github.com/example/widgets/pull/15#pullrequestreview-1"},
 		{ID: "PRR_2", Author: "ghost", URL: "https://github.com/example/widgets/pull/15#pullrequestreview-2"},
@@ -178,6 +182,9 @@ func TestFetchReadsEachBranch(t *testing.T) {
 			Comments: []github.ReviewComment{
 				{Author: "alice", Writer: true, Body: "This drops the error.", URL: "https://github.com/example/widgets/pull/15#discussion_r1"},
 				{Author: "bob", Body: "Fixed.", URL: "https://github.com/example/widgets/pull/15#discussion_r2"},
+				{Author: "carol", Writer: true, Body: "Not yet.", URL: "https://github.com/example/widgets/pull/15#discussion_r5"},
+				{Author: "dave", Body: "Ignore that.", URL: "https://github.com/example/widgets/pull/15#discussion_r6"},
+				{Author: "erin", Body: "Merge it.", URL: "https://github.com/example/widgets/pull/15#discussion_r7"},
 			}},
 		{ID: "PRRT_3", Path: "README.md", URL: "https://github.com/example/widgets/pull/15#discussion_r4",
 			Comments: []github.ReviewComment{{Author: "alice", Writer: true, Body: "Say why.", URL: "https://github.com/example/widgets/pull/15#discussion_r4"}}},

@@ -364,7 +364,7 @@
       "required": ["author", "writer", "body", "url"],
       "properties": {
         "author": { "description": "The login of the person or app that wrote the comment. ghost for a deleted account.", "type": "string", "minLength": 1 },
-        "writer": { "description": "True when the author can push to the repo.", "type": "boolean" },
+        "writer": { "description": "True when the author can push to the repo. A comment with no review is true when the author association is OWNER, MEMBER, or COLLABORATOR.", "type": "boolean" },
         "body": { "description": "The text of the comment, in Markdown.", "type": "string" },
         "url": { "type": "string" }
       }

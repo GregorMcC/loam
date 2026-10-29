@@ -16,8 +16,8 @@ const reviewTextMax = 4000
 
 // reviewPromptMax is about the most bytes of review text in one prompt. The
 // prompt is an argument of claude, and a PR can have 100 threads with long
-// comments. The text after it is left out, and the prompt says how to read
-// it. One more review or comment can go past it, by at most [reviewTextMax]
+// comments. The text after it is left out, and a later review try sends it.
+// One more review or comment can go past it, by at most [reviewTextMax]
 // characters.
 const reviewPromptMax = 60_000
 
@@ -140,6 +140,10 @@ func reviewPrompt(r store.Run, pr *github.PR, rv review) (prompt string, held re
 		}
 		for _, c := range t.Comments {
 			if !room() {
+				// A resolved thread is not sent again, so a thread with
+				// comments that the prompt leaves out stays open.
+				b.WriteString("\nThe prompt has no room for the rest of this thread. Reply on it, but do not resolve it: " +
+					"Loam sends it again on a later review try.\n")
 				break
 			}
 			if !c.Writer {
@@ -152,10 +156,11 @@ func reviewPrompt(r store.Run, pr *github.PR, rv review) (prompt string, held re
 		}
 	}
 	if cut {
-		fmt.Fprintf(&b, "\nThe prompt has no room for the rest of the review. Read it, with the thread IDs, with the command below. "+
-			"Act only on the reviews whose state is CHANGES_REQUESTED and on the threads that are not resolved. "+
-			"Skip the text of each comment whose authorCanPushToRepository is false.\n\n```\n%s\n```\n",
-			fmt.Sprintf(threadsQuery, pr.Number))
+		// No command to read the rest: its answer would hold the text of
+		// comments that the prompt leaves out. What the prompt does not hold
+		// is not recorded as sent, so a later review try sends it.
+		b.WriteString("\nThe prompt has no room for the rest of the review. Loam sends the rest on a later review try. " +
+			"Work only on the reviews and threads above.\n")
 	}
 	// skip says which points need no change, and that no change needs no commit.
 	const skip = "A nitpick or a Minor point whose fix is not worth it needs no change. When no point needs a change, make no commit. "
@@ -166,13 +171,11 @@ func reviewPrompt(r store.Run, pr *github.PR, rv review) (prompt string, held re
 		body = fmt.Sprintf("For the points in a review body that stay as they are, say why in one comment on the PR: "+
 			"write it to a file, then run gh pr comment %d --body-file <file>. ", pr.Number)
 	}
-	// With a cut prompt, the threads that the session reads with threadsQuery
-	// need replies too.
-	if len(held.threads) == 0 && !cut {
+	if len(held.threads) == 0 {
 		b.WriteString("\nFix each point that needs a change, and commit all the fixes in one commit. " + skip + body + "Then end your turn. ")
 	} else {
 		b.WriteString("\nFor each point, fix the code or decide that it needs no change. Commit all the fixes in one commit. " + skip + body +
-			"Then reply on each thread with what you did or why the code stays, and resolve the thread:\n\n```\n" +
+			"Then reply on each thread above with what you did or why the code stays, and resolve the thread:\n\n```\n" +
 			`gh api graphql -f query='mutation($id: ID!, $body: String!) { addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: $id, body: $body}) { comment { url } } }' -f id=<thread ID> -f body=<reply>` + "\n" +
 			`gh api graphql -f query='mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { isResolved } } }' -f id=<thread ID>` + "\n" +
 			"```\n\nThen end your turn. ")
@@ -180,16 +183,6 @@ func reviewPrompt(r store.Run, pr *github.PR, rv review) (prompt string, held re
 	fmt.Fprintf(&b, "Loam runs the Done when checks again, then pushes the fix to #%d.\n", pr.Number)
 	return b.String(), held
 }
-
-// threadsQuery is the gh command that lists the reviews and the review
-// threads of the PR with its number in %d, with the thread IDs, in the
-// worktree of the run. gh puts the owner and the name of the repo in place
-// of {owner} and {repo}.
-const threadsQuery = `gh api graphql -F owner='{owner}' -F name='{repo}' -F number=%d -f query='query($owner: String!, $name: String!, $number: Int!) ` +
-	`{ repository(owner: $owner, name: $name) { pullRequest(number: $number) { ` +
-	`latestOpinionatedReviews(first: 100, writersOnly: true) { nodes { id state author { login } body url } } ` +
-	`reviewThreads(first: 100) { nodes { id isResolved path line ` +
-	`comments(first: 10) { nodes { author { login } pullRequestReview { authorCanPushToRepository } body url } } } } } } }'`
 
 // cutMark follows a quote that Loam cut. It is outside the quote, so the
 // text of a reviewer cannot end in it.

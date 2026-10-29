@@ -176,7 +176,8 @@ type ReviewComment struct {
 	// Author is the login of the person or app that wrote the comment.
 	Author string `json:"author"`
 	// Writer is true when the author can push to the repo. On a public repo,
-	// anyone can comment.
+	// anyone can comment. A comment that has no review uses the association
+	// of its author: OWNER, MEMBER, and COLLABORATOR count as writers.
 	Writer bool `json:"writer"`
 	// Body is the text of the comment, in Markdown.
 	Body string `json:"body"`

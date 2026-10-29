@@ -57,7 +57,7 @@ const detailFields = `    p%[1]d: pullRequest(number: $n%[1]d) {
       %[3]s
       latestOpinionatedReviews(first: %[2]d, writersOnly: true) { nodes { id state body url author { login } } }
       reviewThreads(first: %[2]d) { nodes { id isResolved path line
-        comments(first: %[4]d) { nodes { body url author { login } pullRequestReview { authorCanPushToRepository } } } } }
+        comments(first: %[4]d) { nodes { body url authorAssociation author { login } pullRequestReview { authorCanPushToRepository } } } } }
       commits(last: 1) { nodes { commit { statusCheckRollup { state contexts(first: %[2]d) { totalCount nodes {
         __typename
         ... on CheckRun { name status conclusion detailsUrl startedAt completedAt isRequired(pullRequestNumber: $n%[1]d)
@@ -120,10 +120,13 @@ type detailNode struct {
 					Body   string  `json:"body"`
 					URL    string  `json:"url"`
 					Author *author `json:"author"`
-					// PullRequestReview is the review that the comment is part of.
-					PullRequestReview *struct {
-						AuthorCanPushToRepository bool `json:"authorCanPushToRepository"`
-					} `json:"pullRequestReview"`
+					// AuthorAssociation is how the author is part of the repo,
+					// such as OWNER or NONE.
+					AuthorAssociation string `json:"authorAssociation"`
+					// PullRequestReview is the review that the comment is part
+					// of. It can be null, so [isWriter] then uses
+					// AuthorAssociation.
+					PullRequestReview *commentReview `json:"pullRequestReview"`
 				} `json:"nodes"`
 			} `json:"comments"`
 		} `json:"nodes"`
@@ -147,6 +150,28 @@ type detailNode struct {
 // deleted account.
 type author struct {
 	Login string `json:"login"`
+}
+
+// writerAssociations are the author associations of a person who can push to
+// the repo. A COLLABORATOR can have read access only, so this list can count
+// a person who cannot push. Each other association, such as CONTRIBUTOR or
+// NONE, is not a writer.
+var writerAssociations = map[string]bool{"OWNER": true, "MEMBER": true, "COLLABORATOR": true}
+
+// commentReview is the review that a review comment is part of.
+type commentReview struct {
+	AuthorCanPushToRepository bool `json:"authorCanPushToRepository"`
+}
+
+// isWriter is true when the author of a review comment can push to the repo.
+// When the comment has a review, the push access of the review author is the
+// answer. When it has no review, [writerAssociations] gives the answer from
+// the association of the comment author.
+func isWriter(review *commentReview, association string) bool {
+	if review != nil {
+		return review.AuthorCanPushToRepository
+	}
+	return writerAssociations[association]
 }
 
 // ghostLogin is the login that GitHub shows for a deleted account.
@@ -331,7 +356,7 @@ func addDetails(pr *PR, d detailNode) {
 			thread.Line = *t.Line
 		}
 		for _, c := range t.Comments.Nodes {
-			writer := c.PullRequestReview != nil && c.PullRequestReview.AuthorCanPushToRepository
+			writer := isWriter(c.PullRequestReview, c.AuthorAssociation)
 			thread.Comments = append(thread.Comments, ReviewComment{Author: loginOf(c.Author), Writer: writer, Body: c.Body, URL: c.URL})
 		}
 		if len(thread.Comments) > 0 {
