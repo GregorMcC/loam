@@ -6,8 +6,38 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"slices"
 	"strings"
 )
+
+// ScopeUser is the scope of the MCP servers that Loam can copy: the user
+// scope of the Claude Code config.
+const ScopeUser = "user"
+
+// MCPServer is an MCP server that [MCPConfig] can copy.
+type MCPServer struct {
+	Name  string `json:"name"`
+	Scope string `json:"scope"`
+}
+
+// MCPServers lists the MCP servers that [MCPConfig] can copy, by name. It
+// leaves out a server that MCPConfig rejects, one with a headersHelper, so
+// each name in the list is one that loam run defaults --mcp accepts. A
+// config file that does not exist gives an empty list.
+func MCPServers() ([]MCPServer, error) {
+	user, err := userServers()
+	if err != nil {
+		return nil, err
+	}
+	servers := []MCPServer{}
+	for name, def := range user {
+		if !hasHelper(def) {
+			servers = append(servers, MCPServer{Name: name, Scope: ScopeUser})
+		}
+	}
+	slices.SortFunc(servers, func(a, b MCPServer) int { return strings.Compare(a.Name, b.Name) })
+	return servers, nil
+}
 
 // MCPConfig returns an MCP config for claude --mcp-config that holds only
 // the servers that names gives, as {"mcpServers": {...}}. Loam copies each

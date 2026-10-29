@@ -816,6 +816,19 @@ func scenario(t *testing.T) *harness {
 	h.run("error_run_defaults_bad_effort", "error", 2, "run", "defaults", "Runs", "--effort", "extreme")
 	h.run("run_defaults_clear", "run-defaults", 0, "run", "defaults", "Runs", "--model", "", "--effort", "", "--mcp", "")
 
+	// The MCP servers that --mcp can select: the user scope, without a
+	// server that has a headersHelper. No config file gives an empty list.
+	h.run("run_mcp_servers_none", "run-mcp-servers", 0, "run", "mcp-servers")
+	servers := `{"mcpServers":{"linear-server":{"type":"http","url":"https://example.com/mcp"},"loam":{"type":"stdio","command":"loam","args":["mcp"]},` +
+		`"helper":{"type":"http","url":"https://example.com/mcp","headersHelper":"./token.sh"}}}`
+	if err := os.WriteFile(filepath.Join(h.root, "userhome", ".claude.json"), []byte(servers), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h.run("run_mcp_servers", "run-mcp-servers", 0, "run", "mcp-servers")
+	if err := os.WriteFile(filepath.Join(h.root, "userhome", ".claude.json"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
 	// Run limits, the queue, and usage. Two runs hold a slot here: the
 	// approved run and the guide run that went back. With 2 at a time, a new
 	// run waits for a slot.

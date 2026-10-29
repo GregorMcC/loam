@@ -372,6 +372,12 @@ struct DriverTests {
         try await expectPass("recurring-shot", environment: ["LOAM_DRIVER_LOAM": Self.loamBinary])
     }
 
+    /// TAS-63: the MCP servers of the run defaults. You select 1 server and `loam run defaults` shows it, you clear it
+    /// and the list is empty, and a selected server that the config lacks shows "not found" until you clear it.
+    @Test func picksTheMCPServersOfTheRunDefaults() async throws {
+        try await expectPass("run-defaults-mcp-shot", environment: ["LOAM_DRIVER_LOAM": Self.loamBinary])
+    }
+
     /// Ticket 107: two plots with a worktree each that is ready to merge. The Ready to merge row counts 2,
     /// ⌘⇧L selects the first, then the second, then the first again, and the row goes while gh is missing.
     @Test func reachesTheWorktreesThatAreReadyToMergeWithCommandShiftL() async throws {

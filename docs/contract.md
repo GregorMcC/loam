@@ -689,6 +689,20 @@ The MCP servers are for `claude -p`, which drafts a Shape run and writes the PR 
 - `--mcp` takes a comma-separated list of server names. Loam trims each name and leaves out empty names and repeats. The command prints the defaults after the change.
 - An `--effort` that is not a level exits 2.
 
+`loam run mcp-servers` lists the servers that `--mcp` can select. It takes no plot, because the user scope is the same for each plot.
+
+```json
+{ "servers": [{ "name": "linear-server", "scope": "user" }, { "name": "loam", "scope": "user" }] }
+```
+
+| Command | Output |
+| :- | :- |
+| `loam run mcp-servers` | `{ "servers": [{ "name": "...", "scope": "user" }] }` |
+
+- The list holds the servers in `mcpServers` of the user scope of `.claude.json`, sorted by name. `scope` is always `user` for now, so a later scope needs no change of the shape.
+- The list leaves out a server with a `headersHelper`, because `--mcp` rejects it. It has no `.mcp.json` server, no local-scope server, and no claude.ai connector, for the reasons above.
+- A missing config file gives `[]`.
+
 #### Limits, the queue, and usage
 
 The run limits hold for every run of every plot. There is one set, and it is not in the change log.

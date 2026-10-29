@@ -362,10 +362,17 @@ public struct LoamClient: Sendable {
         return one.defaults
     }
 
-    /// `loam run defaults <plot> --model <model> --effort <level>`. An empty value clears it.
-    public func setRunDefaults(plot: String, model: String, effort: String) async throws -> RunDefaults {
-        let one: RunDefaultsOne = try await read(["run", "defaults", "--model", model, "--effort", effort], positionals: [plot])
+    /// `loam run defaults <plot> --model <model> --effort <level> --mcp <names>`. An empty value clears it.
+    public func setRunDefaults(plot: String, model: String, effort: String, mcpServers: [String]) async throws -> RunDefaults {
+        let one: RunDefaultsOne = try await read(
+            ["run", "defaults", "--model", model, "--effort", effort, "--mcp", mcpServers.joined(separator: ",")], positionals: [plot])
         return one.defaults
+    }
+
+    /// `loam run mcp-servers`: the MCP servers that `--mcp` can select.
+    public func runMCPServers() async throws -> [MCPServer] {
+        let list: MCPServerList = try await read(["run", "mcp-servers"])
+        return list.servers
     }
 
     /// `loam run limits`: the limits of every run.

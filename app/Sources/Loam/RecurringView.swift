@@ -262,22 +262,32 @@ private struct RecurringForm: View {
 }
 
 /// The rules of the plot (ticket 209): checks that every run must pass, with a form that adds one.
-/// The model and the effort that a run of the plot gets when it names none: a run from Intake, a recurring run,
-/// or `loam run start`. Default leaves the choice to Claude Code. A change saves at once.
+/// The model, the effort, and the MCP servers that a run of the plot gets when it names none: a run from Intake, a
+/// recurring run, or `loam run start`. Default leaves the model and the effort to Claude Code, and the servers
+/// default to none. A change saves at once.
 private struct RunDefaultsSection: View {
     let model: AppModel
     let plotID: String
     @State private var chosenModel = ""
     @State private var chosenEffort = ""
+    @State private var chosenServers: [String] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: LoamTheme.space3) {
-            Text("Model and effort").loamText(LoamTheme.rowStyle)
+            Text("Model, effort, and MCP servers").loamText(LoamTheme.rowStyle)
             Text("Each run of this plot uses these, unless its form picks others. Default is the default of Claude Code.")
                 .loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
             ModelEffortPickers(model: $chosenModel, effort: $chosenEffort, defaults: nil, id: "run-defaults",
-                               help: "The model and the effort that a run of this plot gets when it names none")
-                .frame(maxWidth: 420, alignment: .leading)
+                               help: "The model and the effort that a run of this plot gets when it names none") {
+                MCPServerPicker(servers: model.mcpServers, selected: $chosenServers, id: "run-defaults-mcp")
+            }
+            .frame(maxWidth: 560, alignment: .leading)
+            Text("The MCP servers load when Claude drafts a run and writes its PR text. Only servers added with "
+                 + "claude mcp add --scope user show up. Claude.ai connectors cannot be selected. The tools of a selected "
+                 + "server run as your Claude Code permissions allow.")
+                .loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("run-defaults-mcp-note")
             if let error = model.runDefaultsError {
                 Text(error).loamText(LoamTheme.captionStyle, LoamColor.rust).textSelection(.enabled)
                     .accessibilityIdentifier("run-defaults-error")
@@ -285,15 +295,25 @@ private struct RunDefaultsSection: View {
         }
         .task {
             await model.readRunDefaults(plot: plotID)
+            await model.readMCPServers()
             chosenModel = model.runDefaults?.model ?? ""
             chosenEffort = model.runDefaults?.effort ?? ""
+            chosenServers = model.runDefaults?.mcpServers ?? []
         }
-        .onChange(of: [chosenModel, chosenEffort]) { _, now in
-            guard let saved = model.runDefaults, saved.plotID == plotID, [saved.model, saved.effort] != now else { return }
-            Task { await model.setRunDefaults(plot: plotID, model: now[0], effort: now[1]) }
+        .onChange(of: Choice(model: chosenModel, effort: chosenEffort, servers: chosenServers)) { _, now in
+            guard let saved = model.runDefaults, saved.plotID == plotID,
+                  Choice(model: saved.model, effort: saved.effort, servers: saved.mcpServers) != now else { return }
+            Task { await model.setRunDefaults(plot: plotID, model: now.model, effort: now.effort, mcpServers: now.servers) }
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("run-defaults")
+    }
+
+    /// What the pickers hold, to compare with what the core saved.
+    private struct Choice: Equatable {
+        var model: String
+        var effort: String
+        var servers: [String]
     }
 }
 

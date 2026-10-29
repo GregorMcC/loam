@@ -94,15 +94,21 @@ extension AppModel {
         try? await client.linearUpdates().inProgress
     }
 
-    /// Reads the model and the effort that a run of the plot gets when it names none. A failed read leaves none.
+    /// Reads the model, the effort, and the MCP servers that a run of the plot gets when it names none. A failed read leaves none.
     public func readRunDefaults(plot: String) async {
         runDefaults = try? await client.runDefaults(plot: plot)
     }
 
-    /// Sets the model and the effort that a run of the plot gets when it names none. "" clears one.
-    public func setRunDefaults(plot: String, model: String, effort: String) async {
+    /// Reads the MCP servers that a run default can select. A failed read leaves the last list.
+    public func readMCPServers() async {
+        if let servers = try? await client.runMCPServers() { mcpServers = servers }
+    }
+
+    /// Sets the model, the effort, and the MCP servers that a run of the plot gets when it names none. "" clears the
+    /// model or the effort, and no name clears the servers.
+    public func setRunDefaults(plot: String, model: String, effort: String, mcpServers: [String]) async {
         do {
-            runDefaults = try await client.setRunDefaults(plot: plot, model: model, effort: effort)
+            runDefaults = try await client.setRunDefaults(plot: plot, model: model, effort: effort, mcpServers: mcpServers)
             runDefaultsError = nil
         } catch {
             runDefaultsError = Self.message(for: error)

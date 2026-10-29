@@ -145,10 +145,21 @@ import Testing
     @Test func thePlotDefaultsAreReadAndSet() async throws {
         let (model, fake) = try model([("run_defaults_get", 0), ("run_defaults_set", 0)])
         await model.readRunDefaults(plot: "plotaaaaae")
-        #expect(model.runDefaults == RunDefaults(plotID: "plotaaaaae", model: "", effort: ""))
-        await model.setRunDefaults(plot: "plotaaaaae", model: "opus", effort: "high")
-        #expect(fake.args().last == "run defaults --model opus --effort high --json -- plotaaaaae")
+        #expect(model.runDefaults == RunDefaults(plotID: "plotaaaaae", model: "", effort: "", mcpServers: []))
+        await model.setRunDefaults(plot: "plotaaaaae", model: "opus", effort: "high", mcpServers: ["loam", "linear-server"])
+        #expect(fake.args().last == "run defaults --model opus --effort high --mcp loam,linear-server --json -- plotaaaaae")
         #expect(model.runDefaults?.model == "opus" && model.runDefaults?.effort == "high" && model.runDefaultsError == nil)
+    }
+
+    /// The servers that `--mcp` can select come from `loam run mcp-servers`, and no name clears the selection.
+    @Test func theMCPServersAreReadAndClearedWithAnEmptyList() async throws {
+        let (model, fake) = try model([("run_mcp_servers", 0), ("run_defaults_clear", 0)])
+        await model.readMCPServers()
+        #expect(fake.args().last == "run mcp-servers --json")
+        #expect(model.mcpServers == [MCPServer(name: "linear-server", scope: "user"), MCPServer(name: "loam", scope: "user")])
+        await model.setRunDefaults(plot: "plotaaaaae", model: "", effort: "", mcpServers: [])
+        #expect(fake.args().last == "run defaults --model  --effort  --mcp  --json -- plotaaaaae")
+        #expect(model.runDefaults?.mcpServers == [])
     }
 
     @Test func theDefaultChoiceSaysWhatTheDefaultIs() {
