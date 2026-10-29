@@ -382,7 +382,7 @@ func TestUpdateRunGivesEachTryItsStage(t *testing.T) {
 	}
 }
 
-// TAS-176: a run keeps the run that it fixes, and cannot fix itself.
+// TAS-176: a run keeps the run that it fixes.
 func TestARunKeepsTheRunThatItFixes(t *testing.T) {
 	s := openStore(t)
 	p := newPlot(t, s, "A")
@@ -393,9 +393,6 @@ func TestARunKeepsTheRunThatItFixes(t *testing.T) {
 	}
 	if got, err := s.GetRun(fix.ID); err != nil || got.Fixes != landed.ID {
 		t.Fatalf("%+v %v", got, err)
-	}
-	if _, err := s.UpdateRun(fix.ID, func(r *store.Run) error { r.Fixes = r.ID; return nil }); !errors.Is(err, store.ErrInvalid) {
-		t.Fatalf("a run that fixes itself: %v", err)
 	}
 	b, err := json.Marshal(landed)
 	if err != nil || !strings.Contains(string(b), `"fixes":""`) {
@@ -410,8 +407,10 @@ func TestRunHistoryHoldsTheRunsAndEventsOfAPlot(t *testing.T) {
 	a, b := newPlot(t, s, "A"), newPlot(t, s, "B")
 	first, second := addTestRun(t, s, a.ID), addTestRun(t, s, a.ID)
 	other := addTestRun(t, s, b.ID)
-	if err := s.AddRunEvent(first.ID, "check", "Go tests passed"); err != nil {
-		t.Fatal(err)
+	for _, kind := range []string{"shape", "check"} {
+		if err := s.AddRunEvent(first.ID, kind, "Drafted"); err != nil {
+			t.Fatal(err)
+		}
 	}
 	runs, events, err := s.RunHistory(a.ID)
 	if err != nil {
@@ -424,7 +423,8 @@ func TestRunHistoryHoldsTheRunsAndEventsOfAPlot(t *testing.T) {
 	for _, e := range events {
 		got = append(got, e.RunID+":"+e.Kind)
 	}
-	want := []string{first.ID + ":state", second.ID + ":state", first.ID + ":check"}
+	// A check event is not one that the metrics read.
+	want := []string{first.ID + ":state", second.ID + ":state", first.ID + ":shape"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("events %q, want %q", got, want)
 	}

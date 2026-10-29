@@ -39,8 +39,8 @@ type MetricsPeriod struct {
 	Stations Stations `json:"stations"`
 	Recovery Recovery `json:"recovery"`
 	Rework   Rework   `json:"rework"`
-	// NotLanded counts the runs that ended in the window, or that wait for
-	// you in it, with no land.
+	// NotLanded counts the runs whose last state is in the window and is
+	// Stopped, Limited, Cancelled, or Start unknown.
 	NotLanded NotLanded `json:"not_landed"`
 }
 
@@ -76,7 +76,8 @@ type Stations struct {
 // failed gate until the run ships, or is Ready. CI is from a failed CI until
 // the run is Ready again. A gate that fails while the run fixes a CI failure
 // is part of that CI failure. A failure counts in the window that it
-// started in, and a failure that never passed does not count.
+// started in. A failure that never passed does not count, and nor does one
+// that stopped the run, because the Stopped station holds that wait.
 type Recovery struct {
 	Gate Spread `json:"gate"`
 	CI   Spread `json:"ci"`
@@ -90,12 +91,13 @@ type Rework struct {
 	// CodeReviewRounds counts the code reviews before a push that found a
 	// Critical or Major issue.
 	CodeReviewRounds int `json:"code_review_rounds"`
-	// Redrafts counts the drafts after the first one.
+	// Redrafts counts the drafts after the first one, with the drafts that
+	// failed: each one is a loop back to Shape.
 	Redrafts int `json:"redrafts"`
 	Turns    int `json:"turns"`
 }
 
-// NotLanded counts the runs by the state that they ended in, or wait in.
+// NotLanded counts the runs that did not land, by their last state.
 type NotLanded struct {
 	Stopped      int `json:"stopped"`
 	Limited      int `json:"limited"`
@@ -234,6 +236,9 @@ func walk(r store.Run, events []store.RunEvent) runPath {
 				open.took = e.At.Sub(open.at)
 				p.recover = append(p.recover, *open)
 				open = nil
+			}
+			if i, ok := stationOf(st); st == store.RunCancelled || ok && i == stationStopped {
+				open = nil // the failure stopped the run
 			}
 			cur, since, p.last = st, e.At, e.At
 			if st == store.RunLanded {

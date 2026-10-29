@@ -31,6 +31,9 @@ func newRunMetricsCmd() *cobra.Command {
 				if err != nil {
 					return fmt.Errorf("--since %q is not an RFC 3339 time: %w", since, store.ErrInvalid)
 				}
+				if !t.Before(to) {
+					return fmt.Errorf("--since %s is not before now: %w", since, store.ErrInvalid)
+				}
 				from = t.UTC()
 			}
 			s, err := openStore()
@@ -68,7 +71,11 @@ func printMetrics(out io.Writer, m run.Metrics) {
 	c, p := m.Current, m.Previous
 	days := c.To.Sub(c.From).Hours() / 24
 	fmt.Fprintf(out, "Runs from %s to %s (%s days)\n", c.From.Format(time.DateOnly), c.To.Format(time.DateOnly), trimFloat(days))
-	fmt.Fprintf(out, "Landed: %d, %s a week (before: %d)\n", c.Landed, trimFloat(float64(c.Landed)/days*7), p.Landed)
+	rate := ""
+	if days >= 7 { // a shorter window gives a week rate that means little
+		rate = ", " + trimFloat(float64(c.Landed)/days*7) + " a week"
+	}
+	fmt.Fprintf(out, "Landed: %d%s (before: %d)\n", c.Landed, rate, p.Landed)
 	fmt.Fprintf(out, "Lead time: %s (before: %s)\n", spreadText(c.LeadTime), spreadText(p.LeadTime))
 	fmt.Fprintf(out, "First pass: %d of %d. Fixed later: %d of %d.\n", c.FirstPass, c.Landed, c.Fixed, c.Landed)
 	fmt.Fprintln(out)

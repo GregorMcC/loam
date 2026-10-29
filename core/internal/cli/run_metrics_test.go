@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/GregorMcC/loam/core/internal/run"
 	"github.com/GregorMcC/loam/core/internal/store"
@@ -76,8 +77,13 @@ func TestRunMetricsPrintsTheStationsForAPerson(t *testing.T) {
 	if _, code := loam(t, "run", "metrics", "--since", "yesterday", "--json"); code != 2 {
 		t.Fatalf("a bad time: exit %d", code)
 	}
-	if _, code := loam(t, "run", "metrics", "--since", "2999-01-01T00:00:00Z", "--json"); code != 2 {
-		t.Fatalf("a start after now: exit %d", code)
+	if out, code := loam(t, "run", "metrics", "--since", "2999-01-01T00:00:00Z", "--json"); code != 2 || !strings.Contains(out, "--since") {
+		t.Fatalf("a start after now: exit %d: %s", code, out)
+	}
+	// A window under a week has no week rate.
+	since := time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
+	if out, code := loam(t, "run", "metrics", "--since", since); code != 0 || !strings.Contains(out, "Landed: 0 (before: 0)") {
+		t.Fatalf("a short window: exit %d: %s", code, out)
 	}
 }
 

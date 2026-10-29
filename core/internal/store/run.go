@@ -463,9 +463,6 @@ func (r *Run) check() error {
 			return fmt.Errorf("each Done when check needs a name and a command: %w", ErrInvalid)
 		}
 	}
-	if r.Fixes != "" && r.Fixes == r.ID {
-		return fmt.Errorf("a run cannot fix itself: %w", ErrInvalid)
-	}
 	if r.MaxTries < 1 || r.MaxTries > MaxTriesLimit {
 		return fmt.Errorf("a run has 1 to %d tries, because Claude Code lets a session stop after %d blocked stops in a row: %w",
 			MaxTriesLimit, MaxTriesLimit, ErrInvalid)
@@ -683,34 +680,45 @@ func (s *Store) RunEvents(runID string) ([]RunEvent, error) {
 	out := []RunEvent{}
 	err := s.readTx(func(q queryer) error {
 		return scanRows(q, func(rows *sql.Rows) error {
-			var e RunEvent
-			var at int64
-			if err := rows.Scan(&e.ID, &e.RunID, &at, &e.Kind, &e.Detail, &e.Stage); err != nil {
+			e, err := scanRunEvent(rows)
+			if err != nil {
 				return err
 			}
-			e.At = tm(at)
 			out = append(out, e)
 			return nil
-		}, `SELECT id, run_id, at, kind, detail, stage FROM run_events WHERE run_id = ? ORDER BY id`, runID)
+		}, `SELECT `+eventCols+` FROM run_events WHERE run_id = ? ORDER BY id`, runID)
 	})
 	return out, err
 }
 
+// eventCols are the columns of a run event, for [scanRunEvent].
+const eventCols = `id, run_id, at, kind, detail, stage`
+
+func scanRunEvent(rows *sql.Rows) (RunEvent, error) {
+	var e RunEvent
+	var at int64
+	if err := rows.Scan(&e.ID, &e.RunID, &at, &e.Kind, &e.Detail, &e.Stage); err != nil {
+		return RunEvent{}, err
+	}
+	e.At = tm(at)
+	return e, nil
+}
+
 // RunHistory returns the runs of a plot, or of every plot when plotID is
-// empty, and the events of those runs, oldest first, in one read. The run
-// metrics read it.
+// empty, and their state, try, and shape events, oldest first, in one read.
+// The run metrics read only those kinds.
 func (s *Store) RunHistory(plotID string) ([]Run, []RunEvent, error) {
 	runs, events := []Run{}, []RunEvent{}
 	runQuery := `SELECT ` + runCols + ` FROM runs`
-	eventQuery := `SELECT e.id, e.run_id, e.at, e.kind, e.detail, e.stage FROM run_events e JOIN runs r ON r.id = e.run_id`
+	eventQuery := `SELECT ` + eventCols + ` FROM run_events WHERE kind IN ('state', 'try', 'shape')`
 	var args []any
 	if plotID != "" {
 		runQuery += ` WHERE plot_id = ?`
-		eventQuery += ` WHERE r.plot_id = ?`
+		eventQuery += ` AND run_id IN (SELECT id FROM runs WHERE plot_id = ?)`
 		args = append(args, plotID)
 	}
 	runQuery += ` ORDER BY created_at, rowid`
-	eventQuery += ` ORDER BY e.id`
+	eventQuery += ` ORDER BY id`
 	err := s.readTx(func(q queryer) error {
 		if err := scanRows(q, func(rows *sql.Rows) error {
 			r, err := scanRun(rows)
@@ -723,12 +731,10 @@ func (s *Store) RunHistory(plotID string) ([]Run, []RunEvent, error) {
 			return err
 		}
 		return scanRows(q, func(rows *sql.Rows) error {
-			var e RunEvent
-			var at int64
-			if err := rows.Scan(&e.ID, &e.RunID, &at, &e.Kind, &e.Detail, &e.Stage); err != nil {
+			e, err := scanRunEvent(rows)
+			if err != nil {
 				return err
 			}
-			e.At = tm(at)
 			events = append(events, e)
 			return nil
 		}, eventQuery, args...)

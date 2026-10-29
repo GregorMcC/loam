@@ -31,7 +31,9 @@ func (h *history) add(kind, detail string, minute int) *history {
 	return h
 }
 
-func (h *history) state(st store.RunState, minute int) *history { return h.add("state", string(st), minute) }
+func (h *history) state(st store.RunState, minute int) *history {
+	return h.add("state", string(st), minute)
+}
 
 // metricsFixture is 4 runs. Shaped lands after one gate try. Started has no
 // draft, fails CI once, and lands. Fix fixes Shaped and lands. Gave up
@@ -154,6 +156,20 @@ func TestMetricsOfNoRunsAreZeroWithEmptyCounts(t *testing.T) {
 		if !strings.Contains(string(b), key) {
 			t.Fatalf("json has no %s: %s", key, b)
 		}
+	}
+}
+
+// A failure that stops the run has no recovery, even when the run passes
+// after you start it again: the Stopped station holds that wait.
+func TestMetricsGiveNoRecoveryToAFailureThatStoppedTheRun(t *testing.T) {
+	h := (&history{run: "stopped"}).
+		state(store.RunStarting, 0).state(store.RunRunning, 1).add("try", store.TryGate, 10).
+		state(store.RunStopped, 10).state(store.RunRunning, 600).state(store.RunShipping, 610).
+		state(store.RunReady, 615).state(store.RunLanded, 620)
+	runs := []store.Run{{ID: "stopped", State: store.RunLanded}}
+	c := ComputeMetrics(runs, h.events, metricsStart, metricsStart.Add(24*time.Hour)).Current
+	if c.Recovery.Gate.Count != 0 || c.Stations.Stopped != spread(1, 590, 590) || c.Rework.GateTries != 1 {
+		t.Fatalf("recovery %+v, stopped %+v, rework %+v", c.Recovery, c.Stations.Stopped, c.Rework)
 	}
 }
 
