@@ -447,6 +447,7 @@ func (s *Store) AddRun(r Run) (Run, error) {
 	}
 	now := time.Now().UnixMilli()
 	r.Tries, r.Turns, r.TurnBase, r.ReviewTries, r.ReviewsSent = 0, 0, 0, 0, nil
+	r.CodeReview = nil // a new run has no review of its head
 	r.CreatedAt, r.UpdatedAt = tm(now), tm(now)
 	checks, src, pr, shape, queue, notes, draft, sent, review := encodeRun(r)
 	if err := tx.exec(`INSERT INTO runs(`+runCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, 0, ?, ?, ?, ?)`,

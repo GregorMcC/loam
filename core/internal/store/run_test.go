@@ -204,6 +204,11 @@ func TestUpdateRunKeepsTheCodeReviewOutOfTheJSON(t *testing.T) {
 	if r.CodeReview != nil {
 		t.Fatalf("a new run has a code review %+v", r.CodeReview)
 	}
+	cp := r
+	cp.CodeReview = &store.RunCodeReview{Head: "abc123", Rounds: 4}
+	if c, err := s.AddRun(cp); err != nil || c.CodeReview != nil {
+		t.Fatalf("a new run keeps the code review of a copy: %+v, %v", c.CodeReview, err)
+	}
 	want := store.RunCodeReview{Head: "abc123", Rounds: 2, Facts: []string{"Minor issue from the code review: a.go:3: A typo."}}
 	if _, err := s.UpdateRun(r.ID, func(r *store.Run) error { r.CodeReview = &want; return nil }); err != nil {
 		t.Fatal(err)
