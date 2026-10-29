@@ -443,7 +443,7 @@ func newRunDiffCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "diff <run>",
 		Short: "Show the work that a run committed",
-		Long: "Show the work that a run committed on its branch: the change from the commit where the branch left its base to the head of its worktree. Work that is not committed is not in it.\n" +
+		Long: "Show the work that a run committed on its branch: the change from the commit where the branch left its base to the head of its worktree. For a Ready run with a PR, it ends at the head that Loam pushed (origin/<branch>), so it is the work that a land merges. Work that is not committed is not in it.\n" +
 			"With --json, each file has its hunks and lines, with the line numbers before and after. A file keeps at most 3000 lines, and is marked truncated.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
