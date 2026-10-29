@@ -1,3 +1,0 @@
-# The scripts guard with "[ A ] && [ B ] || fail". fail must run when either test
-# is false, which is the case that SC2015 warns about.
-disable=SC2015

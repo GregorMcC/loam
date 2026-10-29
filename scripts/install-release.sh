@@ -63,6 +63,7 @@ curl -fsSL -o "$work/Loam.zip" "$url/Loam.zip" || fail "Could not download $url/
 curl -fsSL -o "$work/Loam.zip.sha256" "$url/Loam.zip.sha256" || fail "Could not download $url/Loam.zip.sha256."
 want=$(awk '{print $1; exit}' "$work/Loam.zip.sha256")
 got=$(shasum -a 256 "$work/Loam.zip" | awk '{print $1}')
+# shellcheck disable=SC2015 # fail must run when either test is false.
 [ -n "$want" ] && [ "$want" = "$got" ] || fail "The download does not match its checksum. Nothing is installed." "run this script again"
 
 # Stage in the apps folder, so the install is a rename on the same volume.
