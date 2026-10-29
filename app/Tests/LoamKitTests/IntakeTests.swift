@@ -162,6 +162,26 @@ import Testing
         #expect(model.runDefaults?.mcpServers == [])
     }
 
+    /// A pick that comes while a save runs waits, and the last pick is the last one saved.
+    @Test func savesOfTheRunDefaultsGoOneAfterTheOtherAndTheLastPickWins() async throws {
+        let (model, fake) = try model([("run_defaults_set_mcp", 0), ("run_defaults_set_mcp", 0)])
+        let first = Task { await model.setRunDefaults(plot: "plotaaaaae", model: "", effort: "", mcpServers: ["a"]) }
+        let second = Task { await model.setRunDefaults(plot: "plotaaaaae", model: "", effort: "", mcpServers: ["a", "b"]) }
+        await first.value
+        await second.value
+        let saves = fake.args().filter { $0.hasPrefix("run defaults") }
+        #expect(saves.count == 2 && saves.last?.contains("--mcp a,b") == true)
+    }
+
+    /// A failed read leaves no list, not the last one.
+    @Test func aFailedReadOfTheMCPServersLeavesNone() async throws {
+        let (model, _) = try model([("run_mcp_servers", 0), ("error_generic", 1)])
+        await model.readMCPServers()
+        #expect(model.mcpServers?.count == 2)
+        await model.readMCPServers()
+        #expect(model.mcpServers == nil)
+    }
+
     @Test func theDefaultChoiceSaysWhatTheDefaultIs() {
         #expect(RunChoices.defaultTitle("opus", in: RunChoices.models) == "Default (Opus)")
         #expect(RunChoices.defaultTitle("", in: RunChoices.efforts) == "Default")

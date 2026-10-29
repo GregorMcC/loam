@@ -99,19 +99,38 @@ extension AppModel {
         runDefaults = try? await client.runDefaults(plot: plot)
     }
 
-    /// Reads the MCP servers that a run default can select. A failed read leaves the last list.
+    /// Reads the MCP servers that a run default can select. A failed read leaves none, so the picker does not offer
+    /// a list that is out of date.
     public func readMCPServers() async {
-        if let servers = try? await client.runMCPServers() { mcpServers = servers }
+        mcpServers = try? await client.runMCPServers()
+    }
+
+    /// The run defaults of a plot to save.
+    struct RunDefaultsRequest {
+        var plot: String
+        var model: String
+        var effort: String
+        var mcpServers: [String]
     }
 
     /// Sets the model, the effort, and the MCP servers that a run of the plot gets when it names none. "" clears the
     /// model or the effort, and no name clears the servers.
+    /// Saves go one after the other, and the last request is the last one written: while a save runs, a new request
+    /// waits and replaces an older one that waits.
     public func setRunDefaults(plot: String, model: String, effort: String, mcpServers: [String]) async {
-        do {
-            runDefaults = try await client.setRunDefaults(plot: plot, model: model, effort: effort, mcpServers: mcpServers)
-            runDefaultsError = nil
-        } catch {
-            runDefaultsError = Self.message(for: error)
+        pendingRunDefaults = RunDefaultsRequest(plot: plot, model: model, effort: effort, mcpServers: mcpServers)
+        guard !isSavingRunDefaults else { return }
+        isSavingRunDefaults = true
+        defer { isSavingRunDefaults = false }
+        while let request = pendingRunDefaults {
+            pendingRunDefaults = nil
+            do {
+                runDefaults = try await client.setRunDefaults(
+                    plot: request.plot, model: request.model, effort: request.effort, mcpServers: request.mcpServers)
+                runDefaultsError = nil
+            } catch {
+                runDefaultsError = Self.message(for: error)
+            }
         }
     }
 
