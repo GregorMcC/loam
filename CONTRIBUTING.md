@@ -29,7 +29,7 @@ CI runs these checks on each PR (see `.github/workflows/ci.yml`):
 
 - `core`: gofmt, `go vet`, [golangci-lint](https://golangci-lint.run), `go test` and [govulncheck](https://go.dev/doc/security/vuln/) in `core/`.
 - `app`: `swift test` without GhosttyKit, which runs the LoamKit tests.
-- `app-driver`: `swift test` with GhosttyKit, which also runs the driver tests. A failure in this check does not block a merge yet.
+- `app-full`: builds the app and its tests with GhosttyKit, and runs no tests. CI does not run the driver tests. Run them yourself for a change to the app.
 - `lint`: shellcheck on `scripts/` and actionlint on the workflows.
 
 On a PR, the `changes` job reads the changed files, and CI skips each job that the change cannot affect. For example, a change to `site/` only runs `lint`.

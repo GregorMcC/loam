@@ -33,7 +33,7 @@ jobs:
     outputs:
       core: ${{ steps.paths.outputs.core }}
       app: ${{ steps.paths.outputs.app }}
-      driver: ${{ steps.paths.outputs.driver }}
+      full: ${{ steps.paths.outputs.full }}
     steps:
       - id: paths
         env:
@@ -41,28 +41,29 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
         run: |
           all() {
-            printf 'core=true\napp=true\ndriver=true\n' >> "$GITHUB_OUTPUT"
+            printf 'core=true\napp=true\nfull=true\n' >> "$GITHUB_OUTPUT"
             exit 0
           }
           [ -n "$PR" ] || all
           # The API gives each path as it is, and both paths of a rename.
           files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" \
             --jq '.[] | .filename, (.previous_filename // empty)') || all
-          core=false app=false driver=false
+          core=false app=false full=false
           while IFS= read -r f; do
             case "$f" in
-              .github/workflows/ci.yml | contract/*) core=true app=true driver=true ;;
-              # The driver tests build the loam CLI and the fakes from core/.
-              core/* | scripts/build-ghosttykit.sh | ghostty.pin) core=true driver=true ;;
+              .github/workflows/ci.yml) core=true app=true full=true ;;
+              contract/*) core=true app=true ;;
+              scripts/build-ghosttykit.sh | ghostty.pin) core=true full=true ;;
               # The core tests run the scripts.
-              scripts/*) core=true ;;
+              core/* | scripts/*) core=true ;;
               # build-icon.sh reads app/Resources.
-              app/Resources/*) core=true app=true driver=true ;;
+              app/Resources/*) core=true app=true full=true ;;
+              app/*) app=true full=true ;;
               # The app tests read the design docs.
-              app/* | docs/*) app=true driver=true ;;
+              docs/*) app=true ;;
             esac
           done <<< "$files"
-          printf 'core=%s\napp=%s\ndriver=%s\n' "$core" "$app" "$driver" | tee -a "$GITHUB_OUTPUT"
+          printf 'core=%s\napp=%s\nfull=%s\n' "$core" "$app" "$full" | tee -a "$GITHUB_OUTPUT"
 
   # Loam runs on macOS only, and some core tests skip on other systems.
   core:
@@ -116,24 +117,19 @@ jobs:
       - run: sudo xcode-select -s "$XCODE"
       - run: swift test
 
-  # The driver tests need GhosttyKit and a window session. This job is not a
-  # required check until it passes on the hosted runners from run to run.
-  app-driver:
+  # The app with GhosttyKit: the terminal, the driver and the driver tests build,
+  # but do not run. The driver scenarios need focus and menus that the hosted
+  # runners do not give reliably, so they stay a local check (TAS-57).
+  app-full:
     needs: changes
-    if: needs.changes.outputs.driver == 'true'
+    if: needs.changes.outputs.full == 'true'
     runs-on: macos-26
-    timeout-minutes: 90
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: sudo xcode-select -s "$XCODE"
-      # The driver tests build the loam CLI and the fakes with Go.
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: stable
-          check-latest: true
-          cache-dependency-path: core/go.sum
       - id: ghosttykit
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -144,28 +140,14 @@ jobs:
         run: xcodebuild -downloadComponent MetalToolchain
       # With a cache hit, the script only links app/vendor to the cache.
       - run: scripts/build-ghosttykit.sh
-      # Save the cache now, so a failed test run does not build GhosttyKit again.
       - if: steps.ghosttykit.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/Library/Caches/Loam/ghosttykit
           key: ${{ steps.ghosttykit.outputs.cache-primary-key }}
-      - name: swift test
+      - name: swift build
         working-directory: app
-        run: swift test --manifest-cache none
-      # Each driver scenario writes its log and screenshots to a folder in the
-      # temporary folder of the user, which TMPDIR does not change.
-      - name: Collect the driver output
-        if: failure()
-        run: |
-          mkdir -p "$RUNNER_TEMP/driver-output"
-          cp -R "$(getconf DARWIN_USER_TEMP_DIR)"loam-driver-* "$RUNNER_TEMP/driver-output/" || true
-      - if: failure()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: driver-output
-          path: ${{ runner.temp }}/driver-output
-          retention-days: 7
+        run: swift build --build-tests --manifest-cache none
 
   lint:
     runs-on: ubuntu-latest
