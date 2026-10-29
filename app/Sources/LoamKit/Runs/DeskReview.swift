@@ -101,13 +101,7 @@ public struct DeskReview: Equatable, Sendable {
     public static func plainText(_ markdown: String, lines: Int = excerptLines) -> String {
         var text = markdown.replacingOccurrences(of: "\r\n", with: "\n")
         text = Self.regex(#"<!--[\s\S]*?(-->|$)"#).replace(in: text, with: "")
-        // A <details> block holds the long part of a bot comment. Inner blocks go first, then the outer one.
-        let inner = Self.regex(#"<details\b(?:(?!<details\b)[\s\S])*?(</details\s*>|$)"#)
-        while true {
-            let next = inner.replace(in: text, with: "")
-            if next == text { break }
-            text = next
-        }
+        text = Self.removingDetails(from: text)
         text = Self.regex(#"<(br|/p|/li|/div|/h[1-6]|/tr)\b[^>]*>"#).replace(in: text, with: "\n")
         text = Self.regex(#"</?[A-Za-z][^>]*>"#).replace(in: text, with: "")
         var out: [String] = []
@@ -117,6 +111,21 @@ public struct DeskReview: Equatable, Sendable {
             if out.count == lines { break }
         }
         return out.joined(separator: "\n")
+    }
+
+    /// The text without its `<details>` blocks. One pass counts the depth, so a deeply nested comment costs no more than
+    /// a flat one. A block that never closes runs to the end of the text.
+    private static func removingDetails(from text: String) -> String {
+        let tags = Self.regex(#"<details\b[^>]*>|</details\s*>"#).expression
+        var kept = "", depth = 0, from = text.startIndex
+        for match in tags.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+            guard let range = Range(match.range, in: text) else { continue }
+            if depth == 0 { kept += text[from..<range.lowerBound] }
+            depth = text[range].hasPrefix("</") ? max(depth - 1, 0) : depth + 1
+            from = range.upperBound
+        }
+        if depth == 0 { kept += text[from...] }
+        return kept
     }
 
     /// One line of Markdown as plain text. A line of a code fence, or a rule, has no text.

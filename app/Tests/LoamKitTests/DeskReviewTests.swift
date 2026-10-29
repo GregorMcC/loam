@@ -44,6 +44,13 @@ import Testing
         #expect(DeskReview.plainText("Fix this.<!-- never closed") == "Fix this.")
     }
 
+    @Test func nestedDetailsBlocksGoInOnePass() {
+        let depth = 5000
+        let nested = String(repeating: "<details>", count: depth) + "inner" + String(repeating: "</details>", count: depth)
+        #expect(DeskReview.plainText("Before.\n" + nested + "\nAfter.") == "Before.\nAfter.")
+        #expect(DeskReview.plainText("a <details>x</details> b <details>y</details> c") == "a  b  c".replacingOccurrences(of: "  ", with: " "))
+    }
+
     @Test func htmlTagsGoAndTheirTextStays() {
         #expect(DeskReview.plainText("Use <code>Match</code> here.<br>Then <b>stop</b>.&nbsp;Done &amp; dusted.")
             == "Use Match here.\nThen stop. Done & dusted.")

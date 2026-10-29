@@ -141,6 +141,13 @@ extension AppModel {
         desk.reviewStamp = run.updatedAt
     }
 
+    /// Reads the review of the run that the desk shows again, when a ship refresh asked GitHub about its plot. A review
+    /// changes on GitHub with no change to the run, so the run row alone does not tell the desk.
+    func rereadDeskReview(plot: String) async {
+        guard page == .desk, let run = deskRun, run.plotID == plot else { return }
+        await readDeskReview(run)
+    }
+
     /// Merges the PR of the run (`loam run land`), with the head of the diff that you read, and shows the
     /// next run. A merge that the core refuses keeps the run, and `desk.error` says why. The core keeps a
     /// worktree that has open panes, so the desk closes none. The merge can remove the worktree, so the
