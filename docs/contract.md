@@ -611,9 +611,9 @@ A tick also watches the PR of each run that is `ready` and has a `pr`. A merge o
 A Ready run with an open PR can also go back to `shipping`, so a later tick reads CI on the new head:
 
 - The branch of the worktree has commits after the PR head. The tick pushes them at once, with the `note` "The branch has commits after the head of #12. Loam pushes them, and CI runs again" and the `ship` event "Pushed the new commits to #12". The tick reads the branch, not `HEAD`, so a commit on another branch changes nothing. A failed push stops the run, as in step 4.
-- The checks of the PR run, wait, or failed, such as after a push by hand: `note` and `ship` event "The checks of #12 run or failed after it was ready. Loam reads CI again".
+- The checks of the PR run, wait, or failed on the head of the branch, such as after a push by hand: `note` and `ship` event "The checks of #12 run or failed after it was ready. Loam reads CI again".
 
-Neither applies while a land waits for GitHub (an auto merge, or a PR in a merge queue), because GitHub merges the PR as it is. A PR head that the worktree does not have, such as a push from another machine, changes nothing. The Done when checks do not run again, and the run keeps the ship notes of its first push.
+Neither applies while a land waits for GitHub (an auto merge, or a PR in a merge queue), because GitHub merges the PR as it is. A PR head that the branch does not have, such as a push from another machine, changes nothing, also when its checks run or fail, because Loam cannot push it. The Done when checks do not run again, and the run keeps the ship notes of its first push.
 
 #### Land
 

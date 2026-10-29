@@ -178,11 +178,13 @@ func (sh *shipper) ship(ctx context.Context) (bool, error) {
 // GitHub has closed its PR. The run goes back to Shipping when the branch has
 // commits after the head of the open PR (see [shipper.shipAgain]), or when
 // the checks of the PR run or fail again on the head of the branch, such as
-// after a push by hand. Then a later tick reads CI. A land that waits for GitHub, with an auto merge or
-// a merge queue, merges the PR as it is, so watch changes nothing while one
-// waits. A run that cannot reach GitHub waits with no warning, because it
-// needs nothing from a tick. A store that cannot read the worktree is an
-// error, not a worktree that is gone.
+// after a push by hand. Then a later tick reads CI. A PR head that the branch
+// does not have, such as a push from another machine, keeps the run Ready,
+// because Loam cannot push it. A land that waits for GitHub, with an auto
+// merge or a merge queue, merges the PR as it is, so watch changes nothing
+// while one waits. A run that cannot reach GitHub waits with no warning,
+// because it needs nothing from a tick. A store that cannot read the
+// worktree is an error, not a worktree that is gone.
 func (sh *shipper) watch(ctx context.Context) (bool, error) {
 	w, err := sh.s.GetWorktree(sh.r.WorktreeID)
 	switch {
@@ -212,9 +214,7 @@ func (sh *shipper) watch(ctx context.Context) (bool, error) {
 	if sh.commitsAfter(ctx, w.Branch, pr.HeadOID) {
 		return sh.shipAgain(ctx, w, pr)
 	}
-	// A PR head that the branch does not have, such as a push from another
-	// machine, keeps the run Ready: Shipping would wait for a push that Loam
-	// does not make.
+	// Shipping would wait for a push that Loam does not make.
 	if local, err := branchHead(ctx, sh.r.Folder, w.Branch); err != nil || local != pr.HeadOID || !ciNotPassed(pr.Checks) {
 		return false, nil
 	}

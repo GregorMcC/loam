@@ -254,10 +254,18 @@ func TestRunTickReadsCIAgainAfterAPushByHand(t *testing.T) {
 // A PR head from another machine is not on the branch, so Loam cannot push it or read CI on it as Shipping. When its
 // checks run, the run stays Ready.
 func TestRunTickKeepsAReadyRunReadyWhenChecksRunOnAHeadFromElsewhere(t *testing.T) {
-	_, _, w := readyRun(t)
-	setGitHub(t, ciState(w.Branch, strings.Repeat("c", 40), ""))
-	if res := tick(t); len(res.Runs) != 0 {
-		t.Fatalf("%+v", res)
+	s, r, w := readyRun(t)
+	writeAndCommit(t, r.Folder, "elsewhere.txt", "from another machine\n")
+	elsewhere := testutil.Git(t, r.Folder, "rev-parse", "HEAD")
+	testutil.Git(t, r.Folder, "reset", "-q", "--hard", "HEAD~1")
+	for _, head := range []string{elsewhere, strings.Repeat("c", 40)} {
+		setGitHub(t, ciState(w.Branch, head, ""))
+		if res := tick(t); len(res.Runs) != 0 {
+			t.Fatalf("head %s: %+v", head, res)
+		}
+	}
+	if got, _ := s.GetRun(r.ID); got.State != store.RunReady {
+		t.Fatalf("run %+v", got)
 	}
 }
 
