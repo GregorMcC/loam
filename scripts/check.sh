@@ -37,7 +37,7 @@ version() {
   echo "$v"
 }
 
-core=0 app=0 lint=0 ghostty=0
+core=0 app=0 lint=0
 if [ $# -eq 0 ]; then
   lint=1
   base=$(git -C "$root" merge-base HEAD origin/main) ||
@@ -50,8 +50,8 @@ if [ $# -eq 0 ]; then
     case "$f" in
       .github/workflows/ci.yml) core=1 app=1 ;;
       contract/*) core=1 app=1 ;;
-      # CI builds GhosttyKit again for these. See the app job below.
-      scripts/build-ghosttykit.sh | ghostty.pin) core=1 app=1 ghostty=1 ;;
+      # CI builds GhosttyKit again for these, and the app job checks the pin.
+      scripts/build-ghosttykit.sh | ghostty.pin) core=1 app=1 ;;
       # The core tests run the scripts.
       core/* | scripts/*) core=1 ;;
       # build-icon.sh reads app/Resources.
@@ -85,7 +85,14 @@ if [ "$core" = 1 ]; then
 fi
 if [ "$app" = 1 ]; then
   xcode=$(version XCODE)
-  command -v swift >/dev/null || fail "swift is not installed." "Install Xcode, as the README says."
+  if [ -d "$xcode" ]; then
+    DEVELOPER_DIR="$xcode/Contents/Developer"
+    export DEVELOPER_DIR
+  else
+    echo "$xcode is not here, so swift uses the Xcode that xcode-select gives."
+  fi
+  # /usr/bin/swift is a shim that is there with no Xcode, so ask xcrun.
+  xcrun --find swift >/dev/null 2>&1 || fail "swift is not installed." "Install Xcode, as the README says."
 fi
 if [ "$lint" = 1 ]; then
   actionlint=$(version ACTIONLINT_VERSION)
@@ -136,18 +143,18 @@ fi
 if [ "$app" = 1 ]; then
   echo "== app"
   cd "$root/app"
-  if [ -d "$xcode" ]; then
-    DEVELOPER_DIR="$xcode/Contents/Developer"
-    export DEVELOPER_DIR
-  else
-    echo "$xcode is not here, so swift uses the Xcode that xcode-select gives."
-  fi
   # Package.swift builds the terminal and the driver only when app/vendor has
   # GhosttyKit, and SwiftPM caches the manifest that reads it.
-  if [ ! -e vendor/GhosttyKit.xcframework ]; then
-    echo "GhosttyKit is not built, so the driver tests do not run. For an app change, run scripts/build-ghosttykit.sh first."
-  elif [ "$ghostty" = 1 ]; then
-    echo "The branch changes the GhosttyKit build. Run scripts/build-ghosttykit.sh first, or the tests use the old GhosttyKit."
+  # build-ghosttykit.sh links app/vendor to a cache folder named for the
+  # pinned commit.
+  pin=$(sed -n 's/^GHOSTTY_COMMIT=//p' "$root/ghostty.pin")
+  if ! built=$(cd vendor/GhosttyKit.xcframework 2>/dev/null && pwd -P); then
+    echo "GhosttyKit is not built, so swift test skips the driver tests."
+  else
+    case "$built" in
+      */"$pin"/*) ;;
+      *) fail "GhosttyKit is not built for the commit in ghostty.pin." "scripts/build-ghosttykit.sh" ;;
+    esac
   fi
   check "swift test" swift test --manifest-cache none
 fi

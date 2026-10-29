@@ -5,8 +5,7 @@
 # requires the CI checks only.
 reviews:
   # Both are the defaults. They are set here so that a change in the
-  # CodeRabbit web settings does not change them. chill comments on real
-  # faults, not on style.
+  # CodeRabbit web settings does not change them.
   profile: chill
   request_changes_workflow: false
   poem: false
