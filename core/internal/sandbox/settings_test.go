@@ -23,10 +23,15 @@ func TestSettingsBlock(t *testing.T) {
 }
 
 // The Read and Edit tools work outside the sandbox, so permission rules deny
-// them the credential paths.
+// them the credential paths, and deny the Edit tool each denied write.
 func TestToolDenies(t *testing.T) {
-	got := ToolDenies()
-	for _, want := range []string{"Read(~/.ssh/**)", "Edit(~/.ssh/**)", "Read(~/.config/gh/**)", "Read(~/.cargo/credentials.toml)"} {
+	got := Rules{DenyWrite: []string{"/p/plot"}}.ToolDenies()
+	for _, want := range []string{
+		"Read(~/.ssh/**)", "Edit(~/.ssh/**)", "Read(~/.config/gh/**)", "Read(~/.cargo/credentials.toml)", "Read(~/.claude.json)",
+		// The Edit and Write tools work outside the sandbox, so they get
+		// each denied write too.
+		"Edit(//p/plot)", "Edit(//p/plot/**)",
+	} {
 		found := false
 		for _, g := range got {
 			found = found || g == want

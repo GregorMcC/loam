@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/GregorMcC/loam/core/internal/session"
@@ -22,6 +23,9 @@ func TestPrepareRunSandboxesTheSession(t *testing.T) {
 	e := setup(t)
 	repo, _ := testutil.GitRepo(t)
 	other, _ := testutil.GitRepo(t)
+	if err := os.WriteFile(filepath.Join(other, "Package.swift"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(repo, "go.mod"), []byte("module x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -34,6 +38,9 @@ func TestPrepareRunSandboxesTheSession(t *testing.T) {
 	plan, err := session.PrepareRun(e.store, store.Run{ID: "r1", PlotID: p.ID, Folder: repo}, "go", "loam", "", "")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if last := plan.Args[len(plan.Args)-1]; !strings.HasPrefix(last, "go\n\nBash works in a sandbox.") || !strings.Contains(last, "--disable-sandbox") {
+		t.Errorf("prompt = %q, want the goal and then the sandbox note of the Swift repo", last)
 	}
 	plotDir := e.store.PlotDir(p.ID)
 	if got := argValues(plan.Args, "--add-dir"); !slices.Equal(got, []string{plotDir}) {
@@ -87,8 +94,11 @@ func TestPrepareRunSandboxesTheSession(t *testing.T) {
 	if slices.Contains(sb.Filesystem.AllowWrite, realpath(t, other)) {
 		t.Errorf("allowWrite = %q has the other repo", sb.Filesystem.AllowWrite)
 	}
-	if !slices.Equal(sb.Filesystem.DenyWrite, []string{realpath(t, plotDir)}) {
+	if !slices.Contains(sb.Filesystem.DenyWrite, realpath(t, plotDir)) {
 		t.Errorf("denyWrite = %q, want the plot folder", sb.Filesystem.DenyWrite)
+	}
+	if !slices.Contains(got.Permissions.Deny, "Edit(/"+realpath(t, plotDir)+"/**)") {
+		t.Errorf("permissions.deny = %q, want the plot folder for the Edit tool", got.Permissions.Deny)
 	}
 	if slices.Contains(sb.Filesystem.AllowRead, "https://example.com") {
 		t.Errorf("allowRead = %q has the URL link", sb.Filesystem.AllowRead)

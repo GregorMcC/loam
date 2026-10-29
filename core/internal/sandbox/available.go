@@ -1,12 +1,8 @@
 package sandbox
 
 import (
-	"context"
 	"fmt"
 	"os"
-	"os/exec"
-	"strings"
-	"time"
 )
 
 // execEnv names the sandbox-exec binary, for tests. The default is the one
@@ -21,18 +17,18 @@ func Exec() string {
 	return "/usr/bin/sandbox-exec"
 }
 
-// Available returns nil when sandbox-exec runs a command under a profile.
-// Claude Code builds its Bash sandbox on the same Seatbelt, and the gate runs
-// the checks with it.
+// Available returns nil when sandbox-exec is an executable file. Claude Code
+// builds its Bash sandbox on the same Seatbelt, and the gate runs the checks
+// with it. It does not run sandbox-exec: that fails inside a sandbox, as in
+// the Bash of a run that works on Loam. A sandbox that fails to start stops
+// the session, because the run settings set failIfUnavailable.
 func Available() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, Exec(), "-p", "(version 1)(allow default)", "/usr/bin/true").CombinedOutput()
-	if err != nil {
-		if msg := strings.TrimSpace(string(out)); msg != "" {
-			return fmt.Errorf("%s does not run: %s", Exec(), msg)
-		}
-		return fmt.Errorf("%s does not run: %v", Exec(), err)
+	info, err := os.Stat(Exec())
+	switch {
+	case err != nil:
+		return fmt.Errorf("%s is missing: %v", Exec(), err)
+	case info.IsDir() || info.Mode()&0o111 == 0:
+		return fmt.Errorf("%s is not an executable file", Exec())
 	}
 	return nil
 }

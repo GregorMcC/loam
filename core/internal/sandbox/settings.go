@@ -1,5 +1,7 @@
 package sandbox
 
+import "strings"
+
 // Settings returns the sandbox block of the Claude Code settings of a run.
 // It covers Bash and the processes that Bash starts.
 func (r Rules) Settings() map[string]any {
@@ -27,28 +29,49 @@ func (r Rules) Settings() map[string]any {
 
 // credentials are the paths below home that hold credentials. The sandbox
 // denies them to Bash with the rest of home. The Read and Edit tools work
-// outside the sandbox, so [ToolDenies] denies these paths to them.
+// outside the sandbox, so [Rules.ToolDenies] denies these paths to them.
 var credentials = []string{
 	"~/.ssh/**",
+	"~/.gnupg/**",
 	"~/.config/gh/**",
+	"~/.config/gcloud/**",
+	"~/.config/op/**",
 	"~/.aws/**",
+	"~/.azure/**",
+	"~/.kube/**",
 	"~/.docker/**",
+	"~/Library/Keychains/**",
 	"~/.netrc",
+	"~/.git-credentials",
+	"~/.claude.json",
 	"~/.cargo/credentials.toml",
 	"~/.npmrc",
 	"~/.pypirc",
 }
 
 // ToolDenies returns the permission rules that deny the Read and Edit tools
-// the credential paths.
-func ToolDenies() []string {
+// the credential paths, and the Edit tool each path of DenyWrite. Edit rules
+// cover the Write tool too. A rule path that starts with // is absolute.
+func (r Rules) ToolDenies() []string {
 	var out []string
 	for _, tool := range []string{"Read", "Edit"} {
 		for _, p := range credentials {
 			out = append(out, tool+"("+p+")")
 		}
 	}
+	for _, p := range r.DenyWrite {
+		out = append(out, "Edit(/"+p+")", "Edit(/"+p+"/**)")
+	}
 	return out
+}
+
+// Prompt returns the text that the first prompt of a run adds about the
+// sandbox, or "" when its stacks need nothing.
+func (r Rules) Prompt() string {
+	if len(r.Notes) == 0 {
+		return ""
+	}
+	return "\n\nBash works in a sandbox. " + strings.Join(r.Notes, " ")
 }
 
 func nonNil(s []string) []string {

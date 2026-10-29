@@ -6,6 +6,8 @@
 package sandbox
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -30,12 +32,16 @@ type Input struct {
 }
 
 // Rules are the paths below home that a run can read and write, and the hosts
-// that it can reach. Paths are absolute.
+// that it can reach. Paths are absolute and real: the sandbox matches real
+// paths, and on macOS /var is a link to /private/var. DenyWrite wins over
+// Write, for a path inside a written folder too.
 type Rules struct {
 	Home        string
 	Read, Write []string
 	DenyWrite   []string
 	Hosts       []string
+	// Notes tell the session what its stacks need in the sandbox.
+	Notes []string
 }
 
 // A preset is what one stack needs: the files that name it, the caches that
@@ -46,6 +52,8 @@ type preset struct {
 	caches    func(home string, getenv func(string) string) []string
 	toolchain []string
 	hosts     []string
+	// note tells the session what the stack needs in the sandbox.
+	note string
 }
 
 // below returns a caches func for fixed paths below home.
@@ -70,6 +78,9 @@ var presets = []preset{
 	{
 		files:  []string{"Package.swift"},
 		caches: below("Library/Caches/org.swift.swiftpm", "Library/org.swift.swiftpm"),
+		// SwiftPM runs the manifest in a sandbox of its own, and a sandbox
+		// cannot start inside another one.
+		note: "Pass --disable-sandbox to swift build, swift test, and swift package: SwiftPM's own sandbox cannot start inside this one.",
 	},
 	{
 		files:  []string{"package.json"},
@@ -113,29 +124,86 @@ func gitConfig(home string) []string {
 	return []string{filepath.Join(home, ".gitconfig"), filepath.Join(home, ".config", "git")}
 }
 
-// For returns the rules of a run.
-func For(in Input) Rules {
-	r := Rules{Home: in.Home}
-	var read, write, hosts set
-	read.add(in.Folder, in.GitDir)
-	read.add(in.Repos...)
-	read.add(in.Links...)
-	read.add(gitConfig(in.Home)...)
-	write.add(in.Folder, in.GitDir)
+// For returns the rules of a run. It leaves out a repo or a link that would
+// open home: home itself, a folder above it, or a credential folder. It
+// returns an error when the home folder is not absolute, or when the folder of
+// the run is such a path, because the rules would then deny nothing.
+func For(in Input) (Rules, error) {
+	if !filepath.IsAbs(in.Home) {
+		return Rules{}, errors.New("the sandbox needs the home folder, and it is not set")
+	}
+	home := Real(in.Home)
+	if opens(home, Real(in.Folder)) {
+		return Rules{}, fmt.Errorf("the sandbox cannot hold a run in %s: it is the home folder, a folder above it, or a credential folder", in.Folder)
+	}
+	r := Rules{Home: home}
+	var read, write, deny, hosts, notes set
+	allow := func(s *set, paths ...string) {
+		for _, p := range paths {
+			if p = Real(p); p != "" && !opens(home, p) {
+				s.add(p)
+			}
+		}
+	}
+	allow(&read, in.Folder, in.GitDir)
+	allow(&read, in.Repos...)
+	allow(&read, in.Links...)
+	allow(&read, gitConfig(in.Home)...)
+	allow(&write, in.Folder, in.GitDir)
 	for _, p := range presets {
 		if !anyRepoHas(in.Repos, p.files) {
 			continue
 		}
 		caches := p.caches(in.Home, in.Getenv)
-		read.add(caches...)
-		read.add(under(in.Home, p.toolchain)...)
-		write.add(caches...)
+		allow(&read, caches...)
+		allow(&read, under(in.Home, p.toolchain)...)
+		allow(&write, caches...)
 		hosts.add(p.hosts...)
+		notes.add(p.note)
 	}
-	var deny set
-	deny.add(in.NoWrite...)
-	r.Read, r.Write, r.DenyWrite, r.Hosts = read.list, write.list, deny.list, hosts.list
-	return r
+	for _, p := range in.NoWrite {
+		deny.add(Real(p))
+	}
+	if git := Real(in.GitDir); git != "" {
+		// A hook or a config that the run writes would run outside the
+		// sandbox, in the next git command of Loam or of the user.
+		deny.add(filepath.Join(git, "hooks"), filepath.Join(git, "config"))
+	}
+	r.Read, r.Write, r.DenyWrite, r.Hosts, r.Notes = read.list, write.list, deny.list, hosts.list, notes.list
+	return r, nil
+}
+
+// opens reports whether allowing path would open what the sandbox denies:
+// the root, home, a folder above home, or a path in a credential folder.
+func opens(home, path string) bool {
+	if path == "" {
+		return false
+	}
+	if path == string(filepath.Separator) || path == home || strings.HasPrefix(home, path+string(filepath.Separator)) {
+		return true
+	}
+	for _, c := range credentials {
+		c = filepath.Join(home, strings.TrimSuffix(strings.TrimPrefix(c, "~/"), "/**"))
+		if path == c || strings.HasPrefix(path, c+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
+}
+
+// Real resolves the symlinks of path. A path that does not exist yet keeps
+// its name below its resolved parent.
+func Real(path string) string {
+	if path == "" {
+		return ""
+	}
+	if r, err := filepath.EvalSymlinks(path); err == nil {
+		return r
+	}
+	if r, err := filepath.EvalSymlinks(filepath.Dir(path)); err == nil {
+		return filepath.Join(r, filepath.Base(path))
+	}
+	return filepath.Clean(path)
 }
 
 // anyRepoHas reports whether a repo holds one of the files at its root or

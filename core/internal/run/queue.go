@@ -40,21 +40,21 @@ func startQueued(ctx context.Context, s *store.Store, loam string) ([]store.Run,
 	slices.Reverse(queued) // the list is newest first
 	var moved []store.Run
 	var warnings []string
-	if err := sandbox.Available(); err != nil {
-		// No run starts. Each one waits, with the reason as its note.
-		for _, r := range queued {
-			if note := sandboxNote(err); r.Note != note {
-				if err := renote(s, r.ID, note); err != nil {
-					warnings = append(warnings, fmt.Sprintf("%s: %v", r.Title, err))
-				}
-			}
-		}
-		return nil, warnings
-	}
+	// With no sandbox, no new session starts. A resume goes on: its session
+	// already has its sandbox.
+	missing := sandbox.Available()
 	if warning := freshUsage(ctx, s, holding); warning != "" {
 		warnings = append(warnings, warning)
 	}
 	for _, r := range queued {
+		if missing != nil && (r.Queue == nil || r.Queue.Resume == "") {
+			if note := sandboxNote(missing); r.Note != note {
+				if err := renote(s, r.ID, note); err != nil {
+					warnings = append(warnings, fmt.Sprintf("%s: %v", r.Title, err))
+				}
+			}
+			continue
+		}
 		hold, err := s.SlotHold(r.ID)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("%s: %v", r.Title, err))

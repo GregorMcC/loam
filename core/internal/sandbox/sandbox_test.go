@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -19,11 +20,30 @@ func mkfile(t *testing.T, path string) {
 
 func noEnv(string) string { return "" }
 
+// realTemp returns a temp folder by its real path, as the rules give it.
+func realTemp(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func mustFor(t *testing.T, in Input) Rules {
+	t.Helper()
+	r, err := For(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
 // TAS-175: a run reads its folder, the repos and the local links of its plot,
 // and the caches of the stacks that the repo files name. The rest of home
 // stays denied. It writes only its folder, the git folder, and the caches.
 func TestForAGoRepoASwiftRepoAndALink(t *testing.T) {
-	dir := t.TempDir()
+	dir := realTemp(t)
 	api := filepath.Join(dir, "api")
 	app := filepath.Join(dir, "app")
 	mkfile(t, filepath.Join(api, "go.mod"))
@@ -32,7 +52,7 @@ func TestForAGoRepoASwiftRepoAndALink(t *testing.T) {
 	git := filepath.Join(api, ".git")
 	spec := filepath.Join(dir, "notes", "spec.md")
 
-	got := For(Input{
+	got := mustFor(t, Input{
 		Home:   "/h",
 		Folder: work,
 		GitDir: git,
@@ -57,6 +77,7 @@ func TestForAGoRepoASwiftRepoAndALink(t *testing.T) {
 			"/h/Library/Caches/org.swift.swiftpm", "/h/Library/org.swift.swiftpm",
 		}},
 		{"Hosts", got.Hosts, []string{"proxy.golang.org", "sum.golang.org"}},
+		{"DenyWrite", got.DenyWrite, []string{filepath.Join(git, "hooks"), filepath.Join(git, "config")}},
 	}
 	for _, c := range cases {
 		if !slices.Equal(c.got, c.want) {
@@ -101,9 +122,9 @@ func TestForPicksThePresetOfEachStackFile(t *testing.T) {
 		},
 	} {
 		t.Run(c.file, func(t *testing.T) {
-			repo := t.TempDir()
+			repo := realTemp(t)
 			mkfile(t, filepath.Join(repo, c.file))
-			got := For(Input{Home: "/h", Folder: repo, Repos: []string{repo}, Getenv: noEnv})
+			got := mustFor(t, Input{Home: "/h", Folder: repo, Repos: []string{repo}, Getenv: noEnv})
 			base := []string{repo, "/h/.gitconfig", "/h/.config/git"}
 			if want := append(base, c.read...); !slices.Equal(got.Read, want) {
 				t.Errorf("Read = %q, want %q", got.Read, want)
@@ -120,8 +141,8 @@ func TestForPicksThePresetOfEachStackFile(t *testing.T) {
 
 // A repo with no stack file adds nothing past its own paths.
 func TestForARepoWithNoStackFile(t *testing.T) {
-	repo := t.TempDir()
-	got := For(Input{Home: "/h", Folder: repo, Repos: []string{repo}, Getenv: noEnv})
+	repo := realTemp(t)
+	got := mustFor(t, Input{Home: "/h", Folder: repo, Repos: []string{repo}, Getenv: noEnv})
 	if len(got.Hosts) != 0 || !slices.Equal(got.Write, []string{repo}) {
 		t.Errorf("got Write %q and Hosts %q, want only the repo and no hosts", got.Write, got.Hosts)
 	}
@@ -129,16 +150,91 @@ func TestForARepoWithNoStackFile(t *testing.T) {
 
 // A user who moved the Go caches gets the moved paths.
 func TestForGoHonoursTheCacheEnv(t *testing.T) {
-	repo := t.TempDir()
+	repo := realTemp(t)
 	mkfile(t, filepath.Join(repo, "go.mod"))
 	env := map[string]string{"GOPATH": "/gp:/other", "GOCACHE": "/cache/go"}
-	got := For(Input{Home: "/h", Folder: repo, Repos: []string{repo}, Getenv: func(k string) string { return env[k] }})
+	got := mustFor(t, Input{Home: "/h", Folder: repo, Repos: []string{repo}, Getenv: func(k string) string { return env[k] }})
 	if !slices.Contains(got.Write, "/gp/pkg/mod") || !slices.Contains(got.Write, "/cache/go") {
 		t.Errorf("Write = %q, want /gp/pkg/mod and /cache/go", got.Write)
 	}
 	env["GOMODCACHE"] = "/mods"
-	got = For(Input{Home: "/h", Folder: repo, Repos: []string{repo}, Getenv: func(k string) string { return env[k] }})
+	got = mustFor(t, Input{Home: "/h", Folder: repo, Repos: []string{repo}, Getenv: func(k string) string { return env[k] }})
 	if !slices.Contains(got.Write, "/mods") || slices.Contains(got.Write, "/gp/pkg/mod") {
 		t.Errorf("Write = %q, want /mods in place of /gp/pkg/mod", got.Write)
+	}
+}
+
+// A repo or a link that would open home is left out: home, a folder above it,
+// the root, or a credential folder. The rest stays.
+func TestForLeavesOutPathsThatOpenHome(t *testing.T) {
+	repo := realTemp(t)
+	home := realTemp(t)
+	got := mustFor(t, Input{
+		Home:   home,
+		Folder: repo,
+		Repos:  []string{repo, home},
+		Links: []string{
+			home, filepath.Dir(home), "/",
+			filepath.Join(home, ".ssh"), filepath.Join(home, ".ssh", "config"), filepath.Join(home, ".config", "gh"),
+			filepath.Join(home, "notes"),
+		},
+		Getenv: noEnv,
+	})
+	want := []string{repo, filepath.Join(home, "notes"), filepath.Join(home, ".gitconfig"), filepath.Join(home, ".config", "git")}
+	if !slices.Equal(got.Read, want) {
+		t.Errorf("Read =\n  %q\nwant\n  %q", got.Read, want)
+	}
+}
+
+// A run in home, or with no home folder, gets no rules: they would deny
+// nothing.
+func TestForRefusesARunThatTheRulesCannotHold(t *testing.T) {
+	home := realTemp(t)
+	for _, in := range []Input{
+		{Home: "", Folder: "/w"},
+		{Home: home, Folder: home},
+		{Home: home, Folder: filepath.Dir(home)},
+		{Home: home, Folder: filepath.Join(home, ".ssh", "x")},
+	} {
+		in.Getenv = noEnv
+		if _, err := For(in); err == nil {
+			t.Errorf("For(%+v) gave no error", in)
+		}
+	}
+}
+
+// A cache that the user moved behind a symlink is allowed by its real path.
+func TestForResolvesTheCachePaths(t *testing.T) {
+	repo := realTemp(t)
+	mkfile(t, filepath.Join(repo, "go.mod"))
+	real := realTemp(t)
+	link := filepath.Join(realTemp(t), "mods")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	got := mustFor(t, Input{Home: "/h", Folder: repo, Repos: []string{repo}, Getenv: func(k string) string {
+		if k == "GOMODCACHE" {
+			return link
+		}
+		return ""
+	}})
+	if !slices.Contains(got.Write, real) || slices.Contains(got.Write, link) {
+		t.Errorf("Write = %q, want %s in place of %s", got.Write, real, link)
+	}
+}
+
+// SwiftPM runs its manifest in a sandbox of its own, which cannot start inside
+// the run's sandbox. So the prompt of a run with a Swift repo asks for
+// --disable-sandbox. A run with no such stack gets no sandbox text.
+func TestPromptNamesWhatTheSandboxNeeds(t *testing.T) {
+	swift := realTemp(t)
+	mkfile(t, filepath.Join(swift, "Package.swift"))
+	got := mustFor(t, Input{Home: "/h", Folder: swift, Repos: []string{swift}, Getenv: noEnv}).Prompt()
+	if !strings.Contains(got, "--disable-sandbox") {
+		t.Errorf("Prompt = %q, want --disable-sandbox", got)
+	}
+	plain := realTemp(t)
+	if got := mustFor(t, Input{Home: "/h", Folder: plain, Repos: []string{plain}, Getenv: noEnv}).Prompt(); got != "" {
+		t.Errorf("Prompt = %q, want none", got)
 	}
 }

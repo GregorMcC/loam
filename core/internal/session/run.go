@@ -3,9 +3,9 @@ package session
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -54,12 +54,16 @@ func PrepareRun(s *store.Store, r store.Run, prompt, loam, model, effort string)
 	// The sandbox lets Bash write each added folder, so a run adds only the
 	// plot folder, and its rules deny writes to it. Bash reads the repos and
 	// the links through the rules.
-	plan, err := build(s, plot, r.Folder, claude, "run-"+r.ID, lead, loam, runSettings(r.ID, runRules(s, plot, r.Folder)), false)
+	box, err := runRules(s, plot, r.Folder)
+	if err != nil {
+		return nil, err
+	}
+	plan, err := build(s, plot, r.Folder, claude, "run-"+r.ID, lead, loam, runSettings(r.ID, box), false)
 	if err != nil {
 		return nil, err
 	}
 	plan.SessionID = ""
-	plan.Args = append(plan.Args, prompt)
+	plan.Args = append(plan.Args, prompt+box.Prompt())
 	return plan, nil
 }
 
@@ -88,7 +92,7 @@ func runSettings(runID string, box sandbox.Rules) settingsFunc {
 			vars[k] = v
 		}
 		s := map[string]any{
-			"permissions": map[string]any{"allow": rules(allowTools), "deny": sandbox.ToolDenies()},
+			"permissions": map[string]any{"allow": rules(allowTools), "deny": box.ToolDenies()},
 			"hooks":       hooks,
 			"env":         vars,
 			"sandbox":     box.Settings(),
@@ -98,52 +102,43 @@ func runSettings(runID string, box sandbox.Rules) settingsFunc {
 }
 
 // runRules returns the sandbox rules of a run that works in folder.
-func runRules(s *store.Store, plot store.Plot, folder string) sandbox.Rules {
-	home, _ := os.UserHomeDir()
+func runRules(s *store.Store, plot store.Plot, folder string) (sandbox.Rules, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return sandbox.Rules{}, fmt.Errorf("the sandbox needs the home folder: %w", err)
+	}
+	git, err := gitCommonDir(folder)
+	if err != nil {
+		return sandbox.Rules{}, err
+	}
 	in := sandbox.Input{
-		Home:   realPath(home),
-		Folder: realPath(folder),
-		GitDir: realPath(gitCommonDir(folder)),
+		Home:   home,
+		Folder: folder,
+		GitDir: git,
 		// The plot folder holds the seed, which only Loam writes.
-		NoWrite: []string{realPath(s.PlotDir(plot.ID))},
+		NoWrite: []string{s.PlotDir(plot.ID)},
 		Getenv:  os.Getenv,
 	}
 	for _, r := range plot.Repos {
-		in.Repos = append(in.Repos, realPath(r.Path))
+		in.Repos = append(in.Repos, r.Path)
 	}
 	for _, l := range plot.Links {
 		if linkkind.IsLocal(l.Target) {
-			in.Links = append(in.Links, realPath(linkkind.Expand(l.Target)))
+			in.Links = append(in.Links, linkkind.Expand(l.Target))
 		}
 	}
 	return sandbox.For(in)
 }
 
 // gitCommonDir returns the git folder that the checkout in dir shares with its
-// worktrees, or "" when dir is not a checkout. A commit in a worktree writes
-// to it.
-func gitCommonDir(dir string) string {
+// worktrees. A commit in a worktree writes to it, so a run cannot commit
+// without it.
+func gitCommonDir(dir string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "--path-format=absolute", "--git-common-dir").Output()
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("find the git folder of %s for the sandbox: %w", dir, err)
 	}
-	return strings.TrimSpace(string(out))
-}
-
-// realPath resolves the symlinks of path, because the sandbox matches real
-// paths: on macOS, /var is a link to /private/var. A path that does not exist
-// yet keeps its name below its resolved parent.
-func realPath(path string) string {
-	if path == "" {
-		return ""
-	}
-	if r, err := filepath.EvalSymlinks(path); err == nil {
-		return r
-	}
-	if r, err := filepath.EvalSymlinks(filepath.Dir(path)); err == nil {
-		return filepath.Join(r, filepath.Base(path))
-	}
-	return filepath.Clean(path)
+	return strings.TrimSpace(string(out)), nil
 }

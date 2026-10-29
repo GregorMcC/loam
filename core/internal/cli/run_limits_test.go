@@ -464,3 +464,24 @@ func TestRunStartWaitsForTheSandbox(t *testing.T) {
 		t.Fatalf("args %q", inv.Args)
 	}
 }
+
+// A queued resume goes on with no sandbox: its session already has one.
+func TestRunTickResumesAQueuedRunWithNoSandbox(t *testing.T) {
+	s, r, _ := readyRun(t)
+	setLimits(t, "--at-a-time", "1")
+	other := startRun(t, "Say bye")
+	if got, code, out := sendBack(t, r.ID, "--note", "Add a test."); code != 0 || got.State != store.RunQueued {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+	if _, _, err := lrRun(t, "", "run", "stop", other.ID); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LOAM_SANDBOX_EXEC", "/no/sandbox-exec")
+	tick(t)
+	if got, _ := s.GetRun(r.ID); got.State != store.RunRunning {
+		t.Fatalf("after the tick: %+v", got)
+	}
+	if prompt := lastPrompt(t); !strings.Contains(prompt, "- Add a test.") {
+		t.Fatalf("prompt %s", prompt)
+	}
+}
