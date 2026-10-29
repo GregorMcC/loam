@@ -31,8 +31,9 @@ type hookInput struct {
 // record for a new ID of a seeded session. A fork in the same process is the
 // /branch command: CLAUDE_PID stays, and the session gets a new ID. A fork
 // that starts a new process (--fork-session) has a new PID, so it has no
-// earlier session and adds nothing. On source "compact" it prints the seed as
-// additional context.
+// earlier session and adds nothing. On source "clear" the worktree that the
+// earlier session works in moves to the new ID. On source "compact" it prints
+// the seed as additional context.
 func RunHook(in io.Reader, out io.Writer, getenv func(string) string) {
 	home, err := store.Home()
 	if err != nil {
@@ -108,8 +109,30 @@ func recordSession(home, pidText, plotID string, h hookInput, logf func(string, 
 	case "clear", "resume", "fork":
 		addSessionRecord(s, pid, plotID, h, logf)
 	}
+	// After /clear the conversation of the earlier ID is gone from the
+	// process, so its worktree goes to the new ID. A resume or a fork keeps it
+	// on the earlier ID, which can still run in another process.
+	if h.Source == "clear" {
+		moveSessionWorktree(s, pid, h.SessionID, logf)
+	}
 	if err := s.SetPIDSession(pid, h.SessionID); err != nil {
 		logf("record session for pid %d: %v", pid, err)
+	}
+}
+
+// moveSessionWorktree moves the worktree of the session that the PID record
+// held before this call to the new session ID.
+func moveSessionWorktree(s *store.Store, pid int, sessionID string, logf func(string, ...any)) {
+	earlier, ok, err := s.SessionForPID(pid)
+	if err != nil {
+		logf("look up pid %d: %v", pid, err)
+		return
+	}
+	if !ok {
+		return
+	}
+	if err := s.MoveSessionWorktree(earlier, sessionID); err != nil {
+		logf("move the worktree of session %s to %s: %v", earlier, sessionID, err)
 	}
 }
 

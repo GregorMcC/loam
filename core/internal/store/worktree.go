@@ -398,6 +398,29 @@ ON CONFLICT(session_id) DO UPDATE SET worktree_id = excluded.worktree_id, update
 	return tx.commit()
 }
 
+// MoveSessionWorktree gives the worktree record of session from to session
+// to, as after /clear: the claude process goes on with a new session ID, in
+// the folders of the earlier ID. A record that to has already stays. from
+// loses its record either way. With no record for from, it does nothing.
+func (s *Store) MoveSessionWorktree(from, to string) error {
+	if from == to {
+		return nil
+	}
+	tx, err := s.beginWrite()
+	if err != nil {
+		return err
+	}
+	defer tx.rollback()
+	if err := tx.exec(`INSERT OR IGNORE INTO session_worktrees(session_id, worktree_id, updated_at)
+SELECT ?, worktree_id, updated_at FROM session_worktrees WHERE session_id = ?`, to, from); err != nil {
+		return err
+	}
+	if err := tx.exec(`DELETE FROM session_worktrees WHERE session_id = ?`, from); err != nil {
+		return err
+	}
+	return tx.commit()
+}
+
 // writeWorktree runs query on the record of a worktree in one write, after
 // the queries in before. Each query in before takes the worktree ID. query
 // takes args, then the worktree ID. When query changes no row, the write

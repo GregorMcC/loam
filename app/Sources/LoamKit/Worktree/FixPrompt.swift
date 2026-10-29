@@ -67,6 +67,17 @@ public struct FixPrompt: Equatable, Sendable {
         }
     }
 
+    /// The prompt for a session that works in the worktree but started in another folder (TAS-55). Its commands
+    /// run in that other folder, so the prompt names the worktree folder first.
+    public func inFolder(_ path: String) -> FixPrompt {
+        FixPrompt(kind: kind, text: "Work in the worktree at `\(Self.oneLine(path))`. \(text)")
+    }
+
+    private init(kind: Kind, text: String) {
+        self.kind = kind
+        self.text = text
+    }
+
     /// The text as one line that shows each character it has. GitHub gives the names, and a PR from a fork can name
     /// its own checks and branches. A control character could act as a key in the terminal, and a line break as
     /// Return. A character that shows nothing could hide words: a direction mark, a zero-width or tag character, a

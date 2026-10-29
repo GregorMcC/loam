@@ -185,6 +185,27 @@ func TestSessionWorktreeLinks(t *testing.T) {
 	if got := sessions(a.ID); len(got) != 0 {
 		t.Fatalf("a: %q", got)
 	}
+	// A move gives the record to the new ID, as after /clear.
+	if err := s.MoveSessionWorktree("s1", "s1c"); err != nil {
+		t.Fatal(err)
+	}
+	if got := sessions(b.ID); !slices.Equal(got, []string{"s1c"}) {
+		t.Fatalf("b after the move: %q", got)
+	}
+	// A move with no record does nothing. A record that the new ID has stays,
+	// and the old ID loses its record.
+	if err := s.MoveSessionWorktree("none", "s5"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetSessionWorktree("s4", a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MoveSessionWorktree("s4", "s1c"); err != nil {
+		t.Fatal(err)
+	}
+	if got, gotB := sessions(a.ID), sessions(b.ID); len(got) != 0 || !slices.Equal(gotB, []string{"s1c"}) {
+		t.Fatalf("a %q, b %q", got, gotB)
+	}
 	// A worktree with a link can go.
 	if err := s.RemoveWorktree(b.ID); err != nil {
 		t.Fatal(err)

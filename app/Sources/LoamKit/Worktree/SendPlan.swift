@@ -31,18 +31,20 @@ public struct SendPlan: Equatable, Sendable {
     /// session runs in the worktree.
     public let paneName: String?
 
-    /// The plan for the worktree, with its prompt. `lastFocus` orders the panes by when they last had the focus,
-    /// the highest last. `titles` are the titles that the terminals set.
+    /// The plan for the worktree, with its prompt. A session that works in the worktree from another folder gets
+    /// the worktree folder in its prompt. `lastFocus` orders the panes by when they last had the focus, the highest
+    /// last. `titles` are the titles that the terminals set.
     public init(prompt: FixPrompt, worktree: Worktree, in workspace: Workspace, links: SessionLinks,
                 lastFocus: [PaneID: Int], titles: [PaneID: String]) {
-        self.prompt = prompt
         guard let pane = Self.target(of: worktree, in: workspace, links: links, lastFocus: lastFocus),
               let session = workspace.session(of: pane) else {
+            self.prompt = prompt
             step = .start
             paneName = nil
             return
         }
-        step = Self.step(for: pane, session: session, prompt: prompt.text)
+        self.prompt = workspace.spec(of: pane)?.worktree?.id == worktree.id ? prompt : prompt.inFolder(worktree.path)
+        step = Self.step(for: pane, session: session, prompt: self.prompt.text)
         paneName = workspace.title(of: pane, terminalTitles: titles)
     }
 

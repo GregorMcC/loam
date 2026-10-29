@@ -276,6 +276,39 @@ func TestHookForkIgnoresUnseededSession(t *testing.T) {
 	}
 }
 
+// After /clear the worktree that the session works in goes to the new ID, so
+// the pane stays under it and work_in_worktree changes the link of the new ID.
+// A fork keeps the link on the earlier ID.
+func TestHookClearMovesTheWorktreeOfTheSession(t *testing.T) {
+	e := setup(t)
+	p := e.plot(t, store.PlotInput{Name: "Alpha"})
+	w, err := e.store.AddWorktree(store.Worktree{PlotID: p.ID, Repo: "/work/app", Name: "fix", Branch: "fix", Path: "/work/app-fix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.store.SetSessionWorktree("s-old", w.ID); err != nil {
+		t.Fatal(err)
+	}
+	sessions := func() string {
+		t.Helper()
+		got, err := e.store.GetWorktree(w.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.Join(got.Sessions, ",")
+	}
+	env := map[string]string{"CLAUDE_PID": "4242", "LOAM_PLOT": p.ID}
+	runHook(t, `{"session_id":"s-old","source":"startup","cwd":"/x"}`, env)
+	runHook(t, `{"session_id":"s-new","source":"clear","cwd":"/x"}`, env)
+	if got := sessions(); got != "s-new" {
+		t.Fatalf("after clear: %q", got)
+	}
+	runHook(t, `{"session_id":"s-fork","source":"fork","cwd":"/x"}`, env)
+	if got := sessions(); got != "s-new" {
+		t.Fatalf("after a fork: %q", got)
+	}
+}
+
 func TestHookClearIgnoresUnseededSession(t *testing.T) {
 	e := setup(t)
 	p := e.plot(t, store.PlotInput{Name: "Alpha"})
