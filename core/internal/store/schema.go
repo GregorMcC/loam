@@ -282,6 +282,13 @@ CREATE INDEX session_worktrees_worktree ON session_worktrees(worktree_id, update
 	// 20: the MCP servers that claude -p loads when it drafts a run or writes
 	// the PR text, as a JSON list of names. Not in the change log.
 	`ALTER TABLE run_defaults ADD COLUMN mcp_servers TEXT NOT NULL DEFAULT '[]';`,
+	// 21: the reviews that Loam sent back to the session of a run.
+	// review_tries counts the sends. reviews_sent holds the IDs of the
+	// reviews that requested changes, as a JSON list, or ''.
+	`
+ALTER TABLE runs ADD COLUMN review_tries INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE runs ADD COLUMN reviews_sent TEXT NOT NULL DEFAULT '';
+`,
 }
 
 // SchemaVersion is the schema version of this binary.

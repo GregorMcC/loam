@@ -31,6 +31,7 @@
       "number": 25,
       "url": "https://github.com/example/widgets/pull/25"
     },
+    "review_tries": 0,
     "session_id": "c57ef956-3136-4e86-bfde-da8facfe0523",
     "state": "running",
     "title": "Tidy the README",

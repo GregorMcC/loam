@@ -284,11 +284,12 @@
         "behind_base", "checks_running", "waiting_for_review", "blocked", "ready_to_merge", "pushed_no_pr", "not_pushed", ""]
     },
     "pullRequest": {
-      "description": "A pull request. The fields from behind_base to passed_checks are 0 or empty for a merged or closed PR.",
+      "description": "A pull request. The fields from behind_base to review_threads are 0 or empty for a merged or closed PR.",
       "type": "object",
       "additionalProperties": false,
       "required": ["number", "title", "url", "state", "draft", "mergeable", "merge_state", "review_decision", "in_merge_queue",
-        "queue_position", "base", "head", "head_oid", "commits", "behind_base", "approvals", "comments", "checks", "failed_checks", "passed_checks"],
+        "queue_position", "base", "head", "head_oid", "commits", "behind_base", "approvals", "comments", "checks", "failed_checks", "passed_checks",
+        "change_requests", "review_threads"],
       "properties": {
         "number": { "type": "integer", "minimum": 1 },
         "title": { "type": "string" },
@@ -315,7 +316,57 @@
           "description": "The passed checks of the first 100 checks, in the order of GitHub. A skipped or neutral check passed too, so the list is as long as checks.passed. A cache row from before Loam stored the passed checks gives an empty list until the next refresh. MCP list_worktrees leaves it out.",
           "type": "array",
           "items": { "$ref": "#/$defs/check" }
+        },
+        "change_requests": {
+          "description": "The last review of each reviewer with write access, when it requests changes, of the first 100 reviewers. MCP list_worktrees leaves it out.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/review" }
+        },
+        "review_threads": {
+          "description": "The review threads that are not resolved, of the first 100, in the order of GitHub. comments counts them. MCP list_worktrees leaves it out.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/reviewThread" }
         }
+      }
+    },
+    "review": {
+      "description": "A review of a PR.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "author", "body", "url"],
+      "properties": {
+        "id": { "description": "The node ID of the review on GitHub.", "type": "string", "minLength": 1 },
+        "author": { "description": "The login of the reviewer. ghost for a deleted account.", "type": "string", "minLength": 1 },
+        "body": { "description": "The text of the review, in Markdown. Empty when the review has only comments on lines.", "type": "string" },
+        "url": { "type": "string" }
+      }
+    },
+    "reviewThread": {
+      "description": "A review thread of a PR that is not resolved: comments on a line of a file.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "path", "line", "url", "comments"],
+      "properties": {
+        "id": { "description": "The node ID of the thread on GitHub, which resolves it.", "type": "string", "minLength": 1 },
+        "path": { "type": "string" },
+        "line": { "description": "The line in the head of the PR. 0 when the head no longer has the line.", "type": "integer", "minimum": 0 },
+        "url": { "description": "The page of the first comment.", "type": "string" },
+        "comments": {
+          "description": "The first 10 comments of the thread, oldest first.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/reviewComment" }
+        }
+      }
+    },
+    "reviewComment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["author", "writer", "body", "url"],
+      "properties": {
+        "author": { "description": "The login of the person or app that wrote the comment. ghost for a deleted account.", "type": "string", "minLength": 1 },
+        "writer": { "description": "True when the author can push to the repo. A comment with no review is true when the author association is OWNER, MEMBER, or COLLABORATOR.", "type": "boolean" },
+        "body": { "description": "The text of the comment, in Markdown.", "type": "string" },
+        "url": { "type": "string" }
       }
     },
     "checkCounts": {
@@ -388,7 +439,7 @@
     "run": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "plot_id", "worktree_id", "folder", "title", "goal", "done_when", "state", "tries", "max_tries", "turns", "session_id", "note", "group_id", "notes", "created_at", "updated_at"],
+      "required": ["id", "plot_id", "worktree_id", "folder", "title", "goal", "done_when", "state", "tries", "max_tries", "review_tries", "turns", "session_id", "note", "group_id", "notes", "created_at", "updated_at"],
       "properties": {
         "id": { "$ref": "#/$defs/id" },
         "plot_id": { "$ref": "#/$defs/id" },
@@ -400,6 +451,7 @@
         "state": { "$ref": "#/$defs/runState" },
         "tries": { "description": "How many times the gate or CI failed.", "type": "integer", "minimum": 0 },
         "max_tries": { "type": "integer", "minimum": 1, "maximum": 8 },
+        "review_tries": { "description": "How many times Loam sent the review of the PR back to the session, at most 2.", "type": "integer", "minimum": 0, "maximum": 2 },
         "turns": { "description": "How many turns the session ended: one for each Stop.", "type": "integer", "minimum": 0 },
         "source": { "description": "It is left out when the run has no issue.", "$ref": "#/$defs/runSource" },
         "pr": { "description": "The PR that Loam opened for the run. It is left out before the run ships.", "$ref": "#/$defs/runPR" },
@@ -643,7 +695,7 @@
         "id": { "type": "integer", "minimum": 1 },
         "run_id": { "$ref": "#/$defs/id" },
         "at": { "$ref": "#/$defs/time" },
-        "kind": { "description": "state: the new state. try: a failed gate or CI, with its note. check: the result of one check. linear: what Loam did to the Linear issue of the run. ship: a push or a PR. ci: the result of CI on the PR. review: your notes went back to the session. note: one of those notes, as <file> line <n>: <text> or as text alone. land: a merge of the PR, or where it waits. shape: a draft by Claude, or why it failed. draft: one step that Claude took while it drafted, such as Read window/frame.go. followup: a follow-up that approve filed as an issue, or why it could not.", "enum": ["state", "try", "check", "linear", "ship", "ci", "review", "note", "land", "shape", "draft", "followup"] },
+        "kind": { "description": "state: the new state. try: a failed gate or CI, with its note. check: the result of one check. linear: what Loam did to the Linear issue of the run. ship: a push or a PR. ci: the result of CI on the PR. review: your notes went back to the session, or the review of the PR requests changes. note: one of those notes, as <file> line <n>: <text> or as text alone. land: a merge of the PR, or where it waits. shape: a draft by Claude, or why it failed. draft: one step that Claude took while it drafted, such as Read window/frame.go. followup: a follow-up that approve filed as an issue, or why it could not.", "enum": ["state", "try", "check", "linear", "ship", "ci", "review", "note", "land", "shape", "draft", "followup"] },
         "detail": { "type": "string" }
       }
     },

@@ -168,6 +168,33 @@ func TestUpdateRunKeepsThePROfAShippedRun(t *testing.T) {
 	}
 }
 
+// TAS-60: a run keeps the count of its review tries and the reviews that Loam sent back, so it sends none twice.
+func TestUpdateRunKeepsTheReviewsSentBack(t *testing.T) {
+	s := openStore(t)
+	p := newPlot(t, s, "A")
+	r := addTestRun(t, s, p.ID)
+	if r.ReviewTries != 0 || r.ReviewsSent != nil {
+		t.Fatalf("a new run has review tries %d, sent %q", r.ReviewTries, r.ReviewsSent)
+	}
+	if _, err := s.UpdateRun(r.ID, func(r *store.Run) error {
+		r.ReviewTries, r.ReviewsSent = 1, append(r.ReviewsSent, "PRR_1", "PRR_2")
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Another change keeps them.
+	if _, err := s.UpdateRun(r.ID, func(r *store.Run) error { r.Note = "later"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetRun(r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ReviewTries != 1 || !slices.Equal(got.ReviewsSent, []string{"PRR_1", "PRR_2"}) || got.Tries != 0 {
+		t.Fatalf("review tries %d, sent %q, tries %d", got.ReviewTries, got.ReviewsSent, got.Tries)
+	}
+}
+
 func TestRunStateNeedsYou(t *testing.T) {
 	for st, want := range map[store.RunState]bool{
 		store.RunShaping: true, store.RunStopped: true, store.RunLimited: true,

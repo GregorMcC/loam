@@ -10,6 +10,7 @@
     "note": "Waits for a slot: 2 of 2 runs are running",
     "notes": null,
     "plot_id": "plotaaaaae",
+    "review_tries": 0,
     "session_id": "",
     "state": "queued",
     "title": "Sort the plot list",

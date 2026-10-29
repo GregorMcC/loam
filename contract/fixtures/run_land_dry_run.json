@@ -55,6 +55,7 @@
       "approvals": 0,
       "base": "main",
       "behind_base": 0,
+      "change_requests": [],
       "checks": {
         "failed": 0,
         "passed": 1,
@@ -85,6 +86,7 @@
       ],
       "queue_position": 0,
       "review_decision": "",
+      "review_threads": [],
       "state": "OPEN",
       "title": "Tidy the README",
       "url": "https://github.com/example/widgets/pull/25"
@@ -143,6 +145,7 @@
       "number": 25,
       "url": "https://github.com/example/widgets/pull/25"
     },
+    "review_tries": 0,
     "session_id": "c57ef956-3136-4e86-bfde-da8facfe0523",
     "state": "ready",
     "title": "Tidy the README",

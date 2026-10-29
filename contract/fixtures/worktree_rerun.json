@@ -3,6 +3,7 @@
     "approvals": 0,
     "base": "main",
     "behind_base": 0,
+    "change_requests": [],
     "checks": {
       "failed": 2,
       "passed": 1,
@@ -48,6 +49,7 @@
     ],
     "queue_position": 0,
     "review_decision": "REVIEW_REQUIRED",
+    "review_threads": [],
     "state": "OPEN",
     "title": "Native panel",
     "url": "https://github.com/example/widgets/pull/16"

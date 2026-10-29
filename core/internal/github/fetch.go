@@ -20,6 +20,10 @@ const prsPerHead = maxNodes
 // The other counts and the lists of checks are of the first page.
 const maxNodes = 100
 
+// commentsPerThread is how many comments Loam reads of each review thread,
+// oldest first. It keeps the second query small: a PR can have 100 threads.
+const commentsPerThread = 10
+
 // The first query reads the PRs and the ref of each branch. A branch has the
 // aliases pr<i> and ref<i>, and the variables h<i> (the branch) and q<i>
 // (its full ref name). It asks for the PRs by head name, not through the
@@ -51,8 +55,9 @@ const detailQuery = `query($owner: String!, $name: String!%s) {
 
 const detailFields = `    p%[1]d: pullRequest(number: $n%[1]d) {
       %[3]s
-      latestOpinionatedReviews(first: %[2]d, writersOnly: true) { nodes { state } }
-      reviewThreads(first: %[2]d) { nodes { isResolved } }
+      latestOpinionatedReviews(first: %[2]d, writersOnly: true) { nodes { id state body url author { login } } }
+      reviewThreads(first: %[2]d) { nodes { id isResolved path line
+        comments(first: %[4]d) { nodes { body url authorAssociation author { login } pullRequestReview { authorCanPushToRepository } } } } }
       commits(last: 1) { nodes { commit { statusCheckRollup { state contexts(first: %[2]d) { totalCount nodes {
         __typename
         ... on CheckRun { name status conclusion detailsUrl startedAt completedAt isRequired(pullRequestNumber: $n%[1]d)
@@ -96,12 +101,34 @@ type detailNode struct {
 	} `json:"baseRef"`
 	LatestOpinionatedReviews struct {
 		Nodes []struct {
-			State string `json:"state"`
+			ID     string  `json:"id"`
+			State  string  `json:"state"`
+			Body   string  `json:"body"`
+			URL    string  `json:"url"`
+			Author *author `json:"author"`
 		} `json:"nodes"`
 	} `json:"latestOpinionatedReviews"`
 	ReviewThreads struct {
 		Nodes []struct {
-			IsResolved bool `json:"isResolved"`
+			ID         string `json:"id"`
+			IsResolved bool   `json:"isResolved"`
+			Path       string `json:"path"`
+			// Line is null for a thread on a line that the head no longer has.
+			Line     *int `json:"line"`
+			Comments struct {
+				Nodes []struct {
+					Body   string  `json:"body"`
+					URL    string  `json:"url"`
+					Author *author `json:"author"`
+					// AuthorAssociation is how the author is part of the repo,
+					// such as OWNER or NONE.
+					AuthorAssociation string `json:"authorAssociation"`
+					// PullRequestReview is the review that the comment is part
+					// of. It can be null, so [isWriter] then uses
+					// AuthorAssociation.
+					PullRequestReview *commentReview `json:"pullRequestReview"`
+				} `json:"nodes"`
+			} `json:"comments"`
 		} `json:"nodes"`
 	} `json:"reviewThreads"`
 	Commits struct {
@@ -117,6 +144,45 @@ type detailNode struct {
 			} `json:"commit"`
 		} `json:"nodes"`
 	} `json:"commits"`
+}
+
+// author is the author of a review or a comment. GitHub gives null for a
+// deleted account.
+type author struct {
+	Login string `json:"login"`
+}
+
+// writerAssociations are the author associations of a person who can push to
+// the repo. A COLLABORATOR can have read access only, so this list can count
+// a person who cannot push. Each other association, such as CONTRIBUTOR or
+// NONE, is not a writer.
+var writerAssociations = map[string]bool{"OWNER": true, "MEMBER": true, "COLLABORATOR": true}
+
+// commentReview is the review that a review comment is part of.
+type commentReview struct {
+	AuthorCanPushToRepository bool `json:"authorCanPushToRepository"`
+}
+
+// isWriter is true when the author of a review comment can push to the repo.
+// When the comment has a review, the push access of the review author is the
+// answer. When it has no review, [writerAssociations] gives the answer from
+// the association of the comment author.
+func isWriter(review *commentReview, association string) bool {
+	if review != nil {
+		return review.AuthorCanPushToRepository
+	}
+	return writerAssociations[association]
+}
+
+// ghostLogin is the login that GitHub shows for a deleted account.
+const ghostLogin = "ghost"
+
+// loginOf is the login of an author, or [ghostLogin] for a deleted account.
+func loginOf(a *author) string {
+	if a == nil || a.Login == "" {
+		return ghostLogin
+	}
+	return a.Login
 }
 
 // checkNode is a CheckRun or a StatusContext.
@@ -202,7 +268,7 @@ func (c *Client) Fetch(ctx context.Context, repo Repo, branches []string) (map[s
 			vars[fmt.Sprintf("h%d", i)] = b
 		}
 		fmt.Fprintf(&params, ", $n%d: Int!", i)
-		fmt.Fprintf(&fields, detailFields, i, maxNodes, compare)
+		fmt.Fprintf(&fields, detailFields, i, maxNodes, compare, commentsPerThread)
 		vars[fmt.Sprintf("n%d", i)] = out[b].PR.Number
 	}
 	var second struct {
@@ -259,7 +325,7 @@ func pick(nodes []prNode) *PR {
 		Mergeable: chosen.Mergeable, MergeState: chosen.MergeStateStatus, ReviewDecision: chosen.ReviewDecision,
 		InMergeQueue: chosen.IsInMergeQueue, Base: chosen.BaseRefName, Head: chosen.HeadRefName, HeadOID: chosen.HeadRefOid,
 		MergedAt: chosen.MergedAt, ClosedAt: chosen.ClosedAt, Commits: chosen.Commits.TotalCount,
-		FailedChecks: []Check{}, PassedChecks: []Check{},
+		FailedChecks: []Check{}, PassedChecks: []Check{}, ChangeRequests: []Review{}, ReviewThreads: []ReviewThread{},
 	}
 	if chosen.MergeQueueEntry != nil {
 		pr.QueuePosition = chosen.MergeQueueEntry.Position
@@ -273,14 +339,30 @@ func addDetails(pr *PR, d detailNode) {
 		pr.BehindBase = d.BaseRef.Compare.BehindBy
 	}
 	for _, r := range d.LatestOpinionatedReviews.Nodes {
-		if r.State == "APPROVED" {
+		switch r.State {
+		case "APPROVED":
 			pr.Approvals++
+		case "CHANGES_REQUESTED":
+			pr.ChangeRequests = append(pr.ChangeRequests, Review{ID: r.ID, Author: loginOf(r.Author), Body: r.Body, URL: r.URL})
 		}
 	}
 	for _, t := range d.ReviewThreads.Nodes {
-		if !t.IsResolved {
-			pr.Comments++
+		if t.IsResolved {
+			continue
 		}
+		pr.Comments++
+		thread := ReviewThread{ID: t.ID, Path: t.Path, Comments: []ReviewComment{}}
+		if t.Line != nil {
+			thread.Line = *t.Line
+		}
+		for _, c := range t.Comments.Nodes {
+			writer := isWriter(c.PullRequestReview, c.AuthorAssociation)
+			thread.Comments = append(thread.Comments, ReviewComment{Author: loginOf(c.Author), Writer: writer, Body: c.Body, URL: c.URL})
+		}
+		if len(thread.Comments) > 0 {
+			thread.URL = thread.Comments[0].URL
+		}
+		pr.ReviewThreads = append(pr.ReviewThreads, thread)
 	}
 	if len(d.Commits.Nodes) == 0 || d.Commits.Nodes[0].Commit.StatusCheckRollup == nil {
 		return

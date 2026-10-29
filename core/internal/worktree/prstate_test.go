@@ -292,8 +292,9 @@ func TestListShowsThePassedChecksOfAnOpenPR(t *testing.T) {
 	}
 }
 
-// A row of the cache from before Loam stored the passed checks has no passed_checks. It lists as an empty
-// list, never null, so the app reads one shape. The next refresh fills it.
+// A row of the cache from before Loam stored the passed checks has no passed_checks, and one from before the
+// reviews (TAS-60) has no change_requests or review_threads. Each lists as an empty list, never null, so the app
+// reads one shape. The next refresh fills them.
 func TestListGivesACachedPRFromBeforePassedChecksAnEmptyList(t *testing.T) {
 	e := setup(t)
 	e.create("fix-login", "")
@@ -318,7 +319,9 @@ func TestListGivesACachedPRFromBeforePassedChecksAnEmptyList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(b), `"passed_checks":[]`) {
-		t.Fatalf("%s", b)
+	for _, list := range []string{`"passed_checks":[]`, `"change_requests":[]`, `"review_threads":[]`} {
+		if !strings.Contains(string(b), list) {
+			t.Fatalf("no %s: %s", list, b)
+		}
 	}
 }

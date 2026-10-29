@@ -96,8 +96,21 @@ const state = `{
   "details": {
     "15": {
       "baseRef": {"compare": {"behindBy": 3}},
-      "latestOpinionatedReviews": {"nodes": [{"state": "APPROVED"}, {"state": "COMMENTED"}]},
-      "reviewThreads": {"nodes": [{"isResolved": false}, {"isResolved": true}, {"isResolved": false}]},
+      "latestOpinionatedReviews": {"nodes": [{"state": "APPROVED"}, {"state": "COMMENTED"},
+        {"id": "PRR_1", "state": "CHANGES_REQUESTED", "body": "Two fixes, please.", "url": "https://github.com/example/widgets/pull/15#pullrequestreview-1",
+         "author": {"login": "alice"}},
+        {"id": "PRR_2", "state": "CHANGES_REQUESTED", "body": "", "url": "https://github.com/example/widgets/pull/15#pullrequestreview-2", "author": null}]},
+      "reviewThreads": {"nodes": [
+        {"id": "PRRT_1", "isResolved": false, "path": "login/form.go", "line": 42, "comments": {"nodes": [
+          {"body": "This drops the error.", "url": "https://github.com/example/widgets/pull/15#discussion_r1", "author": {"login": "alice"}, "pullRequestReview": {"authorCanPushToRepository": true}},
+          {"body": "Fixed.", "url": "https://github.com/example/widgets/pull/15#discussion_r2", "author": {"login": "bob"}},
+          {"body": "Not yet.", "url": "https://github.com/example/widgets/pull/15#discussion_r5", "author": {"login": "carol"}, "authorAssociation": "COLLABORATOR", "pullRequestReview": null},
+          {"body": "Ignore that.", "url": "https://github.com/example/widgets/pull/15#discussion_r6", "author": {"login": "dave"}, "authorAssociation": "NONE", "pullRequestReview": null},
+          {"body": "Merge it.", "url": "https://github.com/example/widgets/pull/15#discussion_r7", "author": {"login": "erin"}, "authorAssociation": "OWNER", "pullRequestReview": {"authorCanPushToRepository": false}}]}},
+        {"id": "PRRT_2", "isResolved": true, "path": "login/form.go", "line": 7, "comments": {"nodes": [
+          {"body": "Done.", "url": "https://github.com/example/widgets/pull/15#discussion_r3", "author": {"login": "alice"}}]}},
+        {"id": "PRRT_3", "isResolved": false, "path": "README.md", "line": null, "comments": {"nodes": [
+          {"body": "Say why.", "url": "https://github.com/example/widgets/pull/15#discussion_r4", "author": {"login": "alice"}, "pullRequestReview": {"authorCanPushToRepository": true}}]}}]},
       "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "FAILURE", "contexts": {"totalCount": 120, "nodes": [
         {"__typename": "CheckRun", "name": "swiftformat", "status": "COMPLETED", "conclusion": "FAILURE",
          "detailsUrl": "https://github.com/example/widgets/actions/runs/1/job/1", "isRequired": true,
@@ -153,6 +166,34 @@ func TestFetchReadsEachBranch(t *testing.T) {
 	if pr.BehindBase != 3 || pr.Approvals != 1 || pr.Comments != 2 {
 		t.Fatalf("behind %d, approvals %d, comments %d", pr.BehindBase, pr.Approvals, pr.Comments)
 	}
+	// The reviews that request changes, and the threads that are not resolved, with their comments. A deleted
+	// account is ghost, a thread on a line that the head no longer has is on line 0, and a comment by someone who
+	// cannot push to the repo is not by a writer. A comment with no review is by a writer when its author is a
+	// collaborator, and the push access of a review wins over the association.
+	wantReviews := []github.Review{
+		{ID: "PRR_1", Author: "alice", Body: "Two fixes, please.", URL: "https://github.com/example/widgets/pull/15#pullrequestreview-1"},
+		{ID: "PRR_2", Author: "ghost", URL: "https://github.com/example/widgets/pull/15#pullrequestreview-2"},
+	}
+	if !slices.Equal(pr.ChangeRequests, wantReviews) {
+		t.Fatalf("change requests %+v", pr.ChangeRequests)
+	}
+	wantThreads := []github.ReviewThread{
+		{ID: "PRRT_1", Path: "login/form.go", Line: 42, URL: "https://github.com/example/widgets/pull/15#discussion_r1",
+			Comments: []github.ReviewComment{
+				{Author: "alice", Writer: true, Body: "This drops the error.", URL: "https://github.com/example/widgets/pull/15#discussion_r1"},
+				{Author: "bob", Body: "Fixed.", URL: "https://github.com/example/widgets/pull/15#discussion_r2"},
+				{Author: "carol", Writer: true, Body: "Not yet.", URL: "https://github.com/example/widgets/pull/15#discussion_r5"},
+				{Author: "dave", Body: "Ignore that.", URL: "https://github.com/example/widgets/pull/15#discussion_r6"},
+				{Author: "erin", Body: "Merge it.", URL: "https://github.com/example/widgets/pull/15#discussion_r7"},
+			}},
+		{ID: "PRRT_3", Path: "README.md", URL: "https://github.com/example/widgets/pull/15#discussion_r4",
+			Comments: []github.ReviewComment{{Author: "alice", Writer: true, Body: "Say why.", URL: "https://github.com/example/widgets/pull/15#discussion_r4"}}},
+	}
+	if !slices.EqualFunc(pr.ReviewThreads, wantThreads, func(a, b github.ReviewThread) bool {
+		return a.ID == b.ID && a.Path == b.Path && a.Line == b.Line && a.URL == b.URL && slices.Equal(a.Comments, b.Comments)
+	}) || len(pr.ReviewThreads) != pr.Comments {
+		t.Fatalf("review threads %+v", pr.ReviewThreads)
+	}
 	// The total counts every check. The other counts are of the first page.
 	want := github.Checks{State: "FAILURE", Total: 120, Passed: 3, Failed: 3, Running: 2, Waiting: 1, Required: 2, RequiredPassed: 1}
 	if pr.Checks != want {
@@ -184,7 +225,7 @@ func TestFetchReadsEachBranch(t *testing.T) {
 	// A merged PR still shows after GitHub deletes its branch.
 	if b := got["old-work"]; b.Pushed || b.PR == nil || b.PR.Number != 9 || b.PR.State != "MERGED" ||
 		b.PR.MergedAt == nil || !b.PR.MergedAt.Equal(time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC)) ||
-		b.PR.FailedChecks == nil || b.PR.PassedChecks == nil {
+		b.PR.FailedChecks == nil || b.PR.PassedChecks == nil || b.PR.ChangeRequests == nil || b.PR.ReviewThreads == nil {
 		t.Fatalf("old-work: %+v", b)
 	}
 	if b := got["local-only"]; b.PR != nil || b.Pushed {
