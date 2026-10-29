@@ -220,6 +220,7 @@ func TestNearestRank(t *testing.T) {
 		{ds(4, 1, 3, 2), 2, 4},
 		{ds(50, 10, 40, 20, 30), 30, 50},
 		{ds(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11), 6, 10},
+		{ds(-5), 0, 0}, // a change of the clock
 	} {
 		got := spreadOf(c.in)
 		if got.Count != len(c.in) || got.MedianSeconds != c.med || got.P90Seconds != c.p90 {

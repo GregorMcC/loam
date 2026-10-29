@@ -360,7 +360,8 @@ func spreadOf(ds []time.Duration) Spread {
 	return Spread{Count: len(sorted), MedianSeconds: rank(0.5), P90Seconds: rank(0.9)}
 }
 
-// seconds is d in whole seconds, rounded.
+// seconds is d in whole seconds, rounded. A time below 0, which a change of
+// the clock can give, is 0.
 func seconds(d time.Duration) int64 {
-	return int64(d.Round(time.Second) / time.Second)
+	return max(0, int64(d.Round(time.Second)/time.Second))
 }
