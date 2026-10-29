@@ -39,6 +39,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
+          CHANGED: ${{ github.event.pull_request.changed_files }}
         run: |
           all() {
             printf 'core=true\napp=true\nfull=true\n' >> "$GITHUB_OUTPUT"
@@ -46,8 +47,7 @@ jobs:
           }
           [ -n "$PR" ] || all
           # The files API lists at most 3000 files, so a larger PR runs every job.
-          count=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq .changed_files) || all
-          [ "$count" -lt 3000 ] || all
+          [ "$CHANGED" -le 3000 ] || all
           # The API gives each path as it is, and both paths of a rename.
           files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" \
             --jq '.[] | .filename, (.previous_filename // empty)') || all
