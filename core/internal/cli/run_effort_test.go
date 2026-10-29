@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"slices"
 	"strings"
@@ -84,10 +85,10 @@ func TestRunShapePassesTheEffortToTheDraftAndTheApprovedSession(t *testing.T) {
 
 func TestRunDefaultsShowSetAndClear(t *testing.T) {
 	s, p := runCLI(t)
-	if d := runDefaultsOut(t, "alpha"); !reflect.DeepEqual(d, store.RunDefaults{PlotID: p.ID, MCPServers: []string{}}) {
+	if d := runDefaultsOut(t, "alpha"); !reflect.DeepEqual(d, store.RunDefaults{PlotID: p.ID, MCPServers: []string{}, Review: true}) {
 		t.Fatalf("defaults of a new plot %+v", d)
 	}
-	if d := runDefaultsOut(t, "alpha", "--model", "opus", "--effort", "max"); !reflect.DeepEqual(d, store.RunDefaults{PlotID: p.ID, Model: "opus", Effort: "max", MCPServers: []string{}}) {
+	if d := runDefaultsOut(t, "alpha", "--model", "opus", "--effort", "max"); !reflect.DeepEqual(d, store.RunDefaults{PlotID: p.ID, Model: "opus", Effort: "max", MCPServers: []string{}, Review: true}) {
 		t.Fatalf("set %+v", d)
 	}
 	// A flag sets its own field and leaves the other.
@@ -122,6 +123,30 @@ func TestRunDefaultsSetShowAndClearTheMCPServers(t *testing.T) {
 	}
 	if d, err := s.GetRunDefaults(p.ID); err != nil || len(d.MCPServers) != 0 {
 		t.Fatalf("stored %+v %v", d, err)
+	}
+}
+
+func TestRunDefaultsTurnTheCodeReviewOffAndSetItsEffort(t *testing.T) {
+	_, p := runCLI(t)
+	want := store.RunDefaults{PlotID: p.ID, Effort: "low", MCPServers: []string{}, Review: false, ReviewEffort: "high"}
+	if d := runDefaultsOut(t, "alpha", "--effort", "low", "--review", "off", "--review-effort", "high"); !reflect.DeepEqual(d, want) {
+		t.Fatalf("set %+v", d)
+	}
+	// Another flag keeps the review as it is.
+	if d := runDefaultsOut(t, "alpha", "--effort", ""); d.Review || d.ReviewEffort != "high" {
+		t.Fatalf("set the effort %+v", d)
+	}
+	if d := runDefaultsOut(t, "alpha", "--review", "on", "--review-effort", ""); !d.Review || d.ReviewEffort != "" {
+		t.Fatalf("on %+v", d)
+	}
+	for _, args := range [][]string{{"--review", "yes"}, {"--review-effort", "extreme"}} {
+		if _, _, err := lrRun(t, "", append([]string{"run", "defaults", "alpha"}, args...)...); !errors.Is(err, store.ErrInvalid) {
+			t.Errorf("%q: %v", args, err)
+		}
+	}
+	out, _, err := lrRun(t, "", "run", "defaults", "alpha")
+	if err != nil || !strings.Contains(out, "review: on\nreview effort: (Claude Code setting)\n") {
+		t.Fatalf("%v: %q", err, out)
 	}
 }
 

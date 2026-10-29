@@ -1,6 +1,7 @@
 package store
 
 import (
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -98,5 +99,41 @@ func TestMigrationGivesOldReposAsk(t *testing.T) {
 	}
 	if p.Repos[0].Setup != "make setup" {
 		t.Fatalf("%+v", p.Repos[0])
+	}
+}
+
+// A store from before the code review migration keeps its run defaults, and
+// each plot gets the review on, with the effort of the Claude Code setting.
+func TestMigrationTurnsTheCodeReviewOnForOldRunDefaults(t *testing.T) {
+	step := slices.IndexFunc(migrations, func(m string) bool { return strings.Contains(m, "ADD COLUMN review ") })
+	if step < 0 {
+		t.Fatal("no migration adds the review")
+	}
+	all := migrations
+	migrations, SchemaVersion = all[:step], step
+	s, err := Open(testutil.Home(t))
+	migrations, SchemaVersion = all, len(all)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	for _, q := range []string{
+		`INSERT INTO plots(id, name, created_at) VALUES ('oldplotaab', 'Old', 1)`,
+		`INSERT INTO run_defaults(plot_id, model, effort, updated_at) VALUES ('oldplotaab', 'opus', 'high', 1)`,
+	} {
+		if _, err := s.db.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+
+	if err := s.migrate(); err != nil {
+		t.Fatal(err)
+	}
+	d, err := s.GetRunDefaults("oldplotaab")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(d, RunDefaults{PlotID: "oldplotaab", Model: "opus", Effort: "high", MCPServers: []string{}, Review: true}) {
+		t.Fatalf("%+v", d)
 	}
 }

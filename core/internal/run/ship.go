@@ -240,15 +240,25 @@ func (sh *shipper) watch(ctx context.Context) (bool, error) {
 
 // shipAgain pushes the commits of the branch after the head of the run's PR,
 // and the run is Shipping again, so a later tick reads CI on the new head.
-// It pushes even when origin/<branch> is the branch head already, because
-// GitHub can have an older head, such as after a force push.
+// The code review of the Ready run runs first, as before each push (see
+// [shipper.codeReview]), and a Critical or Major finding sends the run back
+// to its session. It pushes even when origin/<branch> is the branch
+// head already, because GitHub can have an older head, such as after a force
+// push.
 func (sh *shipper) shipAgain(ctx context.Context, w store.Worktree, pr *github.PR) (bool, error) {
+	head, err := branchHead(ctx, sh.r.Folder, w.Branch)
+	if err != nil {
+		return false, err
+	}
+	if ok, moved, err := sh.codeReview(ctx, w, head); !ok || err != nil {
+		return moved, err
+	}
 	note := fmt.Sprintf("The branch has commits after the head of #%d. Loam pushes them, and CI runs again", pr.Number)
 	moved, err := sh.move(store.RunShipping, note)
 	if !moved || err != nil {
 		return moved, err
 	}
-	if out, err := gitPush(ctx, sh.r.Folder, w.Branch); err != nil {
+	if out, err := sh.gitPush(ctx, w.Branch, head); err != nil {
 		return sh.move(store.RunStopped, failureNote("git push failed", err, out))
 	}
 	return moved, sh.s.AddRunEvent(sh.r.ID, "ship", fmt.Sprintf("Pushed the new commits to #%d", pr.Number))
@@ -332,15 +342,19 @@ func (sh *shipper) ended(ctx context.Context, pr *github.PR) (moved, ended bool,
 }
 
 // push puts the head of the run on GitHub, and opens its PR when it has
-// none. With a PR, the push is a fix after a failed CI or a send-back. Loam
-// saves the PR text on the run before it opens the PR, and a later try for
-// the same head uses it again, so a PR that GitHub did not open costs no
-// second call to Claude.
+// none. With a PR, the push is a fix after a failed CI or a send-back. The
+// code review of head runs first (see [shipper.codeReview]). Loam saves the
+// PR text on the run before it opens the PR, and a later try for the same
+// head uses it again, so a PR that GitHub did not open costs no second call
+// to Claude.
 func (sh *shipper) push(ctx context.Context, repo github.Repo, w store.Worktree, head string, pr *github.PR) (bool, error) {
+	if ok, moved, err := sh.codeReview(ctx, w, head); !ok || err != nil {
+		return moved, err
+	}
 	r := sh.r
 	pushed, err := pushedHead(ctx, r.Folder, w.Branch)
 	if err != nil || pushed != head {
-		if out, err := gitPush(ctx, r.Folder, w.Branch); err != nil {
+		if out, err := sh.gitPush(ctx, w.Branch, head); err != nil {
 			return sh.move(store.RunStopped, failureNote("git push failed", err, out))
 		}
 		if pr != nil {
@@ -681,13 +695,24 @@ func (sh *shipper) update(fn func(*store.Run)) (bool, error) {
 	return moved, nil
 }
 
-// gitPush pushes the branch of the worktree in dir to origin, and returns
-// the output of git.
-func gitPush(ctx context.Context, dir, branch string) (string, error) {
+// gitPush pushes the commit head to the branch on origin, from the worktree
+// of the run, and returns the output of git. It pushes the commit that the
+// code review read, not the branch, so a commit that the branch gets during
+// the review does not go with it. Then the branch tracks origin/<branch>, as
+// with git push -u. The push has happened when that fails, so the failure is
+// a warning, not an error.
+func (sh *shipper) gitPush(ctx context.Context, branch, head string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, pushTimeout)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "git", "-C", dir, "push", "-u", "origin", branch).CombinedOutput()
-	return string(out), err
+	dir := sh.r.Folder
+	out, err := exec.CommandContext(ctx, "git", "-C", dir, "push", "origin", head+":refs/heads/"+branch).CombinedOutput()
+	if err != nil {
+		return string(out), err
+	}
+	if track, err := exec.CommandContext(ctx, "git", "-C", dir, "branch", "--set-upstream-to=origin/"+branch, branch).CombinedOutput(); err != nil {
+		sh.warnings = append(sh.warnings, failureNote(fmt.Sprintf("%s: git could not make %s track origin/%s", sh.r.Title, branch, branch), err, string(track)))
+	}
+	return string(out), nil
 }
 
 // branchHead is the last commit of the branch in the worktree in dir.

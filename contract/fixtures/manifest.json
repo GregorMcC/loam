@@ -1411,6 +1411,21 @@
     "schema": "run-defaults"
   },
   {
+    "name": "run_defaults_review",
+    "args": [
+      "run",
+      "defaults",
+      "Runs",
+      "--review",
+      "off",
+      "--review-effort",
+      "low",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "run-defaults"
+  },
+  {
     "name": "error_run_defaults_bad_effort",
     "args": [
       "run",
@@ -1418,6 +1433,19 @@
       "Runs",
       "--effort",
       "extreme",
+      "--json"
+    ],
+    "exit_code": 2,
+    "schema": "error"
+  },
+  {
+    "name": "error_run_defaults_bad_review",
+    "args": [
+      "run",
+      "defaults",
+      "Runs",
+      "--review",
+      "maybe",
       "--json"
     ],
     "exit_code": 2,
@@ -1434,6 +1462,10 @@
       "--effort",
       "",
       "--mcp",
+      "",
+      "--review",
+      "on",
+      "--review-effort",
       "",
       "--json"
     ],

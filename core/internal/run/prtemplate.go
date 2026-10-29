@@ -218,29 +218,41 @@ func (sh *shipper) askForShipText(ctx context.Context, w store.Worktree, ask shi
 			args = append(args, "--effort", r.Shape.Effort)
 		}
 	}
+	out, why := runPrint(ctx, claude, r.Folder, args, "text")
+	if why != "" {
+		return shipAnswer{}, why
+	}
+	var a shipAnswer
+	if err := json.Unmarshal(out, &a); err != nil {
+		return shipAnswer{}, "claude -p gave a text that Loam cannot read: " + err.Error()
+	}
+	return a, ""
+}
+
+// runPrint runs claude -p with args in dir, where args ask for
+// --output-format json and a --json-schema, and returns the structured
+// output, or why there is none. what names the answer in that reason, such
+// as "text" in "claude -p gave no text".
+func runPrint(ctx context.Context, claude, dir string, args []string, what string) (json.RawMessage, string) {
 	cmd := exec.CommandContext(ctx, claude, args...)
-	cmd.Dir = r.Folder
+	cmd.Dir = dir
 	cmd.WaitDelay = time.Second
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
 	if err := cmd.Run(); err != nil && !errors.Is(err, exec.ErrWaitDelay) {
 		if ctx.Err() != nil {
-			return shipAnswer{}, "claude -p did not answer in time"
+			return nil, "claude -p did not answer in time"
 		}
-		return shipAnswer{}, failureNote("claude -p failed", err, errOut.String())
+		return nil, failureNote("claude -p failed", err, errOut.String())
 	}
 	var res draftResult
 	if err := json.Unmarshal(bytes.TrimSpace(out.Bytes()), &res); err != nil {
-		return shipAnswer{}, "claude -p gave an answer that Loam cannot read: " + err.Error()
+		return nil, "claude -p gave an answer that Loam cannot read: " + err.Error()
 	}
 	if res.IsError || len(res.StructuredOutput) == 0 || string(res.StructuredOutput) == "null" {
-		return shipAnswer{}, strings.TrimSpace(fmt.Sprintf("claude -p gave no text. %s %s", res.Subtype, tail(res.Result, noteTail)))
+		return nil, strings.TrimSpace(fmt.Sprintf("claude -p gave no %s. %s %s", what, res.Subtype, tail(res.Result, noteTail)))
 	}
-	var a shipAnswer
-	if err := json.Unmarshal(res.StructuredOutput, &a); err != nil {
-		return shipAnswer{}, "claude -p gave a text that Loam cannot read: " + err.Error()
-	}
-	return a, ""
+	return res.StructuredOutput, ""
 }
 
 // shipTextPrompt is the prompt that asks for the ship text: what each part

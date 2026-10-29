@@ -97,6 +97,30 @@ func FakeClaudePrint(t *testing.T, text string) {
 	t.Setenv("LOAM_FAKE_CLAUDE_PRINT", file)
 }
 
+// FakeClaudePrintFor makes a -p call of the fake claude whose --json-schema
+// holds schemaText print text, in place of the text of [FakeClaudePrint].
+// Each schemaText gets its own text, and a later call for the same
+// schemaText replaces it.
+func FakeClaudePrintFor(t *testing.T, schemaText, text string) {
+	t.Helper()
+	file := filepath.Join(t.TempDir(), "print.json")
+	if err := os.WriteFile(file, []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{}
+	if s := os.Getenv("LOAM_FAKE_CLAUDE_PRINTS"); s != "" {
+		if err := json.Unmarshal([]byte(s), &files); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files[schemaText] = file
+	b, err := json.Marshal(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LOAM_FAKE_CLAUDE_PRINTS", string(b))
+}
+
 // FakeClaudeInvocation returns what the fake claude recorded. It fails the
 // test if the fake did not run.
 func FakeClaudeInvocation(t *testing.T) Invocation {

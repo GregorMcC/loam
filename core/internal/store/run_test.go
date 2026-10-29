@@ -1,9 +1,11 @@
 package store_test
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -192,6 +194,38 @@ func TestUpdateRunKeepsTheReviewsSentBack(t *testing.T) {
 	}
 	if got.ReviewTries != 1 || !slices.Equal(got.ReviewsSent, []string{"PRR_1", "PRR_2"}) || got.Tries != 0 {
 		t.Fatalf("review tries %d, sent %q, tries %d", got.ReviewTries, got.ReviewsSent, got.Tries)
+	}
+}
+
+func TestUpdateRunKeepsTheCodeReviewOutOfTheJSON(t *testing.T) {
+	s := openStore(t)
+	p := newPlot(t, s, "A")
+	r := addTestRun(t, s, p.ID)
+	if r.CodeReview != nil {
+		t.Fatalf("a new run has a code review %+v", r.CodeReview)
+	}
+	cp := r
+	cp.CodeReview = &store.RunCodeReview{Head: "abc123", Rounds: 4}
+	if c, err := s.AddRun(cp); err != nil || c.CodeReview != nil {
+		t.Fatalf("a new run keeps the code review of a copy: %+v, %v", c.CodeReview, err)
+	}
+	want := store.RunCodeReview{Head: "abc123", Rounds: 2, Facts: []string{"Minor issue from the code review: a.go:3: A typo."}}
+	if _, err := s.UpdateRun(r.ID, func(r *store.Run) error { r.CodeReview = &want; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetRun(r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := got.CodeReview; c == nil || c.Head != want.Head || c.Rounds != want.Rounds || !slices.Equal(c.Facts, want.Facts) {
+		t.Fatalf("code review %+v", got.CodeReview)
+	}
+	b, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "abc123") {
+		t.Fatalf("the run JSON has the code review: %s", b)
 	}
 }
 

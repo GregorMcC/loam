@@ -706,12 +706,16 @@ func scenario(t *testing.T) *harness {
 	h.tokens[testutil.Git(t, tidy.Run.Folder, "rev-parse", "HEAD")] = runHead
 	hook("Stop")
 	// Before it opens the PR, the tick has claude -p write the ship notes.
+	// Before the push, the code review finds no issue.
 	testutil.FakeClaudePrint(t, `{"type": "result", "subtype": "success", "is_error": false, "result": "",
  "structured_output": {"walkthrough": "The README says what Loam is. It was a title alone.",
   "files": [{"path": "README.md", "role": "What you see"}],
   "risk": {"level": "low", "reasons": ["One file.", "No store change."]},
   "where_it_stands": "The README says what Loam is. Next: the guide."}}`)
-	h.env = append(h.env, "LOAM_FAKE_CLAUDE_PRINT="+os.Getenv("LOAM_FAKE_CLAUDE_PRINT"))
+	testutil.FakeClaudePrintFor(t, `"findings"`, `{"type": "result", "subtype": "success", "is_error": false, "result": "",
+ "structured_output": {"findings": []}}`)
+	h.env = append(h.env, "LOAM_FAKE_CLAUDE_PRINT="+os.Getenv("LOAM_FAKE_CLAUDE_PRINT"),
+		"LOAM_FAKE_CLAUDE_PRINTS="+os.Getenv("LOAM_FAKE_CLAUDE_PRINTS"))
 	h.run("run_tick", "run-tick", 0, "run", "tick")
 
 	// Land (ticket 207). CI passes on #25, so a tick makes the run Ready. A
@@ -809,12 +813,16 @@ func scenario(t *testing.T) *harness {
 	h.run("rule_rm", "rule", 0, "rule", "rm", rule.Rule.ID)
 	h.run("error_rule_add_no_command", "error", 2, "rule", "add", "Runs", "--name", "Short README")
 
-	// Run defaults: the model, effort, and MCP servers of the runs of a plot.
+	// Run defaults: the model, effort, and MCP servers of the runs of a plot,
+	// and the code review before each push.
 	h.run("run_defaults_get", "run-defaults", 0, "run", "defaults", "Runs")
 	h.run("run_defaults_set", "run-defaults", 0, "run", "defaults", "Runs", "--model", "opus", "--effort", "high")
 	h.run("run_defaults_set_mcp", "run-defaults", 0, "run", "defaults", "Runs", "--mcp", "loam,linear-server")
+	h.run("run_defaults_review", "run-defaults", 0, "run", "defaults", "Runs", "--review", "off", "--review-effort", "low")
 	h.run("error_run_defaults_bad_effort", "error", 2, "run", "defaults", "Runs", "--effort", "extreme")
-	h.run("run_defaults_clear", "run-defaults", 0, "run", "defaults", "Runs", "--model", "", "--effort", "", "--mcp", "")
+	h.run("error_run_defaults_bad_review", "error", 2, "run", "defaults", "Runs", "--review", "maybe")
+	h.run("run_defaults_clear", "run-defaults", 0, "run", "defaults", "Runs", "--model", "", "--effort", "", "--mcp", "",
+		"--review", "on", "--review-effort", "")
 
 	// The MCP servers that --mcp can select: the user scope, without a
 	// server that has a headersHelper. No config file gives an empty list.

@@ -288,6 +288,15 @@ CREATE INDEX session_worktrees_worktree ON session_worktrees(worktree_id, update
 	`
 ALTER TABLE runs ADD COLUMN review_tries INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE runs ADD COLUMN reviews_sent TEXT NOT NULL DEFAULT '';
+	`,
+	// 22: the code review that Loam runs before it pushes a run. review turns
+	// it on or off for a plot, and review_effort is its effort level, or ''
+	// for the Claude Code setting. code_review is the state of the review of
+	// a run, as JSON, or ''. Neither is in the change log.
+	`
+ALTER TABLE run_defaults ADD COLUMN review INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE run_defaults ADD COLUMN review_effort TEXT NOT NULL DEFAULT '';
+ALTER TABLE runs ADD COLUMN code_review TEXT NOT NULL DEFAULT '';
 `,
 }
 
