@@ -276,6 +276,8 @@ private struct RunDefaultsSection: View {
     @State private var requested = RunDefaultsChoice(model: "", effort: "", servers: [])
     /// True once the pickers hold the defaults that the core read for this plot.
     @State private var isLoaded = false
+    /// True when the read of the defaults of this plot failed. The pickers stay off, so no save writes empty values.
+    @State private var readFailed = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: LoamTheme.space3) {
@@ -294,20 +296,28 @@ private struct RunDefaultsSection: View {
                 .loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("run-defaults-mcp-note")
+            if readFailed {
+                Text("Loam could not read the run defaults of this plot.").loamText(LoamTheme.captionStyle, LoamColor.rust)
+                    .accessibilityIdentifier("run-defaults-read-error")
+            }
             if let error = model.runDefaultsError {
                 Text(error).loamText(LoamTheme.captionStyle, LoamColor.rust).textSelection(.enabled)
                     .accessibilityIdentifier("run-defaults-error")
             }
         }
         .task {
+            async let servers: Void = model.readMCPServers()
             await model.readRunDefaults(plot: plotID)
-            guard model.runDefaults?.plotID == plotID else { return }
+            guard model.runDefaults?.plotID == plotID else {
+                readFailed = true
+                return await servers
+            }
             requested = RunDefaultsChoice(model.runDefaults)
             chosenModel = requested.model
             chosenEffort = requested.effort
             chosenServers = requested.servers
             isLoaded = true
-            await model.readMCPServers()
+            await servers
         }
         .onChange(of: RunDefaultsChoice(model: chosenModel, effort: chosenEffort, servers: chosenServers)) { _, now in
             guard RunDefaultsChoice.needsSave(now, requested: requested, loaded: isLoaded ? model.runDefaults : nil, plot: plotID)
