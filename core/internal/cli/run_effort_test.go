@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -83,10 +84,10 @@ func TestRunShapePassesTheEffortToTheDraftAndTheApprovedSession(t *testing.T) {
 
 func TestRunDefaultsShowSetAndClear(t *testing.T) {
 	s, p := runCLI(t)
-	if d := runDefaultsOut(t, "alpha"); d != (store.RunDefaults{PlotID: p.ID}) {
+	if d := runDefaultsOut(t, "alpha"); !reflect.DeepEqual(d, store.RunDefaults{PlotID: p.ID, MCPServers: []string{}}) {
 		t.Fatalf("defaults of a new plot %+v", d)
 	}
-	if d := runDefaultsOut(t, "alpha", "--model", "opus", "--effort", "max"); d != (store.RunDefaults{PlotID: p.ID, Model: "opus", Effort: "max"}) {
+	if d := runDefaultsOut(t, "alpha", "--model", "opus", "--effort", "max"); !reflect.DeepEqual(d, store.RunDefaults{PlotID: p.ID, Model: "opus", Effort: "max", MCPServers: []string{}}) {
 		t.Fatalf("set %+v", d)
 	}
 	// A flag sets its own field and leaves the other.
@@ -97,6 +98,29 @@ func TestRunDefaultsShowSetAndClear(t *testing.T) {
 		t.Fatalf("clear %+v", d)
 	}
 	if d, err := s.GetRunDefaults(p.ID); err != nil || d.Effort != "low" {
+		t.Fatalf("stored %+v %v", d, err)
+	}
+}
+
+func TestRunDefaultsSetShowAndClearTheMCPServers(t *testing.T) {
+	s, p := runCLI(t)
+	if d := runDefaultsOut(t, "alpha", "--mcp", "loam, linear-server,,loam"); !slices.Equal(d.MCPServers, []string{"loam", "linear-server"}) || d.Effort != "" {
+		t.Fatalf("set %+v", d)
+	}
+	// --model leaves the servers as they are.
+	if d := runDefaultsOut(t, "alpha", "--model", "opus"); !slices.Equal(d.MCPServers, []string{"loam", "linear-server"}) {
+		t.Fatalf("set model %+v", d)
+	}
+	if out, code := loam(t, "run", "defaults", "alpha"); code != 0 || !strings.Contains(out, "mcp servers: loam, linear-server\n") {
+		t.Fatalf("text %q exit %d", out, code)
+	}
+	if d := runDefaultsOut(t, "alpha", "--mcp", ""); d.MCPServers == nil || len(d.MCPServers) != 0 || d.Model != "opus" {
+		t.Fatalf("clear %+v", d)
+	}
+	if out, code := loam(t, "run", "defaults", "alpha"); code != 0 || !strings.Contains(out, "mcp servers: (none)\n") {
+		t.Fatalf("text %q exit %d", out, code)
+	}
+	if d, err := s.GetRunDefaults(p.ID); err != nil || len(d.MCPServers) != 0 {
 		t.Fatalf("stored %+v %v", d, err)
 	}
 }

@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -73,7 +74,8 @@ func TestRunShapeDraftsTheGoalAndTheChecksWithClaude(t *testing.T) {
 	if realPath(t, inv.Cwd) != realPath(t, repo) {
 		t.Fatalf("cwd %s", inv.Cwd)
 	}
-	for _, want := range [][]string{{"-p"}, {"--output-format", "stream-json", "--verbose"}, {"--no-session-persistence"}, {"--tools", "Read,Grep,Glob"}} {
+	for _, want := range [][]string{{"-p"}, {"--output-format", "stream-json", "--verbose"}, {"--no-session-persistence"}, {"--tools", "Read,Grep,Glob"},
+		{"--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`}} {
 		if !containsRun(inv.Args, want) {
 			t.Errorf("args %q miss %q", inv.Args, want)
 		}
@@ -88,6 +90,54 @@ func TestRunShapeDraftsTheGoalAndTheChecksWithClaude(t *testing.T) {
 	}
 	if ws, _ := s.ListWorktrees(p.ID); len(ws) != 0 {
 		t.Fatalf("a shaping run made a worktree: %+v", ws)
+	}
+}
+
+// Issue #58: a draft loads only the MCP servers that the run defaults of
+// the plot select, each copied from the Claude Code config.
+func TestRunShapeLoadsOnlyTheMCPServersOfTheRunDefaults(t *testing.T) {
+	_, _, repo := shapeCLI(t)
+	server := func(cmd string) map[string]any { return map[string]any{"type": "stdio", "command": cmd} }
+	b, _ := json.Marshal(map[string]any{
+		"projects":   map[string]any{repo: map[string]bool{"hasTrustDialogAccepted": true}},
+		"mcpServers": map[string]any{"loam": server("loam-cmd"), "slack": server("slack-cmd")},
+	})
+	if err := os.WriteFile(filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), ".claude.json"), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runDefaultsOut(t, "alpha", "--mcp", "loam")
+	r := shapeRun(t, "shape", "alpha", "--title", "Remember the window size per plot")
+	if r.Shape.DraftedAt == nil {
+		t.Fatalf("no draft: %q", r.Note)
+	}
+	// The config is a file, not an argument, because a definition can hold a
+	// token. Loam removes the file when claude ends.
+	inv := testutil.FakeClaudeInvocation(t)
+	if !slices.Contains(inv.Args, "--strict-mcp-config") || strings.Contains(strings.Join(inv.Args, " "), "loam-cmd") {
+		t.Fatalf("args %q", inv.Args)
+	}
+	if path := argAfter(inv.Args, "--mcp-config"); !filepath.IsAbs(path) {
+		t.Errorf("mcp config path %q", path)
+	} else if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("the mcp config file stays: %v", err)
+	}
+	var config struct {
+		MCPServers map[string]struct {
+			Command string `json:"command"`
+		} `json:"mcpServers"`
+	}
+	if err := json.Unmarshal([]byte(inv.MCPConfig), &config); err != nil {
+		t.Fatalf("%v: %q", err, inv.MCPConfig)
+	}
+	if len(config.MCPServers) != 1 || config.MCPServers["loam"].Command != "loam-cmd" {
+		t.Fatalf("servers %+v", config.MCPServers)
+	}
+
+	// A name that is not in the config stops the draft, and the note names it.
+	runDefaultsOut(t, "alpha", "--mcp", "loam,lienar")
+	r = shapeRun(t, "shape", "alpha", "--title", "Remember the window size per plot")
+	if r.Shape.DraftedAt != nil || !strings.Contains(r.Note, `"lienar"`) {
+		t.Fatalf("draft %v note %q", r.Shape.DraftedAt, r.Note)
 	}
 }
 

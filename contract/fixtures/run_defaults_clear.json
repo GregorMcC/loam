@@ -1,6 +1,7 @@
 {
   "defaults": {
     "effort": "",
+    "mcp_servers": [],
     "model": "",
     "plot_id": "plotaaaaae"
   }

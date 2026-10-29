@@ -255,14 +255,18 @@ func draftRun(ctx context.Context, s *store.Store, r store.Run, change string) (
 	if err != nil {
 		return nil, err
 	}
+	defaults, err := s.GetRunDefaults(r.PlotID)
+	if err != nil {
+		return nil, err
+	}
 	if r.Shape.Split {
-		return splitRun(ctx, s, plot, r, change)
+		return splitRun(ctx, s, plot, r, change, defaults.MCPServers)
 	}
 	others, err := groupRepos(s, plot, r)
 	if err != nil {
 		return nil, err
 	}
-	d, failure := askForDraft(ctx, r, change, others, draftSteps(s, r.ID), usageRecorder(s))
+	d, failure := askForDraft(ctx, r, change, others, defaults.MCPServers, draftSteps(s, r.ID), usageRecorder(s))
 	r, err = s.UpdateRun(r.ID, func(r *store.Run) error {
 		if r.State != store.RunShaping || r.Shape == nil {
 			return nil
@@ -285,9 +289,10 @@ func draftRun(ctx context.Context, s *store.Store, r store.Run, change string) (
 // first repo of the draft, and each other repo gets a new Shaping run with
 // the same title, source, and options. Two or more runs share a group: the
 // ID of r. A draft with a repo that the plot does not have, or with a repo
-// twice, fails as a whole, with the reason as the note of r.
-func splitRun(ctx context.Context, s *store.Store, plot store.Plot, r store.Run, change string) ([]store.Run, error) {
-	ds, failure := askForSplit(ctx, plot, r, change, draftSteps(s, r.ID), usageRecorder(s))
+// twice, fails as a whole, with the reason as the note of r. mcp is as for
+// [askClaude].
+func splitRun(ctx context.Context, s *store.Store, plot store.Plot, r store.Run, change string, mcp []string) ([]store.Run, error) {
+	ds, failure := askForSplit(ctx, plot, r, change, mcp, draftSteps(s, r.ID), usageRecorder(s))
 	var repos []store.Repo
 	if failure == "" {
 		repos, failure = splitRepos(plot, ds)
@@ -396,11 +401,11 @@ func shapeDetail(r store.Run, failure string) string {
 }
 
 // askForDraft has Claude draft one run in the folder of the run. others
-// name the repos of the other runs of its group. step and usage are as for
-// [askClaude].
-func askForDraft(ctx context.Context, r store.Run, change string, others []string, step func(string), usage func(store.Usage)) (draft, string) {
+// name the repos of the other runs of its group. mcp, step, and usage are
+// as for [askClaude].
+func askForDraft(ctx context.Context, r store.Run, change string, others, mcp []string, step func(string), usage func(store.Usage)) (draft, string) {
 	prompt := func(ctx context.Context) string { return shapePrompt(ctx, r, change, others) }
-	out, failure := askClaude(ctx, r, nil, prompt, draftSchema, step, usage)
+	out, failure := askClaude(ctx, r, nil, mcp, prompt, draftSchema, step, usage)
 	if failure != "" {
 		return draft{}, failure
 	}
@@ -414,7 +419,7 @@ func askForDraft(ctx context.Context, r store.Run, change string, others []strin
 // askForSplit has Claude draft one run for each repo of the plot that the
 // issue needs changes in. Claude runs in the folder of r, the main repo, and
 // reads the other repos too.
-func askForSplit(ctx context.Context, plot store.Plot, r store.Run, change string, step func(string), usage func(store.Usage)) ([]draft, string) {
+func askForSplit(ctx context.Context, plot store.Plot, r store.Run, change string, mcp []string, step func(string), usage func(store.Usage)) ([]draft, string) {
 	var dirs []string
 	for _, repo := range plot.Repos {
 		if repo.Path != r.Folder {
@@ -422,7 +427,7 @@ func askForSplit(ctx context.Context, plot store.Plot, r store.Run, change strin
 		}
 	}
 	prompt := func(ctx context.Context) string { return splitPrompt(ctx, plot, r, change) }
-	out, failure := askClaude(ctx, r, dirs, prompt, splitSchema, step, usage)
+	out, failure := askClaude(ctx, r, dirs, mcp, prompt, splitSchema, step, usage)
 	if failure != "" {
 		return nil, failure
 	}
@@ -455,12 +460,13 @@ func cleanDraft(d draft) draft {
 
 // askClaude runs claude -p in the folder of the run, with read-only tools and
 // with --add-dir for each of dirs, and returns its structured output in the
-// shape of schema, or why there is none. claude -p asks no trust question,
+// shape of schema, or why there is none. It loads only the MCP servers that
+// mcp names, as [mcpArgs] says. claude -p asks no trust question,
 // so as for a run, each folder must be one that Claude Code trusts. It
 // streams its output, and step gets each step that Claude takes, such as
 // "Read window/frame.go", as it takes it. usage gets the usage that Claude
 // Code reports.
-func askClaude(ctx context.Context, r store.Run, dirs []string, prompt func(context.Context) string, schema string,
+func askClaude(ctx context.Context, r store.Run, dirs, mcp []string, prompt func(context.Context) string, schema string,
 	step func(string), usage func(store.Usage)) (json.RawMessage, string) {
 	for _, dir := range append([]string{r.Folder}, dirs...) {
 		if !claudebin.Trusted(dir) {
@@ -471,10 +477,16 @@ func askClaude(ctx context.Context, r store.Run, dirs []string, prompt func(cont
 	if err != nil {
 		return nil, err.Error()
 	}
+	mcpFlags, removeConfig, err := mcpArgs(mcp)
+	if err != nil {
+		return nil, err.Error()
+	}
+	defer removeConfig()
 	ctx, cancel := context.WithTimeout(ctx, shapeTimeout)
 	defer cancel()
 	args := []string{"-p", prompt(ctx), "--output-format", "stream-json", "--verbose", "--json-schema", schema,
 		"--no-session-persistence", "--tools", "Read,Grep,Glob"}
+	args = append(args, mcpFlags...)
 	for _, dir := range dirs {
 		args = append(args, "--add-dir", dir)
 	}
@@ -512,6 +524,62 @@ func askClaude(ctx context.Context, r store.Run, dirs []string, prompt func(cont
 		return nil, strings.TrimSpace(fmt.Sprintf("%s %s", res.Subtype, tail(res.Result, noteTail)))
 	}
 	return res.StructuredOutput, ""
+}
+
+// mcpArgs returns the claude -p flags that load only the MCP servers that
+// names gives, as [claudebin.MCPConfig] finds them, and no other server: no
+// claude.ai connector, and no server of the user or the project that names
+// leaves out. --tools leaves out ToolSearch, so Claude Code puts the schema
+// of every MCP tool that it loads in each request, and with many connectors
+// on, that can fill the context before the draft ends. --tools limits only
+// the built-in tools: a selected server is your opt-in, and its tools run as
+// your Claude Code permissions allow.
+//
+// A config with servers goes in a file that only you can read, not on the
+// command line, because a server definition can hold a token in its env or
+// its headers, and any process can read the command line of another. The
+// config with no servers holds nothing secret, so it stays on the command
+// line. remove deletes the file: call it when claude -p has ended. A file
+// that a killed Loam left goes at the next call (see [sweepMCPConfigs]).
+func mcpArgs(names []string) (args []string, remove func(), err error) {
+	config, err := claudebin.MCPConfig(names)
+	if err != nil {
+		return nil, nil, err
+	}
+	sweepMCPConfigs()
+	if len(names) == 0 {
+		return []string{"--strict-mcp-config", "--mcp-config", config}, func() {}, nil
+	}
+	f, err := os.CreateTemp("", mcpConfigPattern) // CreateTemp makes the file 0600
+	if err != nil {
+		return nil, nil, err
+	}
+	name := f.Name()
+	remove = func() { os.Remove(name) }
+	_, err = f.WriteString(config)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		remove()
+		return nil, nil, err
+	}
+	return []string{"--strict-mcp-config", "--mcp-config", name}, remove, nil
+}
+
+// mcpConfigPattern names the MCP config files of [mcpArgs] in the temp folder.
+const mcpConfigPattern = "loam-mcp-*.json"
+
+// sweepMCPConfigs removes the MCP config files that are older than any
+// claude -p call can run, such as a file of a Loam that was killed before it
+// removed it.
+func sweepMCPConfigs() {
+	old, _ := filepath.Glob(filepath.Join(os.TempDir(), mcpConfigPattern))
+	for _, path := range old {
+		if info, err := os.Stat(path); err == nil && time.Since(info.ModTime()) > 2*max(shapeTimeout, prTextTimeout) {
+			os.Remove(path)
+		}
+	}
 }
 
 // draftResult is the last message of claude -p: the draft, or why there is none.

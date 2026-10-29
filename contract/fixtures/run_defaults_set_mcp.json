@@ -1,0 +1,11 @@
+{
+  "defaults": {
+    "effort": "high",
+    "mcp_servers": [
+      "loam",
+      "linear-server"
+    ],
+    "model": "opus",
+    "plot_id": "plotaaaaae"
+  }
+}

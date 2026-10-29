@@ -104,7 +104,7 @@ func (sh *shipper) prText(ctx context.Context, w store.Worktree, repo github.Rep
 	title, body = r.Title, prBody(r, repo, others)
 	template := prTemplate(r.Folder)
 	changed := changedFiles(ctx, r.Folder, w.Base)
-	a, why := askForShipText(ctx, r, w, shipAsk{template: template, where: where, changed: changed})
+	a, why := sh.askForShipText(ctx, w, shipAsk{template: template, where: where, changed: changed})
 	switch {
 	case why != "" && template != "":
 		sh.shipEvent("Loam used no PR template and wrote no ship notes: " + why)
@@ -185,8 +185,10 @@ func shipTextSchema(template bool) string {
 
 // askForShipText has Claude write the ship notes, and fill in the PR template
 // when there is one, from the work of the run: claude -p in the worktree, with
-// read-only tools. It returns why there is no text when Claude cannot give it.
-func askForShipText(ctx context.Context, r store.Run, w store.Worktree, ask shipAsk) (shipAnswer, string) {
+// read-only tools and the MCP servers of the run defaults of the plot, as
+// [mcpArgs] says. It returns why there is no text when Claude cannot give it.
+func (sh *shipper) askForShipText(ctx context.Context, w store.Worktree, ask shipAsk) (shipAnswer, string) {
+	r := sh.r
 	if !claudebin.Trusted(r.Folder) {
 		return shipAnswer{}, fmt.Sprintf("Claude Code does not trust %s. Run claude in it once and choose Yes", r.Folder)
 	}
@@ -194,10 +196,20 @@ func askForShipText(ctx context.Context, r store.Run, w store.Worktree, ask ship
 	if err != nil {
 		return shipAnswer{}, err.Error()
 	}
+	defaults, err := sh.s.GetRunDefaults(r.PlotID)
+	if err != nil {
+		return shipAnswer{}, err.Error()
+	}
+	mcpFlags, removeConfig, err := mcpArgs(defaults.MCPServers)
+	if err != nil {
+		return shipAnswer{}, err.Error()
+	}
+	defer removeConfig()
 	ctx, cancel := context.WithTimeout(ctx, prTextTimeout)
 	defer cancel()
 	args := []string{"-p", shipTextPrompt(ctx, r, w, ask), "--output-format", "json", "--json-schema", shipTextSchema(ask.template != ""),
 		"--no-session-persistence", "--tools", "Read,Grep,Glob"}
+	args = append(args, mcpFlags...)
 	if r.Shape != nil {
 		if r.Shape.Model != "" {
 			args = append(args, "--model", r.Shape.Model)

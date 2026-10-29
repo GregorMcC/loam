@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "loam run defaults --json",
-  "description": "The run defaults of the plot, after the command applied any flag. A plot with none has empty strings.",
+  "description": "The run defaults of the plot, after the command applied any flag. A plot with none has empty strings and no MCP servers.",
   "type": "object",
   "additionalProperties": false,
   "required": [
