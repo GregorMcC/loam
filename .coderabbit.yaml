@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# CodeRabbit reviews each PR. Its threads are the review: it comments, and it
+# does not request changes, so a review that is fixed and resolved does not
+# leave a stale "changes requested" on the PR. The "Protect main" ruleset
+# requires the CI checks only.
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  poem: false
+  path_filters:
+    # scripts/gen-loam-theme.py writes these from docs/design/tokens.json, and
+    # LoamThemeTests checks them. Review the tokens and the script instead.
+    - "!app/Sources/LoamKit/Theme/LoamTheme.swift"
+    - "!app/Resources/ghostty-themes/**"
+    - "!docs/images/**"

@@ -12,7 +12,7 @@
 
 ## Tests
 
-- [ ] `go vet ./...` and `go test ./...` pass in `core/`.
+- [ ] `scripts/check.sh` passes.
 - [ ] `swift test` passes in `app/`. For an app change, I built GhosttyKit first, so the driver tests ran.
 - [ ] For a change to the CLI JSON, I changed `docs/contract.md`, the schema, and the fixtures.
 - [ ] For a change to a design rule, I changed `docs/design/`.
