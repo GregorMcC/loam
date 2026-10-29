@@ -101,6 +101,21 @@ func runSettings(runID string, box sandbox.Rules) settingsFunc {
 	}
 }
 
+// RunSandboxNote returns what the stacks of the run need in the sandbox, or ""
+// when they need nothing. The first prompt of the run says it, and the run
+// hook says it again after a compact, which can drop that prompt.
+func RunSandboxNote(s *store.Store, r store.Run) (string, error) {
+	plot, err := s.GetPlot(r.PlotID)
+	if err != nil {
+		return "", err
+	}
+	box, err := runRules(s, plot, r.Folder)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(box.Prompt()), nil
+}
+
 // runRules returns the sandbox rules of a run that works in folder.
 func runRules(s *store.Store, plot store.Plot, folder string) (sandbox.Rules, error) {
 	home, err := os.UserHomeDir()

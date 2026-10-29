@@ -406,3 +406,24 @@ func TestRunMaxTriesStaysUnderTheBlockCapOfClaudeCode(t *testing.T) {
 		t.Fatalf("err %v", err)
 	}
 }
+
+// TAS-175: a compact can drop the first prompt from the context of a session,
+// so the run hook prints the sandbox note again after a compact, with the seed.
+func TestRunHookPrintsTheSandboxNoteAfterACompact(t *testing.T) {
+	_, p := runCLI(t)
+	if err := os.WriteFile(filepath.Join(p.Repos[0].Path, "Package.swift"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := startRun(t, "Fix the thing")
+	const id = "c57ef956-3136-4e86-bfde-da8facfe0523"
+	for source, want := range map[string]bool{"startup": false, "compact": true} {
+		in := `{"hook_event_name":"SessionStart","session_id":"` + id + `","source":"` + source + `","cwd":"` + r.Folder + `"}`
+		out, _, err := lrRun(t, in, "run", "hook", r.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.Contains(out, "--disable-sandbox"); got != want {
+			t.Errorf("%s: sandbox note printed %v, want %v: %q", source, got, want, out)
+		}
+	}
+}

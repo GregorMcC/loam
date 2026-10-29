@@ -238,3 +238,36 @@ func TestPromptNamesWhatTheSandboxNeeds(t *testing.T) {
 		t.Errorf("Prompt = %q, want none", got)
 	}
 }
+
+// macOS folders are not case sensitive, so a link to ~/.SSH is still the
+// credential folder.
+func TestForComparesPathsWithNoCase(t *testing.T) {
+	repo := realTemp(t)
+	home := realTemp(t)
+	got := mustFor(t, Input{Home: home, Folder: repo, Links: []string{
+		filepath.Join(home, ".SSH"), filepath.Join(strings.ToUpper(home), ".aws", "x"), strings.ToUpper(home),
+	}, Getenv: noEnv})
+	if len(got.Read) != 3 {
+		t.Errorf("Read = %q, want only the folder and the git config", got.Read)
+	}
+}
+
+// The .git file of a worktree names its git folder. A run that points it at a
+// folder of its own could make the git commands of Loam run a hook or a
+// config command outside the sandbox. So the file is write-denied.
+func TestForDeniesWritesToTheGitFileOfAWorktree(t *testing.T) {
+	work := realTemp(t)
+	mkfile(t, filepath.Join(work, ".git"))
+	got := mustFor(t, Input{Home: "/h", Folder: work, Getenv: noEnv})
+	if !slices.Contains(got.DenyWrite, filepath.Join(work, ".git")) {
+		t.Errorf("DenyWrite = %q, want the .git file", got.DenyWrite)
+	}
+	repo := realTemp(t)
+	if err := os.Mkdir(filepath.Join(repo, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got = mustFor(t, Input{Home: "/h", Folder: repo, GitDir: filepath.Join(repo, ".git"), Getenv: noEnv})
+	if slices.Contains(got.DenyWrite, filepath.Join(repo, ".git")) {
+		t.Errorf("DenyWrite = %q denies the git folder of a checkout", got.DenyWrite)
+	}
+}

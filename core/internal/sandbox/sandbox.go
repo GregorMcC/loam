@@ -164,6 +164,12 @@ func For(in Input) (Rules, error) {
 	for _, p := range in.NoWrite {
 		deny.add(Real(p))
 	}
+	if dotgit := filepath.Join(Real(in.Folder), ".git"); isFile(dotgit) {
+		// The .git file of a worktree names its git folder. Pointed at a
+		// folder of the run, it would make the next git command of Loam run
+		// a hook or a config command of the run outside the sandbox.
+		deny.add(dotgit)
+	}
 	if git := Real(in.GitDir); git != "" {
 		// A hook or a config that the run writes would run outside the
 		// sandbox, in the next git command of Loam or of the user.
@@ -174,21 +180,28 @@ func For(in Input) (Rules, error) {
 }
 
 // opens reports whether allowing path would open what the sandbox denies:
-// the root, home, a folder above home, or a path in a credential folder.
+// the root, home, a folder above home, or a path in a credential folder. It
+// ignores case, because macOS folders are not case sensitive by default.
 func opens(home, path string) bool {
 	if path == "" {
 		return false
 	}
-	if path == string(filepath.Separator) || path == home || strings.HasPrefix(home, path+string(filepath.Separator)) {
+	home, path = strings.ToLower(home), strings.ToLower(path)
+	if path == string(filepath.Separator) || within(home, path) {
 		return true
 	}
 	for _, c := range credentials {
-		c = filepath.Join(home, strings.TrimSuffix(strings.TrimPrefix(c, "~/"), "/**"))
-		if path == c || strings.HasPrefix(path, c+string(filepath.Separator)) {
+		c = filepath.Join(home, strings.ToLower(strings.TrimSuffix(strings.TrimPrefix(c, "~/"), "/**")))
+		if within(path, c) {
 			return true
 		}
 	}
 	return false
+}
+
+// within reports whether path is dir or a path inside it.
+func within(path, dir string) bool {
+	return path == dir || strings.HasPrefix(path, dir+string(filepath.Separator))
 }
 
 // Real resolves the symlinks of path. A path that does not exist yet keeps
@@ -220,6 +233,11 @@ func anyRepoHas(repos, files []string) bool {
 		}
 	}
 	return false
+}
+
+func isFile(path string) bool {
+	info, err := os.Lstat(path)
+	return err == nil && !info.IsDir()
 }
 
 func exists(path string) bool {
