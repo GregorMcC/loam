@@ -122,7 +122,7 @@ func startOne(ctx context.Context, s *store.Store, id, loam string) (*store.Run,
 		return nil, nil // another start took the slot first
 	case q.Resume != "":
 		if err := send(ctx, r, q.Resume); err != nil {
-			stopAfter(s, r.ID, fmt.Errorf("could not resume the session: %w", err))
+			_ = stopAfter(s, r.ID, fmt.Errorf("could not resume the session: %w", err))
 			if got, err := s.GetRun(r.ID); err == nil {
 				r = got
 			}

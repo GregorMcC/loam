@@ -66,7 +66,8 @@ func (w *writeTx) commit() error {
 	w.done = true
 	defer w.conn.Close()
 	if _, err := w.conn.ExecContext(context.Background(), "COMMIT"); err != nil {
-		w.conn.ExecContext(context.Background(), "ROLLBACK")
+		// The commit error is the one to report. The connection closes either way.
+		_, _ = w.conn.ExecContext(context.Background(), "ROLLBACK")
 		return fmt.Errorf("commit: %w", err)
 	}
 	if w.committed != nil {
@@ -80,7 +81,8 @@ func (w *writeTx) rollback() {
 		return
 	}
 	w.done = true
-	w.conn.ExecContext(context.Background(), "ROLLBACK")
+	// rollback runs after an error that the caller reports. The connection closes either way.
+	_, _ = w.conn.ExecContext(context.Background(), "ROLLBACK")
 	w.conn.Close()
 }
 
@@ -132,7 +134,8 @@ func (s *Store) readTx(fn func(q queryer) error) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	// A read transaction has nothing to undo, so a failed rollback loses nothing.
+	defer func() { _ = tx.Rollback() }()
 	return fn(tx)
 }
 

@@ -97,7 +97,7 @@ func newRunStartCmd() *cobra.Command {
 	f.StringVar(&o.Model, "model", "", "the Claude model of the session (default: the run defaults of the plot, then your Claude Code setting)")
 	f.StringVar(&o.Effort, "effort", "", "the effort level of the session: "+strings.Join(store.Efforts, ", ")+" (default: the run defaults of the plot, then your Claude Code setting)")
 	f.BoolVar(&o.ApproveSetup, "approve-setup", false, "approve the setup command of the repo when it is new or changed")
-	c.MarkFlagRequired("title")
+	must(c.MarkFlagRequired("title"))
 	return c
 }
 
@@ -140,7 +140,7 @@ func newRunShapeCmd() *cobra.Command {
 	f.IntVar(&o.MaxTries, "max-tries", store.DefaultMaxTries, "how many times the checks can fail before the run stops")
 	f.StringVar(&o.Model, "model", "", "the Claude model of the draft and of the session (default: the run defaults of the plot, then your Claude Code setting)")
 	f.StringVar(&o.Effort, "effort", "", "the effort level of the draft and of the session: "+strings.Join(store.Efforts, ", ")+" (default: the run defaults of the plot, then your Claude Code setting)")
-	c.MarkFlagRequired("title")
+	must(c.MarkFlagRequired("title"))
 	return c
 }
 

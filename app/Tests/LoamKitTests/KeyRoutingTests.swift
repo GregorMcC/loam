@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import Testing
 @testable import LoamKit
 
@@ -32,6 +32,19 @@ import Testing
         #expect(KeyChord.ghosttyTrigger("cmd+a+b") == nil)
         #expect(KeyChord.ghosttyTrigger("catch_all") == nil)
         #expect(KeyChord.ghosttyTrigger("cmd+shift") == nil)
+    }
+
+    @Test func takesTheFourModifiersOfAnEvent() {
+        #expect(KeyChord.Mods([.command, .shift, .option, .control]) == [.command, .shift, .option, .control])
+        #expect(KeyChord.Mods([.command, .capsLock, .function, .numericPad]) == .command)
+    }
+
+    @Test func readsTheChordOfAKeyEvent() throws {
+        let event = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [.command, .shift, .capsLock], timestamp: 0, windowNumber: 0,
+            context: nil, characters: "}", charactersIgnoringModifiers: "}", isARepeat: false, keyCode: 30))
+        // The chord keeps Shift and takes the unshifted character of the key.
+        #expect(KeyChord(event: event) == KeyChord([.command, .shift], "]"))
     }
 
     @Test func showsTheMacOSForm() {

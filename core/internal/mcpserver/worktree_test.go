@@ -83,7 +83,9 @@ func TestCreateAndListWorktrees(t *testing.T) {
 	var none struct {
 		Worktrees []any `json:"worktrees"`
 	}
-	json.Unmarshal([]byte(e.ok("list_worktrees", map[string]any{"plot": e.other.ID})), &none)
+	if err := json.Unmarshal([]byte(e.ok("list_worktrees", map[string]any{"plot": e.other.ID})), &none); err != nil {
+		t.Fatal(err)
+	}
 	if none.Worktrees == nil || len(none.Worktrees) != 0 {
 		t.Fatalf("%#v", none)
 	}
@@ -234,13 +236,17 @@ func TestListWorktreesRefresh(t *testing.T) {
 		} `json:"worktrees"`
 	}
 	var before listed
-	json.Unmarshal([]byte(e.ok("list_worktrees", nil)), &before)
+	if err := json.Unmarshal([]byte(e.ok("list_worktrees", nil)), &before); err != nil {
+		t.Fatal(err)
+	}
 	if w := before.Worktrees[0]; w.Stage != "" || w.PRCheckedAt != nil || len(testutil.FakeGHCalls(t)) != 0 {
 		t.Fatalf("a list with no refresh: %+v", w)
 	}
 
 	var after listed
-	json.Unmarshal([]byte(e.ok("list_worktrees", map[string]any{"refresh": true})), &after)
+	if err := json.Unmarshal([]byte(e.ok("list_worktrees", map[string]any{"refresh": true})), &after); err != nil {
+		t.Fatal(err)
+	}
 	if w := after.Worktrees[0]; w.Stage != "pushed_no_pr" || w.PR != nil || w.PRNote != "" || w.PRCheckedAt == nil ||
 		w.CompareURL != "https://github.com/example/widgets/compare/main...fix-login" {
 		t.Fatalf("%+v", w)

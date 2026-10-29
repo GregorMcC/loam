@@ -91,7 +91,10 @@ func sendToSocket(_ path: String, _ text: String, close: Bool = true) throws -> 
         let folder = folder()
         defer { folder.removeAll() }
         let box = EventBox()
-        let server = try PaneSocketServer(path: try folder.makePath()) { box.add($0) }
+        // On a busy machine, the default read timeout can end the slow connection before the test looks.
+        var options = PaneSocketServer.Options()
+        options.readTimeout = .seconds(60)
+        let server = try PaneSocketServer(path: try folder.makePath(), options: options) { box.add($0) }
         defer { server.close() }
         let open = try sendToSocket(server.path, #"{"event":"Stop","session_id":"slow","cwd":"/x","at":"t"}"#, close: false)
         _ = try sendToSocket(server.path, #"{"event":"Stop","session_id":"fast","cwd":"/x","at":"t"}"# + "\n")

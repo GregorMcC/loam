@@ -161,6 +161,14 @@ func writeEdits(cmd *cobra.Command, s *store.Store, plotArg string, expect map[s
 	return res, edits, item, nil
 }
 
+// must panics on err. Only a wrong flag name in Loam's own code makes a flag
+// call fail, so a test run finds it at once.
+func must(err error) {
+	if err != nil {
+		panic(err)
+	}
+}
+
 // printJSON writes v as indented JSON to the command's output.
 func printJSON(cmd *cobra.Command, v any) error {
 	enc := json.NewEncoder(cmd.OutOrStdout())

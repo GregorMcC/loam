@@ -71,7 +71,8 @@ func WritePlot(s *store.Store, p store.Plot) error {
 	if err := syscall.Flock(int(d.Fd()), syscall.LOCK_EX); err != nil {
 		return err
 	}
-	defer syscall.Flock(int(d.Fd()), syscall.LOCK_UN)
+	// Closing d also releases the lock, so a failed unlock leaves nothing held.
+	defer func() { _ = syscall.Flock(int(d.Fd()), syscall.LOCK_UN) }()
 	if cur, err := ReadRevision(path); err == nil && cur > p.Revision {
 		return nil
 	}

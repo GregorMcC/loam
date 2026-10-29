@@ -208,6 +208,12 @@ func TestCheckChangesNothing(t *testing.T) {
 	testutil.Git(t, other, "checkout", "-b", "unfetched")
 	testutil.Git(t, other, "push", "origin", "unfetched")
 	before := refs(t, e.repo)
+	same := func() {
+		t.Helper()
+		if after := refs(t, e.repo); after != before {
+			t.Fatalf("a dry run moved refs:\n%s\nwant:\n%s", after, before)
+		}
+	}
 
 	check := func(name string) *worktree.CheckResult {
 		t.Helper()
@@ -232,6 +238,7 @@ func TestCheckChangesNothing(t *testing.T) {
 	if got := check("develop"); !got.ValidName || !got.BranchExists {
 		t.Fatalf("local and remote branch: %+v", got)
 	}
+	same()
 	testutil.Git(t, e.repo, "branch", "local-only")
 	before = refs(t, e.repo)
 	if got := check("local-only"); !got.BranchExists {
@@ -241,15 +248,13 @@ func TestCheckChangesNothing(t *testing.T) {
 	if got := check("unfetched"); got.BranchExists {
 		t.Fatalf("unfetched branch: %+v", got)
 	}
+	same()
 	e.create("taken", "")
 	before = refs(t, e.repo)
 	if got := check("taken"); !got.WorktreeExists {
 		t.Fatalf("existing worktree: %+v", got)
 	}
-
-	if after := refs(t, e.repo); after != before {
-		t.Fatalf("a dry run moved refs:\n%s\nwant:\n%s", after, before)
-	}
+	same()
 	if ws, _ := e.s.ListWorktrees(e.plot.ID); len(ws) != 1 {
 		t.Fatalf("records %+v", ws)
 	}

@@ -137,8 +137,12 @@ func TestWorktreeRecordsAreNotChanges(t *testing.T) {
 	p := newPlot(t, s, "A")
 	before, _ := s.ListChanges(store.ChangeQuery{PlotID: p.ID})
 	w, _ := s.AddWorktree(store.Worktree{PlotID: p.ID, Repo: "/work/app", Name: "n", Branch: "n", Path: "/p"})
-	s.MarkWorktreeSetup(w.ID)
-	s.RemoveWorktree(w.ID)
+	if err := s.MarkWorktreeSetup(w.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RemoveWorktree(w.ID); err != nil {
+		t.Fatal(err)
+	}
 	after, _ := s.ListChanges(store.ChangeQuery{PlotID: p.ID})
 	if len(after) != len(before) {
 		t.Fatalf("change log grew from %d to %d", len(before), len(after))

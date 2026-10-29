@@ -48,7 +48,9 @@ func TestRepoSettingsFlags(t *testing.T) {
 		ChangeID int64      `json:"change_id"`
 		Repo     store.Repo `json:"repo"`
 	}
-	json.Unmarshal([]byte(out), &edited)
+	if err := json.Unmarshal([]byte(out), &edited); err != nil {
+		t.Fatal(err)
+	}
 	if edited.ChangeID != 0 || edited.Repo.Setup != "npm ci" || len(edited.Repo.Copy) != 2 {
 		t.Fatalf("%+v", edited)
 	}
@@ -188,7 +190,9 @@ func TestWorktreeNewListRm(t *testing.T) {
 	}
 
 	// Remove: a dirty worktree is refused, a pane blocks even with --force, then it goes.
-	os.WriteFile(filepath.Join(w.Path, "x.txt"), []byte("x"), 0o644)
+	if err := os.WriteFile(filepath.Join(w.Path, "x.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if _, _, err := lrRun(t, "", "worktree", "rm", "alpha", "fix-x"); !errors.Is(err, worktree.ErrUnsafe) {
 		t.Fatalf("%v", err)
 	}
@@ -207,7 +211,9 @@ func TestWorktreeNewListRm(t *testing.T) {
 	if ws, _ := s.ListWorktrees(p.ID); len(ws) != 1 {
 		t.Fatalf("the dry run removed the worktree: %v", ws)
 	}
-	os.WriteFile(filepath.Join(w.Path, "x.txt"), []byte("x"), 0o644)
+	if err := os.WriteFile(filepath.Join(w.Path, "x.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	out, _, err = lrRun(t, "", "worktree", "rm", "alpha", "fix-x", "--force", "--open-pane", repo, "--json")
 	if err != nil {
 		t.Fatal(err)

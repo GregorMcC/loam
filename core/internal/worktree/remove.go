@@ -182,7 +182,10 @@ func Remove(s *store.Store, plotID, arg string, o RemoveOptions) (*RemoveResult,
 	}
 
 	if st.Missing {
-		git(w.Repo, "worktree", "prune")
+		// The folder is gone. A failed prune leaves only a stale git entry that
+		// the next prune clears, and an error here could keep a record of a
+		// repo that is gone.
+		_, _ = git(w.Repo, "worktree", "prune")
 	} else {
 		args := []string{"worktree", "remove"}
 		if o.Force {

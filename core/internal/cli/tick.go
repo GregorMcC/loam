@@ -89,7 +89,7 @@ func newTickCmd() *cobra.Command {
 		},
 	}
 	c.Flags().StringVar(&now, "now", "", "the time of the tick, in RFC 3339 (for tests)")
-	c.Flags().MarkHidden("now")
+	must(c.Flags().MarkHidden("now"))
 	c.AddCommand(newTickInstallCmd(), newTickUninstallCmd(), newTickStatusCmd())
 	return c
 }

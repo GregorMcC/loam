@@ -28,7 +28,7 @@ func main() {
 		if logPath != "" {
 			line, _ := json.Marshal(in)
 			if f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
-				f.Write(append(line, '\n'))
+				_, _ = f.Write(append(line, '\n'))
 				f.Close()
 			}
 		}

@@ -90,7 +90,7 @@ func newRecurringAddCmd() *cobra.Command {
 	f.StringVar(&r.Effort, "effort", "", "the effort level of the runs: "+strings.Join(store.Efforts, ", ")+" (default: the run defaults of the plot, then your Claude Code setting)")
 	f.BoolVar(&approve, "approve-setup", false, "approve the setup command of the repo now, for a chore")
 	for _, name := range []string{"title", "prompt", "kind", "days", "at"} {
-		c.MarkFlagRequired(name)
+		must(c.MarkFlagRequired(name))
 	}
 	return c
 }

@@ -63,7 +63,7 @@ func parseUsage(raw []byte) (store.Usage, bool) {
 // reports. A usage that Loam cannot record is lost: it does not stop the
 // call that reported it.
 func usageRecorder(s *store.Store) func(store.Usage) {
-	return func(u store.Usage) { s.RecordUsage(u, time.Now()) }
+	return func(u store.Usage) { _, _ = s.RecordUsage(u, time.Now()) }
 }
 
 // ProbeUsage asks Claude Code for its usage with a small claude -p call in

@@ -213,7 +213,9 @@ func TestLandStopsAtEachBlockingCheck(t *testing.T) {
 		{check: worktree.CheckBehindBase, state: worktree.StateBehind, from: `"mergeStateStatus": "CLEAN"`, to: `"mergeStateStatus": "BEHIND"`},
 		{check: worktree.CheckGitHub, state: worktree.StateBlocked, from: `"mergeStateStatus": "CLEAN"`, to: `"mergeStateStatus": "BLOCKED"`},
 		{check: worktree.CheckLocalChanges, state: worktree.StateChanged, local: func(t *testing.T, w store.Worktree) {
-			os.WriteFile(filepath.Join(w.Path, "notes.txt"), []byte("n\n"), 0o644)
+			if err := os.WriteFile(filepath.Join(w.Path, "notes.txt"), []byte("n\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
 		}},
 		{check: worktree.CheckUnpushedCommits, state: worktree.StateUnpushed, local: func(t *testing.T, w store.Worktree) {
 			commit(t, w.Path, "more.txt", "m\n")

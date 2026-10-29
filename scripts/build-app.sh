@@ -76,10 +76,14 @@ mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$bin" "$app/Contents/MacOS/Loam"
 # The Ghostty resources: themes and shell integration in ghostty/, and terminfo beside it.
 share="${LOAM_VENDOR:-$root/app/vendor}/ghostty-share"
+# fail must run when either test is false.
+# shellcheck disable=SC2015
 [ -d "$share/ghostty" ] && [ -d "$share/terminfo" ] ||
   fail "No Ghostty resources in $share. Run scripts/build-ghosttykit.sh, then this script again."
 cp -R "$share/ghostty" "$share/terminfo" "$app/Contents/Resources/"
 # The Loam Night and Day terminal themes. The app writes a defaults file that points here.
+# fail must run when either test is false.
+# shellcheck disable=SC2015
 [ -f "$root/app/Resources/ghostty-themes/loam-night" ] && [ -f "$root/app/Resources/ghostty-themes/loam-day" ] ||
   fail "The Loam themes are missing in app/Resources/ghostty-themes. Run scripts/gen-loam-theme.py."
 cp -R "$root/app/Resources/ghostty-themes" "$app/Contents/Resources/"
