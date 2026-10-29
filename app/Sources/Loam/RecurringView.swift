@@ -274,6 +274,8 @@ private struct RunDefaultsSection: View {
     /// What the pickers held when the page last asked the core to save, or when it loaded them. A save of the same
     /// pick is not needed, and the core may not have answered the last save yet.
     @State private var requested = Choice(model: "", effort: "", servers: [])
+    /// True once the pickers hold what the core saved. Before that, a pick does not save: the pickers are empty.
+    @State private var loaded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: LoamTheme.space3) {
@@ -303,10 +305,11 @@ private struct RunDefaultsSection: View {
             chosenModel = requested.model
             chosenEffort = requested.effort
             chosenServers = requested.servers
+            loaded = true
             await model.readMCPServers()
         }
         .onChange(of: Choice(model: chosenModel, effort: chosenEffort, servers: chosenServers)) { _, now in
-            guard model.runDefaults?.plotID == plotID, requested != now else { return }
+            guard loaded, requested != now else { return }
             requested = now
             Task { await model.setRunDefaults(plot: plotID, model: now.model, effort: now.effort, mcpServers: now.servers) }
         }

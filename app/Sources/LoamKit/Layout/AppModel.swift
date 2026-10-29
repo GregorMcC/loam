@@ -183,8 +183,9 @@ public final class AppModel {
     public internal(set) var runDefaults: RunDefaults?
     /// The MCP servers that `--mcp` can select, as the core last read them. Nil when the last read failed.
     public internal(set) var mcpServers: [MCPServer]?
-    /// The run defaults to save next, while a save runs. A later request replaces an earlier one that waits.
-    var pendingRunDefaults: RunDefaultsRequest?
+    /// The run defaults to save next, by plot, while a save runs. A later request replaces an earlier one of the same
+    /// plot that waits.
+    var pendingRunDefaults: [String: RunDefaultsRequest] = [:]
     /// True while a save of run defaults runs, so the saves go one after the other.
     var isSavingRunDefaults = false
     /// Why the run defaults could not be saved, for the Recurring page.

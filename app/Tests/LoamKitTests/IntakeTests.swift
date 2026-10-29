@@ -173,6 +173,19 @@ import Testing
         #expect(saves.count == 2 && saves.last?.contains("--mcp a,b") == true)
     }
 
+    /// A pick for another plot does not replace a pick that waits for a plot.
+    @Test func aWaitingSaveOfOnePlotSurvivesASaveOfAnother() async throws {
+        let (model, fake) = try model([("run_defaults_set_mcp", 0), ("run_defaults_set_mcp", 0), ("run_defaults_set_mcp", 0)])
+        let first = Task { await model.setRunDefaults(plot: "plotaaaaae", model: "", effort: "", mcpServers: ["a"]) }
+        let second = Task { await model.setRunDefaults(plot: "plotaaaaae", model: "", effort: "", mcpServers: ["a", "b"]) }
+        let other = Task { await model.setRunDefaults(plot: "plotaaaaaf", model: "", effort: "", mcpServers: ["c"]) }
+        await first.value
+        await second.value
+        await other.value
+        let saves = fake.args().filter { $0.hasPrefix("run defaults") }
+        #expect(saves.count == 3 && saves.contains { $0.contains("--mcp a,b") && $0.hasSuffix("plotaaaaae") })
+    }
+
     /// A failed read leaves no list, not the last one.
     @Test func aFailedReadOfTheMCPServersLeavesNone() async throws {
         let (model, _) = try model([("run_mcp_servers", 0), ("error_generic", 1)])

@@ -115,15 +115,15 @@ extension AppModel {
 
     /// Sets the model, the effort, and the MCP servers that a run of the plot gets when it names none. "" clears the
     /// model or the effort, and no name clears the servers.
-    /// Saves go one after the other, and the last request is the last one written: while a save runs, a new request
-    /// waits and replaces an older one that waits.
+    /// Saves go one after the other, and the last request of a plot is the last one written: while a save runs, a new
+    /// request waits and replaces an older one of the same plot that waits.
     public func setRunDefaults(plot: String, model: String, effort: String, mcpServers: [String]) async {
-        pendingRunDefaults = RunDefaultsRequest(plot: plot, model: model, effort: effort, mcpServers: mcpServers)
+        pendingRunDefaults[plot] = RunDefaultsRequest(plot: plot, model: model, effort: effort, mcpServers: mcpServers)
         guard !isSavingRunDefaults else { return }
         isSavingRunDefaults = true
         defer { isSavingRunDefaults = false }
-        while let request = pendingRunDefaults {
-            pendingRunDefaults = nil
+        while let request = pendingRunDefaults.values.first {
+            pendingRunDefaults[request.plot] = nil
             do {
                 runDefaults = try await client.setRunDefaults(
                     plot: request.plot, model: request.model, effort: request.effort, mcpServers: request.mcpServers)
