@@ -64,6 +64,24 @@ func TestReviewPromptKeepsToItsSize(t *testing.T) {
 	}
 }
 
+// A point in a review body has no thread, so a point that stays as it is gets a comment on the PR, with or without threads.
+func TestReviewPromptAsksForAPRCommentForTheBodyOfAReview(t *testing.T) {
+	const comment = "gh pr comment 7 --body-file <file>"
+	body := &github.PR{Number: 7, ReviewDecision: changesRequested, ChangeRequests: []github.Review{{ID: "R", Body: "Fix it."}}}
+	if prompt, _ := reviewPrompt(store.Run{}, body, reviewOf(store.Run{}, body)); !strings.Contains(prompt, comment) || strings.Contains(prompt, "resolveReviewThread") {
+		t.Errorf("body only:\n%s", prompt)
+	}
+	both := &github.PR{Number: 7, ReviewDecision: changesRequested, ChangeRequests: body.ChangeRequests,
+		ReviewThreads: []github.ReviewThread{{ID: "T1", Comments: []github.ReviewComment{{Author: "alice", Writer: true, Body: "Check the error."}}}}}
+	if prompt, _ := reviewPrompt(store.Run{}, both, reviewOf(store.Run{}, both)); !strings.Contains(prompt, comment) || !strings.Contains(prompt, "resolveReviewThread") {
+		t.Errorf("body and thread:\n%s", prompt)
+	}
+	threads := &github.PR{Number: 7, ReviewDecision: changesRequested, ReviewThreads: both.ReviewThreads}
+	if prompt, _ := reviewPrompt(store.Run{}, threads, reviewOf(store.Run{}, threads)); strings.Contains(prompt, comment) {
+		t.Errorf("threads only:\n%s", prompt)
+	}
+}
+
 // The text of a comment by someone who cannot push to the repo does not go to the session. The thread does.
 func TestReviewPromptLeavesOutTheTextOfACommentByAReader(t *testing.T) {
 	pr := &github.PR{Number: 7, ReviewDecision: changesRequested, ReviewThreads: []github.ReviewThread{{ID: "T1", Path: "a.go", Line: 3,

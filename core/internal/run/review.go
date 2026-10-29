@@ -159,10 +159,19 @@ func reviewPrompt(r store.Run, pr *github.PR, rv review) (prompt string, held re
 	}
 	// skip says which points need no change, and that no change needs no commit.
 	const skip = "A nitpick or a Minor point whose fix is not worth it needs no change. When no point needs a change, make no commit. "
-	if len(rv.threads) == 0 {
-		b.WriteString("\nFix each point that needs a change, and commit all the fixes in one commit. " + skip + "Then end your turn. ")
+	// A point in the body of a review has no thread to reply on, so the reply
+	// is one comment on the PR for all of them.
+	body := ""
+	if len(held.requests) > 0 {
+		body = fmt.Sprintf("For the points in a review body that stay as they are, say why in one comment on the PR: "+
+			"write it to a file, then run gh pr comment %d --body-file <file>. ", pr.Number)
+	}
+	// With a cut prompt, the threads that the session reads with threadsQuery
+	// need replies too.
+	if len(held.threads) == 0 && !cut {
+		b.WriteString("\nFix each point that needs a change, and commit all the fixes in one commit. " + skip + body + "Then end your turn. ")
 	} else {
-		b.WriteString("\nFor each point, fix the code or decide that it needs no change. Commit all the fixes in one commit. " + skip +
+		b.WriteString("\nFor each point, fix the code or decide that it needs no change. Commit all the fixes in one commit. " + skip + body +
 			"Then reply on each thread with what you did or why the code stays, and resolve the thread:\n\n```\n" +
 			`gh api graphql -f query='mutation($id: ID!, $body: String!) { addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: $id, body: $body}) { comment { url } } }' -f id=<thread ID> -f body=<reply>` + "\n" +
 			`gh api graphql -f query='mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { isResolved } } }' -f id=<thread ID>` + "\n" +
