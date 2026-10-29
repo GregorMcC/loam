@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"strings"
 )
 
 // MCPConfig returns an MCP config for claude --mcp-config that holds only
@@ -24,6 +25,16 @@ import (
 // local scope is keyed by folder, a run works in a worktree, and git has
 // more than one layout of a worktree and its main checkout. The user scope is
 // the same for each folder.
+//
+// A server with a headersHelper is an error. Claude Code 2.1.238 and later
+// runs the headersHelper of a user-scope server in the config folder, but
+// that of an --mcp-config server in the folder of the session (see "Where
+// the helper runs" in the Claude Code MCP docs). The session folder is the
+// worktree of a run, so a relative path in a copied helper could run a file
+// that the run or a PR wrote. A helper is a shell command, so Loam cannot
+// tell whether it has a relative path. The command and args of a stdio
+// server run in the session folder from either scope. The session of the run
+// runs them in the same worktree, so --mcp-config changes nothing for them.
 func MCPConfig(names []string) (string, error) {
 	chosen := map[string]json.RawMessage{}
 	if len(names) > 0 {
@@ -37,6 +48,10 @@ func MCPConfig(names []string) (string, error) {
 				return "", fmt.Errorf("the MCP server %q is not in the user scope of the Claude Code config, the only scope that Loam reads. "+
 					"Add it with claude mcp add --scope user, or change loam run defaults --mcp", n)
 			}
+			if hasHelper(def) {
+				return "", fmt.Errorf("the MCP server %q has a headersHelper, which claude -p would run in the folder of the run, not in the Claude Code config folder. "+
+					"Loam does not copy a server with a headersHelper. Leave it out of loam run defaults --mcp", n)
+			}
 			chosen[n] = def
 		}
 	}
@@ -45,6 +60,23 @@ func MCPConfig(names []string) (string, error) {
 		panic(err)
 	}
 	return string(b), nil
+}
+
+// hasHelper reports whether the server definition def has a headersHelper.
+// It fails closed on the key: a key that is headersHelper in any case, with
+// any value but null, counts. A definition that is not an object has no
+// keys, so it has no helper, and Claude Code rejects it as it would anyway.
+func hasHelper(def json.RawMessage) bool {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(def, &fields) != nil {
+		return false
+	}
+	for k, v := range fields {
+		if strings.EqualFold(k, "headersHelper") && strings.TrimSpace(string(v)) != "null" {
+			return true
+		}
+	}
+	return false
 }
 
 // userServers returns the MCP servers of the user scope. A config file that

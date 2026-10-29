@@ -95,3 +95,41 @@ func TestMCPConfigReadsOnlyTheUserScope(t *testing.T) {
 		}
 	}
 }
+
+// From --mcp-config, Claude Code runs a headersHelper in the session folder,
+// the worktree of the run, not in the config folder. A server with one is an
+// error, whatever the helper is.
+func TestMCPConfigRejectsAServerWithAHelper(t *testing.T) {
+	cfg := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", cfg)
+	http := func(extra map[string]any) map[string]any {
+		def := map[string]any{"type": "http", "url": "https://example.com/mcp"}
+		for k, v := range extra {
+			def[k] = v
+		}
+		return def
+	}
+	writeJSON(t, filepath.Join(cfg, ".claude.json"), map[string]any{"mcpServers": map[string]any{
+		"relative": http(map[string]any{"headersHelper": "./auth.sh"}),
+		"absolute": http(map[string]any{"headersHelper": "/usr/local/bin/token"}),
+		"headers":  http(map[string]any{"headers": map[string]string{"Authorization": "Bearer x"}}),
+		"null":     http(map[string]any{"headersHelper": nil}),
+		"empty":    http(map[string]any{"headersHelper": " "}),
+		"cased":    http(map[string]any{"HeadersHelper": "./auth.sh"}),
+		"list":     http(map[string]any{"headersHelper": []string{"./auth.sh"}}),
+		"odd":      "not an object",
+	}})
+	// Any value but null counts, so a value that Loam cannot read is not copied.
+	for _, name := range []string{"relative", "absolute", "empty", "cased", "list"} {
+		if _, err := claudebin.MCPConfig([]string{name}); err == nil || !strings.Contains(err.Error(), `"`+name+`"`) || !strings.Contains(err.Error(), "headersHelper") {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	got, err := claudebin.MCPConfig([]string{"headers", "null", "odd"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, `"Authorization":"Bearer x"`) || !strings.Contains(got, `"odd":"not an object"`) {
+		t.Fatalf("config %s", got)
+	}
+}

@@ -679,6 +679,7 @@ func newRunDefaultsCmd() *cobra.Command {
 		Long: "A run, a Shape run, and a recurring run of the plot use these defaults when they name no model or effort. Empty means your Claude Code setting.\n" +
 			"--mcp names the MCP servers, comma-separated, that claude -p loads when it drafts a run or writes the PR text. Loam copies each one from the user scope of your Claude Code config " +
 			"(claude mcp add --scope user). It does not read .mcp.json, which a PR or a run can change and whose approval --mcp-config skips, or a local scope, which is keyed by folder while a run works in a worktree. " +
+			"A server with a headersHelper cannot be selected, because claude -p would run the helper in the worktree. " +
 			"claude.ai connectors are not in a local config file, so you cannot select them. " +
 			"The tools of a selected server run as your Claude Code permissions allow, so a tool that your settings allow can write. " +
 			"Empty means no MCP server. A name that Loam cannot find stops the draft.\n" +
