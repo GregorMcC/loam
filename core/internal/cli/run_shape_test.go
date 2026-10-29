@@ -74,8 +74,6 @@ func TestRunShapeDraftsTheGoalAndTheChecksWithClaude(t *testing.T) {
 	if realPath(t, inv.Cwd) != realPath(t, repo) {
 		t.Fatalf("cwd %s", inv.Cwd)
 	}
-	// With no MCP servers in the run defaults, it loads none: no claude.ai
-	// connector and no server of the Claude Code config.
 	for _, want := range [][]string{{"-p"}, {"--output-format", "stream-json", "--verbose"}, {"--no-session-persistence"}, {"--tools", "Read,Grep,Glob"},
 		{"--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`}} {
 		if !containsRun(inv.Args, want) {
@@ -112,17 +110,24 @@ func TestRunShapeLoadsOnlyTheMCPServersOfTheRunDefaults(t *testing.T) {
 	if r.Shape.DraftedAt == nil {
 		t.Fatalf("no draft: %q", r.Note)
 	}
-	args := testutil.FakeClaudeInvocation(t).Args
-	if !slices.Contains(args, "--strict-mcp-config") {
-		t.Fatalf("args %q", args)
+	// The config is a file, not an argument, because a definition can hold a
+	// token. Loam removes the file when claude ends.
+	inv := testutil.FakeClaudeInvocation(t)
+	if !slices.Contains(inv.Args, "--strict-mcp-config") || strings.Contains(strings.Join(inv.Args, " "), "loam-cmd") {
+		t.Fatalf("args %q", inv.Args)
+	}
+	if path := argAfter(inv.Args, "--mcp-config"); !filepath.IsAbs(path) {
+		t.Errorf("mcp config path %q", path)
+	} else if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("the mcp config file stays: %v", err)
 	}
 	var config struct {
 		MCPServers map[string]struct {
 			Command string `json:"command"`
 		} `json:"mcpServers"`
 	}
-	if err := json.Unmarshal([]byte(argAfter(args, "--mcp-config")), &config); err != nil {
-		t.Fatalf("%v: %q", err, args)
+	if err := json.Unmarshal([]byte(inv.MCPConfig), &config); err != nil {
+		t.Fatalf("%v: %q", err, inv.MCPConfig)
 	}
 	if len(config.MCPServers) != 1 || config.MCPServers["loam"].Command != "loam-cmd" {
 		t.Fatalf("servers %+v", config.MCPServers)

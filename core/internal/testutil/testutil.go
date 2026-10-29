@@ -64,6 +64,9 @@ type Invocation struct {
 	Args []string          `json:"args"`
 	Env  map[string]string `json:"env"`
 	Cwd  string            `json:"cwd"`
+	// MCPConfig is the config of --mcp-config: the JSON, or what the file
+	// held. It is empty with no --mcp-config.
+	MCPConfig string `json:"mcp_config"`
 }
 
 // FakeClaude builds a fake `claude`, puts its folder first on PATH for the

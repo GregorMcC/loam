@@ -200,10 +200,11 @@ func (sh *shipper) askForShipText(ctx context.Context, w store.Worktree, ask shi
 	if err != nil {
 		return shipAnswer{}, err.Error()
 	}
-	mcpFlags, err := mcpArgs(r.Folder, defaults.MCPServers)
+	mcpFlags, removeConfig, err := mcpArgs(defaults.MCPServers)
 	if err != nil {
 		return shipAnswer{}, err.Error()
 	}
+	defer removeConfig()
 	ctx, cancel := context.WithTimeout(ctx, prTextTimeout)
 	defer cancel()
 	args := []string{"-p", shipTextPrompt(ctx, r, w, ask), "--output-format", "json", "--json-schema", shipTextSchema(ask.template != ""),

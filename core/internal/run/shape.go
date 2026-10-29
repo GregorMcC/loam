@@ -477,10 +477,11 @@ func askClaude(ctx context.Context, r store.Run, dirs, mcp []string, prompt func
 	if err != nil {
 		return nil, err.Error()
 	}
-	mcpFlags, err := mcpArgs(r.Folder, mcp)
+	mcpFlags, removeConfig, err := mcpArgs(mcp)
 	if err != nil {
 		return nil, err.Error()
 	}
+	defer removeConfig()
 	ctx, cancel := context.WithTimeout(ctx, shapeTimeout)
 	defer cancel()
 	args := []string{"-p", prompt(ctx), "--output-format", "stream-json", "--verbose", "--json-schema", schema,
@@ -526,19 +527,59 @@ func askClaude(ctx context.Context, r store.Run, dirs, mcp []string, prompt func
 }
 
 // mcpArgs returns the claude -p flags that load only the MCP servers that
-// names gives, from the Claude Code config of dir, and no other server: no
+// names gives, as [claudebin.MCPConfig] finds them, and no other server: no
 // claude.ai connector, and no server of the user or the project that names
 // leaves out. --tools leaves out ToolSearch, so Claude Code puts the schema
 // of every MCP tool that it loads in each request, and with many connectors
 // on, that can fill the context before the draft ends. --tools limits only
 // the built-in tools: a selected server is your opt-in, and its tools run as
 // your Claude Code permissions allow.
-func mcpArgs(dir string, names []string) ([]string, error) {
-	config, err := claudebin.MCPConfig(dir, names)
+//
+// A config with servers goes in a file that only you can read, not on the
+// command line, because a server definition can hold a token in its env or
+// its headers, and any process can read the command line of another. The
+// config with no servers holds nothing secret, so it stays on the command
+// line. remove deletes the file: call it when claude -p has ended. A file
+// that a killed Loam left goes at the next call (see [sweepMCPConfigs]).
+func mcpArgs(names []string) (args []string, remove func(), err error) {
+	config, err := claudebin.MCPConfig(names)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return []string{"--strict-mcp-config", "--mcp-config", config}, nil
+	sweepMCPConfigs()
+	if len(names) == 0 {
+		return []string{"--strict-mcp-config", "--mcp-config", config}, func() {}, nil
+	}
+	f, err := os.CreateTemp("", mcpConfigPattern) // CreateTemp makes the file 0600
+	if err != nil {
+		return nil, nil, err
+	}
+	name := f.Name()
+	remove = func() { os.Remove(name) }
+	_, err = f.WriteString(config)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		remove()
+		return nil, nil, err
+	}
+	return []string{"--strict-mcp-config", "--mcp-config", name}, remove, nil
+}
+
+// mcpConfigPattern names the MCP config files of [mcpArgs] in the temp folder.
+const mcpConfigPattern = "loam-mcp-*.json"
+
+// sweepMCPConfigs removes the MCP config files that are older than any
+// claude -p call can run, such as a file of a Loam that was killed before it
+// removed it.
+func sweepMCPConfigs() {
+	old, _ := filepath.Glob(filepath.Join(os.TempDir(), mcpConfigPattern))
+	for _, path := range old {
+		if info, err := os.Stat(path); err == nil && time.Since(info.ModTime()) > 2*max(shapeTimeout, prTextTimeout) {
+			os.Remove(path)
+		}
+	}
 }
 
 // draftResult is the last message of claude -p: the draft, or why there is none.

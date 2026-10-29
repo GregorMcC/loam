@@ -98,7 +98,21 @@ func main() {
 			env[k] = v
 		}
 	}
-	b, _ := json.Marshal(map[string]any{"args": os.Args[1:], "env": env, "cwd": cwd})
+	// The --mcp-config value is JSON or a file. The file is gone when claude
+	// ends, so keep what it holds.
+	var mcpConfig string
+	if i := slices.Index(os.Args, "--mcp-config"); i > 0 && i+1 < len(os.Args) {
+		mcpConfig = os.Args[i+1]
+		if filepath.IsAbs(mcpConfig) {
+			b, err := os.ReadFile(mcpConfig)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "fakeclaude: --mcp-config:", err)
+				os.Exit(2)
+			}
+			mcpConfig = string(b)
+		}
+	}
+	b, _ := json.Marshal(map[string]any{"args": os.Args[1:], "env": env, "cwd": cwd, "mcp_config": mcpConfig})
 	if err := os.WriteFile(out, b, 0o644); err != nil {
 		fmt.Fprintln(os.Stderr, "fakeclaude:", err)
 		os.Exit(2)

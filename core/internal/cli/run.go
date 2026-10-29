@@ -677,9 +677,8 @@ func newRunDefaultsCmd() *cobra.Command {
 		Use:   "defaults <plot> [--model <model>] [--effort <level>] [--mcp <names>]",
 		Short: "Show or set the model, effort, and MCP servers that runs of a plot use",
 		Long: "A run, a Shape run, and a recurring run of the plot use these defaults when they name no model or effort. Empty means your Claude Code setting.\n" +
-			"--mcp names the MCP servers, comma-separated, that claude -p loads when it drafts a run or writes the PR text. Loam copies each one from your Claude Code config: " +
-			"the local scope of the main checkout of the repo, then the user scope, in .claude.json. " +
-			"Loam does not copy a project server from .mcp.json, because that skips its approval, or a server of the local scope of a worktree. " +
+			"--mcp names the MCP servers, comma-separated, that claude -p loads when it drafts a run or writes the PR text. Loam copies each one from the user scope of your Claude Code config " +
+			"(claude mcp add --scope user). It does not read .mcp.json, which a PR or a run can change and whose approval --mcp-config skips, or a local scope, which is keyed by folder while a run works in a worktree. " +
 			"claude.ai connectors are not in a local config file, so you cannot select them. " +
 			"The tools of a selected server run as your Claude Code permissions allow, so a tool that your settings allow can write. " +
 			"Empty means no MCP server. A name that Loam cannot find stops the draft.\n" +
@@ -725,7 +724,7 @@ func newRunDefaultsCmd() *cobra.Command {
 	f := c.Flags()
 	f.StringVar(&model, "model", "", "set the default model; empty clears it")
 	f.StringVar(&effort, "effort", "", "set the default effort level ("+strings.Join(store.Efforts, ", ")+"); empty clears it")
-	f.StringVar(&mcp, "mcp", "", "set the MCP servers that drafts and PR texts load, comma-separated, by name in the Claude Code config (not claude.ai connectors); empty clears it")
+	f.StringVar(&mcp, "mcp", "", "set the MCP servers that drafts and PR texts load, comma-separated, by name in the user scope of the Claude Code config (not claude.ai connectors); empty clears it")
 	return c
 }
 
