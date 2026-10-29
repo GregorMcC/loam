@@ -1101,6 +1101,40 @@
     "schema": "run-diff"
   },
   {
+    "name": "run_send_review_dry_run",
+    "args": [
+      "run",
+      "send-review",
+      "runraaaaac",
+      "--dry-run",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "run-send-review"
+  },
+  {
+    "name": "run_send_review",
+    "args": [
+      "run",
+      "send-review",
+      "runraaaaac",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "run-send-review"
+  },
+  {
+    "name": "error_run_send_review_nothing",
+    "args": [
+      "run",
+      "send-review",
+      "runraaaaac",
+      "--json"
+    ],
+    "exit_code": 2,
+    "schema": "error"
+  },
+  {
     "name": "run_send_back",
     "args": [
       "run",

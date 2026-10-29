@@ -1,0 +1,100 @@
+{
+  "pr": {
+    "approvals": 0,
+    "base": "main",
+    "behind_base": 0,
+    "change_requests": [],
+    "checks": {
+      "failed": 0,
+      "passed": 1,
+      "required": 1,
+      "required_passed": 1,
+      "running": 0,
+      "state": "SUCCESS",
+      "total": 1,
+      "waiting": 0
+    },
+    "comments": 1,
+    "commits": 0,
+    "draft": false,
+    "failed_checks": [],
+    "head": "tidy-the-readme",
+    "head_oid": "1234512345123451234512345123451234512345",
+    "in_merge_queue": false,
+    "merge_state": "CLEAN",
+    "mergeable": "MERGEABLE",
+    "number": 25,
+    "passed_checks": [
+      {
+        "duration": 0,
+        "name": "test",
+        "required": true,
+        "url": ""
+      }
+    ],
+    "queue_position": 0,
+    "review_decision": "",
+    "review_threads": [
+      {
+        "comments": [
+          {
+            "author": "alice",
+            "body": "Say what a plot is.",
+            "url": "https://github.com/example/widgets/pull/25#discussion_r1",
+            "writer": true
+          }
+        ],
+        "id": "PRRT_example",
+        "line": 3,
+        "path": "README.md",
+        "url": "https://github.com/example/widgets/pull/25#discussion_r1"
+      }
+    ],
+    "state": "OPEN",
+    "title": "Tidy the README",
+    "url": "https://github.com/example/widgets/pull/25"
+  },
+  "reviews": 0,
+  "run": {
+    "created_at": "2026-01-01T00:00:00Z",
+    "done_when": [],
+    "folder": "/tmp/loam-contract/loamhome/worktrees/plotaaaaae/web-tidy-the-readme",
+    "goal": "",
+    "group_id": "",
+    "id": "runraaaaac",
+    "max_tries": 3,
+    "note": "You sent back the review of #25. Loam sent back 1 review thread",
+    "notes": {
+      "files": [
+        {
+          "path": "README.md",
+          "role": "What you see"
+        }
+      ],
+      "risk": {
+        "level": "low",
+        "reasons": [
+          "One file.",
+          "No store change."
+        ]
+      },
+      "walkthrough": "The README says what Loam is. It was a title alone.",
+      "where_it_stands": "The README says what Loam is. Next: the guide.",
+      "written_at": "2026-01-01T00:00:00Z"
+    },
+    "plot_id": "plotaaaaae",
+    "pr": {
+      "number": 25,
+      "url": "https://github.com/example/widgets/pull/25"
+    },
+    "review_tries": 0,
+    "session_id": "c57ef956-3136-4e86-bfde-da8facfe0523",
+    "state": "running",
+    "title": "Tidy the README",
+    "tries": 0,
+    "turns": 1,
+    "updated_at": "2026-01-01T00:00:00Z",
+    "worktree_id": "wtreaaaaat"
+  },
+  "threads": 1
+}

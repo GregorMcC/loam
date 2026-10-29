@@ -34,7 +34,7 @@ func newRunCmd() *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
-	c.AddCommand(newRunStartCmd(), newRunShapeCmd(), newRunRedraftCmd(), newRunApproveCmd(), newRunListCmd(), newRunStatusCmd(), newRunEventsCmd(), newRunStopCmd(), newRunDiffCmd(), newRunSendBackCmd(), newRunLandCmd(), newRunTickCmd(), newRunHookCmd(), newRunDefaultsCmd(), newRunMCPServersCmd(), newRunLimitsCmd())
+	c.AddCommand(newRunStartCmd(), newRunShapeCmd(), newRunRedraftCmd(), newRunApproveCmd(), newRunListCmd(), newRunStatusCmd(), newRunEventsCmd(), newRunStopCmd(), newRunDiffCmd(), newRunSendBackCmd(), newRunSendReviewCmd(), newRunLandCmd(), newRunTickCmd(), newRunHookCmd(), newRunDefaultsCmd(), newRunMCPServersCmd(), newRunLimitsCmd())
 	return c
 }
 
@@ -519,6 +519,45 @@ func newRunSendBackCmd() *cobra.Command {
 		},
 	}
 	c.Flags().StringArrayVar(&texts, "note", nil, "a note: \"<file>:<line>: <text>\", or text alone (repeatable)")
+	return c
+}
+
+func newRunSendReviewCmd() *cobra.Command {
+	var dryRun bool
+	c := &cobra.Command{
+		Use:   "send-review <run> [--dry-run]",
+		Short: "Send the review of the PR of a run back to its session",
+		Long: "Resume the session of a run that is Ready to land, with the review of its pull request (PR) as its next prompt: each thread that is not resolved, and each review that requests changes and that Loam has not sent. This is what loam run tick sends when the review requests changes, but here you choose to send it, so the review decision does not matter.\n" +
+			"The prompt leaves out the text of a comment whose author cannot push to the repo. The run goes back to Running. When the session ends its turn, the Done when checks run again, and Loam ships the fix to the PR. You choose this send, so it uses no review try.\n" +
+			"--dry-run changes nothing. It reads the PR and says what Loam would send, which can be nothing.\n" +
+			"It exits with code 2 when the run is not Ready to land, has no PR, or when the PR has no review to send, and with code 17 when gh is missing or signed out.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := openStore()
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+			// Ctrl-C stops gh.
+			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			res, err := run.SendReview(ctx, s, args[0], dryRun)
+			if err != nil {
+				return err
+			}
+			if JSON(cmd) {
+				return printJSON(cmd, res)
+			}
+			out := cmd.OutOrStdout()
+			if dryRun {
+				fmt.Fprintf(out, "#%d: %d threads and %d reviews to send\n", res.PR.Number, res.Threads, res.Reviews)
+				return nil
+			}
+			printRun(out, res.Run)
+			return nil
+		},
+	}
+	c.Flags().BoolVar(&dryRun, "dry-run", false, "change nothing, and say what Loam would send")
 	return c
 }
 

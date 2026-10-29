@@ -726,6 +726,17 @@ func scenario(t *testing.T) *harness {
 		t.Fatalf("run tick: exit %d: %s", code, errOut)
 	}
 	h.run("run_diff", "run-diff", 0, "run", "diff", tidy.Run.ID)
+	// A reviewer left a thread on the PR. You send it back to the session, and the run goes round the gate and
+	// Ship again before the send-back below.
+	openThread(t, h.ghState, 25)
+	h.run("run_send_review_dry_run", "run-send-review", 0, "run", "send-review", tidy.Run.ID, "--dry-run")
+	h.run("run_send_review", "run-send-review", 0, "run", "send-review", tidy.Run.ID)
+	hook("Stop")
+	passCI(t, h.ghState, 25, testutil.Git(t, tidy.Run.Folder, "rev-parse", "HEAD"))
+	if _, errOut, code := h.raw("run", "tick"); code != 0 {
+		t.Fatalf("run tick: exit %d: %s", code, errOut)
+	}
+	h.run("error_run_send_review_nothing", "error", 2, "run", "send-review", tidy.Run.ID)
 	h.run("run_send_back", "run-send-back", 0, "run", "send-back", tidy.Run.ID,
 		"--note", "README.md:3: Say what a plot is.", "--note", "Keep the README short.")
 	hook("Stop")
@@ -934,6 +945,33 @@ func passCI(t *testing.T, stateFile string, number int, head string) {
 		t.Fatal(err)
 	}
 	state["details"].(map[string]any)[strconv.Itoa(number)] = details
+	if data, err = json.Marshal(state); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stateFile, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// openThread gives the PR a review thread that is not resolved, by a reviewer who can push to the repo, in the
+// state of the fake gh.
+func openThread(t *testing.T, stateFile string, number int) {
+	t.Helper()
+	data, err := os.ReadFile(stateFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var state map[string]any
+	if err := json.Unmarshal(data, &state); err != nil {
+		t.Fatal(err)
+	}
+	var threads any
+	if err := json.Unmarshal([]byte(`{"nodes": [{"id": "PRRT_example", "isResolved": false, "path": "README.md", "line": 3,
+  "comments": {"nodes": [{"body": "Say what a plot is.", "url": "https://github.com/example/widgets/pull/25#discussion_r1",
+    "author": {"login": "alice"}, "pullRequestReview": {"authorCanPushToRepository": true}}]}}]}`), &threads); err != nil {
+		t.Fatal(err)
+	}
+	state["details"].(map[string]any)[strconv.Itoa(number)].(map[string]any)["reviewThreads"] = threads
 	if data, err = json.Marshal(state); err != nil {
 		t.Fatal(err)
 	}

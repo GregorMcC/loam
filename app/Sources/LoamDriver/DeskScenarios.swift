@@ -109,6 +109,40 @@ struct GitHubRun {
          "logs": {"9001": "test\\tgo test\\t--- FAIL: TestSearchLabels (0.00s)\\ntest\\tgo test\\tFAIL\\n"}}
         """.write(to: ghState, atomically: true, encoding: .utf8)
     }
+
+    /// One review comment of the fake gh, for `setReview`.
+    struct ReviewComment {
+        var author: String
+        var body: String
+        /// True when GitHub says that the author can push to the repo.
+        var writer = true
+    }
+
+    /// GitHub with PR #1 as `setCI("SUCCESS")` has it, with a review decision, a review that requests changes when
+    /// `requestChanges` is set, and review threads that are not resolved: a path, a line, and comments (TAS-61). The
+    /// fake gh gives the nodes of the GraphQL answer as they are.
+    func setReview(decision: String, requestChanges: Bool = false, threads: [(path: String, line: Int, comments: [ReviewComment])]) throws {
+        try setCI("SUCCESS")
+        let data = try Data(contentsOf: ghState)
+        guard var state = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              var pulls = state["pulls"] as? [[String: Any]], var details = state["details"] as? [String: Any],
+              var detail = details["1"] as? [String: Any] else { throw DriverFailure("the state of the fake gh has no PR #1") }
+        pulls[0]["reviewDecision"] = decision
+        let url = "https://github.com/example/widgets/pull/1"
+        detail["latestOpinionatedReviews"] = ["nodes": requestChanges ? [[
+            "id": "PRR_made_up_1", "state": "CHANGES_REQUESTED", "body": "A label match must never rank above a title match.",
+            "url": "\(url)#pullrequestreview-1", "author": ["login": "alice"]]] : []]
+        detail["reviewThreads"] = ["nodes": threads.enumerated().map { i, thread in [
+            "id": "PRRT_made_up_\(i + 1)", "isResolved": false, "path": thread.path, "line": thread.line,
+            "comments": ["nodes": thread.comments.enumerated().map { j, comment in [
+                "body": comment.body, "url": "\(url)#discussion_r\(i + 1)\(j)", "authorAssociation": comment.writer ? "MEMBER" : "NONE",
+                "author": ["login": comment.author], "pullRequestReview": ["authorCanPushToRepository": comment.writer]] as [String: Any] }]
+        ] as [String: Any] }]
+        details["1"] = detail
+        state["pulls"] = pulls
+        state["details"] = details
+        try JSONSerialization.data(withJSONObject: state).write(to: ghState)
+    }
 }
 
 @MainActor
@@ -306,6 +340,115 @@ extension Scenarios {
         try confirmDesk(app.text(of: "desk-stations")?.contains("CI failed") == false, "the desk says CI failed")
         await app.sleep(0.5)
         app.screenshot("desk-no-ci-night")
+        NSApp.appearance = nil
+    }
+
+    static func deskReviewShot(_ app: DriverApp) async throws {
+        do { try await deskReviewShotSteps(app) } catch { app.dumpAccessibility(); throw error }
+    }
+
+    /// TAS-61: the desk shows the review of the PR of a Ready run. With no review, the row says None and Merge is the
+    /// main action. With changes requested and 2 open threads, the row says so and opens to the 2 comments as plain
+    /// text, and Send review back is the main action. An approved PR with an open thread keeps Merge as the main
+    /// action. Send review back resumes the session.
+    private static func deskReviewShotSteps(_ app: DriverApp) async throws {
+        let gh = try GitHubRun(app, title: "Plot search matches link labels", goal: "A search for a link label finds its plot.")
+        try gh.commitAndStop("search/match.go", text: "package search\n\n// Match returns the items whose title or label matches q.\n")
+        let host = try await app.launchApp(
+            client: LoamClient(binary: gh.rig.binary, environment: gh.environment), state: gh.rig.stateFile, terminals: true)
+        app.runtime.applyWindowAppearance(to: host.window)
+        frameLikeTheDesign(host.window)
+        NSApp.appearance = NSAppearance(named: .darkAqua)
+        let model = host.model
+        try await app.waitUntil("the run ships") { model.runs.first?.state == .shipping }
+        await model.tickRuns()
+        try gh.setCI("SUCCESS")
+        await model.tickRuns()
+        try await app.waitUntil("the run is ready") { model.runs.first?.state == .ready }
+
+        // No review: the row says None, and Merge is the main action.
+        await model.openDesk()
+        try await app.waitUntil("the desk shows the review row") {
+            model.page == .desk && app.exists("desk-merge") && app.text(of: "desk-review")?.contains("None") == true
+        }
+        try confirmDesk(model.desk.review?.sendBackIsPrimary == false && !app.exists("desk-send-review"),
+                        "a PR with no review shows Send review back: \(String(describing: model.desk.review))")
+        await app.sleep(0.5)
+        app.screenshot("desk-review-none-night")
+
+        // An approved PR with an open thread: Merge stays the main action, and Send review back is beside it.
+        let tidy = GitHubRun.ReviewComment(author: "alice", body: "Please name the weight in one place.")
+        try gh.setReview(decision: "APPROVED", threads: [("search/match.go", 8, [tidy])])
+        await model.openDesk(gh.id)
+        try await app.waitUntil("the row says approved") {
+            app.text(of: "desk-review")?.contains("Approved") == true && app.exists("desk-send-review")
+        }
+        try confirmDesk(model.desk.review?.sendBackIsPrimary == false && app.exists("desk-merge"),
+                        "an approved PR makes Send review back the main action")
+
+        // Changes requested with 2 open threads: a bot comment full of HTML, and a person's comment.
+        let bot = GitHubRun.ReviewComment(author: "coderabbitai", body: """
+            _\u{26A0}\u{FE0F} Potential issue_ | _\u{1F7E0} Major_
+
+            **A label match can outrank a title match.**
+
+            `labelWeight` is `0.8`, so a label that scores 1.0 passes a title that scores 0.7. See [the scorer](https://example.com/score).
+
+            <details>
+            <summary>Suggested change</summary>
+
+            ```suggestion
+            const labelWeight = 0.5
+            ```
+
+            </details>
+
+            <!-- fingerprinting:phantom:made-up -->
+            """)
+        let person = GitHubRun.ReviewComment(author: "alice", body: "This test needs a case for a link with no label.")
+        try gh.setReview(decision: "CHANGES_REQUESTED", threads: [
+            ("search/match.go", 8, [bot]), ("search/match_test.go", 3, [person]),
+        ])
+        await model.openDesk(gh.id)
+        try await app.waitUntil("the row says changes requested") {
+            app.text(of: "desk-review")?.contains("Changes requested") == true && app.text(of: "desk-review")?.contains("2 open threads") == true
+        }
+        // The row starts closed, so the comments do not push Merge down.
+        try confirmDesk(!app.exists("desk-review-comment-0") && model.desk.review?.sendBackIsPrimary == true
+                        && app.exists("desk-merge") && app.exists("desk-send-review"),
+                        "the row is open, or Send review back is not the main action")
+        await app.sleep(0.5)
+        app.screenshot("desk-review-closed-night")
+        try app.click("desk-review")
+        try await app.waitUntil("the comments show") {
+            app.exists("desk-review-comment-0") && app.exists("desk-review-comment-1")
+        }
+        let comments = model.desk.review?.comments ?? []
+        let first = comments.first
+        try confirmDesk(first?.reviewer == "coderabbitai" && first?.place == "search/match.go:8" && comments.count == 2,
+                        "the comments are not the 2 threads: \(comments)")
+        try confirmDesk(first?.excerpt == """
+                        \u{26A0}\u{FE0F} Potential issue | \u{1F7E0} Major
+                        A label match can outrank a title match.
+                        labelWeight is 0.8, so a label that scores 1.0 passes a title that scores 0.7. See the scorer.
+                        """, "the first comment is not plain text: \(String(describing: first?.excerpt))")
+        try confirmDesk(app.exists("desk-review-open-0") && !app.exists("desk-review-comment-2"),
+                        "a comment has no link to its thread, or the review has a third comment")
+        await app.sleep(0.5)
+        app.screenshot("desk-review-open-night")
+        NSApp.appearance = NSAppearance(named: .aqua)
+        await app.sleep(1)
+        app.screenshot("desk-review-open-day")
+        NSApp.appearance = NSAppearance(named: .darkAqua)
+
+        // Send review back resumes the session, and no review try counts.
+        try app.click("desk-send-review")
+        try await app.waitUntil("the run runs again") {
+            model.runs.first?.state == .running
+                && model.runs.first?.note == "You sent back the review of #1. Loam sent back 2 review threads"
+        }
+        let status = try gh.rig.loam(["run", "status", gh.id, "--json"], extra: gh.environment)
+        try confirmDesk(status.contains(#""review_tries": 0"#) || status.contains(#""review_tries":0"#), "the send used a review try: \(status)")
         NSApp.appearance = nil
     }
 

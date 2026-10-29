@@ -1,11 +1,13 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/GregorMcC/loam/core/internal/run"
 	"github.com/GregorMcC/loam/core/internal/store"
 	"github.com/GregorMcC/loam/core/internal/testutil"
 )
@@ -215,5 +217,85 @@ func TestRunTickStopsARunWhoseReviewDidNotReachTheSession(t *testing.T) {
 	if len(got.Runs) != 1 || got.Runs[0].State != store.RunStopped || got.Runs[0].ReviewTries != 1 ||
 		got.Runs[0].Note != "Could not send the review to the session: the run has no session" {
 		t.Fatalf("%+v", got)
+	}
+}
+
+// TAS-61: you send the review of a Ready run back to its session from the desk. The review decision does not
+// matter, no review try counts, and the text of a reader stays out of the prompt.
+func TestRunSendReviewSendsOpenThreadsWithNoChangeRequestAndUsesNoTry(t *testing.T) {
+	s, r, w := readyRun(t)
+	head := testutil.Git(t, r.Folder, "rev-parse", "HEAD")
+	setGitHub(t, reviewState(w.Branch, head, "REVIEW_REQUIRED", "[]", "["+threadT1+", "+threadT0+"]"))
+	// A dry run reads the PR and sends nothing.
+	out, code := loam(t, "run", "send-review", r.ID, "--dry-run", "--json")
+	var plan run.ReviewResult
+	if err := json.Unmarshal([]byte(out), &plan); err != nil || code != 0 || plan.Threads != 1 || plan.Reviews != 0 ||
+		plan.PR.ReviewDecision != "REVIEW_REQUIRED" || len(plan.PR.ReviewThreads) != 1 || plan.Run.State != store.RunReady || len(resumes(t)) != 0 {
+		t.Fatalf("exit %d, %v: %s", code, err, out)
+	}
+	out, code = loam(t, "run", "send-review", r.ID, "--json")
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+	got, err := s.GetRun(r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State != store.RunRunning || got.ReviewTries != 0 || got.Tries != r.Tries ||
+		got.Note != "You sent back the review of #1. Loam sent back 1 review thread" {
+		t.Fatalf("%+v", got)
+	}
+	if e := events(t, s, r.ID, "review"); !slices.Equal(e, []string{"You sent back the review of #1: 1 review thread"}) {
+		t.Fatalf("review events %q", e)
+	}
+	prompts := resumes(t)
+	if len(prompts) != 1 {
+		t.Fatalf("prompts %q", prompts)
+	}
+	for _, want := range []string{
+		"I ask you to address the review of #1.", "Thread ID: T1", "alice wrote:\n> Say hello to the world.",
+		"bob, who cannot push to the repo, wrote a comment", "resolveReviewThread",
+	} {
+		if !strings.Contains(prompts[0], want) {
+			t.Errorf("the prompt misses %q:\n%s", want, prompts[0])
+		}
+	}
+	if strings.Contains(prompts[0], "review try") || strings.Contains(prompts[0], "And keep it short.") || strings.Contains(prompts[0], "An old point.") {
+		t.Errorf("the prompt has a review try, the text of a reader, or a resolved thread:\n%s", prompts[0])
+	}
+}
+
+// A review that requests changes is sent once: after the send, a run that is Ready again has nothing to send.
+func TestRunSendReviewSendsAReviewOnceAndRefusesWhenThereIsNothingToSend(t *testing.T) {
+	s, r, w := readyRun(t)
+	head := testutil.Git(t, r.Folder, "rev-parse", "HEAD")
+	setGitHub(t, reviewState(w.Branch, head, "CHANGES_REQUESTED", "["+reviewR1+"]", "[]"))
+	if out, code := loam(t, "run", "send-review", r.ID, "--json"); code != 0 {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+	if p := resumes(t); len(p) != 1 || !strings.Contains(p[0], "> Two things before this merges.") {
+		t.Fatalf("prompts %q", p)
+	}
+	passGate(t, s, r)
+	tick(t) // CI passed on the head, and Loam sent the review: the run is Ready again
+	if got, _ := s.GetRun(r.ID); got.State != store.RunReady {
+		t.Fatalf("%+v", got)
+	}
+	out, code := loam(t, "run", "send-review", r.ID, "--json")
+	if code != ExitInvalid || !strings.Contains(out, "no review to send back") {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+	// A dry run says that there is nothing to send, and it is no error.
+	var plan run.ReviewResult
+	out, code = loam(t, "run", "send-review", r.ID, "--dry-run", "--json")
+	if err := json.Unmarshal([]byte(out), &plan); err != nil || code != 0 || plan.Threads != 0 || plan.Reviews != 0 {
+		t.Fatalf("exit %d, %v: %s", code, err, out)
+	}
+}
+
+func TestRunSendReviewRefusesARunThatIsNotReady(t *testing.T) {
+	_, r, _ := shipRun(t, "3")
+	if out, code := loam(t, "run", "send-review", r.ID, "--json"); code != ExitInvalid || !strings.Contains(out, "Ready to land") {
+		t.Fatalf("exit %d: %s", code, out)
 	}
 }

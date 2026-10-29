@@ -486,6 +486,14 @@ public struct LoamClient: Sendable {
         try await read(["run", "send-back"] + notes.flatMap { ["--note", $0] }, positionals: [id])
     }
 
+    /// `loam run send-review`: resumes the session of a run that is ready to land with the review of its PR: the
+    /// threads that are not resolved and the reviews that request changes. The core leaves out the text of a
+    /// comment by someone who cannot push to the repo (TAS-61). With `dryRun`, the core changes nothing and says what
+    /// it would send. That read is also how the desk gets the PR as GitHub has it now.
+    public func runSendReview(_ id: String, dryRun: Bool = false) async throws -> RunReview {
+        try await read(["run", "send-review"] + (dryRun ? ["--dry-run"] : []), positionals: [id])
+    }
+
     /// `loam run land`: merges the PR of a run that is ready to land. `head` is the PR head that you read: the
     /// merge throws `.notReady` when GitHub has another head. `linearDone` false leaves the Linear issue where it is.
     /// `whereItStands` sets Where it stands of the plot to the text of the ship notes, as a change by you in the app.

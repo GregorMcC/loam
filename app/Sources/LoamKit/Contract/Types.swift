@@ -442,11 +442,62 @@ public struct PullRequest: Codable, Equatable, Sendable {
     /// The checks that passed, in the order of GitHub. A skipped or neutral check passed too, so the list is as
     /// long as `checks.passed`. Nil from a core older than ticket 116. A cache row from before it gives an empty list.
     public var passedChecks: [PRCheck]?
+    /// The reviews that request changes. Nil from a core older than TAS-60. A cache row from before it gives an
+    /// empty list.
+    public var changeRequests: [PRReview]?
+    /// The review threads that are not resolved, with their first comments. Nil from a core older than TAS-60.
+    public var reviewThreads: [PRReviewThread]?
     enum CodingKeys: String, CodingKey {
         case number, title, url, state, draft, mergeable, base, head, commits, approvals, comments, checks
+        case changeRequests = "change_requests", reviewThreads = "review_threads"
         case mergeState = "merge_state", reviewDecision = "review_decision", inMergeQueue = "in_merge_queue"
         case queuePosition = "queue_position", headOID = "head_oid", mergedAt = "merged_at", closedAt = "closed_at"
         case behindBase = "behind_base", failedChecks = "failed_checks", passedChecks = "passed_checks"
+    }
+}
+
+/// A review of a PR that requests changes (TAS-60).
+public struct PRReview: Codable, Equatable, Sendable {
+    public var id: String
+    /// The login of the reviewer.
+    public var author: String
+    /// The text of the review, in Markdown. Empty for a review with only comments on lines.
+    public var body: String
+    public var url: String
+
+    public init(id: String, author: String, body: String, url: String) {
+        (self.id, self.author, self.body, self.url) = (id, author, body, url)
+    }
+}
+
+/// A review thread of a PR that is not resolved (TAS-60): comments on a line of a file.
+public struct PRReviewThread: Codable, Equatable, Sendable {
+    public var id: String
+    public var path: String
+    /// The line in the head of the PR. Zero when the head no longer has the line.
+    public var line: Int
+    /// The page of the first comment.
+    public var url: String
+    /// The first comments of the thread, oldest first.
+    public var comments: [PRReviewComment]
+
+    public init(id: String, path: String, line: Int, url: String, comments: [PRReviewComment]) {
+        (self.id, self.path, self.line, self.url, self.comments) = (id, path, line, url, comments)
+    }
+}
+
+/// A comment of a review thread.
+public struct PRReviewComment: Codable, Equatable, Sendable {
+    /// The login of the person or app that wrote the comment.
+    public var author: String
+    /// True when the author can push to the repo. The prompt of a session leaves out the text of other comments.
+    public var writer: Bool
+    /// The text of the comment, in Markdown.
+    public var body: String
+    public var url: String
+
+    public init(author: String, writer: Bool, body: String, url: String) {
+        (self.author, self.writer, self.body, self.url) = (author, writer, body, url)
     }
 }
 

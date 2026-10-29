@@ -105,6 +105,42 @@ extension AppModel {
         }
     }
 
+    /// Opens or closes the comments of the review row.
+    public func toggleDeskReview() {
+        desk.reviewOpen.toggle()
+    }
+
+    /// Sends the review of the PR back to the session of the run (`loam run send-review`), and shows the next run.
+    /// The core sends the threads and the reviews with the filter for the text of readers, and builds the prompt.
+    public func sendBackDeskReview() async {
+        guard let id = desk.runID, !desk.busy, desk.review?.canSendBack == true else { return }
+        await deskAction(id) {
+            _ = try await self.client.runSendReview(id)
+        }
+    }
+
+    /// Reads the review of the PR of a ready run (`loam run send-review --dry-run`). A run in another state, or a run
+    /// with no PR, has no review row. A failed read says why in the row, and the Merge button stays.
+    func readDeskReview(_ run: Run) async {
+        guard run.state == .ready, run.pr != nil else {
+            desk.review = nil
+            desk.reviewError = nil
+            desk.reviewStamp = nil
+            return
+        }
+        do {
+            let review = DeskReview(try await client.runSendReview(run.id, dryRun: true))
+            guard desk.runID == run.id else { return }
+            desk.review = review
+            desk.reviewError = nil
+        } catch {
+            guard desk.runID == run.id else { return }
+            desk.review = nil
+            desk.reviewError = Self.message(for: error)
+        }
+        desk.reviewStamp = run.updatedAt
+    }
+
     /// Merges the PR of the run (`loam run land`), with the head of the diff that you read, and shows the
     /// next run. A merge that the core refuses keeps the run, and `desk.error` says why. The core keeps a
     /// worktree that has open panes, so the desk closes none. The merge can remove the worktree, so the
@@ -236,8 +272,9 @@ extension AppModel {
     /// the run that is now there. An empty desk shows the first run that comes.
     func followDeskQueue(from place: Int?) async {
         let queue = deskQueue
-        if let id = desk.runID, queue.contains(where: { $0.id == id }) {
+        if let id = desk.runID, let run = queue.first(where: { $0.id == id }) {
             await readRunStatus(id)
+            if run.updatedAt != desk.reviewStamp { await readDeskReview(run) }
         } else if desk.runID != nil || !queue.isEmpty {
             await showDeskItem(queue.isEmpty ? nil : queue[min(place ?? 0, queue.count - 1)].id)
         }
@@ -256,6 +293,10 @@ extension AppModel {
         desk.recurringTitle = nil
         desk.linearDone = nil
         desk.moveWhereItStands = true
+        desk.review = nil
+        desk.reviewError = nil
+        desk.reviewStamp = nil
+        desk.reviewOpen = false
         runStatus = nil
         guard let id else { return }
         // A draft has no work to read yet. The rules of its plot join its checks.
@@ -277,8 +318,9 @@ extension AppModel {
             desk.error = Self.message(for: error)
         }
         await readRunStatus(id)
-        if let run = runs.first(where: { $0.id == id }), run.source?.kind == "linear" {
-            await readDeskLinearUpdates()
+        if let run = runs.first(where: { $0.id == id }) {
+            await readDeskReview(run)
+            if run.source?.kind == "linear" { await readDeskLinearUpdates() }
         }
     }
 
