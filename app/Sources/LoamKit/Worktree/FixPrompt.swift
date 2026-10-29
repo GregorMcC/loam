@@ -70,7 +70,7 @@ public struct FixPrompt: Equatable, Sendable {
     /// The prompt for a session that works in the worktree but started in another folder (TAS-55). Its commands
     /// run in that other folder, so the prompt names the worktree folder first.
     public func inFolder(_ path: String) -> FixPrompt {
-        FixPrompt(kind: kind, text: "Work in the worktree at `\(Self.oneLine(path))`. \(text)")
+        FixPrompt(kind: kind, text: "Work in the worktree at `\(Self.onePathLine(path))`. \(text)")
     }
 
     private init(kind: Kind, text: String) {
@@ -92,6 +92,17 @@ public struct FixPrompt: Equatable, Sendable {
             .split { $0.properties.generalCategory == .control || $0.properties.isWhitespace }
             .map { String(String.UnicodeScalarView($0)) }
             .joined(separator: " ")
+    }
+
+    /// A folder path as one line. Each control character and line break becomes a space, and the characters that
+    /// show nothing go, as in `oneLine`. It keeps each other character, so a run of spaces stays as it is, and the
+    /// path still names the same folder.
+    static func onePathLine(_ path: String) -> String {
+        let breaks: Set<Unicode.GeneralCategory> = [.control, .lineSeparator, .paragraphSeparator]
+        let shown = path.unicodeScalars.lazy
+            .filter { !hidden.contains($0.properties.generalCategory) && !$0.properties.isDefaultIgnorableCodePoint }
+            .map { breaks.contains($0.properties.generalCategory) ? " " : $0 }
+        return String(String.UnicodeScalarView(shown))
     }
 
     /// The general categories that show nothing: Cf, Co, Cn and Cs. Cf has the direction marks.

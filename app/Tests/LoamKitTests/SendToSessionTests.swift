@@ -146,9 +146,9 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
     /// A session that started in another folder runs its commands there, so its prompt names the worktree folder.
     @Test func aPromptForAnotherFolderNamesTheWorktreeFolderFirst() throws {
         let prompt = FixPrompt(.failures, pr: try pr(.checksFailed))
-        let moved = prompt.inFolder("/work/app-fix\nrm")
+        let moved = prompt.inFolder("/work/app  fix\nrm\u{200B}")
         #expect(moved.kind == .failures)
-        #expect(moved.text == "Work in the worktree at `/work/app-fix rm`. " + prompt.text)
+        #expect(moved.text == "Work in the worktree at `/work/app  fix rm`. " + prompt.text, "a run of spaces stays")
         #expect(try PaneText.withoutReturn(moved.text) == moved.text)
     }
 
