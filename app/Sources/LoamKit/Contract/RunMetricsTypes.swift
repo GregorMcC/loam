@@ -56,6 +56,18 @@ public struct MetricsNotLanded: Codable, Equatable, Sendable {
     }
 }
 
+/// A landed run and its lead time.
+public struct MetricsSlowRun: Codable, Equatable, Sendable {
+    public var runID: String
+    public var plotID: String
+    public var title: String
+    public var leadSeconds: Int
+
+    enum CodingKeys: String, CodingKey {
+        case title, runID = "run_id", plotID = "plot_id", leadSeconds = "lead_seconds"
+    }
+}
+
 /// The run metrics of one window. A landed run counts in the window that it landed in.
 public struct MetricsPeriod: Codable, Equatable, Sendable {
     public var from: String
@@ -71,9 +83,11 @@ public struct MetricsPeriod: Codable, Equatable, Sendable {
     public var recovery: MetricsRecovery
     public var rework: MetricsRework
     public var notLanded: MetricsNotLanded
+    /// The landed runs with the longest lead time, longest first, at most 5.
+    public var slowest: [MetricsSlowRun]
 
     enum CodingKeys: String, CodingKey {
-        case from, to, landed, fixed, stations, recovery, rework
+        case from, to, landed, fixed, stations, recovery, rework, slowest
         case firstPass = "first_pass", leadTime = "lead_time", notLanded = "not_landed"
     }
 }

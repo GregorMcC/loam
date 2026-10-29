@@ -98,6 +98,13 @@ func printMetrics(out io.Writer, m run.Metrics) {
 		r.GateTries, r.CITries, r.ReviewTries, r.CodeReviewRounds, r.Redrafts, r.Turns)
 	n := c.NotLanded
 	fmt.Fprintf(out, "Not landed: stopped %d, limited %d, cancelled %d, start unknown %d\n", n.Stopped, n.Limited, n.Cancelled, n.StartUnknown)
+	if len(c.Slowest) > 0 {
+		fmt.Fprintln(out)
+		fmt.Fprintln(out, "Slowest:")
+		for _, r := range c.Slowest {
+			fmt.Fprintf(out, "  %s  %s  %s\n", r.RunID, seconds(r.LeadSeconds), oneLine(r.Title))
+		}
+	}
 }
 
 // spreadText is a spread for a person, such as "median 4m, 90th 12m (5)".

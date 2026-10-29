@@ -6,8 +6,8 @@
     "landed": 1,
     "lead_time": {
       "count": 1,
-      "median_seconds": 17,
-      "p90_seconds": 17
+      "median_seconds": 6,
+      "p90_seconds": 6
     },
     "not_landed": {
       "cancelled": 1,
@@ -35,6 +35,14 @@
       "review_tries": 0,
       "turns": 2
     },
+    "slowest": [
+      {
+        "lead_seconds": 6,
+        "plot_id": "plotaaaaae",
+        "run_id": "runraaaaac",
+        "title": "Tidy the README"
+      }
+    ],
     "stations": {
       "approve": {
         "count": 0,
@@ -43,13 +51,13 @@
       },
       "build": {
         "count": 1,
-        "median_seconds": 4,
-        "p90_seconds": 4
+        "median_seconds": 1,
+        "p90_seconds": 1
       },
       "merge": {
         "count": 1,
-        "median_seconds": 8,
-        "p90_seconds": 8
+        "median_seconds": 3,
+        "p90_seconds": 3
       },
       "queue": {
         "count": 1,
@@ -58,8 +66,8 @@
       },
       "ship": {
         "count": 1,
-        "median_seconds": 6,
-        "p90_seconds": 6
+        "median_seconds": 2,
+        "p90_seconds": 2
       },
       "stopped": {
         "count": 1,
@@ -105,6 +113,7 @@
       "review_tries": 0,
       "turns": 0
     },
+    "slowest": [],
     "stations": {
       "approve": {
         "count": 0,

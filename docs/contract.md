@@ -824,11 +824,12 @@ The usage is the last usage that Claude Code reported to Loam. It is not in the 
   "stations": { "approve": {...}, "queue": {...}, "build": {...}, "ship": {...}, "merge": {...}, "stopped": {...} },
   "recovery": { "gate": {...}, "ci": {...} },
   "rework": { "gate_tries": 1, "ci_tries": 0, "review_tries": 0, "code_review_rounds": 0, "redrafts": 2, "turns": 10 },
-  "not_landed": { "stopped": 0, "limited": 0, "cancelled": 0, "start_unknown": 0 }
+  "not_landed": { "stopped": 0, "limited": 0, "cancelled": 0, "start_unknown": 0 },
+  "slowest": [{ "run_id": "runraaaaab", "plot_id": "k3v9q2mxa7", "title": "Fix the login form", "lead_seconds": 8768 }]
 }
 ```
 
-- A landed run counts in the window that it landed in. `landed`, `first_pass`, `fixed`, `lead_time`, `stations`, and `rework` hold the landed runs of the window.
+- A landed run counts in the window that it landed in. `landed`, `first_pass`, `fixed`, `lead_time`, `stations`, `rework`, and `slowest` hold the landed runs of the window.
 - A spread has `count`, and the median and the 90th percentile in seconds, by the nearest rank: the time at rank ceil(q × count) of the sorted times. Both are 0 when `count` is 0.
 - `lead_time` runs from approve, when the run leaves `shaping`, to `landed`. A run with no draft starts when Loam records it.
 - `stations` add each visit to a state, so a run that goes from `ready` back to `shipping` adds both visits. `approve` is `shaping`, `queue` is `queued`, `build` is `starting` and `running`, `ship` is `shipping`, `merge` is `ready`, and `stopped` is `stopped`, `limited`, and `start_unknown`. The stations other than `approve` add up to the lead time of a run. Each spread holds every landed run, with 0 for a station that the run did not pass. `approve` holds only the runs that had a draft.
@@ -836,6 +837,7 @@ The usage is the last usage that Claude Code reported to Loam. It is not in the 
 - `fixed` counts the landed runs that a later run fixes (`--fixes`), unless you cancelled the fix. It is the change failure count, and it can grow after the window ends.
 - `recovery` times each failure to the next pass. `gate` is from a failed gate until the run is `shipping`, `ready`, or `landed`. `ci` is from a failed CI until the run is `ready` or `landed`. A gate that fails while the run fixes a CI failure is part of that CI failure. A failure counts in the window that it started in, for any run. A failure that never passed does not count, and nor does a failure whose run stopped or was cancelled before it passed, for any reason: the `stopped` station holds that wait.
 - `rework` adds up the loops of the landed runs. A try of the gate and a try of CI each count once. `code_review_rounds` counts the code reviews before a push that found a Critical or Major issue. `redrafts` counts the drafts after the first one, with the drafts that failed.
+- `slowest` holds the landed runs of the window with the longest lead time, longest first, at most 5. It is `[]` when no run landed.
 - `not_landed` counts the runs whose last state is in the window and is `stopped`, `limited`, `cancelled`, or `start_unknown`.
 
 #### Rules

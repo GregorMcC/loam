@@ -1,6 +1,7 @@
 package run
 
 import (
+	"cmp"
 	"fmt"
 	"math"
 	"slices"
@@ -42,6 +43,20 @@ type MetricsPeriod struct {
 	// NotLanded counts the runs whose last state is in the window and is
 	// Stopped, Limited, Cancelled, or Start unknown.
 	NotLanded NotLanded `json:"not_landed"`
+	// Slowest are the landed runs with the longest lead time, longest
+	// first, at most [SlowestLimit].
+	Slowest []SlowRun `json:"slowest"`
+}
+
+// SlowestLimit is how many runs [MetricsPeriod.Slowest] holds.
+const SlowestLimit = 5
+
+// SlowRun is a landed run and its lead time.
+type SlowRun struct {
+	RunID       string `json:"run_id"`
+	PlotID      string `json:"plot_id"`
+	Title       string `json:"title"`
+	LeadSeconds int64  `json:"lead_seconds"`
 }
 
 // Spread is the median and the 90th percentile of some times, in seconds,
@@ -255,7 +270,7 @@ func walk(r store.Run, events []store.RunEvent) runPath {
 // measure is the metrics of one window.
 func measure(paths []runPath, from, to time.Time) MetricsPeriod {
 	in := func(t time.Time) bool { return !t.IsZero() && !t.Before(from) && t.Before(to) }
-	m := MetricsPeriod{From: from, To: to}
+	m := MetricsPeriod{From: from, To: to, Slowest: []SlowRun{}}
 	var lead []time.Duration
 	var stations [stationCount][]time.Duration
 	var gate, ci []time.Duration
@@ -281,6 +296,8 @@ func measure(paths []runPath, from, to time.Time) MetricsPeriod {
 		}
 		m.Landed++
 		lead = append(lead, p.landed.Sub(p.start))
+		m.Slowest = append(m.Slowest, SlowRun{RunID: p.run.ID, PlotID: p.run.PlotID, Title: p.run.Title,
+			LeadSeconds: seconds(p.landed.Sub(p.start))})
 		for i, d := range p.stations {
 			if i != stationApprove || p.shaped {
 				stations[i] = append(stations[i], d)
@@ -302,6 +319,8 @@ func measure(paths []runPath, from, to time.Time) MetricsPeriod {
 		m.Rework.Redrafts += max(0, p.shapes-1)
 		m.Rework.Turns += p.run.Turns
 	}
+	slices.SortStableFunc(m.Slowest, func(a, b SlowRun) int { return cmp.Compare(b.LeadSeconds, a.LeadSeconds) })
+	m.Slowest = m.Slowest[:min(len(m.Slowest), SlowestLimit)]
 	m.LeadTime = spreadOf(lead)
 	m.Stations = Stations{
 		Approve: spreadOf(stations[stationApprove]), Queue: spreadOf(stations[stationQueue]),
@@ -336,8 +355,12 @@ func spreadOf(ds []time.Duration) Spread {
 	sorted := slices.Clone(ds)
 	slices.Sort(sorted)
 	rank := func(q float64) int64 {
-		i := int(math.Ceil(q*float64(len(sorted)))) - 1
-		return int64(sorted[i].Round(time.Second) / time.Second)
+		return seconds(sorted[int(math.Ceil(q*float64(len(sorted))))-1])
 	}
 	return Spread{Count: len(sorted), MedianSeconds: rank(0.5), P90Seconds: rank(0.9)}
+}
+
+// seconds is d in whole seconds, rounded.
+func seconds(d time.Duration) int64 {
+	return int64(d.Round(time.Second) / time.Second)
 }

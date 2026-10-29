@@ -25,7 +25,7 @@
     "period": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["from", "to", "landed", "first_pass", "fixed", "lead_time", "stations", "recovery", "rework", "not_landed"],
+      "required": ["from", "to", "landed", "first_pass", "fixed", "lead_time", "stations", "recovery", "rework", "not_landed", "slowest"],
       "properties": {
         "from": { "$ref": "defs.json#/$defs/time" },
         "to": { "$ref": "defs.json#/$defs/time" },
@@ -69,6 +69,22 @@
             "code_review_rounds": { "description": "The code reviews before a push that found a Critical or Major issue.", "$ref": "#/$defs/count" },
             "redrafts": { "description": "The drafts after the first one.", "$ref": "#/$defs/count" },
             "turns": { "$ref": "#/$defs/count" }
+          }
+        },
+        "slowest": {
+          "description": "The landed runs with the longest lead time, longest first, at most 5.",
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["run_id", "plot_id", "title", "lead_seconds"],
+            "properties": {
+              "run_id": { "$ref": "defs.json#/$defs/id" },
+              "plot_id": { "$ref": "defs.json#/$defs/id" },
+              "title": { "type": "string" },
+              "lead_seconds": { "$ref": "#/$defs/count" }
+            }
           }
         },
         "not_landed": {

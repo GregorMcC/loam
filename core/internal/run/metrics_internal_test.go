@@ -94,6 +94,27 @@ func TestMetricsSplitTheLeadTimeOfEachLandedRunByStation(t *testing.T) {
 	if c.Stations != want {
 		t.Fatalf("stations %+v\nwant %+v", c.Stations, want)
 	}
+	slowest := []SlowRun{{RunID: "shaped", LeadSeconds: minutes(90)}, {RunID: "started", LeadSeconds: minutes(80)},
+		{RunID: "fix", LeadSeconds: minutes(20)}}
+	if !reflect.DeepEqual(c.Slowest, slowest) {
+		t.Fatalf("slowest %+v", c.Slowest)
+	}
+}
+
+// Slowest keeps the runs with the longest lead time.
+func TestMetricsKeepTheSlowestRunsOnly(t *testing.T) {
+	var runs []store.Run
+	var events []store.RunEvent
+	for i := range SlowestLimit + 2 {
+		id := string(rune('a' + i))
+		h := (&history{run: id}).state(store.RunStarting, 0).state(store.RunLanded, 10+i)
+		runs = append(runs, store.Run{ID: id, State: store.RunLanded})
+		events = append(events, h.events...)
+	}
+	c := ComputeMetrics(runs, events, metricsStart, metricsStart.Add(time.Hour)).Current
+	if len(c.Slowest) != SlowestLimit || c.Slowest[0].RunID != "g" || c.Slowest[SlowestLimit-1].RunID != "c" {
+		t.Fatalf("slowest %+v", c.Slowest)
+	}
 }
 
 func TestMetricsCountFirstPassFixesReworkAndRunsThatDidNotLand(t *testing.T) {
@@ -145,14 +166,14 @@ func TestMetricsCountARunInTheWindowThatItLandedIn(t *testing.T) {
 
 func TestMetricsOfNoRunsAreZeroWithEmptyCounts(t *testing.T) {
 	m := ComputeMetrics(nil, nil, metricsStart, metricsStart.Add(time.Hour))
-	if !reflect.DeepEqual(m.Current, MetricsPeriod{From: metricsStart, To: metricsStart.Add(time.Hour)}) {
+	if !reflect.DeepEqual(m.Current, MetricsPeriod{From: metricsStart, To: metricsStart.Add(time.Hour), Slowest: []SlowRun{}}) {
 		t.Fatalf("%+v", m.Current)
 	}
 	b, err := json.Marshal(m)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{`"lead_time":{"count":0,"median_seconds":0,"p90_seconds":0}`, `"not_landed":{"stopped":0,`, `"merge":`} {
+	for _, key := range []string{`"lead_time":{"count":0,"median_seconds":0,"p90_seconds":0}`, `"not_landed":{"stopped":0,`, `"merge":`, `"slowest":[]`} {
 		if !strings.Contains(string(b), key) {
 			t.Fatalf("json has no %s: %s", key, b)
 		}
