@@ -94,14 +94,13 @@ public struct FixPrompt: Equatable, Sendable {
             .joined(separator: " ")
     }
 
-    /// A folder path as one line. Each control character and line break becomes a space, and the characters that
-    /// show nothing go, as in `oneLine`. It keeps each other character, so a run of spaces stays as it is, and the
-    /// path still names the same folder.
+    /// A folder path as one line. Each control character and line break becomes a space, because Loam cannot type
+    /// it. Every other character stays, so the path names the same folder: a run of spaces, a variation selector.
+    /// The path comes from the store of Loam, not from GitHub, so a character that shows nothing hides no words
+    /// that someone else wrote.
     static func onePathLine(_ path: String) -> String {
         let breaks: Set<Unicode.GeneralCategory> = [.control, .lineSeparator, .paragraphSeparator]
-        let shown = path.unicodeScalars.lazy
-            .filter { !hidden.contains($0.properties.generalCategory) && !$0.properties.isDefaultIgnorableCodePoint }
-            .map { breaks.contains($0.properties.generalCategory) ? " " : $0 }
+        let shown = path.unicodeScalars.lazy.map { breaks.contains($0.properties.generalCategory) ? " " : $0 }
         return String(String.UnicodeScalarView(shown))
     }
 
