@@ -1,6 +1,7 @@
 {
   "defaults": {
     "effort": "high",
+    "mcp_servers": [],
     "model": "opus",
     "plot_id": "plotaaaaae"
   }

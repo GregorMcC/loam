@@ -672,11 +672,14 @@ type exitCode int
 func (e exitCode) Error() string { return fmt.Sprintf("exit code %d", int(e)) }
 
 func newRunDefaultsCmd() *cobra.Command {
-	var model, effort string
+	var model, effort, mcp string
 	c := &cobra.Command{
-		Use:   "defaults <plot> [--model <model>] [--effort <level>]",
-		Short: "Show or set the model and effort that runs of a plot use",
+		Use:   "defaults <plot> [--model <model>] [--effort <level>] [--mcp <names>]",
+		Short: "Show or set the model, effort, and MCP servers that runs of a plot use",
 		Long: "A run, a Shape run, and a recurring run of the plot use these defaults when they name no model or effort. Empty means your Claude Code setting.\n" +
+			"--mcp names the MCP servers, comma-separated, that claude -p loads when it drafts a run or writes the PR text. Loam copies each one from your Claude Code config: " +
+			"the local and user scopes in .claude.json, then .mcp.json in the folder of the run. claude.ai connectors are not in a local config file, so you cannot select them. " +
+			"Empty means no MCP server. A name that Loam cannot find stops the draft.\n" +
 			"With no flag, this shows the defaults. A flag sets that default, and an empty value clears it. Run defaults are not in the change log.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -694,12 +697,15 @@ func newRunDefaultsCmd() *cobra.Command {
 				return err
 			}
 			f := cmd.Flags()
-			if f.Changed("model") || f.Changed("effort") {
+			if f.Changed("model") || f.Changed("effort") || f.Changed("mcp") {
 				if f.Changed("model") {
 					d.Model = model
 				}
 				if f.Changed("effort") {
 					d.Effort = effort
+				}
+				if f.Changed("mcp") {
+					d.MCPServers = strings.Split(mcp, ",")
 				}
 				if d, err = s.SetRunDefaults(d); err != nil {
 					return err
@@ -708,13 +714,15 @@ func newRunDefaultsCmd() *cobra.Command {
 			if JSON(cmd) {
 				return printJSON(cmd, map[string]any{"defaults": d})
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "model: %s\neffort: %s\n", cmp.Or(d.Model, "(Claude Code setting)"), cmp.Or(d.Effort, "(Claude Code setting)"))
+			fmt.Fprintf(cmd.OutOrStdout(), "model: %s\neffort: %s\nmcp servers: %s\n", cmp.Or(d.Model, "(Claude Code setting)"), cmp.Or(d.Effort, "(Claude Code setting)"),
+				cmp.Or(strings.Join(d.MCPServers, ", "), "(none)"))
 			return nil
 		},
 	}
 	f := c.Flags()
 	f.StringVar(&model, "model", "", "set the default model; empty clears it")
 	f.StringVar(&effort, "effort", "", "set the default effort level ("+strings.Join(store.Efforts, ", ")+"); empty clears it")
+	f.StringVar(&mcp, "mcp", "", "set the MCP servers that drafts and PR texts load, comma-separated, by name in the Claude Code config (not claude.ai connectors); empty clears it")
 	return c
 }
 

@@ -1398,6 +1398,19 @@
     "schema": "run-defaults"
   },
   {
+    "name": "run_defaults_set_mcp",
+    "args": [
+      "run",
+      "defaults",
+      "Runs",
+      "--mcp",
+      "loam,linear-server",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "run-defaults"
+  },
+  {
     "name": "error_run_defaults_bad_effort",
     "args": [
       "run",
@@ -1419,6 +1432,8 @@
       "--model",
       "",
       "--effort",
+      "",
+      "--mcp",
       "",
       "--json"
     ],

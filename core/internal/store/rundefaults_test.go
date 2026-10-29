@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/GregorMcC/loam/core/internal/store"
@@ -10,21 +11,24 @@ import (
 func TestRunDefaultsOfAPlot(t *testing.T) {
 	s := openStore(t)
 	p := newPlot(t, s, "A")
-	if d, err := s.GetRunDefaults(p.ID); err != nil || d != (store.RunDefaults{PlotID: p.ID}) {
+	if d, err := s.GetRunDefaults(p.ID); err != nil || !reflect.DeepEqual(d, store.RunDefaults{PlotID: p.ID, MCPServers: []string{}}) {
 		t.Fatalf("new plot: %+v %v", d, err)
 	}
-	want := store.RunDefaults{PlotID: p.ID, Model: "opus", Effort: "xhigh"}
-	if _, err := s.SetRunDefaults(want); err != nil {
-		t.Fatal(err)
+	want := store.RunDefaults{PlotID: p.ID, Model: "opus", Effort: "xhigh", MCPServers: []string{"loam", "linear-server"}}
+	// Loam trims each server name and leaves out empty names and repeats.
+	set := want
+	set.MCPServers = []string{" loam", "", "linear-server ", "loam"}
+	if d, err := s.SetRunDefaults(set); err != nil || !reflect.DeepEqual(d, want) {
+		t.Fatalf("set %+v %v", d, err)
 	}
-	if d, _ := s.GetRunDefaults(p.ID); d != want {
+	if d, _ := s.GetRunDefaults(p.ID); !reflect.DeepEqual(d, want) {
 		t.Fatalf("got %+v", d)
 	}
 	// Setting again replaces the row.
 	if _, err := s.SetRunDefaults(store.RunDefaults{PlotID: p.ID}); err != nil {
 		t.Fatal(err)
 	}
-	if d, _ := s.GetRunDefaults(p.ID); d.Model != "" || d.Effort != "" {
+	if d, _ := s.GetRunDefaults(p.ID); d.Model != "" || d.Effort != "" || d.MCPServers == nil || len(d.MCPServers) != 0 {
 		t.Fatalf("cleared: %+v", d)
 	}
 	if _, err := s.SetRunDefaults(store.RunDefaults{PlotID: p.ID, Effort: "extreme"}); !errors.Is(err, store.ErrInvalid) {

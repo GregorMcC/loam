@@ -279,6 +279,9 @@ CREATE TABLE session_worktrees (
 );
 CREATE INDEX session_worktrees_worktree ON session_worktrees(worktree_id, updated_at);
 `,
+	// 20: the MCP servers that claude -p loads when it drafts a run or writes
+	// the PR text, as a JSON list of names. Not in the change log.
+	`ALTER TABLE run_defaults ADD COLUMN mcp_servers TEXT NOT NULL DEFAULT '[]';`,
 }
 
 // SchemaVersion is the schema version of this binary.

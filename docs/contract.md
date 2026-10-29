@@ -668,18 +668,21 @@ Neither applies while a land waits for GitHub (an auto merge, or a PR in a merge
 
 `run start`, `run shape`, and `recurring add` take `--model <model>` and `--effort <level>`. The level is `low`, `medium`, `high`, `xhigh`, or `max`. Loam passes them to Claude Code as `--model` and `--effort`: to the session of the run, and for `run shape` also to `claude -p`, which drafts the run. `run approve` starts the session with the model and effort of the shape. An empty value passes no flag, so Claude Code uses its own setting. A level that is not in the list exits 2, and the message lists the levels.
 
-A plot can have run defaults: a model and an effort. A run, a Shape run, and a recurring run that fires use the default of the plot for the model or the effort that it leaves empty. A flag or a field that is set wins. Loam fills the value when it starts or shapes the run, so a change of the defaults does not change a run that exists. Run defaults are not in the change log. Deleting a plot deletes its run defaults.
+A plot can have run defaults: a model, an effort, and MCP servers. A run, a Shape run, and a recurring run that fires use the default of the plot for the model or the effort that it leaves empty. A flag or a field that is set wins. Loam fills the value when it starts or shapes the run, so a change of the defaults does not change a run that exists. Run defaults are not in the change log. Deleting a plot deletes its run defaults.
+
+The MCP servers are for `claude -p`, which drafts a Shape run and writes the PR text of a run. Loam starts it with `--strict-mcp-config` and an `--mcp-config` that holds only the servers that `mcp_servers` names, so no claude.ai connector and no other server loads. An empty list loads no MCP server. Loam copies each definition from the Claude Code config: the local scope of the run folder and then the user scope in `.claude.json` (in `CLAUDE_CONFIG_DIR`, else the home folder), then `.mcp.json` in the run folder. A claude.ai connector is not in a local file, so no name selects one. A name that Loam cannot find stops the draft, and the note of the run names the server. With no PR text, the run gets a `ship` event that says why. The session of a run loads its MCP servers as Claude Code does.
 
 ```json
-{ "plot_id": "k3v9q2mxa7", "model": "opus", "effort": "high" }
+{ "plot_id": "k3v9q2mxa7", "model": "opus", "effort": "high", "mcp_servers": ["loam"] }
 ```
 
 | Command | Output |
 | :- | :- |
-| `loam run defaults <plot> [--model <model>] [--effort <level>]` | `{ "defaults": {...} }` |
+| `loam run defaults <plot> [--model <model>] [--effort <level>] [--mcp <names>]` | `{ "defaults": {...} }` |
 
-- With no flag, the command prints the defaults. A plot that has none prints empty strings for `model` and `effort`.
-- A flag sets that field and leaves the other. An empty value clears the field. The command prints the defaults after the change.
+- With no flag, the command prints the defaults. A plot that has none prints empty strings for `model` and `effort`, and `[]` for `mcp_servers`.
+- A flag sets that field and leaves the others. An empty value clears the field.
+- `--mcp` takes a comma-separated list of server names. Loam trims each name and leaves out empty names and repeats. The command prints the defaults after the change.
 - An `--effort` that is not a level exits 2.
 
 #### Limits, the queue, and usage

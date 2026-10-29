@@ -41,16 +41,26 @@ func Trusted(dir string) bool {
 	return main != "" && projects[main]
 }
 
-// trustedProjects returns the folders that the Claude Code config trusts.
-func trustedProjects() map[string]bool {
+// configFile returns the path of the Claude Code config file: .claude.json
+// in CLAUDE_CONFIG_DIR, else in the home folder.
+func configFile() (string, error) {
 	h := os.Getenv("CLAUDE_CONFIG_DIR")
 	if h == "" {
 		var err error
 		if h, err = os.UserHomeDir(); err != nil {
-			return nil
+			return "", err
 		}
 	}
-	b, err := os.ReadFile(filepath.Join(h, ".claude.json"))
+	return filepath.Join(h, ".claude.json"), nil
+}
+
+// trustedProjects returns the folders that the Claude Code config trusts.
+func trustedProjects() map[string]bool {
+	path, err := configFile()
+	if err != nil {
+		return nil
+	}
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil
 	}

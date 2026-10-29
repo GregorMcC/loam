@@ -75,7 +75,8 @@ func TestRunTickOpensThePRWithTheBodyThatClaudeFilledIn(t *testing.T) {
 		t.Fatalf("claude -p calls %q", calls)
 	}
 	args := calls[0]
-	for _, want := range [][]string{{"--output-format", "json"}, {"--tools", "Read,Grep,Glob"}, {"--no-session-persistence"}, {"--json-schema"}} {
+	for _, want := range [][]string{{"--output-format", "json"}, {"--tools", "Read,Grep,Glob"}, {"--no-session-persistence"}, {"--json-schema"},
+		{"--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`}} {
 		if !containsRun(args, want) {
 			t.Errorf("args %q miss %q", args, want)
 		}
