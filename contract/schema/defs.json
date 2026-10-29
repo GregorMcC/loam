@@ -508,7 +508,7 @@
     "runShape": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["assumptions", "plan", "size", "repo", "base", "link", "model", "effort"],
+      "required": ["assumptions", "follow_ups", "plan", "size", "repo", "base", "link", "model", "effort"],
       "properties": {
         "assumptions": {
           "description": "The choices that Claude made and the issue does not settle.",
@@ -520,6 +520,42 @@
             "properties": {
               "text": { "type": "string" },
               "answer": { "description": "What you want instead, or empty when you keep the assumption.", "type": "string" }
+            }
+          }
+        },
+        "follow_ups": {
+          "description": "The work that the draft leaves out on purpose. On approve, Loam files each kept follow-up as an issue at its target.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["title", "body", "target", "kept"],
+            "properties": {
+              "title": { "type": "string", "minLength": 1 },
+              "body": { "type": "string" },
+              "target": {
+                "description": "The tracker where Loam files the issue. A run from a GitHub issue files in the repo of the issue. A run from a Linear issue files in the Linear project of the issue. Else Claude picks one of the Linear links of the plot, or the plot has none and Loam files in the GitHub repo of the run.",
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["kind", "label"],
+                "properties": {
+                  "kind": { "enum": ["linear", "github"] },
+                  "label": { "description": "For a person: the Linear project, or the GitHub repo as owner/name.", "type": "string" },
+                  "url": { "description": "The Linear project or team page, or the web page of the GitHub repo. It is left out for the project of the Linear issue of the run.", "type": "string" }
+                }
+              },
+              "kept": { "description": "True until you drop the follow-up with --drop-follow-up.", "type": "boolean" },
+              "filed": {
+                "description": "The issue that Loam made. It is left out until approve files the follow-up, and for a dropped follow-up or one that failed.",
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["key", "url"],
+                "properties": {
+                  "key": { "description": "A Linear key such as ENG-523, or owner/name#57 for GitHub.", "type": "string" },
+                  "url": { "type": "string" }
+                }
+              },
+              "error": { "description": "Why Loam could not file the follow-up, or could not link it to the issue of the run. It is left out when filing went well.", "type": "string" }
             }
           }
         },
@@ -607,7 +643,7 @@
         "id": { "type": "integer", "minimum": 1 },
         "run_id": { "$ref": "#/$defs/id" },
         "at": { "$ref": "#/$defs/time" },
-        "kind": { "description": "state: the new state. try: a failed gate or CI, with its note. check: the result of one check. linear: what Loam did to the Linear issue of the run. ship: a push or a PR. ci: the result of CI on the PR. review: your notes went back to the session. note: one of those notes, as <file> line <n>: <text> or as text alone. land: a merge of the PR, or where it waits. shape: a draft by Claude, or why it failed. draft: one step that Claude took while it drafted, such as Read window/frame.go.", "enum": ["state", "try", "check", "linear", "ship", "ci", "review", "note", "land", "shape", "draft"] },
+        "kind": { "description": "state: the new state. try: a failed gate or CI, with its note. check: the result of one check. linear: what Loam did to the Linear issue of the run. ship: a push or a PR. ci: the result of CI on the PR. review: your notes went back to the session. note: one of those notes, as <file> line <n>: <text> or as text alone. land: a merge of the PR, or where it waits. shape: a draft by Claude, or why it failed. draft: one step that Claude took while it drafted, such as Read window/frame.go. followup: a follow-up that approve filed as an issue, or why it could not.", "enum": ["state", "try", "check", "linear", "ship", "ci", "review", "note", "land", "shape", "draft", "followup"] },
         "detail": { "type": "string" }
       }
     },

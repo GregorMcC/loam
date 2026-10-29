@@ -107,6 +107,9 @@ private struct DeskDraft: View {
                 if let shape, !shape.assumptions.isEmpty {
                     assumptions(shape.assumptions, answers: edit.answers)
                 }
+                if let shape, !shape.followUps.isEmpty {
+                    followUps(shape.followUps, dropped: edit.droppedFollowUps)
+                }
                 if let shape, !shape.plan.isEmpty || !shape.size.isEmpty {
                     HStack(alignment: .top, spacing: 18) {
                         if !shape.plan.isEmpty {
@@ -182,6 +185,72 @@ private struct DeskDraft: View {
         .loamCard()
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("desk-assumptions")
+    }
+
+    /// The follow-ups of the draft as one card: work that the draft leaves out on purpose. Loam files each kept one
+    /// as an issue when you approve the run. Each shows its target, and you keep or drop it. To change the text,
+    /// ask Claude to draft the run again.
+    private func followUps(_ followUps: [RunFollowUp], dropped: Set<Int>) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: LoamTheme.space2) {
+                Text("Follow-ups \u{00B7} \(followUps.count == 1 ? "1 issue" : "\(followUps.count) issues") to file")
+                    .font(.system(size: 12.5, weight: .semibold)).foregroundStyle(LoamColor.ink)
+                if !dropped.isEmpty { Text("Edited").loamText(LoamTheme.captionStyle, LoamColor.inkMuted) }
+            }
+            Text("Work that this run leaves out on purpose. Loam files each one when you approve.")
+                .loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+                .padding(.top, 2).padding(.bottom, LoamTheme.space3)
+            ForEach(Array(followUps.enumerated()), id: \.offset) { i, followUp in
+                if i > 0 { Rectangle().fill(LoamColor.inkHairline).frame(height: 1).padding(.vertical, LoamTheme.space2) }
+                followUpRow(i, followUp, kept: !dropped.contains(i))
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, LoamTheme.space3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .loamCard()
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("desk-followups")
+    }
+
+    /// One follow-up, with its title, its text, its target, and a toggle that keeps or drops it.
+    private func followUpRow(_ i: Int, _ followUp: RunFollowUp, kept: Bool) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(followUp.title).loamText(LoamTheme.bodyStyle, kept ? LoamColor.ink : LoamColor.inkMuted)
+                    .strikethrough(!kept)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !followUp.body.isEmpty {
+                    Text(followUp.body).loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Text("Files in \(followUp.target.words)").loamText(LoamTheme.captionStyle, LoamColor.inkFaint)
+                    .accessibilityIdentifier("desk-followup-target-\(i)")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if kept {
+                Label("Kept", systemImage: "checkmark")
+                    .loamText(LoamTheme.captionStyle, LoamColor.moss)
+                    .padding(.top, 5)
+                    .accessibilityIdentifier("desk-followup-kept-\(i)")
+                Button("Drop") { model.setDeskFollowUp(i, kept: false) }
+                    .loamSecondaryButton()
+                    .help("File no issue for this follow-up")
+                    .accessibilityIdentifier("desk-followup-drop-\(i)")
+            } else {
+                Label("Dropped", systemImage: "xmark")
+                    .loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+                    .padding(.top, 5)
+                    .accessibilityIdentifier("desk-followup-dropped-\(i)")
+                Button("Keep") { model.setDeskFollowUp(i, kept: true) }
+                    .loamSecondaryButton()
+                    .help("File an issue for this follow-up when you approve")
+                    .accessibilityIdentifier("desk-followup-keep-\(i)")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("desk-followup-\(i)")
     }
 
     /// One assumption, with Keep and Change. A changed assumption shows what you want in its place.
@@ -437,6 +506,10 @@ private struct DeskIfYouApprove: View {
                         }
                         row("Limits", text(DeskContent.limits(model.desk.limits, maxTries: run.maxTries)))
                         if let shapeModel = run.shape?.model, !shapeModel.isEmpty { row("Model", text(shapeModel)) }
+                        if keptFollowUps > 0 {
+                            row("Follow-ups", text("Files \(keptFollowUps == 1 ? "1 issue" : "\(keptFollowUps) issues") for the work it leaves out"))
+                                .accessibilityIdentifier("desk-approve-followups")
+                        }
                         if let source = run.source, source.kind == "linear", model.desk.linearUpdates?.inProgress == true {
                             row("Linear", text("\(source.key) moves to In Progress when the run starts"))
                         }
@@ -481,6 +554,11 @@ private struct DeskIfYouApprove: View {
         .clipped()
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("desk-if-you-approve")
+    }
+
+    /// The follow-ups that approve files as issues: the ones that you did not drop.
+    private var keptFollowUps: Int {
+        (run.shape?.followUps.count ?? 0) - model.desk.currentEdit.droppedFollowUps.count
     }
 
     private var base: String {

@@ -151,6 +151,14 @@ extension AppModel {
         }
     }
 
+    /// Keeps or drops a follow-up of the draft. A dropped follow-up files no issue when you approve the run.
+    public func setDeskFollowUp(_ index: Int, kept: Bool) {
+        editDeskShape { edit, run in
+            guard run.shape?.followUps.indices.contains(index) == true else { return }
+            if kept { edit.droppedFollowUps.remove(index) } else { edit.droppedFollowUps.insert(index) }
+        }
+    }
+
     private func editDeskShape(_ change: (inout ShapeEdit, Run) -> Void) {
         guard let run = deskRun, run.state == .shaping else { return }
         var edit = desk.shapeEdits[run.id] ?? ShapeEdit()
@@ -165,9 +173,15 @@ extension AppModel {
         let edit = desk.currentEdit
         let approveSetup = desk.needsSetupApproval || desk.setup != nil
         await deskAction(id) {
-            _ = try await self.client.runApprove(id, goal: edit.goal, checks: edit.checks, answers: edit.answers,
-                                                 approveSetup: approveSetup)
+            let started = try await self.client.runApprove(id, goal: edit.goal, checks: edit.checks, answers: edit.answers,
+                                                           dropFollowUps: edit.droppedFollowUps, approveSetup: approveSetup)
             self.desk.shapeEdits[id] = nil
+            // The run starts when a follow-up fails to file, so the toast is the one place that says so.
+            let failed = started.run.shape?.followUps.filter { $0.error != nil }.count ?? 0
+            if failed > 0 {
+                self.onToast?("The run started. Loam could not file \(failed == 1 ? "1 follow-up" : "\(failed) follow-ups"). "
+                              + "The run events say why.", .notice)
+            }
         }
     }
 
@@ -184,6 +198,11 @@ extension AppModel {
         } catch {
             if desk.runID == id { desk.error = Self.message(for: error) }
             return
+        }
+        // A new draft has new follow-ups, so a drop of the old list would land on another one.
+        if var edit = desk.shapeEdits[id] {
+            edit.droppedFollowUps = []
+            desk.shapeEdits[id] = edit.isEmpty ? nil : edit
         }
         await reloadRuns()
     }

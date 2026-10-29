@@ -26,6 +26,7 @@
       "base": "",
       "drafted_at": "2026-01-01T00:00:00Z",
       "effort": "",
+      "follow_ups": [],
       "link": "",
       "model": "",
       "plan": [
@@ -69,6 +70,7 @@
         "base": "",
         "drafted_at": "2026-01-01T00:00:00Z",
         "effort": "",
+        "follow_ups": [],
         "link": "",
         "model": "",
         "plan": [
@@ -106,6 +108,7 @@
         "base": "",
         "drafted_at": "2026-01-01T00:00:00Z",
         "effort": "",
+        "follow_ups": [],
         "link": "",
         "model": "",
         "plan": [

@@ -153,3 +153,26 @@ func TestIssueTextIsTheTitleAndTheDescription(t *testing.T) {
 		t.Fatalf("vars %+v", v)
 	}
 }
+
+func TestCreateIssueMakesAnIssueInTheProjectOfAnotherIssueAndRelatesThem(t *testing.T) {
+	f := testutil.FakeLinear(t)
+	c, ctx := linear.NewClient(f.URL, testutil.LinearKey), context.Background()
+	home, err := c.HomeOfIssue(ctx, "ENG-523")
+	if err != nil || home.TeamID != "team-eng" || home.ProjectID != "project-loam" || home.IssueID != "id-ENG-523" {
+		t.Fatalf("%+v %v", home, err)
+	}
+	made, err := c.CreateIssue(ctx, linear.NewIssue{Home: home, Title: "A picker", Description: "Later."})
+	if err != nil || made.Key != "ENG-601" || !strings.Contains(made.URL, "ENG-601") {
+		t.Fatalf("%+v %v", made, err)
+	}
+	if err := c.Relate(ctx, made.ID, home.IssueID); err != nil {
+		t.Fatal(err)
+	}
+	scope, err := c.HomeOfScope(ctx, linear.Scope{Project: "8f3a2b1c9d0e"})
+	if err != nil || scope.ProjectID != "project-loam" || scope.TeamID != "team-eng" {
+		t.Fatalf("%+v %v", scope, err)
+	}
+	if team, err := c.HomeOfScope(ctx, linear.Scope{Team: "ENG"}); err != nil || team.ProjectID != "" || team.TeamID != "team-eng" {
+		t.Fatalf("%+v %v", team, err)
+	}
+}

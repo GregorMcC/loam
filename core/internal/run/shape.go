@@ -40,30 +40,33 @@ const draftFields = `
   "checks": {"type": "array", "items": {"type": "object", "additionalProperties": false,
    "required": ["name", "command"], "properties": {"name": {"type": "string"}, "command": {"type": "string"}}}},
   "assumptions": {"type": "array", "items": {"type": "string"}},
+  "follow_ups": {"type": "array", "items": {"type": "object", "additionalProperties": false,
+   "required": ["title", "body", "target"], "properties": {"title": {"type": "string"}, "body": {"type": "string"}, "target": {"type": "string"}}}},
   "plan": {"type": "array", "items": {"type": "string"}},
   "size": {"type": "string"}`
 
 // draftSchema is the JSON Schema of a draft, for claude -p --json-schema.
 const draftSchema = `{"type": "object", "additionalProperties": false,
- "required": ["goal", "checks", "assumptions", "plan", "size"],
+ "required": ["goal", "checks", "assumptions", "follow_ups", "plan", "size"],
  "properties": {` + draftFields + `}}`
 
 // splitSchema is the JSON Schema of a split draft: one draft for each repo
 // that the issue needs changes in.
 const splitSchema = `{"type": "object", "additionalProperties": false, "required": ["runs"],
  "properties": {"runs": {"type": "array", "minItems": 1, "items": {"type": "object", "additionalProperties": false,
- "required": ["repo", "goal", "checks", "assumptions", "plan", "size"],
+ "required": ["repo", "goal", "checks", "assumptions", "follow_ups", "plan", "size"],
  "properties": {"repo": {"type": "string"},` + draftFields + `}}}}}`
 
 // draft is what Claude answers, in the shape of draftSchema. Repo is the
 // repo of one run of a split draft.
 type draft struct {
-	Repo        string        `json:"repo,omitempty"`
-	Goal        string        `json:"goal"`
-	Checks      []store.Check `json:"checks"`
-	Assumptions []string      `json:"assumptions"`
-	Plan        []string      `json:"plan"`
-	Size        string        `json:"size"`
+	Repo        string          `json:"repo,omitempty"`
+	Goal        string          `json:"goal"`
+	Checks      []store.Check   `json:"checks"`
+	Assumptions []string        `json:"assumptions"`
+	FollowUps   []draftFollowUp `json:"follow_ups"`
+	Plan        []string        `json:"plan"`
+	Size        string          `json:"size"`
 }
 
 // ShapeOptions says which run to shape. The fields are as for
@@ -176,9 +179,12 @@ type ApproveOptions struct {
 	DoneWhen []store.Check
 	// Answers change assumptions, by number from 1. An assumption with no
 	// answer stays as Claude made it.
-	Answers      map[int]string
-	ApproveSetup bool
-	Loam         string
+	Answers map[int]string
+	// DropFollowUps are follow-ups to drop, by number from 1. Loam files
+	// each other follow-up as an issue.
+	DropFollowUps []int
+	ApproveSetup  bool
+	Loam          string
 }
 
 // Approve starts a Shaping run with your edits to its draft: it makes the
@@ -199,6 +205,11 @@ func Approve(ctx context.Context, s *store.Store, id string, o ApproveOptions) (
 	for n := range o.Answers {
 		if n < 1 || n > len(r.Shape.Assumptions) {
 			return nil, fmt.Errorf("the draft has no assumption %d: it has %d: %w", n, len(r.Shape.Assumptions), store.ErrInvalid)
+		}
+	}
+	for _, n := range o.DropFollowUps {
+		if n < 1 || n > len(r.Shape.FollowUps) {
+			return nil, fmt.Errorf("the draft has no follow-up %d: it has %d: %w", n, len(r.Shape.FollowUps), store.ErrInvalid)
 		}
 	}
 	plot, err := s.GetPlot(r.PlotID)
@@ -231,6 +242,9 @@ func Approve(ctx context.Context, s *store.Store, id string, o ApproveOptions) (
 		for n, answer := range o.Answers {
 			r.Shape.Assumptions[n-1].Answer = strings.TrimSpace(answer)
 		}
+		for _, n := range o.DropFollowUps {
+			r.Shape.FollowUps[n-1].Kept = false
+		}
 		if r.Source == nil {
 			r.Source = sourceOf(wt.Link)
 		}
@@ -239,6 +253,12 @@ func Approve(ctx context.Context, s *store.Store, id string, o ApproveOptions) (
 	if err != nil {
 		return nil, err
 	}
+	// The run starts even when a follow-up fails to file: the failure is a
+	// warning, an event, and the error of the follow-up, and the PR body
+	// lists only the issues that exist.
+	var followWarnings []string
+	r, followWarnings = fileFollowUps(ctx, s, r)
+	res.Warnings = append(res.Warnings, followWarnings...)
 	if r.State == store.RunQueued {
 		res.Run = r
 		return res, nil
@@ -266,7 +286,9 @@ func draftRun(ctx context.Context, s *store.Store, r store.Run, change string) (
 	if err != nil {
 		return nil, err
 	}
-	d, failure := askForDraft(ctx, r, change, others, defaults.MCPServers, draftSteps(s, r.ID), usageRecorder(s))
+	d, failure := askForDraft(ctx, plot, r, change, others, defaults.MCPServers, draftSteps(s, r.ID), usageRecorder(s))
+	// Placing the follow-ups can run git, so it happens before the transaction.
+	place := placeFollowUps(plot, r.Source, r.Shape.Repo)
 	r, err = s.UpdateRun(r.ID, func(r *store.Run) error {
 		if r.State != store.RunShaping || r.Shape == nil {
 			return nil
@@ -276,6 +298,7 @@ func draftRun(ctx context.Context, s *store.Store, r store.Run, change string) (
 			return nil
 		}
 		applyDraft(r, d)
+		setFollowUps(place, r, d.FollowUps)
 		return nil
 	})
 	if err != nil || r.State != store.RunShaping {
@@ -302,6 +325,10 @@ func splitRun(ctx context.Context, s *store.Store, plot store.Plot, r store.Run,
 		group = r.ID
 	}
 	mainBase := r.Shape.Base
+	var places []followUpPlace
+	for _, repo := range repos {
+		places = append(places, placeFollowUps(plot, r.Source, repo.ID))
+	}
 	base := func(repo store.Repo) string {
 		// The base of a shape is a branch of the main repo.
 		if m := plot.MainRepo(); m != nil && m.ID == repo.ID {
@@ -320,6 +347,7 @@ func splitRun(ctx context.Context, s *store.Store, plot store.Plot, r store.Run,
 		applyDraft(r, ds[0])
 		r.Folder, r.GroupID = repos[0].Path, group
 		r.Shape.Repo, r.Shape.Base, r.Shape.Split = repos[0].ID, base(repos[0]), false
+		setFollowUps(places[0], r, ds[0].FollowUps)
 		return nil
 	})
 	runs := []store.Run{r}
@@ -336,6 +364,7 @@ func splitRun(ctx context.Context, s *store.Store, plot store.Plot, r store.Run,
 			Shape: &store.RunShape{Repo: repo.ID, Base: base(repo), Link: r.Shape.Link, Model: r.Shape.Model,
 				Effort: r.Shape.Effort, Brief: r.Shape.Brief}}
 		applyDraft(&n, d)
+		setFollowUps(places[i+1], &n, d.FollowUps)
 		if n, err = s.AddRun(n); err != nil {
 			return runs, err
 		}
@@ -403,8 +432,8 @@ func shapeDetail(r store.Run, failure string) string {
 // askForDraft has Claude draft one run in the folder of the run. others
 // name the repos of the other runs of its group. mcp, step, and usage are
 // as for [askClaude].
-func askForDraft(ctx context.Context, r store.Run, change string, others, mcp []string, step func(string), usage func(store.Usage)) (draft, string) {
-	prompt := func(ctx context.Context) string { return shapePrompt(ctx, r, change, others) }
+func askForDraft(ctx context.Context, plot store.Plot, r store.Run, change string, others, mcp []string, step func(string), usage func(store.Usage)) (draft, string) {
+	prompt := func(ctx context.Context) string { return shapePrompt(ctx, plot, r, change, others) }
 	out, failure := askClaude(ctx, r, nil, mcp, prompt, draftSchema, step, usage)
 	if failure != "" {
 		return draft{}, failure
@@ -683,6 +712,10 @@ const draftHow = "- goal: what the run must do, in 2 to 4 plain sentences. Say w
 	"- checks: 1 to 4 Done when checks. Each has a short name and a shell command that exits 0 in the repo when the work is done, " +
 	"such as the tests of the area. Use the commands that the repo already has. The run can run the checks, but it cannot change them.\n" +
 	"- assumptions: each choice that you made and the issue does not settle, in one sentence each. Give an empty list when there is none.\n" +
+	"- follow_ups: each piece of work that this run leaves out on purpose, such as \"A picker in the app is a later ticket\". " +
+	"Do not hide such work in an assumption. Loam files each follow-up as an issue when the run is approved. " +
+	"Give a short title and a body of 1 to 3 sentences that a person can act on. Give an empty list when the run leaves nothing out. " +
+	"Leave target empty, unless the prompt asks you to pick one.\n" +
 	"- plan: 2 to 6 short steps.\n" +
 	"- size: one sentence about the size of the change, such as the lines and the areas that it changes.\n"
 
@@ -690,7 +723,7 @@ const draftHow = "- goal: what the run must do, in 2 to 4 plain sentences. Say w
 // text of its issue. With a change, it gives Claude the last draft and the
 // change that you ask for. others name the repos of the other runs of its
 // group.
-func shapePrompt(ctx context.Context, r store.Run, change string, others []string) string {
+func shapePrompt(ctx context.Context, plot store.Plot, r store.Run, change string, others []string) string {
 	var b strings.Builder
 	b.WriteString("You draft a run for Loam. A run is one goal that a Claude Code session works on alone, in a worktree of this repo, until its checks pass. " +
 		"The session commits its work on its branch, and Loam then pushes the branch and opens the PR, so the plan needs no step for those. " +
@@ -702,6 +735,7 @@ func shapePrompt(ctx context.Context, r store.Run, change string, others []strin
 	}
 	writeIssue(ctx, &b, r)
 	b.WriteString("\nDraft the run:\n" + draftHow)
+	writeFollowUpAdvice(&b, plot, r)
 	if change != "" {
 		last, _ := json.MarshalIndent(lastDraft(r), "", "  ")
 		fmt.Fprintf(&b, "\nYour last draft:\n%s\n\nThe person asks for this change:\n%s\n\nDraft the run again with the change.\n", last, change)
@@ -717,7 +751,8 @@ func splitPrompt(ctx context.Context, plot store.Plot, r store.Run, change strin
 		"The session commits its work on its branch, and Loam then pushes the branch and opens the PR, so the plan needs no step for those.\n" +
 		"\nThe issue can need changes in more than one repo of the plot. Draft one run for each repo that needs changes, and no run for a repo that needs none. " +
 		"Each run works alone in a worktree of its repo, and its checks run there. The runs may land in any order, " +
-		"so each run must be correct alone, or say in an assumption what it needs from another run.\n" +
+		"so each run must be correct alone, or say in an assumption what it needs from another run. " +
+		"Give a follow-up in one run only, even when it concerns more than one repo.\n" +
 		"\nRead the repos to learn how each one is built and tested. Do not change any file. The repos of the plot:\n")
 	for _, repo := range plot.Repos {
 		fmt.Fprintf(&b, "- %s: %s, at %s", repo.ID, repoLabel(repo), repo.Path)
@@ -728,6 +763,7 @@ func splitPrompt(ctx context.Context, plot store.Plot, r store.Run, change strin
 	}
 	writeIssue(ctx, &b, r)
 	b.WriteString("\nDraft the runs. For each run:\n- repo: the ID of its repo, from the list. Give each repo at most once.\n" + draftHow)
+	writeFollowUpAdvice(&b, plot, r)
 	if change != "" {
 		fmt.Fprintf(&b, "\nThe person asks for this change:\n%s\n", change)
 	}
@@ -762,7 +798,15 @@ func writeIssue(ctx context.Context, b *strings.Builder, r store.Run) {
 
 // lastDraft is the draft of the run as Claude gave it.
 func lastDraft(r store.Run) draft {
-	d := draft{Goal: r.Goal, Checks: r.DoneWhen, Plan: r.Shape.Plan, Size: r.Shape.Size, Assumptions: []string{}}
+	d := draft{Goal: r.Goal, Checks: r.DoneWhen, Plan: r.Shape.Plan, Size: r.Shape.Size, Assumptions: []string{},
+		FollowUps: []draftFollowUp{}}
+	for _, f := range r.Shape.FollowUps {
+		fu := draftFollowUp{Title: f.Title, Body: f.Body}
+		if f.Target.Kind == store.TargetLinear {
+			fu.Target = f.Target.URL
+		}
+		d.FollowUps = append(d.FollowUps, fu)
+	}
 	for _, a := range r.Shape.Assumptions {
 		d.Assumptions = append(d.Assumptions, a.Text)
 	}
