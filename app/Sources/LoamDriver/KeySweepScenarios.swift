@@ -145,7 +145,9 @@ final class KeySweep {
     /// Puts back the items that `savePasteboard` copied.
     func restorePasteboard(_ items: [NSPasteboardItem]) {
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.writeObjects(items)
+        if !items.isEmpty && !NSPasteboard.general.writeObjects(items) {
+            note("your pasteboard could not be put back")
+        }
     }
 
     /// Logs the counts and each broken key. A broken key fails the scenario.
