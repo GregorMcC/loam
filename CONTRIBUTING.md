@@ -43,6 +43,14 @@ gofmt -l .
 go vet ./...
 golangci-lint run
 go test ./...
+govulncheck ./...
+```
+
+In the repo root, for a change to `scripts/` or `.github/`:
+
+```sh
+shellcheck scripts/*.sh
+actionlint
 ```
 
 In `app/`:

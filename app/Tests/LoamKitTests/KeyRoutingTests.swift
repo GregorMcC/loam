@@ -41,9 +41,10 @@ import Testing
 
     @Test func readsTheChordOfAKeyEvent() throws {
         let event = try #require(NSEvent.keyEvent(
-            with: .keyDown, location: .zero, modifierFlags: [.command, .capsLock], timestamp: 0, windowNumber: 0,
-            context: nil, characters: "]", charactersIgnoringModifiers: "]", isARepeat: false, keyCode: 30))
-        #expect(KeyChord(event: event) == KeyChord(.command, "]"))
+            with: .keyDown, location: .zero, modifierFlags: [.command, .shift, .capsLock], timestamp: 0, windowNumber: 0,
+            context: nil, characters: "}", charactersIgnoringModifiers: "}", isARepeat: false, keyCode: 30))
+        // The chord keeps Shift and takes the unshifted character of the key.
+        #expect(KeyChord(event: event) == KeyChord([.command, .shift], "]"))
     }
 
     @Test func showsTheMacOSForm() {
