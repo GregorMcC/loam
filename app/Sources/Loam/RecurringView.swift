@@ -271,6 +271,9 @@ private struct RunDefaultsSection: View {
     @State private var chosenModel = ""
     @State private var chosenEffort = ""
     @State private var chosenServers: [String] = []
+    /// What the pickers held when the page last asked the core to save, or when it loaded them. A save of the same
+    /// pick is not needed, and the core may not have answered the last save yet.
+    @State private var requested = Choice(model: "", effort: "", servers: [])
 
     var body: some View {
         VStack(alignment: .leading, spacing: LoamTheme.space3) {
@@ -295,14 +298,16 @@ private struct RunDefaultsSection: View {
         }
         .task {
             await model.readRunDefaults(plot: plotID)
-            chosenModel = model.runDefaults?.model ?? ""
-            chosenEffort = model.runDefaults?.effort ?? ""
-            chosenServers = model.runDefaults?.mcpServers ?? []
+            let saved = model.runDefaults
+            requested = Choice(model: saved?.model ?? "", effort: saved?.effort ?? "", servers: saved?.mcpServers ?? [])
+            chosenModel = requested.model
+            chosenEffort = requested.effort
+            chosenServers = requested.servers
             await model.readMCPServers()
         }
         .onChange(of: Choice(model: chosenModel, effort: chosenEffort, servers: chosenServers)) { _, now in
-            guard let saved = model.runDefaults, saved.plotID == plotID,
-                  Choice(model: saved.model, effort: saved.effort, servers: saved.mcpServers) != now else { return }
+            guard model.runDefaults?.plotID == plotID, requested != now else { return }
+            requested = now
             Task { await model.setRunDefaults(plot: plotID, model: now.model, effort: now.effort, mcpServers: now.servers) }
         }
         .accessibilityElement(children: .contain)
