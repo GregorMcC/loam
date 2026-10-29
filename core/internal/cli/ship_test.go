@@ -26,7 +26,8 @@ type tickOut struct {
 }
 
 // shipRun gives a run with a session, whose repo is on GitHub, a passed
-// gate. It returns the run, in Shipping, and its worktree.
+// gate. It returns the run, in Shipping, and its worktree. The code review
+// before a push finds no issue.
 func shipRun(t *testing.T, maxTries string) (*store.Store, store.Run, store.Worktree) {
 	t.Helper()
 	s, r := gateRun(t, maxTries)
@@ -42,6 +43,7 @@ func shipRun(t *testing.T, maxTries string) (*store.Store, store.Run, store.Work
 		t.Fatalf("gate: %d %s", code, reason)
 	}
 	testutil.FakeGH(t, `{}`)
+	testutil.FakeClaudePrintFor(t, codeReviewSchemaText, codeReviewAnswer(`[]`))
 	r, _ = s.GetRun(r.ID)
 	if r.State != store.RunShipping {
 		t.Fatalf("not shipping: %+v", r)

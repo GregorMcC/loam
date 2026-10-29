@@ -6,6 +6,8 @@
       "linear-server"
     ],
     "model": "opus",
-    "plot_id": "plotaaaaae"
+    "plot_id": "plotaaaaae",
+    "review": true,
+    "review_effort": ""
   }
 }

@@ -21,7 +21,8 @@ const factNames = 5
 // are the files that the branch changed, or nil when git cannot say. With
 // them, Loam drops a file that the branch did not change, and adds each
 // changed file that Claude left out. Loam adds its own facts to the reasons
-// of the risk (see [riskFacts]).
+// of the risk (see [riskFacts]), and then those of the code review (see
+// [codeReviewFacts]).
 func shipNotes(r store.Run, a shipAnswer, changed []string) *store.RunNotes {
 	n := &store.RunNotes{
 		Walkthrough:   strings.TrimSpace(a.Walkthrough),
@@ -53,6 +54,9 @@ func shipNotes(r store.Run, a shipAnswer, changed []string) *store.RunNotes {
 		}
 	}
 	n.Risk.Reasons = append(n.Risk.Reasons, riskFacts(r, changed)...)
+	if r.CodeReview != nil {
+		n.Risk.Reasons = append(n.Risk.Reasons, r.CodeReview.Facts...)
+	}
 	return n
 }
 

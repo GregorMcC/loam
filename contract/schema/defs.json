@@ -504,10 +504,10 @@
       "enum": ["", "low", "medium", "high", "xhigh", "max"]
     },
     "runDefaults": {
-      "description": "The model and the effort that a run of a plot uses when it names none, and the MCP servers that claude -p loads when it drafts a run or writes the PR text (loam run defaults).",
+      "description": "The model and the effort that a run of a plot uses when it names none, the MCP servers that claude -p loads when it drafts a run, writes the PR text, or reviews the code, and the code review before each push (loam run defaults).",
       "type": "object",
       "additionalProperties": false,
-      "required": ["plot_id", "model", "effort", "mcp_servers"],
+      "required": ["plot_id", "model", "effort", "mcp_servers", "review", "review_effort"],
       "properties": {
         "plot_id": { "$ref": "#/$defs/id" },
         "model": { "description": "The Claude model, or empty for the Claude Code setting.", "type": "string" },
@@ -517,7 +517,9 @@
           "type": "array",
           "items": { "type": "string", "minLength": 1 },
           "uniqueItems": true
-        }
+        },
+        "review": { "description": "Whether Loam runs a code review of the diff before it pushes a run. True for a plot with no run defaults.", "type": "boolean" },
+        "review_effort": { "$ref": "#/$defs/effort" }
       }
     },
     "runLimits": {
@@ -695,7 +697,7 @@
         "id": { "type": "integer", "minimum": 1 },
         "run_id": { "$ref": "#/$defs/id" },
         "at": { "$ref": "#/$defs/time" },
-        "kind": { "description": "state: the new state. try: a failed gate or CI, with its note. check: the result of one check. linear: what Loam did to the Linear issue of the run. ship: a push or a PR. ci: the result of CI on the PR. review: your notes went back to the session, or the review of the PR requests changes. note: one of those notes, as <file> line <n>: <text> or as text alone. land: a merge of the PR, or where it waits. shape: a draft by Claude, or why it failed. draft: one step that Claude took while it drafted, such as Read window/frame.go. followup: a follow-up that approve filed as an issue, or why it could not.", "enum": ["state", "try", "check", "linear", "ship", "ci", "review", "note", "land", "shape", "draft", "followup"] },
+        "kind": { "description": "state: the new state. try: a failed gate or CI, with its note. check: the result of one check. linear: what Loam did to the Linear issue of the run. ship: a push or a PR. ci: the result of CI on the PR. code_review: the result of the code review before a push, with the count of each severity and the round. review: your notes went back to the session, or the review of the PR requests changes. note: one of those notes, as <file> line <n>: <text> or as text alone. land: a merge of the PR, or where it waits. shape: a draft by Claude, or why it failed. draft: one step that Claude took while it drafted, such as Read window/frame.go. followup: a follow-up that approve filed as an issue, or why it could not.", "enum": ["state", "try", "check", "linear", "ship", "ci", "code_review", "review", "note", "land", "shape", "draft", "followup"] },
         "detail": { "type": "string" }
       }
     },

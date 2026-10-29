@@ -41,7 +41,9 @@
 //
 // With LOAM_FAKE_CLAUDE_PRINT set to a file, a call with -p (print mode)
 // prints the text of that file to stdout, as claude -p --output-format json
-// prints its result.
+// prints its result. LOAM_FAKE_CLAUDE_PRINTS is a JSON object from a text to
+// a file. A -p call whose --json-schema holds that text prints that file
+// instead, so a test can give each kind of call its own answer.
 //
 // With LOAM_FAKE_CLAUDE_HUP_WAIT set to a duration, a SIGHUP and the EOF of
 // stdin do not end the process at once. It waits that long, then exits 0, as
@@ -55,6 +57,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -121,7 +124,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "fakeclaude:", err)
 		os.Exit(2)
 	}
-	if print := os.Getenv("LOAM_FAKE_CLAUDE_PRINT"); print != "" && slices.Contains(os.Args[1:], "-p") {
+	if print := printFile(os.Args[1:]); print != "" && slices.Contains(os.Args[1:], "-p") {
 		b, err := os.ReadFile(print)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "fakeclaude:", err)
@@ -135,6 +138,26 @@ func main() {
 			time.Sleep(hupWait)
 		}
 	}
+}
+
+// printFile is the file that a -p call with args prints: the file of
+// LOAM_FAKE_CLAUDE_PRINTS whose text the --json-schema holds, else the file
+// of LOAM_FAKE_CLAUDE_PRINT.
+func printFile(args []string) string {
+	files := map[string]string{}
+	if s := os.Getenv("LOAM_FAKE_CLAUDE_PRINTS"); s != "" {
+		if err := json.Unmarshal([]byte(s), &files); err != nil {
+			fmt.Fprintln(os.Stderr, "fakeclaude: prints:", err)
+		}
+	}
+	if i := slices.Index(args, "--json-schema"); i >= 0 && i+1 < len(args) {
+		for _, text := range slices.Sorted(maps.Keys(files)) { // sorted, so a test that two texts match is not flaky
+			if strings.Contains(args[i+1], text) {
+				return files[text]
+			}
+		}
+	}
+	return os.Getenv("LOAM_FAKE_CLAUDE_PRINT")
 }
 
 // slowHangUp makes a SIGHUP end the process after the wait d.

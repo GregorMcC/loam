@@ -11,10 +11,10 @@ import (
 func TestRunDefaultsOfAPlot(t *testing.T) {
 	s := openStore(t)
 	p := newPlot(t, s, "A")
-	if d, err := s.GetRunDefaults(p.ID); err != nil || !reflect.DeepEqual(d, store.RunDefaults{PlotID: p.ID, MCPServers: []string{}}) {
+	if d, err := s.GetRunDefaults(p.ID); err != nil || !reflect.DeepEqual(d, store.RunDefaults{PlotID: p.ID, MCPServers: []string{}, Review: true}) {
 		t.Fatalf("new plot: %+v %v", d, err)
 	}
-	want := store.RunDefaults{PlotID: p.ID, Model: "opus", Effort: "xhigh", MCPServers: []string{"loam", "linear-server"}}
+	want := store.RunDefaults{PlotID: p.ID, Model: "opus", Effort: "xhigh", MCPServers: []string{"loam", "linear-server"}, Review: false, ReviewEffort: "low"}
 	// Loam trims each server name and leaves out empty names and repeats.
 	set := want
 	set.MCPServers = []string{" loam", "", "linear-server ", "loam"}
@@ -33,6 +33,9 @@ func TestRunDefaultsOfAPlot(t *testing.T) {
 	}
 	if _, err := s.SetRunDefaults(store.RunDefaults{PlotID: p.ID, Effort: "extreme"}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("bad effort: %v", err)
+	}
+	if _, err := s.SetRunDefaults(store.RunDefaults{PlotID: p.ID, ReviewEffort: "extreme"}); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("bad review effort: %v", err)
 	}
 	if _, err := s.SetRunDefaults(store.RunDefaults{PlotID: "nosuchplot"}); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("no plot: %v", err)
