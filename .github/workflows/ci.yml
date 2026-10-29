@@ -140,6 +140,7 @@ jobs:
         run: xcodebuild -downloadComponent MetalToolchain
       # With a cache hit, the script only links app/vendor to the cache.
       - run: scripts/build-ghosttykit.sh
+      # Save the cache now, so a failed build does not build GhosttyKit again.
       - if: steps.ghosttykit.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
