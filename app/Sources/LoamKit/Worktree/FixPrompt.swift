@@ -67,6 +67,33 @@ public struct FixPrompt: Equatable, Sendable {
         }
     }
 
+    /// The prompt for a session that works in the worktree but started in another folder (TAS-55). Its commands
+    /// run in that other folder, so the prompt names the worktree folder first, as a code span that the path cannot
+    /// end. The folder name comes from the branch name, and a branch name can have backticks.
+    public func inFolder(_ path: String) -> FixPrompt {
+        FixPrompt(kind: kind, text: "Work in the worktree at \(Self.codeSpan(Self.onePathLine(path))). \(text)")
+    }
+
+    /// The text as a Markdown code span that the text cannot end (CommonMark): the fence is one backtick longer
+    /// than the longest run of backticks in the text. Text that starts or ends with a backtick gets a space inside
+    /// each fence, which CommonMark removes. It counts code points, as CommonMark does: Swift joins a backtick and
+    /// a variation selector after it into one character.
+    static func codeSpan(_ text: String) -> String {
+        var longest = 0, run = 0
+        for scalar in text.unicodeScalars {
+            run = scalar == "`" ? run + 1 : 0
+            longest = max(longest, run)
+        }
+        let fence = String(repeating: "`", count: longest + 1)
+        let pad = text.unicodeScalars.first == "`" || text.unicodeScalars.last == "`" ? " " : ""
+        return fence + pad + text + pad + fence
+    }
+
+    private init(kind: Kind, text: String) {
+        self.kind = kind
+        self.text = text
+    }
+
     /// The text as one line that shows each character it has. GitHub gives the names, and a PR from a fork can name
     /// its own checks and branches. A control character could act as a key in the terminal, and a line break as
     /// Return. A character that shows nothing could hide words: a direction mark, a zero-width or tag character, a
@@ -81,6 +108,16 @@ public struct FixPrompt: Equatable, Sendable {
             .split { $0.properties.generalCategory == .control || $0.properties.isWhitespace }
             .map { String(String.UnicodeScalarView($0)) }
             .joined(separator: " ")
+    }
+
+    /// A folder path as one line. Each control character and line break becomes a space, because Loam cannot type
+    /// it. Every other character stays, so the path names the same folder: a run of spaces, a variation selector.
+    /// The path comes from the store of Loam, not from GitHub, so a character that shows nothing hides no words
+    /// that someone else wrote.
+    static func onePathLine(_ path: String) -> String {
+        let breaks: Set<Unicode.GeneralCategory> = [.control, .lineSeparator, .paragraphSeparator]
+        let shown = path.unicodeScalars.lazy.map { breaks.contains($0.properties.generalCategory) ? " " : $0 }
+        return String(String.UnicodeScalarView(shown))
     }
 
     /// The general categories that show nothing: Cf, Co, Cn and Cs. Cf has the direction marks.

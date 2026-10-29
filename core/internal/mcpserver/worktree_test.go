@@ -91,6 +91,72 @@ func TestCreateAndListWorktrees(t *testing.T) {
 	}
 }
 
+// TAS-55: the session that makes a worktree works in it, so the app shows the session under it. work_in_worktree
+// moves the session to another worktree of the plot, or back to the folder that it started in.
+func TestASessionWorksInTheWorktreeThatItMakes(t *testing.T) {
+	testutil.GitEnv(t)
+	e := setup(t, opts{plotEnv: "ALPHA", session: "sess-1"})
+	withGitRepo(t, e)
+	create := func(name string) store.Worktree {
+		t.Helper()
+		var out struct {
+			Worktree store.Worktree `json:"worktree"`
+		}
+		if text := e.ok("create_worktree", map[string]any{"name": name}); json.Unmarshal([]byte(text), &out) != nil {
+			t.Fatal(text)
+		}
+		return out.Worktree
+	}
+	sessions := func(id string) []string {
+		t.Helper()
+		w, err := e.s.GetWorktree(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return w.Sessions
+	}
+	a := create("first")
+	if !slices.Equal(a.Sessions, []string{"sess-1"}) {
+		t.Fatalf("the reply has sessions %q", a.Sessions)
+	}
+	// The latest worktree wins.
+	b := create("second")
+	if !slices.Equal(sessions(a.ID), []string{}) || !slices.Equal(sessions(b.ID), []string{"sess-1"}) {
+		t.Fatalf("a %q, b %q", sessions(a.ID), sessions(b.ID))
+	}
+	e.ok("work_in_worktree", map[string]any{"worktree_id": a.ID})
+	if !slices.Equal(sessions(a.ID), []string{"sess-1"}) || len(sessions(b.ID)) != 0 {
+		t.Fatalf("a %q, b %q", sessions(a.ID), sessions(b.ID))
+	}
+	// No worktree_id puts the session back under the folder that it started in.
+	e.ok("work_in_worktree", nil)
+	if len(sessions(a.ID)) != 0 {
+		t.Fatalf("a %q", sessions(a.ID))
+	}
+	if out := e.fail("work_in_worktree", map[string]any{"worktree_id": "nosuchwt"}); !strings.Contains(out, "list_worktrees") {
+		t.Fatal(out)
+	}
+	if out := e.fail("work_in_worktree", map[string]any{"worktree_id": a.ID, "plot": e.other.ID}); !strings.Contains(out, "list_worktrees") {
+		t.Fatal(out)
+	}
+}
+
+// A server that cannot tell its session makes the worktree with no link, and work_in_worktree says why it fails.
+func TestWorkInWorktreeNeedsASession(t *testing.T) {
+	testutil.GitEnv(t)
+	e := setup(t, opts{plotEnv: "ALPHA"})
+	withGitRepo(t, e)
+	var out struct {
+		Worktree store.Worktree `json:"worktree"`
+	}
+	if text := e.ok("create_worktree", map[string]any{"name": "first"}); json.Unmarshal([]byte(text), &out) != nil || len(out.Worktree.Sessions) != 0 {
+		t.Fatal(text)
+	}
+	if text := e.fail("work_in_worktree", map[string]any{"worktree_id": out.Worktree.ID}); !strings.Contains(text, "which session it serves") {
+		t.Fatal(text)
+	}
+}
+
 func TestCreateWorktreeOptionsAndErrors(t *testing.T) {
 	testutil.GitEnv(t)
 	e := setup(t, opts{plotEnv: "ALPHA"})

@@ -317,6 +317,39 @@ struct AttentionCycleTests {
         #expect(model.checkout(holding: s.main1)?.id == "main-a")
     }
 
+    /// TAS-55: a session that works in a worktree, such as one that it made through MCP, sits under it, from the
+    /// main checkout or from the plot folder. A /clear keeps it there. A link to a worktree of another plot, and
+    /// a shell, do not move.
+    @Test func aSessionSitsUnderTheWorktreeThatItWorksIn() {
+        var ws = Workspace()
+        let linked = ws.openTab(PaneSpec(kind: .session, space: "a", title: "claude", sessionID: "s1"))
+        let other = ws.openTab(PaneSpec(kind: .session, space: "a", title: "claude", sessionID: "s2"))
+        var inPlotFolder = PaneSpec(kind: .session, space: "a", title: "claude", sessionID: "s3")
+        inPlotFolder.inPlotFolder = true
+        let plotSession = ws.openTab(inPlotFolder)
+        let main = ws.openTab(shell("a"))
+        ws.activate("a")
+        var fix = status("wt-fix", "a", "fix-login")
+        fix.worktree.sessions = ["s1", "s3"]
+        var docs = status("wt-docs", "b", "docs-pass")
+        docs.worktree.sessions = ["s2"]
+        func checkouts() -> SidebarModel.CheckoutRow {
+            SidebarModel(plots: plots, workspace: ws, collapsed: false, worktrees: ["a": [fix], "b": [docs]],
+                         repos: mainRepo("a", "main")).tree(of: "a").checkouts[0]
+        }
+        #expect(checkouts().panes.map(\.id) == [other, main])
+        #expect(checkouts().worktrees.map(\.id) == ["wt-fix"])
+        #expect(checkouts().worktrees[0].panes.map(\.id) == [linked, plotSession])
+        #expect(checkouts().worktrees[0].worktree?.paneCount == 2)
+        // After /clear the session has a new ID, and the pane stays.
+        ws.apply(PaneEvent(event: "SessionStart", sessionID: "s1-after-clear", cwd: "/tmp", at: "2026-10-03T09:00:00Z",
+                           source: "clear", notificationType: nil), to: linked, now: anyTime)
+        #expect(checkouts().worktrees[0].panes.map(\.id) == [linked, plotSession])
+        // The new session works in no worktree yet, and the link of the old one holds. A link of the new one wins.
+        fix.worktree.sessions = ["s3"]
+        #expect(checkouts().panes.map(\.id) == [linked, other, main])
+    }
+
     @Test func aPlotWithNoMainRepoHoldsItsOtherPanesItself() {
         let s = sample()
         let model = SidebarModel(plots: plots, workspace: s.ws, collapsed: false, worktrees: s.worktrees)

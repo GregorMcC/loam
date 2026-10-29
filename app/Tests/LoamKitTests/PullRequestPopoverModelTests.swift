@@ -611,6 +611,28 @@ import Testing
         #expect(model.pullRequestMark(of: pane)?.stage == .readyToMerge)
     }
 
+    /// TAS-55: a session in the main checkout that works in a worktree shows the PR of that worktree, and the
+    /// actions of the focused worktree act on it. The pane keeps its folder.
+    @Test func aSessionThatWorksInAWorktreeShowsItsPR() async throws {
+        let rig = try await rig()
+        let model = rig.model
+        model.openTab(.session)
+        let pane = try #require(model.workspace.focusedPane)
+        model.apply(PaneEvent(event: "SessionStart", sessionID: "s-linked", cwd: "/tmp", at: "2026-01-01T00:00:00Z",
+                              source: "startup", notificationType: nil), to: pane)
+        #expect(model.pullRequestMark(of: pane) == nil && model.focusedWorktree == nil)
+        let list = String(decoding: try Fixtures.data("worktree_list_stages"), as: UTF8.self)
+        let parts = list.components(separatedBy: "\"id\": \"\(nativePanel)\"")
+        try #require(parts.count == 2)
+        let linked = parts[0] + "\"id\": \"\(nativePanel)\""
+            + parts[1].replacingOccurrences(of: "\"sessions\": []", with: "\"sessions\": [\"s-linked\"]", range: parts[1].range(of: "\"sessions\": []"))
+        try rig.touch("worktree_list_stages.json", linked)
+        await model.reloadWorktrees()
+        #expect(model.pullRequestMark(of: pane)?.label == "#16")
+        #expect(model.focusedWorktree?.id == nativePanel && model.shownWorktree(of: pane)?.branch == "native-panel")
+        #expect(model.workspace.spec(of: pane)?.worktree == nil)
+    }
+
     /// The pane header shows the branch from the pane spec, and then the number of the PR mark.
     @Test func thePaneHeaderShowsTheBranchAndThenThePRNumber() async throws {
         let rig = try await rig()

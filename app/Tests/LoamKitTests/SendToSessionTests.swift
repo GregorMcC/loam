@@ -143,6 +143,22 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
         }
     }
 
+    /// A session that started in another folder runs its commands there, so its prompt names the worktree folder.
+    @Test func aPromptForAnotherFolderNamesTheWorktreeFolderFirst() throws {
+        let prompt = FixPrompt(.failures, pr: try pr(.checksFailed))
+        let moved = prompt.inFolder("/work/app  fix\nrm-\u{2764}\u{FE0F}")
+        #expect(moved.kind == .failures)
+        #expect(moved.text == "Work in the worktree at `/work/app  fix rm-\u{2764}\u{FE0F}`. " + prompt.text,
+                "a run of spaces and a variation selector stay")
+        // A backtick in the path cannot end the code span.
+        #expect(FixPrompt.codeSpan("/w/fix-`x`y") == "``/w/fix-`x`y``")
+        #expect(FixPrompt.codeSpan("/w/a``b`") == "``` /w/a``b` ```")
+        #expect(FixPrompt.codeSpan("/w/``\u{FE0F}run") == "```/w/``\u{FE0F}run```", "a backtick with a variation selector counts")
+        #expect(FixPrompt.codeSpan("`\u{FE0F}/w") == "`` `\u{FE0F}/w ``", "a first backtick with a variation selector gets a space")
+        #expect(prompt.inFolder("/w/fix-`push`-now").text.hasPrefix("Work in the worktree at ``/w/fix-`push`-now``. "))
+        #expect(try PaneText.withoutReturn(moved.text) == moved.text)
+    }
+
     @Test func theStageGivesTheKind() throws {
         for status in try stageRows() {
             let expected: FixPrompt.Kind? = switch status.stage {
@@ -592,6 +608,30 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
         send("SessionStart", to: third, model, source: "startup")
         #expect(record.typed.isEmpty)
         #expect(record.notices.last == "Loam did not type a prompt into the new session, because it cannot find the worktree now.")
+    }
+
+    /// A session that works in the worktree but started in the main checkout gets the prompt, with the worktree
+    /// folder first (TAS-55). A session in the worktree gets the prompt as it is.
+    @Test func aSessionThatWorksInTheWorktreeFromAnotherFolderGetsItsFolder() async throws {
+        let (model, record, rows) = try await rigWithRows()
+        model.openTab(.session)
+        let pane = try #require(model.workspace.focusedPane)
+        model.apply(paneEvent("SessionStart", "s-linked", source: "startup"), to: pane)
+        var list = try JSONDecoder().decode([WorktreeStatus].self, from: Data(contentsOf: rows))
+        let i = try #require(list.firstIndex { $0.worktree.id == failed })
+        list[i].worktree.sessions = ["s-linked"]
+        try JSONEncoder().encode(list).write(to: rows)
+        await model.reloadWorktrees()
+        let path = try worktree(failed, in: model).path
+        let text = "Work in the worktree at `\(path)`. " + (try prompt(failed, model))
+        #expect(model.sendPlan(for: failed)?.step == .type(pane))
+        #expect(model.sendPlan(for: failed)?.prompt.text == text)
+        _ = model.sendToSession(failed)
+        #expect(record.typed.map(\.1) == [text])
+
+        let inside = try open(in: failed, model)
+        #expect(model.sendPlan(for: failed)?.step == .type(inside))
+        #expect(model.sendPlan(for: failed)?.prompt.text == (try prompt(failed, model)))
     }
 
     /// Start session with prompt opens no pane when the plot of the worktree is not in the list. A notice says so.

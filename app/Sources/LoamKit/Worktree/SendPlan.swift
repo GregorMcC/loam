@@ -31,28 +31,33 @@ public struct SendPlan: Equatable, Sendable {
     /// session runs in the worktree.
     public let paneName: String?
 
-    /// The plan for the worktree, with its prompt. `lastFocus` orders the panes by when they last had the focus,
-    /// the highest last. `titles` are the titles that the terminals set.
-    public init(prompt: FixPrompt, worktree: Worktree, in workspace: Workspace, lastFocus: [PaneID: Int],
-                titles: [PaneID: String]) {
-        self.prompt = prompt
-        guard let pane = Self.target(of: worktree, in: workspace, lastFocus: lastFocus),
+    /// The plan for the worktree, with its prompt. A session that works in the worktree from another folder gets
+    /// the worktree folder in its prompt. `lastFocus` orders the panes by when they last had the focus, the highest
+    /// last. `titles` are the titles that the terminals set.
+    public init(prompt: FixPrompt, worktree: Worktree, in workspace: Workspace, links: SessionLinks,
+                lastFocus: [PaneID: Int], titles: [PaneID: String]) {
+        guard let pane = Self.target(of: worktree, in: workspace, links: links, lastFocus: lastFocus),
               let session = workspace.session(of: pane) else {
+            self.prompt = prompt
             step = .start
             paneName = nil
             return
         }
-        step = Self.step(for: pane, session: session, prompt: prompt.text)
+        self.prompt = workspace.spec(of: pane)?.worktree?.id == worktree.id ? prompt : prompt.inFolder(worktree.path)
+        step = Self.step(for: pane, session: session, prompt: self.prompt.text)
         paneName = workspace.title(of: pane, terminalTitles: titles)
     }
 
     /// The session pane that gets the prompt: a seeded session of the worktree, in its plot, whose session has
-    /// not ended. Of two or more, the one that you focused last, else the first in tab order. A saved pane that
-    /// has not resumed counts too: it is `running` until its `SessionStart`, so Loam offers Copy prompt and does
-    /// not start a second session.
-    public static func target(of worktree: Worktree, in workspace: Workspace, lastFocus: [PaneID: Int]) -> PaneID? {
+    /// not ended. A session that works in the worktree but started in another folder counts (TAS-55). Of two or
+    /// more, the one that you focused last, else the first in tab order. A saved pane that has not resumed counts
+    /// too: it is `running` until its `SessionStart`, so Loam offers Copy prompt and does not start a second
+    /// session.
+    public static func target(of worktree: Worktree, in workspace: Workspace, links: SessionLinks,
+                              lastFocus: [PaneID: Int]) -> PaneID? {
         let panes = workspace.paneIDs(of: .plot(worktree.plotID)).filter { pane in
-            guard let spec = workspace.spec(of: pane), spec.kind == .session, spec.worktree?.id == worktree.id,
+            guard let spec = workspace.spec(of: pane), spec.kind == .session,
+                  workspace.shownWorktree(of: pane, links: links)?.id == worktree.id,
                   let session = workspace.session(of: pane) else { return false }
             return !session.exited && session.state != .ended
         }

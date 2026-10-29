@@ -1332,7 +1332,8 @@ public final class AppModel {
     /// worktree.
     public func sendPlan(for id: String) -> SendPlan? {
         guard let status = worktreeStatus(id), let prompt = FixPrompt(status) else { return nil }
-        return SendPlan(prompt: prompt, worktree: status.worktree, in: workspace, lastFocus: lastFocus, titles: terminalTitles)
+        return SendPlan(prompt: prompt, worktree: status.worktree, in: workspace, links: SessionLinks(worktrees),
+                        lastFocus: lastFocus, titles: terminalTitles)
     }
 
     /// True when the checks of the worktree failed. The Worktree actions menu and ⌘J then offer Send failures
@@ -1431,18 +1432,25 @@ public final class AppModel {
 
     // MARK: The PR of a pane
 
-    /// The PR of the worktree that the pane runs in, as the action bar chip and the pane header show it.
+    /// The worktree that the pane shows under: the worktree that it runs in, or the one that its session works
+    /// in (TAS-55). The pane header shows its branch, and the chip its PR.
+    public func shownWorktree(of pane: PaneID) -> WorktreeRef? {
+        workspace.shownWorktree(of: pane, links: SessionLinks(worktrees))
+    }
+
+    /// The PR of the worktree that the pane shows under, as the action bar chip and the pane header show it.
     /// Nil for a pane in the main checkout or in Home, and for a worktree with no PR or with no folder. The
     /// ✎ mark of work that is not pushed is a mark of the sidebar, not a PR.
     public func pullRequestMark(of pane: PaneID) -> StageMark? {
-        guard let id = workspace.spec(of: pane)?.worktree?.id, let status = worktreeStatus(id), status.pr != nil,
+        guard let id = shownWorktree(of: pane)?.id, let status = worktreeStatus(id), status.pr != nil,
               let mark = StageMark(status), mark.number != nil else { return nil }
         return mark
     }
 
-    /// The worktree that the focused pane runs in. Nil for the main checkout and for Home.
+    /// The worktree that the focused pane shows under (`shownWorktree(of:)`). Nil for the main checkout and
+    /// for Home.
     public var focusedWorktree: WorktreeRef? {
-        workspace.focusedPane.flatMap { workspace.spec(of: $0)?.worktree }
+        workspace.focusedPane.flatMap(shownWorktree(of:))
     }
 
     /// The line that the "Session ended" bar adds when the pane's worktree is gone. Nil otherwise.

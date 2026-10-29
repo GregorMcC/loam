@@ -255,7 +255,8 @@ A worktree is a separate checkout of one repo of a plot, on its own branch. It l
   "goal": "Fix the login form",
   "link": { "target": "https://github.com/example/widgets/issues/57", "label": "widgets#57", "key": "#57", "link_id": "" },
   "version": 0,
-  "land": { "pr": 12, "method": "squash", "auto": true, "merge_queue": false, "keep_worktree": false, "keep_remote_branch": false }
+  "land": { "pr": 12, "method": "squash", "auto": true, "merge_queue": false, "keep_worktree": false, "keep_remote_branch": false },
+  "sessions": ["c57ef956-3136-4e86-bfde-da8facfe0523"]
 }
 ```
 
@@ -269,6 +270,7 @@ A worktree is a separate checkout of one repo of a plot, on its own branch. It l
   - A GitHub issue in another repo: `owner/repo#57`, such as `example/widgets#57`, because GitHub reads `#57` as an issue of the repo of the PR. A repo with no `origin` on github.com always gets this form.
   - Any other link: empty.
 - `version` is the ID of the change that last set the goal, or 0 when no change has set it.
+- `sessions` are the IDs of the sessions that work in the worktree but started in another folder, oldest link first. It is `[]` when none does. A session works in one worktree at a time. MCP `create_worktree` links the session that calls it to the new worktree, and MCP `work_in_worktree` links it to another worktree of the plot, or clears the link when it has no `worktree_id`. After `/clear`, `loam hook` moves the link to the new session ID. A resume or a fork keeps it on the earlier ID. The link does not change the folder of the session, so Send to session puts the worktree folder first in the prompt of a linked session. The app shows the pane of a linked session under the worktree, with its PR. A link is not a change in the change log, and it goes when the worktree goes.
 - `land` is a land that waits for GitHub to merge the PR: an auto merge, or a merge queue. It is also a land that GitHub may have when Loam cannot see the merge, and a land after a merge that waits for the panes of the worktree to close. It holds the options of `loam worktree land`, and a later land of the same PR (`pr`) applies its keeps. `method` is empty with a merge queue. `land` is left out when no land waits.
 
 | Command | Output |

@@ -169,7 +169,7 @@
     "worktree": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "plot_id", "repo", "name", "branch", "base", "path", "setup_done", "created_at", "goal", "link", "version"],
+      "required": ["id", "plot_id", "repo", "name", "branch", "base", "path", "setup_done", "created_at", "goal", "link", "version", "sessions"],
       "properties": {
         "id": { "$ref": "#/$defs/id" },
         "plot_id": { "$ref": "#/$defs/id" },
@@ -189,6 +189,11 @@
         "land": {
           "description": "A land that waits: for GitHub (an auto merge, or a merge queue), or after a merge, for the panes of the worktree to close. It is left out when no land waits.",
           "$ref": "#/$defs/pendingLand"
+        },
+        "sessions": {
+          "description": "The IDs of the sessions that work in the worktree but started in another folder, oldest link first.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
         }
       }
     },

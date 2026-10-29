@@ -268,6 +268,17 @@ ALTER TABLE usage ADD COLUMN tried_at INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE runs ADD COLUMN turn_base INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE runs ADD COLUMN pr_draft TEXT NOT NULL DEFAULT '';
 `,
+	// 19: the worktree that a session works in, when it is not the folder
+	// that the session started in, such as a worktree that the session made
+	// through MCP. A session has one at most. Not in the change log.
+	`
+CREATE TABLE session_worktrees (
+  session_id TEXT PRIMARY KEY,
+  worktree_id TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX session_worktrees_worktree ON session_worktrees(worktree_id, updated_at);
+`,
 }
 
 // SchemaVersion is the schema version of this binary.

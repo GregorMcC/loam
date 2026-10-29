@@ -169,6 +169,9 @@ type Worktree struct {
 	Version int64 `json:"version"`
 	// Land is the land that waits for GitHub, or nil.
 	Land *PendingLand `json:"land,omitempty"`
+	// Sessions are the IDs of the sessions that work in the worktree but did
+	// not start in it (see [Store.SetSessionWorktree]), oldest link first.
+	Sessions []string `json:"sessions"`
 }
 
 // WorktreeLink is the link that the work of a worktree started from. It
@@ -213,23 +216,28 @@ type PendingLand struct {
 // worktreeCols are the columns of a worktree record.
 const worktreeCols = `id, plot_id, repo_path, name, branch, base, path, setup_done, created_at, goal, link_target, link_label, link_key, link_id, land`
 
-// worktreeSelect reads worktreeCols and the version of the goal. Use it with
-// FROM worktrees, with no alias.
+// worktreeSelect reads worktreeCols, the version of the goal, and the
+// sessions as a JSON array. Use it with FROM worktrees, with no alias.
 const worktreeSelect = worktreeCols + `, (SELECT COALESCE(MAX(e.change_id), 0) FROM change_entries e
-  WHERE e.plot_id = worktrees.plot_id AND e.item = '` + worktreePrefix + `' || worktrees.id)`
+  WHERE e.plot_id = worktrees.plot_id AND e.item = '` + worktreePrefix + `' || worktrees.id),
+  (SELECT json_group_array(session_id) FROM (SELECT session_id FROM session_worktrees
+  WHERE worktree_id = worktrees.id ORDER BY updated_at, session_id))`
 
 func scanWorktree(sc interface{ Scan(...any) error }) (Worktree, error) {
 	var w Worktree
 	var created int64
 	var l WorktreeLink
-	var land string
+	var land, sessions string
 	err := sc.Scan(&w.ID, &w.PlotID, &w.Repo, &w.Name, &w.Branch, &w.Base, &w.Path, &w.SetupDone, &created,
-		&w.Goal, &l.Target, &l.Label, &l.Key, &l.LinkID, &land, &w.Version)
+		&w.Goal, &l.Target, &l.Label, &l.Key, &l.LinkID, &land, &w.Version, &sessions)
 	w.CreatedAt = tm(created)
 	if l.Target != "" {
 		w.Link = &l
 	}
 	w.Land = decodeLand(land)
+	if json.Unmarshal([]byte(sessions), &w.Sessions) != nil || w.Sessions == nil {
+		w.Sessions = []string{}
+	}
 	return w, err
 }
 
@@ -283,7 +291,7 @@ func (s *Store) AddWorktree(w Worktree) (Worktree, error) {
 		w.ID, w.PlotID, w.Repo, w.Name, w.Branch, w.Base, w.Path, now, w.Goal, l.Target, l.Label, l.Key, l.LinkID); err != nil {
 		return Worktree{}, err
 	}
-	w.SetupDone, w.CreatedAt, w.Link, w.Version, w.Land = false, tm(now), nil, 0, nil
+	w.SetupDone, w.CreatedAt, w.Link, w.Version, w.Land, w.Sessions = false, tm(now), nil, 0, nil, []string{}
 	if l.Target != "" {
 		w.Link = &l
 	}
@@ -349,12 +357,68 @@ func (s *Store) SetPendingLand(id string, land *PendingLand) error {
 	return s.writeWorktree(id, nil, `UPDATE worktrees SET land = ? WHERE id = ?`, value)
 }
 
-// RemoveWorktree deletes the record of a worktree and the PR cache row of its
-// branch. It does not touch git.
+// RemoveWorktree deletes the record of a worktree, the PR cache row of its
+// branch, and the links of sessions to it. It does not touch git.
 func (s *Store) RemoveWorktree(id string) error {
 	return s.writeWorktree(id,
-		[]string{`DELETE FROM pr_cache WHERE (repo_path, branch) IN (SELECT repo_path, branch FROM worktrees WHERE id = ?)`},
+		[]string{
+			`DELETE FROM pr_cache WHERE (repo_path, branch) IN (SELECT repo_path, branch FROM worktrees WHERE id = ?)`,
+			`DELETE FROM session_worktrees WHERE worktree_id = ?`,
+		},
 		`DELETE FROM worktrees WHERE id = ?`)
+}
+
+// SetSessionWorktree records the worktree that a session works in, when it
+// is not the folder that the session started in, so the app shows the
+// session under it. A session works in one worktree at a time: a later call
+// replaces the record. An empty worktreeID clears it. It fails with
+// [ErrNotFound] when no worktree has the ID.
+func (s *Store) SetSessionWorktree(sessionID, worktreeID string) error {
+	tx, err := s.beginWrite()
+	if err != nil {
+		return err
+	}
+	defer tx.rollback()
+	if worktreeID == "" {
+		if err := tx.exec(`DELETE FROM session_worktrees WHERE session_id = ?`, sessionID); err != nil {
+			return err
+		}
+		return tx.commit()
+	}
+	res, err := tx.conn.ExecContext(context.Background(), `INSERT INTO session_worktrees(session_id, worktree_id, updated_at)
+SELECT ?, id, ? FROM worktrees WHERE id = ?
+ON CONFLICT(session_id) DO UPDATE SET worktree_id = excluded.worktree_id, updated_at = excluded.updated_at`,
+		sessionID, time.Now().UnixMilli(), worktreeID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("worktree %q: %w", worktreeID, ErrNotFound)
+	}
+	return tx.commit()
+}
+
+// MoveSessionWorktree gives the worktree record of session from to session
+// to, as after /clear: the claude process goes on with a new session ID, in
+// the folders of the earlier ID. A record that to has already stays. from
+// loses its record either way. With no record for from, it does nothing.
+func (s *Store) MoveSessionWorktree(from, to string) error {
+	if from == to {
+		return nil
+	}
+	tx, err := s.beginWrite()
+	if err != nil {
+		return err
+	}
+	defer tx.rollback()
+	if err := tx.exec(`INSERT OR IGNORE INTO session_worktrees(session_id, worktree_id, updated_at)
+SELECT ?, worktree_id, updated_at FROM session_worktrees WHERE session_id = ?`, to, from); err != nil {
+		return err
+	}
+	if err := tx.exec(`DELETE FROM session_worktrees WHERE session_id = ?`, from); err != nil {
+		return err
+	}
+	return tx.commit()
 }
 
 // writeWorktree runs query on the record of a worktree in one write, after

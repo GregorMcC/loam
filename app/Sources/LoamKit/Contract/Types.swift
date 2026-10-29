@@ -287,8 +287,11 @@ public struct Worktree: Codable, Equatable, Sendable, Identifiable {
     public var version: Int?
     /// A land that waits for GitHub to merge the PR. Nil when no land waits.
     public var land: PendingLand?
+    /// The sessions that work in the worktree but started in another folder, such as a session that made it
+    /// through MCP (TAS-55). Nil from a core before TAS-55.
+    public var sessions: [String]?
     enum CodingKeys: String, CodingKey {
-        case id, repo, name, branch, base, path, goal, link, version, land
+        case id, repo, name, branch, base, path, goal, link, version, land, sessions
         case plotID = "plot_id", setupDone = "setup_done", createdAt = "created_at"
     }
 }

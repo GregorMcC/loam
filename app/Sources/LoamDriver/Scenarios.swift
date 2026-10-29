@@ -49,6 +49,7 @@ enum Scenarios {
         Scenario(name: "sidebar-shot", limit: 90, body: sidebarShot),
         Scenario(name: "panes", limit: 90, body: panes),
         Scenario(name: "worktrees", limit: 120, body: worktrees),
+        Scenario(name: "session-worktree-shot", limit: 120, body: sessionWorktreeShot),
         Scenario(name: "worktrees-section", limit: 120, body: worktreesSection),
         Scenario(name: "pr-popover", limit: 150, body: prPopover),
         Scenario(name: "send-to-session", limit: 120, body: sendToSession),
