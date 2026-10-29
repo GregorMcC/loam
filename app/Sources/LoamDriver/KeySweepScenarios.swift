@@ -131,6 +131,23 @@ final class KeySweep {
 
     func note(_ text: String) { Log.line("SWEEP NOTE \(text)") }
 
+    /// A copy of the items on your pasteboard, for `restorePasteboard`.
+    func savePasteboard() -> [NSPasteboardItem] {
+        (NSPasteboard.general.pasteboardItems ?? []).map { item in
+            let copy = NSPasteboardItem()
+            for type in item.types {
+                if let data = item.data(forType: type) { copy.setData(data, forType: type) }
+            }
+            return copy
+        }
+    }
+
+    /// Puts back the items that `savePasteboard` copied.
+    func restorePasteboard(_ items: [NSPasteboardItem]) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.writeObjects(items)
+    }
+
     /// Logs the counts and each broken key. A broken key fails the scenario.
     func summary() throws {
         Log.line("SWEEP SUMMARY \(passed.count) ok, \(broken.count) broken")
@@ -353,7 +370,10 @@ extension Scenarios {
             await sweep.check("Text field", "⌘A Select All", "a", .command) {
                 (app.window.firstResponder as? NSTextView)?.selectedRange().length == 5
             }
-            // The count of the pasteboard shows the copy, and the sweep writes nothing to your pasteboard.
+            // ⌘C and ⌘X in a text view write to your pasteboard, so the sweep puts its items back.
+            let saved = sweep.savePasteboard()
+            defer { sweep.restorePasteboard(saved) }
+            // The count of the pasteboard shows the copy.
             let copies = NSPasteboard.general.changeCount
             await sweep.check("Text field", "⌘C Copy", "c", .command) {
                 NSPasteboard.general.changeCount != copies && NSPasteboard.general.string(forType: .string) == "hello"
