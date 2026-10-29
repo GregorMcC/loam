@@ -207,6 +207,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             if let frame = saved.rect, onScreen(frame) {
                 window.setFrame(frame, display: false)
             }
+            // A column that starts shut posts no width, so the model takes it here or the next save drops it.
+            if let width = saved.sidebarWidth { model.sidebarWidth = restoreWidth(CGFloat(width), of: sidebarItem) }
+            if let width = saved.panelWidth { model.panelWidth = restoreWidth(CGFloat(width), of: panelItem) }
             sidebarItem.isCollapsed = saved.sidebarCollapsed
             model.sidebarCollapsed = saved.sidebarCollapsed
             if saved.panelOpen {
@@ -225,6 +228,46 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         frameObservers = [NSWindow.didMoveNotification, NSWindow.didResizeNotification, NSWindow.didEndLiveResizeNotification]
             .map { center.addObserver(forName: $0, object: window, queue: .main, using: save) }
         model.windowFrame = window.frame
+        frameObservers += [
+            recordWidth(of: sidebarItem) { [weak self] in self?.model.sidebarWidth = $0 },
+            recordWidth(of: panelItem) { [weak self] in self?.model.panelWidth = $0 },
+        ]
+    }
+
+    /// Calls `record` with the width of an open column each time it changes. The width is that of the column
+    /// in the split view, which the divider sets: the glass sidebar sits inset in it.
+    private func recordWidth(of item: NSSplitViewItem, _ record: @escaping @MainActor (CGFloat) -> Void) -> NSObjectProtocol {
+        // The item itself is not Sendable, so the observer finds it again by its place.
+        let index = splitController.splitViewItems.firstIndex { $0 === item }!
+        let view = splitController.splitView.arrangedSubviews[index]
+        view.postsFrameChangedNotifications = true
+        return NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: view, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let item = self?.splitController.splitViewItems[index], !item.isCollapsed else { return }
+                // A column that opens or shuts passes through widths outside its limits.
+                guard (item.minimumThickness...item.maximumThickness).contains(view.frame.width) else { return }
+                record(view.frame.width)
+            }
+        }
+    }
+
+    /// Sets the width of a column, and opens it for a moment if it is shut. The column keeps that width for when it opens.
+    /// Returns the width, held to the column's limits.
+    private func restoreWidth(_ width: CGFloat, of item: NSSplitViewItem) -> CGFloat {
+        let width = min(max(width, item.minimumThickness), item.maximumThickness)
+        let split = splitController.splitView
+        // The columns are the sidebar, the well, and the panel, so the panel's divider is the last one.
+        // `PanelShotScenarios.setPanelWidth` does the same sums.
+        let isSidebar = item === sidebarItem
+        let divider = isSidebar ? 0 : splitController.splitViewItems.count - 2
+        let position = isSidebar ? width : split.bounds.width - width - split.dividerThickness
+        let wasCollapsed = item.isCollapsed
+        item.isCollapsed = false
+        split.layoutSubtreeIfNeeded()
+        split.setPosition(position, ofDividerAt: divider)
+        split.layoutSubtreeIfNeeded()
+        item.isCollapsed = wasCollapsed
+        return width
     }
 
     /// The quit question, or nil when no session is mid-turn.
