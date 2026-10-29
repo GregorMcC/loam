@@ -73,8 +73,8 @@ func Diff(ctx context.Context, s *store.Store, id string) (DiffResult, error) {
 		return DiffResult{}, fmt.Errorf("could not read the head of %s: %w", r.Folder, err)
 	}
 	if r.State == store.RunReady && r.PR != nil {
-		if pushed, err := pushedHead(ctx, r.Folder, w.Branch); err == nil {
-			head = pushed
+		if head, err = pushedHead(ctx, r.Folder, w.Branch); err != nil {
+			return DiffResult{}, fmt.Errorf("could not read the pushed head of %s, so the diff could show work that the PR does not have: %w", w.Branch, err)
 		}
 	}
 	base, err := gitOut(ctx, r.Folder, "merge-base", w.Base, head)

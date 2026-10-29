@@ -251,6 +251,16 @@ func TestRunTickReadsCIAgainAfterAPushByHand(t *testing.T) {
 	}
 }
 
+// A PR head from another machine is not on the branch, so Loam cannot push it or read CI on it as Shipping. When its
+// checks run, the run stays Ready.
+func TestRunTickKeepsAReadyRunReadyWhenChecksRunOnAHeadFromElsewhere(t *testing.T) {
+	_, _, w := readyRun(t)
+	setGitHub(t, ciState(w.Branch, strings.Repeat("c", 40), ""))
+	if res := tick(t); len(res.Runs) != 0 {
+		t.Fatalf("%+v", res)
+	}
+}
+
 // TAS-53: the desk shows the diff of a Ready run and merges the head of that diff, so the diff is the PR: it ends at
 // the head that Loam pushed, not at a commit after it.
 func TestRunDiffOfAReadyRunEndsAtThePushedHead(t *testing.T) {
@@ -264,6 +274,18 @@ func TestRunDiffOfAReadyRunEndsAtThePushedHead(t *testing.T) {
 	}
 	if got.Head != shipped || len(got.Files) != 1 || got.Files[0].Path != "hello.txt" {
 		t.Fatalf("%s", out)
+	}
+}
+
+// With no origin/<branch>, such as after a fetch pruned the branch of a merged PR, the diff of a Ready run fails. It
+// does not end at HEAD, which can have commits that the PR does not have.
+func TestRunDiffOfAReadyRunWithNoPushedHeadFails(t *testing.T) {
+	_, r, w := readyRun(t)
+	writeAndCommit(t, r.Folder, "later.txt", "one more\n")
+	testutil.Git(t, r.Folder, "update-ref", "-d", "refs/remotes/origin/"+w.Branch)
+	out, code := loam(t, "run", "diff", r.ID, "--json")
+	if code == 0 || !strings.Contains(out, "could not read the pushed head of "+w.Branch) {
+		t.Fatalf("exit %d: %s", code, out)
 	}
 }
 
