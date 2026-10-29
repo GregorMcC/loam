@@ -1,13 +1,14 @@
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
-# CodeRabbit reviews each PR. Its threads are the review: it comments, and it
-# does not request changes, so a review that is fixed and resolved does not
-# leave a stale "changes requested" on the PR. The "Protect main" ruleset
-# requires the CI checks only.
+# CodeRabbit reviews each PR. A review with findings requests changes, and a
+# Loam run sends a review that requests changes back to its session. GitHub
+# keeps the decision until CodeRabbit reviews again, and the "Protect main"
+# ruleset requires the CI checks only, so a stale decision does not stop a
+# merge once each thread is resolved.
 reviews:
-  # Both are the defaults. They are set here so that a change in the
-  # CodeRabbit web settings does not change them.
+  # Set here so that a change in the CodeRabbit web settings does not change
+  # them.
   profile: chill
-  request_changes_workflow: false
+  request_changes_workflow: true
   poem: false
   path_filters:
     # scripts/gen-loam-theme.py writes these from docs/design/tokens.json, and
