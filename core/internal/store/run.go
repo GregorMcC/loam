@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 )
@@ -85,6 +86,11 @@ func (st RunState) valid() bool {
 // DefaultMaxTries is how many times the gate of a run can fail before the
 // run stops.
 const DefaultMaxTries = 3
+
+// DefaultMaxReviewTries is how many times Loam sends the review of a PR
+// back to the session of its run, when the review requests changes. A
+// review try is not a try: it has its own count.
+const DefaultMaxReviewTries = 2
 
 // MaxTriesLimit is the most tries a run can have. Claude Code lets a stop
 // happen after 8 blocked stops in a row, so a gate cannot hold more.
@@ -293,6 +299,12 @@ type Run struct {
 	Tries    int        `json:"tries"`
 	MaxTries int        `json:"max_tries"`
 	Source   *RunSource `json:"source,omitempty"`
+	// ReviewTries counts the times that Loam sent the review of the PR back
+	// to the session, at most [DefaultMaxReviewTries].
+	ReviewTries int `json:"review_tries"`
+	// ReviewsSent are the IDs of the reviews that requested changes and that
+	// Loam sent back, so it sends none twice. It is not in the JSON.
+	ReviewsSent []string `json:"-"`
 	// PR is the pull request of the run, or nil before Loam ships it.
 	PR *RunPR `json:"pr,omitempty"`
 	// Shape is the draft of a run that started in Shaping, or nil.
@@ -407,12 +419,12 @@ func (s *Store) AddRun(r Run) (Run, error) {
 		return Run{}, err
 	}
 	now := time.Now().UnixMilli()
-	r.Tries, r.Turns, r.TurnBase = 0, 0, 0
+	r.Tries, r.Turns, r.TurnBase, r.ReviewTries, r.ReviewsSent = 0, 0, 0, 0, nil
 	r.CreatedAt, r.UpdatedAt = tm(now), tm(now)
-	checks, src, pr, shape, queue, notes, draft := encodeRun(r)
-	if err := tx.exec(`INSERT INTO runs(`+runCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?)`,
+	checks, src, pr, shape, queue, notes, draft, sent := encodeRun(r)
+	if err := tx.exec(`INSERT INTO runs(`+runCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, 0, ?, ?, ?)`,
 		r.ID, r.PlotID, r.WorktreeID, r.Folder, r.Title, r.Goal, checks, r.State, r.MaxTries, r.SessionID, r.Note,
-		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, r.GroupID, queue, notes, draft, now, now); err != nil {
+		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, r.GroupID, queue, notes, draft, sent, now, now); err != nil {
 		return Run{}, err
 	}
 	if err := addRunEvent(tx, r.ID, now, "state", string(r.State)); err != nil {
@@ -513,6 +525,7 @@ func updateRun(tx *writeTx, id string, fn func(*Run) error, tryNote *string) (Ru
 	}
 	r.Notes = old.Notes.clone()
 	r.PRDraft = old.PRDraft.clone()
+	r.ReviewsSent = slices.Clone(old.ReviewsSent)
 	if err := fn(&r); err != nil {
 		return Run{}, err
 	}
@@ -524,13 +537,14 @@ func updateRun(tx *writeTx, id string, fn func(*Run) error, tryNote *string) (Ru
 	}
 	now := time.Now().UnixMilli()
 	r.UpdatedAt = tm(now)
-	checks, src, pr, shape, queue, notes, draft := encodeRun(r)
+	checks, src, pr, shape, queue, notes, draft, sent := encodeRun(r)
 	if err := tx.exec(`UPDATE runs SET worktree_id = ?, folder = ?, title = ?, goal = ?, done_when = ?, state = ?, tries = ?,
   max_tries = ?, session_id = ?, note = ?, source_kind = ?, source_key = ?, source_url = ?, pr_number = ?, pr_url = ?,
-  shape = ?, group_id = ?, turns = ?, turn_base = ?, queue = ?, notes = ?, pr_draft = ?,
+  shape = ?, group_id = ?, turns = ?, turn_base = ?, queue = ?, notes = ?, pr_draft = ?, review_tries = ?, reviews_sent = ?,
   updated_at = ? WHERE id = ?`,
 		r.WorktreeID, r.Folder, r.Title, r.Goal, checks, r.State, r.Tries, r.MaxTries, r.SessionID, r.Note,
-		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, r.GroupID, r.Turns, r.TurnBase, queue, notes, draft, now, r.ID); err != nil {
+		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, r.GroupID, r.Turns, r.TurnBase, queue, notes, draft,
+		r.ReviewTries, sent, now, r.ID); err != nil {
 		return Run{}, err
 	}
 	if r.Tries != old.Tries {
@@ -625,11 +639,11 @@ func (s *Store) RunFeed(plotID string, since time.Time) ([]FeedEvent, error) {
 // runCols are the columns of a run record.
 const runCols = `id, plot_id, worktree_id, folder, title, goal, done_when, state, tries, max_tries, session_id, note,
   source_kind, source_key, source_url, pr_number, pr_url, shape, group_id, turns, turn_base, queue, notes, pr_draft,
-  created_at, updated_at`
+  review_tries, reviews_sent, created_at, updated_at`
 
 // encodeRun returns the columns of a run that are not plain values. notes is
-// NULL when the run has none, and draft is "" when it has none.
-func encodeRun(r Run) (checks string, src RunSource, pr RunPR, shape, queue string, notes sql.NullString, draft string) {
+// NULL when the run has none, and draft and sent are "" when it has none.
+func encodeRun(r Run) (checks string, src RunSource, pr RunPR, shape, queue string, notes sql.NullString, draft, sent string) {
 	b, err := json.Marshal(append([]Check{}, r.DoneWhen...))
 	if err != nil { // a slice of string pairs always encodes
 		panic(err)
@@ -668,7 +682,14 @@ func encodeRun(r Run) (checks string, src RunSource, pr RunPR, shape, queue stri
 		}
 		draft = string(db)
 	}
-	return string(b), src, pr, shape, queue, notes, draft
+	if len(r.ReviewsSent) > 0 {
+		sb, err := json.Marshal(r.ReviewsSent)
+		if err != nil { // strings always encode
+			panic(err)
+		}
+		sent = string(sb)
+	}
+	return string(b), src, pr, shape, queue, notes, draft, sent
 }
 
 // clone copies the shape, with empty lists where it has none, so the JSON
@@ -693,12 +714,12 @@ func scanRun(sc interface{ Scan(...any) error }) (Run, error) {
 	var checks string
 	var src RunSource
 	var pr RunPR
-	var shape, queue, draft string
+	var shape, queue, draft, sent string
 	var notes sql.NullString
 	var created, updated int64
 	err := sc.Scan(&r.ID, &r.PlotID, &r.WorktreeID, &r.Folder, &r.Title, &r.Goal, &checks, &r.State, &r.Tries,
 		&r.MaxTries, &r.SessionID, &r.Note, &src.Kind, &src.Key, &src.URL, &pr.Number, &pr.URL, &shape, &r.GroupID,
-		&r.Turns, &r.TurnBase, &queue, &notes, &draft, &created, &updated)
+		&r.Turns, &r.TurnBase, &queue, &notes, &draft, &r.ReviewTries, &sent, &created, &updated)
 	if err != nil {
 		return Run{}, err
 	}
@@ -738,6 +759,11 @@ func scanRun(sc interface{ Scan(...any) error }) (Run, error) {
 			return Run{}, fmt.Errorf("run %s: bad PR draft: %w", r.ID, err)
 		}
 		r.PRDraft = &d
+	}
+	if sent != "" {
+		if err := json.Unmarshal([]byte(sent), &r.ReviewsSent); err != nil {
+			return Run{}, fmt.Errorf("run %s: bad sent reviews: %w", r.ID, err)
+		}
 	}
 	r.CreatedAt, r.UpdatedAt = tm(created), tm(updated)
 	return r, nil

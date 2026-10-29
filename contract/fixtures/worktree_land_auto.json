@@ -54,6 +54,7 @@
     "approvals": 1,
     "base": "main",
     "behind_base": 0,
+    "change_requests": [],
     "checks": {
       "failed": 0,
       "passed": 1,
@@ -84,6 +85,7 @@
     ],
     "queue_position": 0,
     "review_decision": "APPROVED",
+    "review_threads": [],
     "state": "OPEN",
     "title": "Sign commits",
     "url": "https://github.com/example/widgets/pull/23"

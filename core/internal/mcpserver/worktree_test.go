@@ -323,8 +323,8 @@ func TestListWorktreesRefresh(t *testing.T) {
 }
 
 // list_worktrees gives the failed checks of a PR and counts the passed ones. It leaves out the list of the
-// passed checks: a session reads those through gh, and up to 100 rows for each worktree would fill its
-// context. The CLI list and the PR cache keep the list.
+// passed checks and the reviews: a session reads those through gh, and up to 100 rows for each worktree would
+// fill its context. The CLI list and the PR cache keep the lists.
 func TestListWorktreesLeavesOutThePassedChecks(t *testing.T) {
 	testutil.GitEnv(t)
 	e := setup(t, opts{plotEnv: "ALPHA"})
@@ -336,15 +336,21 @@ func TestListWorktreesLeavesOutThePassedChecks(t *testing.T) {
 	  {"number": 14, "title": "Fix login", "url": "https://github.com/example/widgets/pull/14", "state": "OPEN",
 	   "mergeable": "MERGEABLE", "mergeStateStatus": "UNSTABLE", "baseRefName": "main", "headRefName": "fix-login",
 	   "headRefOid": "1111111111111111111111111111111111111111", "commits": {"totalCount": 1}}
-	], "details": {"14": {"commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "FAILURE", "contexts": {"totalCount": 3, "nodes": [
+	], "details": {"14": {
+	  "latestOpinionatedReviews": {"nodes": [{"id": "R1", "state": "CHANGES_REQUESTED", "body": "Please fix.", "author": {"login": "alice"}}]},
+	  "reviewThreads": {"nodes": [{"id": "T1", "isResolved": false, "path": "a.go", "line": 3,
+	    "comments": {"nodes": [{"body": "A bug here.", "author": {"login": "alice"}}]}}]},
+	  "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "FAILURE", "contexts": {"totalCount": 3, "nodes": [
 	  {"__typename": "CheckRun", "name": "build", "status": "COMPLETED", "conclusion": "SUCCESS", "isRequired": false},
 	  {"__typename": "CheckRun", "name": "docs", "status": "COMPLETED", "conclusion": "FAILURE", "isRequired": false},
 	  {"__typename": "StatusContext", "context": "ci/legacy", "state": "SUCCESS", "targetUrl": "", "isRequired": false}
 	]}}}}]}}}}`)
 
 	out := e.ok("list_worktrees", map[string]any{"refresh": true})
-	if strings.Contains(out, "passed_checks") {
-		t.Fatalf("the list holds the passed checks: %s", out)
+	for _, list := range []string{"passed_checks", "change_requests", "review_threads"} {
+		if strings.Contains(out, list) {
+			t.Fatalf("the list holds %s: %s", list, out)
+		}
 	}
 	var list struct {
 		Worktrees []struct {

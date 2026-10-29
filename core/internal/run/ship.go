@@ -41,14 +41,16 @@ type TickResult struct {
 
 // Tick moves on each run in Shipping. It pushes the branch of the run and
 // opens its PR, and then reads CI on the PR. When CI passes, the run is
-// Ready. When CI fails, the run goes back to its session with the failed
-// logs, and the failure counts a try. Tick also watches the PR of each run
-// that is Ready: a merge on GitHub lands the run, and a close stops it. Then
-// it starts the Queued runs, oldest first, while a slot is free and the
-// week's usage is under the hold. loam is the loam binary, for the hooks of
-// a new session. A tick that waits on GitHub or for a slot changes nothing,
-// so the app and a timer can run one as often as they like. Only one tick
-// runs at a time: a second one returns at once with nothing.
+// Ready, unless the review of the PR requests changes: then the review goes
+// back to its session first (see [shipper.passCI]). When CI fails, the run
+// goes back to its session with the failed logs, and the failure counts a
+// try. Tick also watches the PR of each run that is Ready: a merge on GitHub
+// lands the run, and a close stops it. Then it starts the Queued runs,
+// oldest first, while a slot is free and the week's usage is under the
+// hold. loam is the loam binary, for the hooks of a new session. A tick
+// that waits on GitHub or for a slot changes nothing, so the app and a timer
+// can run one as often as they like. Only one tick runs at a time: a second
+// one returns at once with nothing.
 func Tick(ctx context.Context, s *store.Store, loam string) (TickResult, error) {
 	res := TickResult{Runs: []store.Run{}, Warnings: []string{}}
 	unlock, ok, err := lockTick(s.Home())
@@ -176,15 +178,17 @@ func (sh *shipper) ship(ctx context.Context) (bool, error) {
 
 // watch lands a Ready run when GitHub has merged its PR, and stops it when
 // GitHub has closed its PR. The run goes back to Shipping when the branch has
-// commits after the head of the open PR (see [shipper.shipAgain]), or when
-// the checks of the PR run or fail again on the head of the branch, such as
-// after a push by hand. Then a later tick reads CI. A PR head that the branch
-// does not have, such as a push from another machine, keeps the run Ready,
-// because Loam cannot push it. A land that waits for GitHub, with an auto
-// merge or a merge queue, merges the PR as it is, so watch changes nothing
-// while one waits. A run that cannot reach GitHub waits with no warning,
-// because it needs nothing from a tick. A store that cannot read the
-// worktree is an error, not a worktree that is gone.
+// commits after the head of the open PR (see [shipper.shipAgain]), when the
+// checks of the PR run or fail again on the head of the branch, such as
+// after a push by hand, or when the review of the PR requests changes that
+// Loam can send back (see [reviewOf]). Then a later tick reads CI, and sends
+// the review back when CI passes. A PR head that the branch does not have,
+// such as a push from another machine, keeps the run Ready, because Loam
+// cannot push it. A land that waits for GitHub, with an auto merge or a
+// merge queue, merges the PR as it is, so watch changes nothing while one
+// waits. A run that cannot reach GitHub waits with no warning, because it
+// needs nothing from a tick. A store that cannot read the worktree is an
+// error, not a worktree that is gone.
 func (sh *shipper) watch(ctx context.Context) (bool, error) {
 	w, err := sh.s.GetWorktree(sh.r.WorktreeID)
 	switch {
@@ -215,15 +219,23 @@ func (sh *shipper) watch(ctx context.Context) (bool, error) {
 		return sh.shipAgain(ctx, w, pr)
 	}
 	// Shipping would wait for a push that Loam does not make.
-	if local, err := branchHead(ctx, sh.r.Folder, w.Branch); err != nil || local != pr.HeadOID || !ciNotPassed(pr.Checks) {
+	if local, err := branchHead(ctx, sh.r.Folder, w.Branch); err != nil || local != pr.HeadOID {
 		return false, nil
 	}
-	note := fmt.Sprintf("The checks of #%d run or failed after it was ready. Loam reads CI again", pr.Number)
+	var kind, note string
+	switch {
+	case ciNotPassed(pr.Checks):
+		kind, note = "ship", fmt.Sprintf("The checks of #%d run or failed after it was ready. Loam reads CI again", pr.Number)
+	case !reviewOf(sh.r, pr).empty() && sh.r.ReviewTries < store.DefaultMaxReviewTries:
+		kind, note = "review", fmt.Sprintf("Changes are requested on #%d after it was ready. Loam sends the review back", pr.Number)
+	default:
+		return false, nil
+	}
 	moved, err := sh.move(store.RunShipping, note)
 	if !moved || err != nil {
 		return moved, err
 	}
-	return moved, sh.s.AddRunEvent(sh.r.ID, "ship", note)
+	return moved, sh.s.AddRunEvent(sh.r.ID, kind, note)
 }
 
 // shipAgain pushes the commits of the branch after the head of the run's PR,
@@ -406,13 +418,13 @@ func (sh *shipper) readCI(ctx context.Context, repo github.Repo, pr *github.PR) 
 		if sh.sincePush() < NoCIWait {
 			return false, nil
 		}
-		return sh.passCI(fmt.Sprintf("No CI ran on #%d", pr.Number))
+		return sh.passCI(ctx, pr, fmt.Sprintf("No CI ran on #%d", pr.Number))
 	case c.Failed > 0:
 		return sh.failCI(ctx, repo, pr)
 	case c.Running > 0 || c.Waiting > 0 || c.State == "PENDING" || c.State == "EXPECTED":
 		return false, nil
 	}
-	return sh.passCI(fmt.Sprintf("CI passed on #%d: %d of %d checks", pr.Number, c.Passed, c.Total))
+	return sh.passCI(ctx, pr, fmt.Sprintf("CI passed on #%d: %d of %d checks", pr.Number, c.Passed, c.Total))
 }
 
 // sincePush is how long ago Loam last pushed the run or opened its PR.
@@ -429,11 +441,23 @@ func (sh *shipper) sincePush() time.Duration {
 	return 0
 }
 
-func (sh *shipper) passCI(note string) (bool, error) {
+// passCI makes the run Ready with the note, when CI passed or no CI ran on
+// pr. When the review of pr requests changes that Loam can send back (see
+// [reviewOf]), the review goes back to the session first, as a review try.
+// With no review tries left, the run is Ready, and the note says that
+// changes are requested.
+func (sh *shipper) passCI(ctx context.Context, pr *github.PR, note string) (bool, error) {
 	if err := sh.s.AddRunEvent(sh.r.ID, "ci", note); err != nil {
 		return false, err
 	}
-	return sh.move(store.RunReady, note)
+	rv := reviewOf(sh.r, pr)
+	switch {
+	case rv.empty():
+		return sh.move(store.RunReady, note)
+	case sh.r.ReviewTries >= store.DefaultMaxReviewTries:
+		return sh.move(store.RunReady, fmt.Sprintf("%s. The review tries are used up, and changes are requested on #%d", note, pr.Number))
+	}
+	return sh.sendReview(ctx, pr, rv)
 }
 
 // failCI counts a try, and sends the failed logs back to the session. On the
@@ -453,11 +477,21 @@ func (sh *shipper) failCI(ctx context.Context, repo github.Repo, pr *github.PR) 
 		return sh.moveTry(store.RunStopped, fmt.Sprintf("%s after %s: %s", failed, count(r.Tries+1, "try"), strings.Join(names, ", ")))
 	}
 	prompt := ciPrompt(ctx, sh.gh, repo, r, pr)
-	from, moved := r.State, false
-	r, err := sh.s.TakeSlot(r.ID, &store.RunQueue{Resume: prompt}, func(r *store.Run) error {
+	return sh.resume(ctx, prompt, failed+": "+strings.Join(names, ", "), "CI failure", func(r *store.Run) { r.Tries++ })
+}
+
+// resume sends the prompt back to the session of the run, and the run is
+// Running with the note. addTry counts the try in the same write. When no
+// slot is free, the run waits in Queued with the prompt, and a later tick
+// sends it. A prompt that does not reach the session stops the run, and its
+// note names what (such as "CI failure").
+func (sh *shipper) resume(ctx context.Context, prompt, note, what string, addTry func(*store.Run)) (bool, error) {
+	from, moved := sh.r.State, false
+	r, err := sh.s.TakeSlot(sh.r.ID, &store.RunQueue{Resume: prompt}, func(r *store.Run) error {
 		if r.State == from { // you may have changed the run during the tick
-			r.State, r.Note, r.Tries, moved = store.RunRunning, failed+": "+strings.Join(names, ", "), r.Tries+1, true
+			r.State, r.Note, moved = store.RunRunning, note, true
 			r.TurnBase = r.Turns // the turn limit counts from the resume
+			addTry(r)
 		}
 		return nil
 	})
@@ -469,7 +503,7 @@ func (sh *shipper) failCI(ctx context.Context, repo github.Repo, pr *github.PR) 
 		return moved, nil // a run that you changed gets no prompt, and a Queued run gets it from a later tick
 	}
 	if err := send(ctx, sh.r, prompt); err != nil {
-		note := "Could not send the CI failure to the session: " + err.Error()
+		note := "Could not send the " + what + " to the session: " + err.Error()
 		r, uerr := sh.s.UpdateRun(r.ID, func(r *store.Run) error {
 			if r.State == store.RunRunning {
 				r.State, r.Note = store.RunStopped, note

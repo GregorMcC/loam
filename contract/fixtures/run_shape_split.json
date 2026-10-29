@@ -15,6 +15,7 @@
     "note": "",
     "notes": null,
     "plot_id": "plotaaaaae",
+    "review_tries": 0,
     "session_id": "",
     "shape": {
       "assumptions": [
@@ -59,6 +60,7 @@
       "note": "",
       "notes": null,
       "plot_id": "plotaaaaae",
+      "review_tries": 0,
       "session_id": "",
       "shape": {
         "assumptions": [
@@ -102,6 +104,7 @@
       "note": "",
       "notes": null,
       "plot_id": "plotaaaaae",
+      "review_tries": 0,
       "session_id": "",
       "shape": {
         "assumptions": [],

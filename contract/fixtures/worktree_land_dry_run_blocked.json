@@ -54,6 +54,14 @@
     "approvals": 0,
     "base": "main",
     "behind_base": 0,
+    "change_requests": [
+      {
+        "author": "alice",
+        "body": "Keep the old name as an alias.",
+        "id": "PRR_15",
+        "url": "https://github.com/example/widgets/pull/15#pullrequestreview-1500"
+      }
+    ],
     "checks": {
       "failed": 0,
       "passed": 1,
@@ -84,6 +92,56 @@
     ],
     "queue_position": 0,
     "review_decision": "CHANGES_REQUESTED",
+    "review_threads": [
+      {
+        "comments": [
+          {
+            "author": "alice",
+            "body": "This drops the error.",
+            "url": "https://github.com/example/widgets/pull/15#discussion_r1501",
+            "writer": true
+          },
+          {
+            "author": "bob",
+            "body": "It returns it now.",
+            "url": "https://github.com/example/widgets/pull/15#discussion_r1502",
+            "writer": false
+          }
+        ],
+        "id": "PRRT_151",
+        "line": 12,
+        "path": "users/rename.go",
+        "url": "https://github.com/example/widgets/pull/15#discussion_r1501"
+      },
+      {
+        "comments": [
+          {
+            "author": "alice",
+            "body": "Add a test for an empty name.",
+            "url": "https://github.com/example/widgets/pull/15#discussion_r1503",
+            "writer": true
+          }
+        ],
+        "id": "PRRT_152",
+        "line": 0,
+        "path": "users/rename_test.go",
+        "url": "https://github.com/example/widgets/pull/15#discussion_r1503"
+      },
+      {
+        "comments": [
+          {
+            "author": "ghost",
+            "body": "Say why.",
+            "url": "https://github.com/example/widgets/pull/15#discussion_r1504",
+            "writer": false
+          }
+        ],
+        "id": "PRRT_153",
+        "line": 4,
+        "path": "README.md",
+        "url": "https://github.com/example/widgets/pull/15#discussion_r1504"
+      }
+    ],
     "state": "OPEN",
     "title": "Rename users",
     "url": "https://github.com/example/widgets/pull/15"

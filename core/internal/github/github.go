@@ -90,7 +90,7 @@ type Branch struct {
 }
 
 // PR is a pull request, with the counts that a status line needs. The
-// counts from BehindBase to PassedChecks are for an open PR only. They are
+// counts from BehindBase to ReviewThreads are for an open PR only. They are
 // zero or empty for a merged or closed PR.
 type PR struct {
 	Number int    `json:"number"`
@@ -133,6 +133,54 @@ type PR struct {
 	// gives an empty list until the next refresh. Like FailedChecks, it is a
 	// list and never null.
 	PassedChecks []Check `json:"passed_checks"`
+	// ChangeRequests are the reviews that request changes: the last review
+	// of each reviewer with write access, when it requests changes. The
+	// list is of the first 100 reviewers, and it is never null.
+	ChangeRequests []Review `json:"change_requests"`
+	// ReviewThreads are the review threads that are not resolved, of the
+	// first 100, in the order of GitHub. Comments counts them. The list is
+	// never null.
+	ReviewThreads []ReviewThread `json:"review_threads"`
+}
+
+// Review is one review of a PR.
+type Review struct {
+	// ID is the node ID of the review on GitHub.
+	ID string `json:"id"`
+	// Author is the login of the reviewer.
+	Author string `json:"author"`
+	// Body is the text of the review, in Markdown. It is empty when the
+	// review has only comments on lines.
+	Body string `json:"body"`
+	URL  string `json:"url"`
+}
+
+// ReviewThread is one review thread of a PR: comments on a line of a file.
+type ReviewThread struct {
+	// ID is the node ID of the thread on GitHub, which a session needs to
+	// resolve it.
+	ID   string `json:"id"`
+	Path string `json:"path"`
+	// Line is the line in the head of the PR. It is 0 when the head no
+	// longer has the line.
+	Line int `json:"line"`
+	// URL is the page of the first comment.
+	URL string `json:"url"`
+	// Comments are the first comments of the thread, oldest first, at most
+	// [commentsPerThread].
+	Comments []ReviewComment `json:"comments"`
+}
+
+// ReviewComment is one comment of a review thread.
+type ReviewComment struct {
+	// Author is the login of the person or app that wrote the comment.
+	Author string `json:"author"`
+	// Writer is true when the author can push to the repo. On a public repo,
+	// anyone can comment.
+	Writer bool `json:"writer"`
+	// Body is the text of the comment, in Markdown.
+	Body string `json:"body"`
+	URL  string `json:"url"`
 }
 
 // Checks counts the checks of the head commit of a PR.

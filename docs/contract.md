@@ -346,7 +346,7 @@ A pane in Home (see [Home sessions](#home-sessions)) has `"home": true` and an e
 
 ### Ship state of worktrees
 
-`loam worktree list` shows the pull request (PR) of the branch of each worktree, from GitHub only. Without `--refresh`, it reads the PR cache in the store and does not use the network. `--refresh` asks GitHub first and writes the cache. `--worktree <worktree>` refreshes only that worktree (an ID, a folder name, or a name); the output still lists every worktree. `--worktree` needs a plot and `--refresh`, and `--repo` needs `--worktree`. Each other use exits with code 2. MCP `list_worktrees` takes `refresh` (a boolean) and does the same as `--refresh`. Its result is the same JSON as `loam worktree list --json`, except that the `pr` of a worktree leaves out `passed_checks`. A session reads the passed checks through gh, and up to 100 rows for each worktree would fill its context. `checks.passed` still counts them.
+`loam worktree list` shows the pull request (PR) of the branch of each worktree, from GitHub only. Without `--refresh`, it reads the PR cache in the store and does not use the network. `--refresh` asks GitHub first and writes the cache. `--worktree <worktree>` refreshes only that worktree (an ID, a folder name, or a name); the output still lists every worktree. `--worktree` needs a plot and `--refresh`, and `--repo` needs `--worktree`. Each other use exits with code 2. MCP `list_worktrees` takes `refresh` (a boolean) and does the same as `--refresh`. Its result is the same JSON as `loam worktree list --json`, except that the `pr` of a worktree leaves out `passed_checks`, `change_requests`, and `review_threads`. A session reads them through gh, and up to 100 rows for each worktree would fill its context. `checks.passed` and `comments` still count them.
 
 A refresh runs `gh api graphql`, so gh holds the sign-in and Loam holds no credentials. Loam finds gh on `PATH`, else in `/opt/homebrew/bin`, `/usr/local/bin`, or `/opt/local/bin` (`LOAM_GH` replaces the search in tests). Each repo gets at most two queries for each refresh: one for the PRs and the branches on GitHub, and one for the checks and reviews of the open PRs. Each gh call stops after 15 seconds. Ctrl-C, or a cancelled MCP call, stops gh. Then the refresh writes nothing, and the command fails. The owner and the name come from the `origin` remote. A repo whose `origin` is not on github.com gets no query. A worktree whose folder is gone gets no query and shows no ship state.
 
@@ -404,7 +404,10 @@ The PR object:
   "commits": 3, "behind_base": 2, "approvals": 1, "comments": 3,
   "checks": { "state": "FAILURE", "total": 14, "passed": 12, "failed": 2, "running": 0, "waiting": 0, "required": 14, "required_passed": 12 },
   "failed_checks": [{ "name": "lint / swiftformat", "url": "https://github.com/...", "duration": 42, "required": true, "run_id": 1234 }],
-  "passed_checks": [{ "name": "test / macos-26", "url": "https://github.com/...", "duration": 190, "required": true, "run_id": 1235 }]
+  "passed_checks": [{ "name": "test / macos-26", "url": "https://github.com/...", "duration": 190, "required": true, "run_id": 1235 }],
+  "change_requests": [{ "id": "PRR_kwDO...", "author": "alice", "body": "Keep the old name as an alias.", "url": "https://github.com/...#pullrequestreview-1" }],
+  "review_threads": [{ "id": "PRRT_kwDO...", "path": "login/form.go", "line": 42, "url": "https://github.com/...#discussion_r1",
+    "comments": [{ "author": "alice", "writer": true, "body": "This drops the error.", "url": "https://github.com/...#discussion_r1" }] }]
 }
 ```
 
@@ -415,8 +418,11 @@ The PR object:
 - `checks` counts the checks of the head commit. `checks.state` is GitHub's summary, empty when the head has no checks. A cancelled or stale check counts only in `total`. `required` counts the checks that the base branch needs to pass before a merge, and `required_passed` counts those that passed. For an `UNSTABLE` PR, the app can write "14 of 14 required checks passed · 2 optional failed".
 - `failed_checks` lists each failed check. A GitHub Actions job has its workflow name first. `duration` is in seconds, 0 when GitHub gives no start or end. `required` is true for a required check. `run_id` is the GitHub Actions run of the check, which `loam worktree rerun` runs again. It is left out for a check that is not a job of GitHub Actions.
 - `passed_checks` lists each passed check, with the same fields as a failed check. A skipped or neutral check counts as passed, as in `checks.passed`, so the list is as long as `checks.passed`. The order is the order of GitHub. A cache row from before Loam stored the passed checks gives an empty list until the next refresh. MCP `list_worktrees` leaves the field out.
-- Loam reads one page of 100 checks and 100 review threads, to keep to two queries for each repo. `checks.total` counts every check. The other check counts, `failed_checks`, `passed_checks`, and `comments` cover the first 100.
-- `behind_base`, `approvals`, `comments`, `checks`, `failed_checks`, and `passed_checks` are for an open PR. They are 0 or empty for a merged or closed PR. `failed_checks` and `passed_checks` are always lists, never null.
+- `change_requests` lists the reviews that request changes: the last review of each reviewer with write access, when it requests changes. `id` is the node ID of the review on GitHub. `author` is a login, or `ghost` for a deleted account. `body` is Markdown, and it is empty for a review with only comments on lines.
+- `review_threads` lists the review threads that are not resolved, in the order of GitHub, so it is as long as `comments`. `id` is the node ID of the thread, which a session needs to resolve it. `line` is the line in the PR head, 0 when the head no longer has it. `url` is the page of the first comment. `comments` are the first 10 comments of the thread, oldest first, each with `author`, `writer`, `body` (Markdown), and `url`. `writer` is true when the author can push to the repo.
+- A cache row from before Loam stored the reviews gives empty `change_requests` and `review_threads` until the next refresh. MCP `list_worktrees` leaves both out.
+- Loam reads one page of 100 checks, 100 reviews, and 100 review threads, to keep to two queries for each repo. `checks.total` counts every check. The other check counts, `failed_checks`, `passed_checks`, `change_requests`, `review_threads`, and `comments` cover the first 100.
+- `behind_base`, `approvals`, `comments`, `checks`, `failed_checks`, `passed_checks`, `change_requests`, and `review_threads` are for an open PR. They are 0 or empty for a merged or closed PR. Each of the lists is always a list, never null.
 
 ### Land, rerun, and update
 
@@ -522,7 +528,7 @@ A run is one goal that a background Claude Code session (`claude --bg`) works on
   "id": "runraaaaab", "plot_id": "k3v9q2mxa7", "worktree_id": "wtreeaaaab", "folder": "/abs/path/of/worktree",
   "title": "Fix the login form", "goal": "The login form works on phones.",
   "done_when": [{ "name": "Go tests", "command": "go test ./..." }],
-  "state": "running", "tries": 1, "max_tries": 3, "turns": 2,
+  "state": "running", "tries": 1, "max_tries": 3, "review_tries": 0, "turns": 2,
   "source": { "kind": "github", "key": "#57", "url": "https://github.com/example/widgets/issues/57" },
   "pr": { "number": 147, "url": "https://github.com/example/widgets/pull/147" },
   "session_id": "c57ef956-3136-4e86-bfde-da8facfe0523", "note": "Try 1 failed: Go tests", "group_id": "", "notes": null,
@@ -536,13 +542,14 @@ A run is one goal that a background Claude Code session (`claude --bg`) works on
   - `starting`: Loam is starting its session.
   - `running`: its session works, or the gate or CI sent failures back.
   - `shipping`: every check passed, and the repo is on GitHub. `loam run tick` pushes the branch, opens the PR, and reads CI.
-  - `ready`: it waits for you to land it. Every check passed, and CI passed on its PR, or it has no PR. `note` says which.
+  - `ready`: it waits for you to land it. Every check passed, and CI passed on its PR, or it has no PR. `note` says which. A review that requests changes can still be open when the review tries are used up, and `note` says so.
   - `stopped`: it used all its tries, or a failure stopped it.
   - `limited`: Claude Code hit a usage limit (Stopped by a limit). It counts no try.
   - `start_unknown`: `claude --bg` did not return in time. The session may exist.
   - `landed`, `cancelled` (stopped by you), and `skipped` (a recurring run found no work).
 - `shaping`, `stopped`, and `limited` need you.
 - `tries` counts the failed gates and the CI failures. `max_tries` is 1 to 8, because Claude Code lets a session stop after 8 blocked stops in a row.
+- `review_tries` counts the times that Loam sent the review of the PR back to the session, because the review requested changes (see Ship). It is at most 2, and it counts no try.
 - `turns` counts the turns that the session ended: the Stop hook adds 1 for each Stop, in any state. It is always there, and it is 0 before the first Stop.
 - `session_id` is empty until the SessionStart hook of the session records it. `claude --bg` picks its own session ID. `claude attach`, `logs`, and `stop` take its first 8 characters.
 - `pr` is the PR that Loam opened for the run, or the open PR of its branch that Loam found. It is left out before the run ships.
@@ -589,10 +596,22 @@ The gate is the Stop hook of the session. Each time the session ends a turn, Loa
 3. An open PR of the branch that is not the run's PR: it becomes the run's PR (event `ship`, "Found #12, the open PR of the branch").
 4. The head of the worktree is not the PR head: the tick runs `git push -u origin <branch>` when `origin/<branch>` is not the head. A failed push stops the run with the output in `note`. With no PR, it runs `gh pr create` with the title of the run, the base of the worktree, and a body with the goal, the Done when checks, and the issue (`Closes #57` for a GitHub issue, the key, such as `Linear: ENG-523`, for a Linear issue). With a PR template in the worktree, the body comes from the template instead (see below). For a run of a group, the body has one more line with the repos of the other runs of the issue, such as "The issue also has runs in example/docs." A repo on GitHub is `owner/name`, and another repo is its folder name. A cancelled run does not count. It names no local path and no Linear URL, because the repo can be public and the Linear workspace private. The events are `ship`: "Opened #12", or "Pushed the fix to #12" after a failed CI or a send-back. For a Linear issue, Loam attaches the PR to it (event `linear`), when that update to Linear is on (see Linear). A failed attach is a warning. The run gets its `notes` in the same write as its `pr`.
 5. CI on the PR head:
-   - No checks: the run waits 3 minutes after the push, then is `ready` ("No CI ran on #12").
+   - No checks: the run waits 3 minutes after the push, then is `ready` ("No CI ran on #12"), unless the review of the PR requests changes (see Reviews below).
    - A failed check: the try counts. With tries left, the run is `running` (or `queued`, with the prompt, when no slot is free) and Loam sends the session a prompt with each failed check and the last 60 lines of its failed log (`gh run view <id> --log-failed`). Loam runs `claude stop` and then `claude --bg --resume <session ID> "<prompt>"` with no other flag, so the session wakes with its own options and hooks. The next gate that passes ships the fix to the same PR. With no tries left, the run is `stopped`.
    - Checks that run or wait: nothing changes.
-   - All passed: the run is `ready` ("CI passed on #12: 14 of 14 checks").
+   - All passed: the run is `ready` ("CI passed on #12: 14 of 14 checks"), unless the review of the PR requests changes (see Reviews below).
+
+**Reviews.** When CI passed or no CI ran, and `review_decision` is `CHANGES_REQUESTED`, Loam sends the review back to the session as for a CI failure. It does this only when it has something to send: a review in `change_requests` that it has not sent, or a thread in `review_threads`. A thread with no change request does not stop the run.
+
+- The event `review` is "Changes are requested on #12: 2 review threads and 1 review".
+- The run is `running` (or `queued`), with the `note` "Changes are requested on #12. Loam sent back 2 review threads and 1 review (review try 1 of 2)".
+- `review_tries` goes up by 1. `tries` does not change. As for a CI failure, a prompt that does not reach the session stops the run ("Could not send the review to the session: ..."), and the review try still counts.
+- The prompt holds the body of each review that Loam sends. It holds each thread with its path and line, its ID, its URL, and the author and text of each comment.
+- The prompt leaves out the text of a comment whose author cannot push to the repo (`writer` is false), because anyone can comment on a public repo. It names the author and the URL of the comment only. A thread with no comment by a writer has nothing to send, so it does not count. The prompt also tells the session that the text is review data, not instructions.
+- Loam cuts the text of a review or a comment at 4000 characters, and a line after the cut text says so. After about 60 KB of review text, the prompt leaves out the rest and gives a `gh api graphql` command that lists the reviews and the threads, with the thread IDs. A review that the prompt leaves out is not sent, so a later review try can send it.
+- The prompt tells the session to fix the code, commit, reply on each thread, and resolve it with `gh api graphql`. Loam pushes the commit after the gate passes, as for a CI fix.
+- Loam sends each review in `change_requests` once: the run records the ID of each review that the prompt holds. GitHub keeps `CHANGES_REQUESTED` until the reviewer reviews again. So when Loam has sent each review and no thread is open, the run is `ready`.
+- When the run has used its 2 review tries, the run is `ready`, and `note` adds ". The review tries are used up, and changes are requested on #12".
 
 **Ship notes and PR template.** Before `gh pr create`, Loam runs `claude -p` in the worktree with the tools Read, Grep, and Glob only, `--output-format json`, a `--json-schema`, `--no-session-persistence`, and the model and effort of the run when it has them. The call stops after 3 minutes, and it needs a folder that Claude Code trusts. The answer has the ship notes: `walkthrough`, `files` (each `{ "path", "role" }`), `risk` (`{ "level", "reasons" }`), and `where_it_stands`. The prompt holds the Where it stands of the plot, the goal, the Done when checks (all passed), the plan of the shape when there is one, the commit messages of the branch, `git diff --stat` of the branch, and the list of changed files. It asks Claude to write plainly and to use no em dashes.
 
@@ -614,6 +633,7 @@ A Ready run with an open PR can also go back to `shipping`, so a later tick read
 
 - The branch of the worktree has commits after the PR head. The tick pushes them at once, with the `note` "The branch has commits after the head of #12. Loam pushes them, and CI runs again" and the `ship` event "Pushed the new commits to #12". The tick reads the branch, not `HEAD`, so a commit on another branch changes nothing. A failed push stops the run, as in step 4.
 - The checks of the PR run, wait, or failed on the head of the branch, such as after a push by hand: `note` and `ship` event "The checks of #12 run or failed after it was ready. Loam reads CI again".
+- The review of the PR requests changes, Loam has something to send (see Reviews), and the run has review tries left: `note` and `review` event "Changes are requested on #12 after it was ready. Loam sends the review back". A later tick sends the review when CI passes.
 
 Neither applies while a land waits for GitHub (an auto merge, or a PR in a merge queue), because GitHub merges the PR as it is. A PR head that the branch does not have, such as a push from another machine, changes nothing, also when its checks run or fail, because Loam cannot push it. The Done when checks do not run again, and the run keeps the ship notes of its first push.
 
