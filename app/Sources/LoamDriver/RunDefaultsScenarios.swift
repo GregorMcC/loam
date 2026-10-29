@@ -9,8 +9,8 @@ extension Scenarios {
         do { try await runDefaultsMCPSteps(app) } catch { app.dumpAccessibility(); throw error }
     }
 
-    /// TAS-63: the MCP servers of the run defaults. The fake Claude Code config holds 3 servers in the user scope and
-    /// a project server that the list must leave out. You select 1, and `loam run defaults` shows it. You clear it,
+    /// TAS-63: the MCP servers of the run defaults. The fake Claude Code config holds 3 servers in the user scope, one
+    /// with a headersHelper, and a server in a local scope. The list must leave out the last 2. You select 1, and `loam run defaults` shows it. You clear it,
     /// and the list is empty. A selected server that the config lacks stays selected, shows "not found", and goes
     /// when you clear it by hand.
     private static func runDefaultsMCPSteps(_ app: DriverApp) async throws {
@@ -20,7 +20,11 @@ extension Scenarios {
         let stdio = { (command: String) in ["type": "stdio", "command": command, "args": ["serve"]] }
         var config = (try? JSONSerialization.jsonObject(with: Data(contentsOf: rig.claudeJSON)) as? [String: Any]) ?? [:]
         config["mcpServers"] = ["docs-search": stdio("docs-search"), "notes-server": stdio("notes-server"),
-                                "ticket-tracker": stdio("ticket-tracker")]
+                                "ticket-tracker": stdio("ticket-tracker"),
+                                "token-server": ["type": "http", "url": "https://example.com/mcp", "headersHelper": "./token.sh"]]
+        var projects = config["projects"] as? [String: Any] ?? [:]
+        projects["/example/widgets"] = ["mcpServers": ["widgets-only": stdio("widgets-only")]]
+        config["projects"] = projects
         try JSONSerialization.data(withJSONObject: config).write(to: rig.claudeJSON, options: .atomic)
 
         /// The `mcp_servers` of the run defaults, as the core prints them.

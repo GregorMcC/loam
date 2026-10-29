@@ -700,7 +700,7 @@ The MCP servers are for `claude -p`, which drafts a Shape run and writes the PR 
 | `loam run mcp-servers` | `{ "servers": [{ "name": "...", "scope": "user" }] }` |
 
 - The list holds the servers in `mcpServers` of the user scope of `.claude.json`, sorted by name. `scope` is always `user` for now, so a later scope needs no change of the shape.
-- The list leaves out a server with a `headersHelper`, because `--mcp` rejects it. It has no `.mcp.json` server, no local-scope server, and no claude.ai connector, for the reasons above.
+- The list leaves out a server with a `headersHelper`, because `--mcp` rejects it, and a server whose name has a comma or edge spaces, because `--mcp` cannot keep the name. It has no `.mcp.json` server, no local-scope server, and no claude.ai connector, for the reasons above.
 - A missing config file gives `[]`.
 
 #### Limits, the queue, and usage

@@ -295,10 +295,10 @@ private struct RunDefaultsSection: View {
         }
         .task {
             await model.readRunDefaults(plot: plotID)
-            await model.readMCPServers()
             chosenModel = model.runDefaults?.model ?? ""
             chosenEffort = model.runDefaults?.effort ?? ""
             chosenServers = model.runDefaults?.mcpServers ?? []
+            await model.readMCPServers()
         }
         .onChange(of: Choice(model: chosenModel, effort: chosenEffort, servers: chosenServers)) { _, now in
             guard let saved = model.runDefaults, saved.plotID == plotID,

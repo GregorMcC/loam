@@ -21,9 +21,11 @@ type MCPServer struct {
 }
 
 // MCPServers lists the MCP servers that [MCPConfig] can copy, by name. It
-// leaves out a server that MCPConfig rejects, one with a headersHelper, so
-// each name in the list is one that loam run defaults --mcp accepts. A
-// config file that does not exist gives an empty list.
+// leaves out a server that --mcp cannot select, so each name in the list is
+// one that loam run defaults --mcp accepts: one with a headersHelper, which
+// MCPConfig rejects, and one whose name has a comma or edge spaces, which
+// --mcp would split or trim into another name. A config file that does not
+// exist gives an empty list.
 func MCPServers() ([]MCPServer, error) {
 	user, err := userServers()
 	if err != nil {
@@ -31,12 +33,17 @@ func MCPServers() ([]MCPServer, error) {
 	}
 	servers := []MCPServer{}
 	for name, def := range user {
-		if !hasHelper(def) {
+		if selectable(name) && !hasHelper(def) {
 			servers = append(servers, MCPServer{Name: name, Scope: ScopeUser})
 		}
 	}
 	slices.SortFunc(servers, func(a, b MCPServer) int { return strings.Compare(a.Name, b.Name) })
 	return servers, nil
+}
+
+// selectable reports whether --mcp keeps the server name as it is.
+func selectable(name string) bool {
+	return name != "" && name == strings.TrimSpace(name) && !strings.Contains(name, ",")
 }
 
 // MCPConfig returns an MCP config for claude --mcp-config that holds only

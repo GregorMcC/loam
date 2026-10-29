@@ -24,11 +24,16 @@ struct MCPServerPicker: View {
                             get: { item.isSelected },
                             set: { _ in selected = MCPChoices.toggled(item.name, in: selected) }))
                     }
+                } else {
+                    // The list could not be read: a selected server stays in the menu, so you can still clear it.
+                    Text("Loam could not read the MCP servers")
+                    ForEach(selected, id: \.self) { name in
+                        Toggle(name, isOn: Binding(get: { true }, set: { _ in selected = MCPChoices.toggled(name, in: selected) }))
+                    }
                 }
             } label: {
                 Text(MCPChoices.label(count: selected.count))
             }
-            .disabled(servers == nil)
             .frame(maxWidth: .infinity, alignment: .leading)
             .help(servers == nil ? "Loam could not read the MCP servers" : "The MCP servers that Claude loads when it drafts a run and writes its PR text")
             .accessibilityIdentifier(id)

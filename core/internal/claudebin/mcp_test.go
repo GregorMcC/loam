@@ -149,7 +149,11 @@ func TestMCPServersListsWhatMCPConfigCopies(t *testing.T) {
 	if err := json.Unmarshal(b, &doc); err != nil {
 		t.Fatal(err)
 	}
-	doc["mcpServers"].(map[string]any)["helper"] = map[string]any{"type": "http", "url": "https://example.com", "headersHelper": "./h.sh"}
+	servers := doc["mcpServers"].(map[string]any)
+	servers["helper"] = map[string]any{"type": "http", "url": "https://example.com", "headersHelper": "./h.sh"}
+	// --mcp splits on a comma and trims a name, so it cannot select these.
+	servers["a,b"] = servers["user"]
+	servers[" padded "] = servers["user"]
 	writeJSON(t, path, doc)
 	got, err := claudebin.MCPServers()
 	if err != nil {

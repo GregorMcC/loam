@@ -738,7 +738,7 @@ func newRunMCPServersCmd() *cobra.Command {
 		Use:   "mcp-servers",
 		Short: "List the MCP servers that loam run defaults --mcp can select",
 		Long: "List the MCP servers in the user scope of your Claude Code config (claude mcp add --scope user), by name. Each one has its scope, which is always user for now.\n" +
-			"The list leaves out a server with a headersHelper, because --mcp rejects it. It has no .mcp.json server and no local-scope server, and no claude.ai connector, because --mcp cannot select them.",
+			"The list leaves out a server with a headersHelper, because --mcp rejects it, and a server whose name has a comma or edge spaces, because --mcp cannot keep the name. It has no .mcp.json server and no local-scope server, and no claude.ai connector, because --mcp cannot select them.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			servers, err := claudebin.MCPServers()
