@@ -37,19 +37,21 @@ version() {
   echo "$v"
 }
 
-core=0 app=0 lint=0
+core=0 app=0 lint=0 ghostty=0
 if [ $# -eq 0 ]; then
   lint=1
   base=$(git -C "$root" merge-base HEAD origin/main) ||
     fail "Cannot find where the branch leaves origin/main." "git fetch origin, or name the jobs."
   # The changed files of the branch, with its uncommitted and new files. With
   # --no-renames, a rename gives both paths, as the files API gives CI.
-  files=$(git -C "$root" diff --name-only --no-renames "$base" && git -C "$root" ls-files --others --exclude-standard)
+  files=$(git -C "$root" -c core.quotePath=false diff --name-only --no-renames "$base" &&
+    git -C "$root" -c core.quotePath=false ls-files --others --exclude-standard)
   while IFS= read -r f; do
     case "$f" in
       .github/workflows/ci.yml) core=1 app=1 ;;
       contract/*) core=1 app=1 ;;
-      scripts/build-ghosttykit.sh | ghostty.pin) core=1 app=1 ;;
+      # CI builds GhosttyKit again for these. See the app job below.
+      scripts/build-ghosttykit.sh | ghostty.pin) core=1 app=1 ghostty=1 ;;
       # The core tests run the scripts.
       core/* | scripts/*) core=1 ;;
       # build-icon.sh reads app/Resources.
@@ -74,12 +76,16 @@ fi
 
 # Read the versions and look for the tools first, so a missing tool stops the
 # script before the long jobs run.
+if [ "$core" = 1 ] || [ "$lint" = 1 ]; then
+  command -v go >/dev/null || fail "go is not installed." "brew install go"
+fi
 if [ "$core" = 1 ]; then
   golangci_lint=$(version GOLANGCI_LINT_VERSION)
   govulncheck=$(version GOVULNCHECK_VERSION)
 fi
 if [ "$app" = 1 ]; then
   xcode=$(version XCODE)
+  command -v swift >/dev/null || fail "swift is not installed." "Install Xcode, as the README says."
 fi
 if [ "$lint" = 1 ]; then
   actionlint=$(version ACTIONLINT_VERSION)
@@ -136,7 +142,13 @@ if [ "$app" = 1 ]; then
   else
     echo "$xcode is not here, so swift uses the Xcode that xcode-select gives."
   fi
-  # SwiftPM caches the manifest, which reads whether app/vendor has GhosttyKit.
+  # Package.swift builds the terminal and the driver only when app/vendor has
+  # GhosttyKit, and SwiftPM caches the manifest that reads it.
+  if [ ! -e vendor/GhosttyKit.xcframework ]; then
+    echo "GhosttyKit is not built, so the driver tests do not run. For an app change, run scripts/build-ghosttykit.sh first."
+  elif [ "$ghostty" = 1 ]; then
+    echo "The branch changes the GhosttyKit build. Run scripts/build-ghosttykit.sh first, or the tests use the old GhosttyKit."
+  fi
   check "swift test" swift test --manifest-cache none
 fi
 

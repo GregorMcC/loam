@@ -4,9 +4,10 @@
 # leave a stale "changes requested" on the PR. The "Protect main" ruleset
 # requires the CI checks only.
 reviews:
+  # Both are the defaults. They are set here so that a change in the
+  # CodeRabbit web settings does not change them. chill comments on real
+  # faults, not on style.
   profile: chill
-  # The default, set here so that a change in the CodeRabbit web settings
-  # does not turn it on.
   request_changes_workflow: false
   poem: false
   path_filters:
