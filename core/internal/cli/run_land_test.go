@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -162,6 +163,149 @@ func TestRunTickStopsAReadyRunWhosePRWasClosed(t *testing.T) {
 	res := tick(t)
 	if len(res.Runs) != 1 || res.Runs[0].State != store.RunStopped || res.Runs[0].Note != "#1 was closed on GitHub" {
 		t.Fatalf("%+v", res)
+	}
+}
+
+// TAS-53: a commit in the worktree after the run is Ready is not on the PR. A tick pushes it, and the run is Shipping
+// again, so CI reads it before you merge.
+func TestRunTickShipsACommitAfterReadyAgain(t *testing.T) {
+	s, r, w := readyRun(t)
+	shipped := testutil.Git(t, r.Folder, "rev-parse", "HEAD")
+	writeAndCommit(t, r.Folder, "later.txt", "one more\n")
+	res := tick(t)
+	note := "The branch has commits after the head of #1. Loam pushes them, and CI runs again"
+	if len(res.Runs) != 1 || res.Runs[0].State != store.RunShipping || res.Runs[0].Note != note {
+		t.Fatalf("%+v", res)
+	}
+	if e := events(t, s, r.ID, "ship"); !slices.Contains(e, "Pushed the new commits to #1") {
+		t.Fatalf("ship events %q", e)
+	}
+	remote := filepath.Join(filepath.Dir(filepath.Dir(w.Repo)), "remote.git")
+	if head := testutil.Git(t, r.Folder, "rev-parse", "HEAD"); testutil.Git(t, remote, "rev-parse", w.Branch) != head || head == shipped {
+		t.Fatal("the new commit is not on GitHub")
+	}
+	// CI passes on the new head, and the run is Ready again.
+	setGitHub(t, ciState(w.Branch, testutil.Git(t, r.Folder, "rev-parse", "HEAD"), "SUCCESS"))
+	if res := tick(t); len(res.Runs) != 1 || res.Runs[0].State != store.RunReady {
+		t.Fatalf("%+v", res)
+	}
+}
+
+// A Ready run stays Ready when nothing is new: when its PR head is the head of the branch, when GitHub has commits
+// that the worktree does not have, such as a push from another machine (Loam does not push over them), and when
+// HEAD is on another branch.
+func TestRunTickKeepsAReadyRunWithNoNewCommitsReady(t *testing.T) {
+	_, r, w := readyRun(t)
+	if res := tick(t); len(res.Runs) != 0 {
+		t.Fatalf("%+v", res)
+	}
+	testutil.Git(t, r.Folder, "checkout", "-q", "-b", "try-something")
+	writeAndCommit(t, r.Folder, "later.txt", "one more\n")
+	if res := tick(t); len(res.Runs) != 0 {
+		t.Fatalf("another branch: %+v", res)
+	}
+	testutil.Git(t, r.Folder, "checkout", "-q", w.Branch)
+	setGitHub(t, ciState(w.Branch, strings.Repeat("c", 40), "SUCCESS"))
+	writeAndCommit(t, r.Folder, "more.txt", "and more\n")
+	if res := tick(t); len(res.Runs) != 0 {
+		t.Fatalf("a head from elsewhere: %+v", res)
+	}
+}
+
+// An auto merge or a merge queue merges the PR as it is. A commit after Ready does not go into it while it waits.
+func TestRunTickDoesNotPushIntoALandThatWaitsForGitHub(t *testing.T) {
+	s, r, w := readyRun(t)
+	if err := s.SetPendingLand(w.ID, &store.PendingLand{PR: 1, Method: "squash", Auto: true}); err != nil {
+		t.Fatal(err)
+	}
+	shipped := testutil.Git(t, r.Folder, "rev-parse", "HEAD")
+	writeAndCommit(t, r.Folder, "later.txt", "one more\n")
+	if res := tick(t); len(res.Runs) != 0 {
+		t.Fatalf("%+v", res)
+	}
+	remote := filepath.Join(filepath.Dir(filepath.Dir(w.Repo)), "remote.git")
+	if testutil.Git(t, remote, "rev-parse", w.Branch) != shipped {
+		t.Fatal("Loam pushed into the auto merge")
+	}
+}
+
+// A commit that you push by hand is on the PR, but CI did not pass on it. When its checks run, the run is Shipping
+// again, and it is Ready when they pass.
+func TestRunTickReadsCIAgainAfterAPushByHand(t *testing.T) {
+	s, r, w := readyRun(t)
+	writeAndCommit(t, r.Folder, "later.txt", "one more\n")
+	testutil.Git(t, r.Folder, "push", "-q", "origin", w.Branch)
+	head := testutil.Git(t, r.Folder, "rev-parse", "HEAD")
+	setGitHub(t, ciState(w.Branch, head, ""))
+	res := tick(t)
+	note := "The checks of #1 run or failed after it was ready. Loam reads CI again"
+	if len(res.Runs) != 1 || res.Runs[0].State != store.RunShipping || res.Runs[0].Note != note {
+		t.Fatalf("%+v", res)
+	}
+	if e := events(t, s, r.ID, "ship"); !slices.Contains(e, note) {
+		t.Fatalf("ship events %q", e)
+	}
+	setGitHub(t, ciState(w.Branch, head, "SUCCESS"))
+	if res := tick(t); len(res.Runs) != 1 || res.Runs[0].State != store.RunReady {
+		t.Fatalf("%+v", res)
+	}
+}
+
+// A PR head from another machine is not on the branch, so Loam cannot push it or read CI on it as Shipping. When its
+// checks run, the run stays Ready.
+func TestRunTickKeepsAReadyRunReadyWhenChecksRunOnAHeadFromElsewhere(t *testing.T) {
+	s, r, w := readyRun(t)
+	writeAndCommit(t, r.Folder, "elsewhere.txt", "from another machine\n")
+	elsewhere := testutil.Git(t, r.Folder, "rev-parse", "HEAD")
+	testutil.Git(t, r.Folder, "reset", "-q", "--hard", "HEAD~1")
+	for _, head := range []string{elsewhere, strings.Repeat("c", 40)} {
+		setGitHub(t, ciState(w.Branch, head, ""))
+		if res := tick(t); len(res.Runs) != 0 {
+			t.Fatalf("head %s: %+v", head, res)
+		}
+	}
+	if got, _ := s.GetRun(r.ID); got.State != store.RunReady {
+		t.Fatalf("run %+v", got)
+	}
+}
+
+// TAS-53: the desk shows the diff of a Ready run and merges the head of that diff, so the diff is the PR: it ends at
+// the head that Loam pushed, not at a commit after it.
+func TestRunDiffOfAReadyRunEndsAtThePushedHead(t *testing.T) {
+	_, r, _ := readyRun(t)
+	shipped := testutil.Git(t, r.Folder, "rev-parse", "HEAD")
+	writeAndCommit(t, r.Folder, "later.txt", "one more\n")
+	out, code := loam(t, "run", "diff", r.ID, "--json")
+	var got run.DiffResult
+	if code != 0 || json.Unmarshal([]byte(out), &got) != nil {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+	if got.Head != shipped || len(got.Files) != 1 || got.Files[0].Path != "hello.txt" {
+		t.Fatalf("%s", out)
+	}
+}
+
+// With no origin/<branch>, such as after a fetch pruned the branch of a merged PR, the diff of a Ready run fails. It
+// does not end at HEAD, which can have commits that the PR does not have.
+func TestRunDiffOfAReadyRunWithNoPushedHeadFails(t *testing.T) {
+	_, r, w := readyRun(t)
+	writeAndCommit(t, r.Folder, "later.txt", "one more\n")
+	testutil.Git(t, r.Folder, "update-ref", "-d", "refs/remotes/origin/"+w.Branch)
+	out, code := loam(t, "run", "diff", r.ID, "--json")
+	if code == 0 || !strings.Contains(out, "could not read the pushed head of "+w.Branch) {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+}
+
+// TAS-53: a land with the head of a commit after the PR head says that the PR does not have that commit yet. It does
+// not say that the PR has new commits.
+func TestRunLandWithACommitAfterThePRHeadSaysThePRDoesNotHaveIt(t *testing.T) {
+	_, r, _ := readyRun(t)
+	writeAndCommit(t, r.Folder, "later.txt", "one more\n")
+	_, code, out := runLand(t, r.ID, "--head", testutil.Git(t, r.Folder, "rev-parse", "HEAD"))
+	want := "PR #1 does not have the commit that you looked at. Look again when GitHub has it, before you merge"
+	if code == 0 || !strings.Contains(out, want) {
+		t.Fatalf("exit %d: %s", code, out)
 	}
 }
 

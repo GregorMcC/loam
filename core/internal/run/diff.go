@@ -56,7 +56,9 @@ type DiffLine struct {
 }
 
 // Diff returns the work that a run committed on its branch, from the commit
-// where the branch left its base to the head of the worktree.
+// where the branch left its base to the head of the worktree. For a Ready
+// run with a PR, the diff ends at the head that Loam pushed, so it is the
+// work that a land merges, and not a commit after it.
 func Diff(ctx context.Context, s *store.Store, id string) (DiffResult, error) {
 	r, err := s.GetRun(id)
 	if err != nil {
@@ -69,6 +71,11 @@ func Diff(ctx context.Context, s *store.Store, id string) (DiffResult, error) {
 	head, err := gitOut(ctx, r.Folder, "rev-parse", "HEAD")
 	if err != nil {
 		return DiffResult{}, fmt.Errorf("could not read the head of %s: %w", r.Folder, err)
+	}
+	if r.State == store.RunReady && r.PR != nil {
+		if head, err = pushedHead(ctx, r.Folder, w.Branch); err != nil {
+			return DiffResult{}, fmt.Errorf("could not read the pushed head of %s, so the diff could show work that the PR does not have: %w", w.Branch, err)
+		}
 	}
 	base, err := gitOut(ctx, r.Folder, "merge-base", w.Base, head)
 	if err != nil || w.Base == "" {
