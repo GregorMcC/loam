@@ -11,6 +11,6 @@
     "note": "",
     "path": "/tmp/loam-contract/repos/web",
     "setup": "npm ci",
-    "version": 24
+    "version": 25
   }
 }

@@ -35,7 +35,7 @@ func decodeFixture(schema: String, data: Data) throws {
     case "version": _ = try d.decode(VersionInfo.self, from: data)
     case "list": _ = try d.decode([PlotSummary].self, from: data)
     case "show", "new", "set", "edit": _ = try d.decode(Plot.self, from: data)
-    case "link-add", "link-edit", "link-rm", "repo-add", "repo-edit", "repo-main", "repo-rm":
+    case "link-add", "link-edit", "link-move", "link-rm", "repo-add", "repo-edit", "repo-main", "repo-rm":
         _ = try d.decode(WriteResult.self, from: data)
     case "sessions": _ = try d.decode([SessionRecord].self, from: data)
     case "move": _ = try d.decode(MoveResult.self, from: data)

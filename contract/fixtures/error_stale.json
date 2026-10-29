@@ -3,7 +3,7 @@
     "details": {
       "items": [
         {
-          "current": 17,
+          "current": 18,
           "exists": true,
           "expected": 1,
           "item": "what"
@@ -13,6 +13,6 @@
     },
     "exit_code": 10,
     "kind": "stale",
-    "message": "stale write: what changed since you read it; what is now at version 17: \"\""
+    "message": "stale write: what changed since you read it; what is now at version 18: \"\""
   }
 }

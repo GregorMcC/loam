@@ -60,7 +60,7 @@ import Testing
         #expect(clash.current != nil)
         // The draft stays, so nothing the person typed is lost.
         #expect(m.shownText(of: .what) == "My text")
-        #expect(fake.args()[1].contains("--expect what=17"))
+        #expect(fake.args()[1].contains("--expect what=18"))
     }
 
     @Test func keepMineWritesAgainWithTheNewVersion() async throws {
@@ -70,7 +70,7 @@ import Testing
         await m.save(.what)
         await m.keepMine()
         #expect(m.clash == nil)
-        #expect(fake.args().last?.hasPrefix("set plotaaaaab what - --expect what=17") == true)
+        #expect(fake.args().last?.hasPrefix("set plotaaaaab what - --expect what=18") == true)
         #expect(!m.isDirty(.what))
     }
 
@@ -85,12 +85,12 @@ import Testing
     }
 
     @Test func draftKeepsItsBaseVersionAcrossAReload() async throws {
-        // The draft began at version 17. A reload must not move the base.
+        // The draft began at version 18. A reload must not move the base.
         let (m, _) = try model([("show_links", 0), ("show", 0)])
         await m.load(plotID: "plotaaaaab")
         m.edit(.what, to: "Draft")
         await m.load(plotID: "plotaaaaab")
-        #expect(m.drafts[.what]?.base == 17)
+        #expect(m.drafts[.what]?.base == 18)
         #expect(m.shownText(of: .what) == "Draft")
     }
 
@@ -261,7 +261,7 @@ import Testing
         let (m, fake) = try model([("show_links", 0), ("link_edit", 0), ("show_links", 0)])
         await m.load(plotID: "plotaaaaab")
         await m.editLink(id: "linkaaaaai", label: "Missing", target: "/new/path", note: "")
-        #expect(fake.args()[1].contains("--expect link:linkaaaaai=23"))
+        #expect(fake.args()[1].contains("--expect link:linkaaaaai=24"))
         #expect(fake.args()[1].contains("--target /new/path"))
     }
 
@@ -270,6 +270,50 @@ import Testing
         await m.load(plotID: "plotaaaaab")
         await m.removeLink(id: "linkaaaaab")
         #expect(fake.args()[1] == "link rm plotaaaaab linkaaaaab --expect link:linkaaaaab=7 --json --actor app")
+    }
+
+    @Test func moveLinkExpectsTheLinkOrderVersion() async throws {
+        let (m, fake) = try model([("show_links", 0), ("link_move", 0), ("show_links", 0)])
+        await m.load(plotID: "plotaaaaab")
+        await m.moveLink(id: "linkaaaaad", to: 1)
+        #expect(fake.args()[1] == "link move plotaaaaab linkaaaaad 1 --expect links=8 --json --actor app")
+        #expect(fake.args().count == 3)
+    }
+
+    @Test func moveLinkReordersTheLinksBeforeTheReload() async throws {
+        // The reload fails, so the plot keeps the order the move set locally.
+        let (m, _) = try model([("show_links", 0), ("link_move", 0), ("error_generic", 1)])
+        await m.load(plotID: "plotaaaaab")
+        await m.moveLink(id: "linkaaaaad", to: 1)
+        let links = try #require(m.plot?.links)
+        #expect(links.prefix(3).map(\.id) == ["linkaaaaad", "linkaaaaac", "linkaaaaab"])
+        #expect(links.map(\.position) == Array(1...links.count))
+    }
+
+    @Test func failedMoveReloadsTheStoredOrder() async throws {
+        let (m, _) = try model([("show_links", 0), ("error_generic", 1), ("show_links", 0)])
+        await m.load(plotID: "plotaaaaab")
+        let stored = m.plot?.links.map(\.id)
+        await m.moveLink(id: "linkaaaaad", to: 1)
+        #expect(m.plot?.links.map(\.id) == stored)
+        #expect(m.errorMessage != nil)
+    }
+
+    @Test func staleMoveReportsAndReloadsWithoutAClash() async throws {
+        let (m, _) = try model([("show_links", 0), ("error_stale", 10), ("show_links", 0)])
+        await m.load(plotID: "plotaaaaab")
+        let stored = m.plot?.links.map(\.id)
+        await m.moveLink(id: "linkaaaaad", to: 1)
+        #expect(m.clash == nil)
+        #expect(m.errorMessage != nil)
+        #expect(m.plot?.links.map(\.id) == stored)
+    }
+
+    @Test func moveLinkSendsTheClampedPosition() async throws {
+        let (m, fake) = try model([("show_links", 0), ("link_move", 0), ("show_links", 0)])
+        await m.load(plotID: "plotaaaaab")
+        await m.moveLink(id: "linkaaaaad", to: 99)
+        #expect(fake.args()[1] == "link move plotaaaaab linkaaaaad 8 --expect links=8 --json --actor app")
     }
 
     @Test func staleLinkEditShowsClash() async throws {
@@ -289,5 +333,57 @@ import Testing
         #expect(m.clash == nil)
         #expect(m.errorMessage != nil)
         #expect(m.isDirty(.why))
+        #expect(m.linkError == nil)
+    }
+
+    @Test func failedLinkActionsShowTheirErrorByTheLinks() async throws {
+        let (m, fake) = try model([("show_links", 0), ("error_generic", 1), ("show_links", 0), ("error_generic", 1)])
+        await m.load(plotID: "plotaaaaab")
+        await m.moveLink(id: "linkaaaaad", to: 1)
+        #expect(m.linkError != nil)
+        #expect(m.linkError == m.errorMessage)
+        await m.removeLink(id: "linkaaaaab")
+        #expect(fake.args().last?.hasPrefix("link rm plotaaaaab linkaaaaab") == true)
+        #expect(m.linkError != nil)
+        #expect(m.linkError == m.errorMessage)
+    }
+
+    @Test func emptyLinkTargetShowsByTheLinks() async throws {
+        let (m, _) = try model([("show_links", 0)])
+        await m.load(plotID: "plotaaaaab")
+        await m.addLink(label: "", target: " ")
+        #expect(m.linkError == "A link needs a target.")
+    }
+
+    @Test func anotherErrorReplacesTheLinkError() async throws {
+        let (m, _) = try model([("show_links", 0), ("error_generic", 1), ("show_links", 0), ("error_generic", 1)])
+        await m.load(plotID: "plotaaaaab")
+        await m.moveLink(id: "linkaaaaad", to: 1)
+        #expect(m.linkError != nil)
+        m.edit(.why, to: "x")
+        await m.save(.why)
+        #expect(m.errorMessage != nil)
+        #expect(m.linkError == nil)
+    }
+
+    @Test func aLaterSuccessClearsTheLinkError() async throws {
+        let (m, fake) = try model([("show_links", 0), ("error_generic", 1), ("show_links", 0), ("set", 0)])
+        await m.load(plotID: "plotaaaaab")
+        await m.moveLink(id: "linkaaaaad", to: 1)
+        #expect(m.linkError != nil)
+        m.edit(.why, to: "x")
+        await m.save(.why)
+        #expect(fake.args().last?.hasPrefix("set plotaaaaab why") == true)
+        #expect(m.errorMessage == nil)
+        #expect(m.linkError == nil)
+    }
+
+    @Test func aMoveWhileOneIsInFlightIsIgnored() async throws {
+        let (m, fake) = try model([("show_links", 0), ("link_move", 0), ("show_links", 0)])
+        await m.load(plotID: "plotaaaaab")
+        async let first: Void = m.moveLink(id: "linkaaaaad", to: 3)
+        async let second: Void = m.moveLink(id: "linkaaaaad", to: 2)
+        _ = await (first, second)
+        #expect(fake.args().filter { $0.hasPrefix("link move") }.count == 1)
     }
 }

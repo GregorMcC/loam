@@ -166,6 +166,54 @@ private func tempState() -> AppStateFile {
         let remove = change(3, claude, entries: [ChangeEntry(item: "repo:r", field: "path", old: "/x", new: nil)])
         #expect(ChangeRules.summary(remove) == "Removed repo")
     }
+
+    private func moved(_ old: [String], _ new: [String]) -> String? {
+        ChangeRules.movedLink(old: old, new: new).map { "\($0.id)@\($0.position)" }
+    }
+
+    @Test func movedLinkIsTheOneWhoseRemovalLeavesTheListsEqual() {
+        #expect(moved(["a", "b", "c"], ["c", "a", "b"]) == "c@1")
+        #expect(moved(["a", "b", "c"], ["b", "c", "a"]) == "a@3")
+    }
+
+    @Test func swapOfNeighboursIsTheLinkThatWentUp() {
+        #expect(moved(["a", "b"], ["b", "a"]) == "b@1")
+    }
+
+    @Test func differentMembersHaveNoMovedLink() {
+        #expect(moved(["a", "b"], ["b", "c"]) == nil)
+        #expect(moved(["a", "b"], ["a", "b"]) == nil)
+    }
+
+    private func move(_ id: Int, old: String, new: String, undoOf: Int? = nil) -> Change {
+        change(id, you, entries: [ChangeEntry(item: "links", field: "order", old: old, new: new)], undoOf: undoOf)
+    }
+
+    @Test func linkMoveShowsTheLinkAndItsNewPosition() {
+        let moved = move(1, old: "a,b,c", new: "c,a,b")
+        #expect(ChangeRules.summary(moved) == "Moved link")
+        #expect(ChangeRules.itemTitle("links") == "Link order")
+        #expect(ChangeRules.entryViews(moved, linkLabels: ["c": "Project hub"])
+            == [.init(title: "Link order", body: .text("Project hub moved to 1"))])
+        #expect(ChangeRules.entryViews(moved) == [.init(title: "Link order", body: .text("a removed link moved to 1"))])
+    }
+
+    @Test func unexplainedLinkOrderChange() {
+        let moved = move(1, old: "a,b", new: "c,b,a")
+        #expect(ChangeRules.entryViews(moved) == [.init(title: "Link order", body: .text("Link order changed"))])
+    }
+
+    @Test func linkOrderTextNamesEachLinkInOrder() {
+        let labels = ["a": "Spec", "b": "Board", "c": "Project hub"]
+        #expect(ChangeRules.linkOrderText("c,a,b", linkLabels: labels) == "Project hub, Spec, Board")
+        #expect(ChangeRules.linkOrderText("a,x", linkLabels: labels) == "Spec, a removed link")
+        #expect(ChangeRules.linkOrderText("", linkLabels: labels) == "")
+        #expect(ChangeRules.linkOrderText(nil, linkLabels: labels) == "")
+    }
+
+    @Test func undoOfAMoveSummarisesAsUndo() {
+        #expect(ChangeRules.summary(move(4, old: "c,a,b", new: "a,b,c", undoOf: 3)) == "Undid change 3")
+    }
 }
 
 @Suite struct AppStateFileTests {

@@ -1,5 +1,5 @@
 {
-  "change_id": 27,
+  "change_id": 28,
   "plot": "plotaaaaab",
   "worktree": {
     "base": "origin/main",
@@ -13,6 +13,6 @@
     "plot_id": "plotaaaaab",
     "repo": "/tmp/loam-contract/repos/web",
     "setup_done": false,
-    "version": 27
+    "version": 28
   }
 }
