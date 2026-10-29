@@ -27,6 +27,7 @@ import (
 	"github.com/GregorMcC/loam/core/internal/claudebin"
 	"github.com/GregorMcC/loam/core/internal/intake"
 	"github.com/GregorMcC/loam/core/internal/linear"
+	"github.com/GregorMcC/loam/core/internal/sandbox"
 	"github.com/GregorMcC/loam/core/internal/session"
 	"github.com/GregorMcC/loam/core/internal/store"
 	"github.com/GregorMcC/loam/core/internal/wayfinder"
@@ -189,8 +190,21 @@ func prepare(s *store.Store, plot store.Plot, o StartOptions, title string, tick
 
 // launch starts the background session of a recorded run in its folder, and
 // moves its Linear issue to In Progress. When claude --bg fails, the run is
-// Stopped, with its output as the note.
+// Stopped, with its output as the note. With no sandbox, the run goes back to
+// Queued with its model and effort, and a tick starts it later.
 func launch(ctx context.Context, s *store.Store, r store.Run, o StartOptions, res *StartResult) (*StartResult, error) {
+	if missing := sandbox.Available(); missing != nil {
+		queued, err := s.UpdateRun(r.ID, func(r *store.Run) error {
+			r.State, r.Note = store.RunQueued, sandboxNote(missing)
+			r.Queue = &store.RunQueue{Model: o.Model, Effort: o.Effort}
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		res.Run = queued
+		return res, nil
+	}
 	rules, err := s.ListRules(r.PlotID)
 	if err != nil {
 		return nil, stopAfter(s, r.ID, err)

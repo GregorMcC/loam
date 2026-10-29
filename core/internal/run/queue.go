@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/GregorMcC/loam/core/internal/sandbox"
 	"github.com/GregorMcC/loam/core/internal/store"
 )
 
@@ -39,6 +40,17 @@ func startQueued(ctx context.Context, s *store.Store, loam string) ([]store.Run,
 	slices.Reverse(queued) // the list is newest first
 	var moved []store.Run
 	var warnings []string
+	if err := sandbox.Available(); err != nil {
+		// No run starts. Each one waits, with the reason as its note.
+		for _, r := range queued {
+			if note := sandboxNote(err); r.Note != note {
+				if err := renote(s, r.ID, note); err != nil {
+					warnings = append(warnings, fmt.Sprintf("%s: %v", r.Title, err))
+				}
+			}
+		}
+		return nil, warnings
+	}
 	if warning := freshUsage(ctx, s, holding); warning != "" {
 		warnings = append(warnings, warning)
 	}
@@ -80,6 +92,9 @@ func freshUsage(ctx context.Context, s *store.Store, holding int) string {
 	}
 	return probeStale(ctx, s)
 }
+
+// sandboxNote is the note of a run that waits for the sandbox.
+func sandboxNote(err error) string { return "Waits for the sandbox: " + err.Error() }
 
 // renote gives a Queued run the note that says why it waits now. A run that
 // left Queued meanwhile stays as it is.

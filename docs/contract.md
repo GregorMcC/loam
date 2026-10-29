@@ -587,6 +587,28 @@ The gate is the Stop hook of the session. Each time the session ends a turn, Loa
 
 `run start` uses the worktree that `--worktree` names, or makes it. With no `--worktree`, it makes a worktree with a name from the key of the link or the ticket, and the title. With no `--repo`, a new worktree is in the repo of the plot whose origin the `--link` is a GitHub issue of, else in the main repo. `--repo` always wins. `run shape` picks its repo in the same way. A run has `--link` or `--ticket`, not both (exit code 2). It refuses, with exit code 1, a folder that Claude Code does not trust: a background session cannot show the trust prompt. In git, Claude Code trusts a worktree when it trusts the main checkout of the repo. A setup command that you have not approved gives exit code 2 (`invalid`); `--approve-setup` approves it. When `claude --bg` fails, the run is `stopped` with the output in `note`, and the command exits 0. When no slot is free, the run is `queued` with the reason in `note`, and the command exits 0 (see [Limits, the queue, and usage](#limits-the-queue-and-usage)).
 
+#### Sandbox
+
+The session of a run works in the Bash sandbox of Claude Code (Seatbelt on macOS). The settings file of the run holds the `sandbox` block. The sandbox covers Bash and the processes that Bash starts. The Read and Edit tools, the hooks, and the MCP servers work outside it.
+
+- Read: the sandbox denies the home folder, then allows the folder of the run, its git folder (the main checkout's `.git` for a worktree), the repos of the plot, the local links of the plot, `~/.gitconfig`, `~/.config/git`, and the caches and toolchain folders of each stack preset. Paths outside the home folder stay readable.
+- Write: the folder of the run, its git folder, and the caches of each stack preset. Claude Code also allows its temporary folder and each `--add-dir` folder. So a run session adds only the plot folder, which holds the seed, and `denyWrite` denies it. A run session does not add the other repos or the local links: Bash reads them through `allowRead`, and the Read tool reads them in auto mode. The `CLAUDE.md` of another repo does not load in a run.
+- Network: only the hosts of the stack presets. `strictAllowlist` refuses any other host with no prompt, because nobody answers the prompts of a background session.
+- `failIfUnavailable` stops a session that has no sandbox, and `allowUnsandboxedCommands: false` ignores a command's request to run outside it.
+- `permissions.deny` denies the Read and Edit tools the credential paths: `~/.ssh`, `~/.config/gh`, `~/.aws`, `~/.docker`, `~/.netrc`, `~/.cargo/credentials.toml`, `~/.npmrc`, and `~/.pypirc`.
+
+A stack preset applies when a repo of the plot has its file at the root or one folder down:
+
+| File | Caches (read and write) | Toolchain (read) | Hosts |
+| --- | --- | --- | --- |
+| `go.mod` | the module cache (`GOMODCACHE`, else the first `GOPATH` entry, else `~/go`, then `pkg/mod`), the build cache (`GOCACHE`, else `~/Library/Caches/go-build`), and `~/Library/Application Support/go/telemetry` | | `proxy.golang.org`, `sum.golang.org` |
+| `Package.swift` | `~/Library/Caches/org.swift.swiftpm`, `~/Library/org.swift.swiftpm` | | |
+| `package.json` | `~/.npm` | | `registry.npmjs.org` |
+| `Cargo.toml` | `~/.cargo/registry`, `~/.cargo/git` | `~/.cargo/bin`, `~/.rustup` | `crates.io`, `index.crates.io`, `static.crates.io` |
+| `pyproject.toml`, `requirements.txt` | `~/Library/Caches/pip` | | `pypi.org`, `files.pythonhosted.org` |
+
+Loam resolves each path through its symlinks, because the sandbox matches real paths. Before it starts a session, Loam checks that `sandbox-exec` runs a command under a profile. When it does not, the run is `queued` with `Waits for the sandbox: <reason>` in `note`, and `run start` exits 0. A tick with no sandbox starts no run and writes a note only when it changed. A resume sends a prompt to a session that already has its sandbox, so it does not check.
+
 #### Ship
 
 `loam run tick` moves on each run in `shipping`. A tick that waits on GitHub changes nothing, so the app runs it often while a run ships. Only one tick runs at a time: a second one prints the empty result at once. For each run, the tick does the first step that applies:
