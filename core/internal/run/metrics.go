@@ -77,7 +77,8 @@ type Stations struct {
 // the run is Ready again. A gate that fails while the run fixes a CI failure
 // is part of that CI failure. A failure counts in the window that it
 // started in. A failure that never passed does not count, and nor does one
-// that stopped the run, because the Stopped station holds that wait.
+// whose run stopped or was cancelled before it passed, for any reason: the
+// Stopped station holds that wait.
 type Recovery struct {
 	Gate Spread `json:"gate"`
 	CI   Spread `json:"ci"`
@@ -203,9 +204,10 @@ func passes(stage string, st store.RunState) bool {
 	return st == store.RunShipping || st == store.RunReady || st == store.RunLanded
 }
 
-// walk reads the events of a run in order. Each state adds the time since
-// the state before it to the station of that state. The walk ends when the
-// run lands.
+// walk reads the events of a run in order: the state, try, and shape events
+// that [store.Store.RunHistory] returns. Each state adds the time since the
+// state before it to the station of that state. The walk ends when the run
+// lands.
 func walk(r store.Run, events []store.RunEvent) runPath {
 	p := runPath{run: r, tries: map[string]int{}}
 	var cur store.RunState
@@ -238,7 +240,7 @@ func walk(r store.Run, events []store.RunEvent) runPath {
 				open = nil
 			}
 			if i, ok := stationOf(st); st == store.RunCancelled || ok && i == stationStopped {
-				open = nil // the failure stopped the run
+				open = nil // the run stopped before the failure passed
 			}
 			cur, since, p.last = st, e.At, e.At
 			if st == store.RunLanded {
