@@ -88,6 +88,7 @@ extension Scenarios {
         try? await app.waitUntil("the note field on line 6 has the keys", timeout: 3) { app.fieldWithTheKeys() == "Note on line 6" }
         try await sweep.click("desk-file-search/match_test.go")
         try? await app.waitUntil("the other file shows", timeout: 3) { model.desk.file == "search/match_test.go" }
+        sweep.expect(d, "A click on another file closes the note", !app.exists("desk-note-field"))
         let f3 = model.desk.file
         await sweep.check(d, "] after a click on another file with a note open", "]") { model.desk.file != f3 }
         try await sweep.click("desk-file-search/match.go")
