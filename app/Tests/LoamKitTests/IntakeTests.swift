@@ -145,10 +145,67 @@ import Testing
     @Test func thePlotDefaultsAreReadAndSet() async throws {
         let (model, fake) = try model([("run_defaults_get", 0), ("run_defaults_set", 0)])
         await model.readRunDefaults(plot: "plotaaaaae")
-        #expect(model.runDefaults == RunDefaults(plotID: "plotaaaaae", model: "", effort: ""))
-        await model.setRunDefaults(plot: "plotaaaaae", model: "opus", effort: "high")
-        #expect(fake.args().last == "run defaults --model opus --effort high --json -- plotaaaaae")
+        #expect(model.runDefaults == RunDefaults(plotID: "plotaaaaae", model: "", effort: "", mcpServers: []))
+        await model.setRunDefaults(plot: "plotaaaaae", model: "opus", effort: "high", mcpServers: ["loam", "linear-server"])
+        #expect(fake.args().last == "run defaults --model opus --effort high --mcp loam,linear-server --json -- plotaaaaae")
         #expect(model.runDefaults?.model == "opus" && model.runDefaults?.effort == "high" && model.runDefaultsError == nil)
+    }
+
+    /// The servers that `--mcp` can select come from `loam run mcp-servers`, and no name clears the selection.
+    @Test func theMCPServersAreReadAndClearedWithAnEmptyList() async throws {
+        let (model, fake) = try model([("run_mcp_servers", 0), ("run_defaults_clear", 0)])
+        await model.readMCPServers()
+        #expect(fake.args().last == "run mcp-servers --json")
+        #expect(model.mcpServers == [MCPServer(name: "linear-server", scope: "user"), MCPServer(name: "loam", scope: "user")])
+        await model.setRunDefaults(plot: "plotaaaaae", model: "", effort: "", mcpServers: [])
+        #expect(fake.args().last == "run defaults --model  --effort  --mcp  --json -- plotaaaaae")
+        #expect(model.runDefaults?.mcpServers == [])
+    }
+
+    /// A pick that comes while a save runs waits, and the last pick is the last one saved.
+    @Test func savesOfTheRunDefaultsGoOneAfterTheOtherAndTheLastPickWins() async throws {
+        let (model, fake) = try model([("run_defaults_set_mcp", 0), ("run_defaults_set_mcp", 0)])
+        let first = Task { await model.setRunDefaults(plot: "plotaaaaae", model: "", effort: "", mcpServers: ["a"]) }
+        let second = Task { await model.setRunDefaults(plot: "plotaaaaae", model: "", effort: "", mcpServers: ["a", "b"]) }
+        await first.value
+        await second.value
+        let saves = fake.args().filter { $0.hasPrefix("run defaults") }
+        #expect(saves.count == 2 && saves.last?.contains("--mcp a,b") == true)
+    }
+
+    /// Plot A has a save that runs and a save that waits, and plot B changes. Each plot ends with its last pick.
+    @Test func aWaitingSaveOfOnePlotSurvivesASaveOfAnother() async throws {
+        let (model, fake) = try model([("run_defaults_set_mcp", 0), ("run_defaults_set_mcp", 0), ("run_defaults_set_mcp", 0)])
+        let running = Task { await model.setRunDefaults(plot: "plotaaaaae", model: "", effort: "", mcpServers: ["a"]) }
+        let waiting = Task { await model.setRunDefaults(plot: "plotaaaaae", model: "", effort: "", mcpServers: ["a", "b"]) }
+        let other = Task { await model.setRunDefaults(plot: "plotaaaaaf", model: "", effort: "", mcpServers: ["c"]) }
+        await running.value
+        await waiting.value
+        await other.value
+        let saves = fake.args().filter { $0.hasPrefix("run defaults") }
+        #expect(saves.count == 3)
+        #expect(saves.filter { $0.hasSuffix("plotaaaaaf") }.map { $0.contains("--mcp c") } == [true])
+        #expect(saves.filter { $0.hasSuffix("plotaaaaae") }.last?.contains("--mcp a,b") == true)
+    }
+
+    /// A pick saves only when the defaults of its plot are read: before that, the pickers are empty.
+    @Test func aPickBeforeTheReadEndsSavesNothing() {
+        let pick = RunDefaultsChoice(model: "opus", effort: "", servers: [])
+        let empty = RunDefaultsChoice(model: "", effort: "", servers: [])
+        let read = RunDefaults(plotID: "plotaaaaae", model: "", effort: "", mcpServers: [])
+        #expect(!RunDefaultsChoice.needsSave(pick, requested: empty, loaded: nil, plot: "plotaaaaae"))
+        #expect(!RunDefaultsChoice.needsSave(pick, requested: empty, loaded: read, plot: "plotaaaaaf"))
+        #expect(RunDefaultsChoice.needsSave(pick, requested: empty, loaded: read, plot: "plotaaaaae"))
+        #expect(!RunDefaultsChoice.needsSave(empty, requested: empty, loaded: read, plot: "plotaaaaae"))
+    }
+
+    /// A failed read leaves no list, not the last one.
+    @Test func aFailedReadOfTheMCPServersLeavesNone() async throws {
+        let (model, _) = try model([("run_mcp_servers", 0), ("error_generic", 1)])
+        await model.readMCPServers()
+        #expect(model.mcpServers?.count == 2)
+        await model.readMCPServers()
+        #expect(model.mcpServers == nil)
     }
 
     @Test func theDefaultChoiceSaysWhatTheDefaultIs() {

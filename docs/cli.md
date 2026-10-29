@@ -64,6 +64,7 @@ loam tick install                             # let launchd move runs on every 5
 | `loam run stop <run>` | Stop the session of a run. The run is Cancelled. The worktree and its work stay. |
 | `loam run limits` | Show or set the limits: `--at-a-time`, `--max-turns`, `--hold-at` |
 | `loam run defaults <plot>` | Show or set the model and the effort of the runs of a plot |
+| `loam run mcp-servers` | List the MCP servers that `loam run defaults --mcp` can select |
 | `loam usage [--refresh]` | Show the last usage that Claude Code reported: the 5-hour and 7-day windows |
 
 ## Intake, rules, and recurring runs

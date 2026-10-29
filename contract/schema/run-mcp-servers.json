@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam run mcp-servers --json",
+  "description": "The MCP servers that loam run defaults --mcp can select, by name. A server with a headersHelper is not in the list. No server gives an empty list.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "servers"
+  ],
+  "properties": {
+    "servers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "scope"],
+        "properties": {
+          "name": { "description": "The name that --mcp takes.", "type": "string", "minLength": 1 },
+          "scope": { "description": "The scope of the Claude Code config that holds the server. Always user for now.", "enum": ["user"] }
+        }
+      }
+    }
+  }
+}

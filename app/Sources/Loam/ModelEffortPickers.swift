@@ -2,8 +2,8 @@ import LoamKit
 import SwiftUI
 
 /// The Model and Effort pickers of a run. "" leaves the choice to the plot default, and its title says what that
-/// default is, such as "Default (Opus)".
-struct ModelEffortPickers: View {
+/// default is, such as "Default (Opus)". `trailing` adds more columns to the row, such as the MCP servers.
+struct ModelEffortPickers<Trailing: View>: View {
     @Binding var model: String
     @Binding var effort: String
     let defaults: RunDefaults?
@@ -11,11 +11,13 @@ struct ModelEffortPickers: View {
     let id: String
     /// The help of each picker.
     var help = "The model and the effort of the session of the run. Default is the plot default, else that of Claude Code."
+    @ViewBuilder var trailing: Trailing
 
     var body: some View {
         HStack(alignment: .top, spacing: LoamTheme.space3) {
             picker("Model", $model, RunChoices.models, defaultValue: defaults?.model, id: "\(id)-model")
             picker("Effort", $effort, RunChoices.efforts, defaultValue: defaults?.effort, id: "\(id)-effort")
+            trailing
         }
     }
 
@@ -34,5 +36,12 @@ struct ModelEffortPickers: View {
             .accessibilityIdentifier(id)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+extension ModelEffortPickers where Trailing == EmptyView {
+    init(model: Binding<String>, effort: Binding<String>, defaults: RunDefaults?, id: String,
+         help: String = "The model and the effort of the session of the run. Default is the plot default, else that of Claude Code.") {
+        self.init(model: model, effort: effort, defaults: defaults, id: id, help: help, trailing: { EmptyView() })
     }
 }

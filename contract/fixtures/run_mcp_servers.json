@@ -1,0 +1,12 @@
+{
+  "servers": [
+    {
+      "name": "linear-server",
+      "scope": "user"
+    },
+    {
+      "name": "loam",
+      "scope": "user"
+    }
+  ]
+}

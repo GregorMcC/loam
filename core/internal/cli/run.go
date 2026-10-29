@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/GregorMcC/loam/core/internal/claudebin"
 	"github.com/GregorMcC/loam/core/internal/run"
 	"github.com/GregorMcC/loam/core/internal/store"
 	"github.com/spf13/cobra"
@@ -33,7 +34,7 @@ func newRunCmd() *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
-	c.AddCommand(newRunStartCmd(), newRunShapeCmd(), newRunRedraftCmd(), newRunApproveCmd(), newRunListCmd(), newRunStatusCmd(), newRunEventsCmd(), newRunStopCmd(), newRunDiffCmd(), newRunSendBackCmd(), newRunLandCmd(), newRunTickCmd(), newRunHookCmd(), newRunDefaultsCmd(), newRunLimitsCmd())
+	c.AddCommand(newRunStartCmd(), newRunShapeCmd(), newRunRedraftCmd(), newRunApproveCmd(), newRunListCmd(), newRunStatusCmd(), newRunEventsCmd(), newRunStopCmd(), newRunDiffCmd(), newRunSendBackCmd(), newRunLandCmd(), newRunTickCmd(), newRunHookCmd(), newRunDefaultsCmd(), newRunMCPServersCmd(), newRunLimitsCmd())
 	return c
 }
 
@@ -730,6 +731,33 @@ func newRunDefaultsCmd() *cobra.Command {
 	f.StringVar(&effort, "effort", "", "set the default effort level ("+strings.Join(store.Efforts, ", ")+"); empty clears it")
 	f.StringVar(&mcp, "mcp", "", "set the MCP servers that drafts and PR texts load, comma-separated, by name in the user scope of the Claude Code config (not claude.ai connectors); empty clears it")
 	return c
+}
+
+func newRunMCPServersCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "mcp-servers",
+		Short: "List the MCP servers that loam run defaults --mcp can select",
+		Long: "List the MCP servers in the user scope of your Claude Code config (claude mcp add --scope user), by name. Each one has its scope, which is always user for now.\n" +
+			"The list leaves out a server with a headersHelper, because --mcp rejects it, and a server whose name has a comma or edge spaces, because --mcp cannot keep the name. It has no .mcp.json server and no local-scope server, and no claude.ai connector, because --mcp cannot select them.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			servers, err := claudebin.MCPServers()
+			if err != nil {
+				return err
+			}
+			if JSON(cmd) {
+				return printJSON(cmd, map[string]any{"servers": servers})
+			}
+			out := cmd.OutOrStdout()
+			if len(servers) == 0 {
+				fmt.Fprintln(out, "No MCP servers in the user scope.")
+			}
+			for _, s := range servers {
+				fmt.Fprintf(out, "%s (%s)\n", s.Name, s.Scope)
+			}
+			return nil
+		},
+	}
 }
 
 func newRunLimitsCmd() *cobra.Command {

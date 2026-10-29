@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -131,5 +132,48 @@ func TestMCPConfigRejectsAServerWithAHelper(t *testing.T) {
 	}
 	if !strings.Contains(got, `"Authorization":"Bearer x"`) || !strings.Contains(got, `"odd":"not an object"`) {
 		t.Fatalf("config %s", got)
+	}
+}
+
+// The list holds the user scope by name. A local scope, .mcp.json, and a
+// server with a headersHelper are not in it, as MCPConfig does not copy them.
+func TestMCPServersListsWhatMCPConfigCopies(t *testing.T) {
+	mcpSetup(t)
+	cfg := os.Getenv("CLAUDE_CONFIG_DIR")
+	path := filepath.Join(cfg, ".claude.json")
+	var doc map[string]any
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(b, &doc); err != nil {
+		t.Fatal(err)
+	}
+	servers := doc["mcpServers"].(map[string]any)
+	servers["helper"] = map[string]any{"type": "http", "url": "https://example.com", "headersHelper": "./h.sh"}
+	// --mcp splits on a comma and trims a name, so it cannot select these.
+	servers["a,b"] = servers["user"]
+	servers[" padded "] = servers["user"]
+	writeJSON(t, path, doc)
+	got, err := claudebin.MCPServers()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []claudebin.MCPServer{{Name: "other", Scope: "user"}, {Name: "user", Scope: "user"}}
+	if !slices.Equal(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for _, s := range got {
+		if _, err := claudebin.MCPConfig([]string{s.Name}); err != nil {
+			t.Errorf("%s is listed, but MCPConfig rejects it: %v", s.Name, err)
+		}
+	}
+}
+
+func TestMCPServersWithNoConfigIsEmpty(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	got, err := claudebin.MCPServers()
+	if err != nil || got == nil || len(got) != 0 {
+		t.Fatalf("got %#v, %v", got, err)
 	}
 }

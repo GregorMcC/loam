@@ -1441,6 +1441,26 @@
     "schema": "run-defaults"
   },
   {
+    "name": "run_mcp_servers_none",
+    "args": [
+      "run",
+      "mcp-servers",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "run-mcp-servers"
+  },
+  {
+    "name": "run_mcp_servers",
+    "args": [
+      "run",
+      "mcp-servers",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "run-mcp-servers"
+  },
+  {
     "name": "run_limits_get",
     "args": [
       "run",

@@ -181,6 +181,13 @@ public final class AppModel {
     var pendingShape: PendingShape?
     /// The run defaults of the plot of the start form or the Recurring page, as the core last read them.
     public internal(set) var runDefaults: RunDefaults?
+    /// The MCP servers that `--mcp` can select, as the core last read them. Nil when the last read failed.
+    public internal(set) var mcpServers: [MCPServer]?
+    /// The run defaults to save next, by plot, while a save runs. A later request replaces an earlier one of the same
+    /// plot that waits.
+    var pendingRunDefaults: [String: RunDefaultsRequest] = [:]
+    /// The plots that have a save of run defaults running, so the saves of one plot go one after the other.
+    var savingRunDefaults: Set<String> = []
     /// Why the run defaults could not be saved, for the Recurring page.
     public internal(set) var runDefaultsError: String?
     /// The intake that the Intake page shows, as the core last read it (ticket 204).

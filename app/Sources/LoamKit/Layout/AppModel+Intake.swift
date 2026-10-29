@@ -94,18 +94,42 @@ extension AppModel {
         try? await client.linearUpdates().inProgress
     }
 
-    /// Reads the model and the effort that a run of the plot gets when it names none. A failed read leaves none.
+    /// Reads the model, the effort, and the MCP servers that a run of the plot gets when it names none. A failed read leaves none.
     public func readRunDefaults(plot: String) async {
         runDefaults = try? await client.runDefaults(plot: plot)
     }
 
-    /// Sets the model and the effort that a run of the plot gets when it names none. "" clears one.
-    public func setRunDefaults(plot: String, model: String, effort: String) async {
-        do {
-            runDefaults = try await client.setRunDefaults(plot: plot, model: model, effort: effort)
-            runDefaultsError = nil
-        } catch {
-            runDefaultsError = Self.message(for: error)
+    /// Reads the MCP servers that a run default can select. A failed read leaves none, so the picker does not offer
+    /// a list that is out of date.
+    public func readMCPServers() async {
+        mcpServers = try? await client.runMCPServers()
+    }
+
+    /// The run defaults of a plot to save.
+    struct RunDefaultsRequest {
+        var plot: String
+        var model: String
+        var effort: String
+        var mcpServers: [String]
+    }
+
+    /// Sets the model, the effort, and the MCP servers that a run of the plot gets when it names none. "" clears the
+    /// model or the effort, and no name clears the servers.
+    /// The saves of a plot go one after the other, and its last request is the last one written: while a save of the
+    /// plot runs, a new request waits and replaces an older one that waits. Saves of other plots do not wait for it.
+    public func setRunDefaults(plot: String, model: String, effort: String, mcpServers: [String]) async {
+        pendingRunDefaults[plot] = RunDefaultsRequest(plot: plot, model: model, effort: effort, mcpServers: mcpServers)
+        guard savingRunDefaults.insert(plot).inserted else { return }
+        defer { savingRunDefaults.remove(plot) }
+        while let request = pendingRunDefaults[plot] {
+            pendingRunDefaults[plot] = nil
+            do {
+                runDefaults = try await client.setRunDefaults(
+                    plot: request.plot, model: request.model, effort: request.effort, mcpServers: request.mcpServers)
+                runDefaultsError = nil
+            } catch {
+                runDefaultsError = Self.message(for: error)
+            }
         }
     }
 
