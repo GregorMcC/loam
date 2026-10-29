@@ -30,11 +30,11 @@ import (
 // runs the headersHelper of a user-scope server in the config folder, but
 // that of an --mcp-config server in the folder of the session (see "Where
 // the helper runs" in the Claude Code MCP docs). The session folder is the
-// worktree of a run, so a relative path in a copied helper could run a file
-// that the run or a PR wrote. A helper is a shell command, so Loam cannot
-// tell whether it has a relative path. The command and args of a stdio
-// server run in the session folder from either scope. The session of the run
-// runs them in the same worktree, so --mcp-config changes nothing for them.
+// repo folder for a draft and the worktree of the run for the PR text, so a
+// relative path in a copied helper could run a file that a PR or the run
+// wrote. A helper is a shell command, so Loam cannot tell whether it has a
+// relative path. The command and args of a stdio server run in the session
+// folder from either scope, so --mcp-config changes nothing for them.
 func MCPConfig(names []string) (string, error) {
 	chosen := map[string]json.RawMessage{}
 	if len(names) > 0 {
