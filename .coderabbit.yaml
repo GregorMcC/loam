@@ -5,6 +5,8 @@
 # requires the CI checks only.
 reviews:
   profile: chill
+  # The default, set here so that a change in the CodeRabbit web settings
+  # does not turn it on.
   request_changes_workflow: false
   poem: false
   path_filters:
@@ -12,4 +14,3 @@ reviews:
     # LoamThemeTests checks them. Review the tokens and the script instead.
     - "!app/Sources/LoamKit/Theme/LoamTheme.swift"
     - "!app/Resources/ghostty-themes/**"
-    - "!docs/images/**"

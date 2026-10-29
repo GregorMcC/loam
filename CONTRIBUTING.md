@@ -34,7 +34,7 @@ CI runs these checks on each PR (see `.github/workflows/ci.yml`):
 
 On a PR, the `changes` job reads the changed files, and CI skips each job that the change cannot affect. For example, a change to `site/` only runs `lint`.
 
-Run the same commands yourself before you push. CI does not replace them. `scripts/check.sh` runs them: with no arguments, it picks the jobs from the files that your branch changes, as the `changes` job does. `scripts/check.sh core app lint` names the jobs.
+Run the same commands yourself before you push. CI does not replace them. `scripts/check.sh` runs them. With no arguments, it picks the `core` and `app` jobs from the files that your branch changes, with the rules of the `changes` job, and it always runs `lint`. `scripts/check.sh core app lint` names the jobs.
 
 The commands, in `core/`:
 

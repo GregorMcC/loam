@@ -4,13 +4,14 @@
 #   scripts/check.sh [core] [app] [lint]
 #
 # With no job names, it picks the jobs from the files that the branch changes
-# since origin/main, with the same rules as the changes job in
-# .github/workflows/ci.yml. It runs each job as CI does, and stops at the
-# first check that fails. It reads the tool versions from ci.yml, so they
-# stay the same as CI.
+# since origin/main, with the rules of the changes job in
+# .github/workflows/ci.yml, and it always runs lint, as CI does. It runs each
+# check of each job, and at the end it lists the checks that failed. It reads
+# the tool versions from ci.yml, so they stay the same as CI.
 #
 # core: gofmt, go vet, golangci-lint, go test and govulncheck in core/.
-# app: swift test in app/. With GhosttyKit built, it runs the driver tests too.
+# app: swift test in app/. With GhosttyKit built, it also builds the app with
+# GhosttyKit and runs the driver tests, which CI does not run (TAS-57).
 # lint: shellcheck on scripts/ and actionlint on the workflows.
 set -eu
 
@@ -28,30 +29,34 @@ fail() {
   exit 1
 }
 
-# version NAME prints the value of NAME in the env block of ci.yml.
+# version NAME prints the value of NAME in the env block of ci.yml, without
+# quotes or a comment.
 version() {
-  v=$(sed -n "s/^  $1: *//p" "$ci")
-  [ -n "$v" ] || fail "ci.yml sets no $1."
+  v=$(sed -n "s/^  $1: *[\"']\{0,1\}\([^\"' #]*\).*/\1/p" "$ci")
+  [ -n "$v" ] || fail "ci.yml sets no $1." "Change version() in scripts/check.sh to match ci.yml."
   echo "$v"
 }
 
 core=0 app=0 lint=0
 if [ $# -eq 0 ]; then
+  lint=1
   base=$(git -C "$root" merge-base HEAD origin/main) ||
     fail "Cannot find where the branch leaves origin/main." "git fetch origin, or name the jobs."
-  # The changed files of the branch, with its uncommitted and new files.
-  files=$(git -C "$root" diff --name-only "$base" && git -C "$root" ls-files --others --exclude-standard)
+  # The changed files of the branch, with its uncommitted and new files. With
+  # --no-renames, a rename gives both paths, as the files API gives CI.
+  files=$(git -C "$root" diff --name-only --no-renames "$base" && git -C "$root" ls-files --others --exclude-standard)
   while IFS= read -r f; do
     case "$f" in
-      .github/workflows/ci.yml) core=1 app=1 lint=1 ;;
+      .github/workflows/ci.yml) core=1 app=1 ;;
       contract/*) core=1 app=1 ;;
+      scripts/build-ghosttykit.sh | ghostty.pin) core=1 app=1 ;;
       # The core tests run the scripts.
-      scripts/*) core=1 lint=1 ;;
-      core/* | ghostty.pin) core=1 ;;
+      core/* | scripts/*) core=1 ;;
+      # build-icon.sh reads app/Resources.
+      app/Resources/*) core=1 app=1 ;;
       app/*) app=1 ;;
       # The app tests read the design docs.
       docs/*) app=1 ;;
-      .github/*) lint=1 ;;
     esac
   done <<EOF
 $files
@@ -67,35 +72,83 @@ else
   done
 fi
 
-if [ "$core" = 0 ] && [ "$app" = 0 ] && [ "$lint" = 0 ]; then
-  echo "The change needs no CI job."
-  exit 0
+# Read the versions and look for the tools first, so a missing tool stops the
+# script before the long jobs run.
+if [ "$core" = 1 ]; then
+  golangci_lint=$(version GOLANGCI_LINT_VERSION)
+  govulncheck=$(version GOVULNCHECK_VERSION)
 fi
+if [ "$app" = 1 ]; then
+  xcode=$(version XCODE)
+fi
+if [ "$lint" = 1 ]; then
+  actionlint=$(version ACTIONLINT_VERSION)
+  command -v shellcheck >/dev/null || fail "shellcheck is not installed." "brew install shellcheck"
+fi
+
+failed=""
+
+# check NAME COMMAND...: run a check, and note its name when it fails.
+check() {
+  name=$1
+  shift
+  echo "-- $name"
+  "$@" || failed="$failed $name"
+}
+
+gofmt_clean() {
+  unformatted=$(gofmt -l .)
+  [ -z "$unformatted" ] && return
+  echo "gofmt changes these files. Run gofmt -w on them:"
+  echo "$unformatted"
+  return 1
+}
+
+# CI runs the release binary of golangci-lint. A source build can lint
+# differently, so the script uses a golangci-lint of the same version when
+# one is on the PATH.
+golangci_lint() {
+  if command -v golangci-lint >/dev/null &&
+    [ "v$(golangci-lint version --short 2>/dev/null)" = "$golangci_lint" ]; then
+    golangci-lint run
+    return
+  fi
+  echo "No golangci-lint $golangci_lint on the PATH, so it builds one from source. Its results can differ from CI."
+  go run "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$golangci_lint" run
+}
 
 if [ "$core" = 1 ]; then
   echo "== core"
   cd "$root/core"
-  unformatted=$(gofmt -l .)
-  [ -z "$unformatted" ] || fail "gofmt changes these files:
-$unformatted" "gofmt -w on them."
-  go vet ./...
-  go run "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(version GOLANGCI_LINT_VERSION)" run
-  go test ./...
-  go run "golang.org/x/vuln/cmd/govulncheck@$(version GOVULNCHECK_VERSION)" ./...
+  check gofmt gofmt_clean
+  check "go vet" go vet ./...
+  check golangci-lint golangci_lint
+  check "go test" go test ./...
+  check govulncheck go run "golang.org/x/vuln/cmd/govulncheck@$govulncheck" ./...
 fi
 
 if [ "$app" = 1 ]; then
   echo "== app"
   cd "$root/app"
-  swift test
+  if [ -d "$xcode" ]; then
+    DEVELOPER_DIR="$xcode/Contents/Developer"
+    export DEVELOPER_DIR
+  else
+    echo "$xcode is not here, so swift uses the Xcode that xcode-select gives."
+  fi
+  # SwiftPM caches the manifest, which reads whether app/vendor has GhosttyKit.
+  check "swift test" swift test --manifest-cache none
 fi
 
 if [ "$lint" = 1 ]; then
   echo "== lint"
   cd "$root"
-  command -v shellcheck >/dev/null || fail "shellcheck is not installed." "brew install shellcheck"
-  shellcheck scripts/*.sh
-  go run "github.com/rhysd/actionlint/cmd/actionlint@$(version ACTIONLINT_VERSION)"
+  check shellcheck shellcheck scripts/*.sh
+  check actionlint go run "github.com/rhysd/actionlint/cmd/actionlint@$actionlint"
 fi
 
+if [ -n "$failed" ]; then
+  echo "These checks failed:$failed" >&2
+  exit 1
+fi
 echo "All checks passed."
