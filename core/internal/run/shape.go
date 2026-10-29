@@ -530,7 +530,9 @@ func askClaude(ctx context.Context, r store.Run, dirs, mcp []string, prompt func
 // claude.ai connector, and no server of the user or the project that names
 // leaves out. --tools leaves out ToolSearch, so Claude Code puts the schema
 // of every MCP tool that it loads in each request, and with many connectors
-// on, that can fill the context before the draft ends.
+// on, that can fill the context before the draft ends. --tools limits only
+// the built-in tools: a selected server is your opt-in, and its tools run as
+// your Claude Code permissions allow.
 func mcpArgs(dir string, names []string) ([]string, error) {
 	config, err := claudebin.MCPConfig(dir, names)
 	if err != nil {

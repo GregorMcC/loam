@@ -11,12 +11,19 @@ import (
 
 // MCPConfig returns an MCP config for claude --mcp-config that holds only
 // the servers that names gives, as {"mcpServers": {...}}. Loam copies each
-// definition from the Claude Code config. It looks for a name in this order:
-// the local scope of dir and the user scope in .claude.json (in
-// CLAUDE_CONFIG_DIR, else in the home folder), then .mcp.json in dir. No
-// names gives a config with no servers. A name that Loam cannot find is an
-// error that names it. claude.ai connectors are not in a local file, so no
-// name selects one.
+// definition from the Claude Code config. It looks for a name in the local
+// scope, then in the user scope, both in .claude.json (in CLAUDE_CONFIG_DIR,
+// else in the home folder). The local scope is that of the main checkout of
+// the repo of dir, or of dir outside git. No names gives a config with no
+// servers. A name that Loam cannot find is an error that names it. claude.ai
+// connectors are not in a local file, so no name selects one.
+//
+// Loam reads only what you add with claude mcp add in the main checkout or
+// in the user scope. It does not copy a project server from .mcp.json:
+// Claude Code asks you to approve a project server, and --mcp-config skips
+// that approval. It does not read the local scope of a worktree either. The
+// session of a run writes both of them from its worktree, so a definition
+// from them could run a command that you did not approve.
 func MCPConfig(dir string, names []string) (string, error) {
 	servers := map[string]json.RawMessage{}
 	if len(names) > 0 {
@@ -32,7 +39,8 @@ func MCPConfig(dir string, names []string) (string, error) {
 				}
 			}
 			if _, ok := servers[n]; !ok {
-				return "", fmt.Errorf("the MCP server %q is not in the Claude Code config of %s. Add it with claude mcp add, or change loam run defaults --mcp", n, dir)
+				return "", fmt.Errorf("the MCP server %q is not in the Claude Code config of %s: Loam reads the local scope of the main checkout "+
+					"and the user scope, and not .mcp.json. Add it with claude mcp add in the main checkout, or change loam run defaults --mcp", n, dir)
 			}
 		}
 	}
@@ -43,8 +51,9 @@ func MCPConfig(dir string, names []string) (string, error) {
 	return string(b), nil
 }
 
-// mcpScopes returns the MCP servers of each scope that Claude Code reads for
-// dir, first scope first. A file that does not exist adds no scope.
+// mcpScopes returns the MCP servers of the local scope and of the user scope,
+// local first, as [MCPConfig] says. A config file that does not exist gives
+// no servers.
 func mcpScopes(dir string) ([]map[string]json.RawMessage, error) {
 	type servers struct {
 		MCPServers map[string]json.RawMessage `json:"mcpServers"`
@@ -59,6 +68,9 @@ func mcpScopes(dir string) ([]map[string]json.RawMessage, error) {
 	}
 	if err := readJSON(path, &cfg); err != nil {
 		return nil, err
+	}
+	if _, main := gitRoots(dir); main != "" {
+		dir = main
 	}
 	// The config keeps each folder as written, so match dir as given and as
 	// resolved, such as /var and /private/var on macOS.
@@ -75,11 +87,7 @@ func mcpScopes(dir string) ([]map[string]json.RawMessage, error) {
 			break
 		}
 	}
-	var project servers
-	if err := readJSON(filepath.Join(dir, ".mcp.json"), &project); err != nil {
-		return nil, err
-	}
-	return []map[string]json.RawMessage{local, cfg.MCPServers, project.MCPServers}, nil
+	return []map[string]json.RawMessage{local, cfg.MCPServers}, nil
 }
 
 // readJSON decodes the JSON file at path into v. A file that does not exist

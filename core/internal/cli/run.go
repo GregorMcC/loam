@@ -678,7 +678,10 @@ func newRunDefaultsCmd() *cobra.Command {
 		Short: "Show or set the model, effort, and MCP servers that runs of a plot use",
 		Long: "A run, a Shape run, and a recurring run of the plot use these defaults when they name no model or effort. Empty means your Claude Code setting.\n" +
 			"--mcp names the MCP servers, comma-separated, that claude -p loads when it drafts a run or writes the PR text. Loam copies each one from your Claude Code config: " +
-			"the local and user scopes in .claude.json, then .mcp.json in the folder of the run. claude.ai connectors are not in a local config file, so you cannot select them. " +
+			"the local scope of the main checkout of the repo, then the user scope, in .claude.json. " +
+			"Loam does not copy a project server from .mcp.json, because that skips its approval, or a server of the local scope of a worktree. " +
+			"claude.ai connectors are not in a local config file, so you cannot select them. " +
+			"The tools of a selected server run as your Claude Code permissions allow, so a tool that your settings allow can write. " +
 			"Empty means no MCP server. A name that Loam cannot find stops the draft.\n" +
 			"With no flag, this shows the defaults. A flag sets that default, and an empty value clears it. Run defaults are not in the change log.",
 		Args: cobra.ExactArgs(1),
