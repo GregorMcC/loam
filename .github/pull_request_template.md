@@ -12,8 +12,8 @@
 
 ## Tests
 
-- [ ] `go vet ./...` and `go test ./...` pass in `core/`.
-- [ ] `swift test` passes in `app/`. For an app change, I built GhosttyKit first, so the driver tests ran.
+- [ ] `scripts/check.sh` passes.
+- [ ] For an app change, I built GhosttyKit first, so `scripts/check.sh` ran the driver tests.
 - [ ] For a change to the CLI JSON, I changed `docs/contract.md`, the schema, and the fixtures.
 - [ ] For a change to a design rule, I changed `docs/design/`.
 - [ ] I read my full diff. It has no personal name, home path, email address, or host name.
