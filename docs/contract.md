@@ -97,7 +97,7 @@ Details of `not_ready`:
 { "checks": [{ "name": "conflicts", "state": "conflicting", "blocks": true }] }
 ```
 
-- `checks` lists each check that blocks the land, in the order of the land result. See [Land, rerun, and update](#land-rerun-and-update). The list is empty when `--head` names another commit than the PR head: no check blocks, and the message says that the PR has new commits, or that the PR does not have the commit that `--head` names.
+- `checks` lists each check that blocks the land, in the order of the land result. See [Land, rerun, and update](#land-rerun-and-update). For a land of an open PR that is not a dry run, the list is empty when `--head` names another commit than the PR head: no check blocks, and the message says that the PR has new commits, or that the PR does not have the commit that `--head` names.
 
 Details of an `error` that refuses `loam worktree rm` (ticket 113). Other errors of kind `error` have no details.
 
