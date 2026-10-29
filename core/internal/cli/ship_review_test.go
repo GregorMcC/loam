@@ -82,6 +82,7 @@ func TestRunTickSendsAReviewThatRequestsChangesBackAsAReviewTry(t *testing.T) {
 		"## Review by alice", "https://github.com/example/widgets/pull/1#pullrequestreview-1", "> Two things before this merges.",
 		"## Thread on hello.txt:1", "Thread ID: T1", "https://github.com/example/widgets/pull/1#discussion_r1",
 		"alice wrote:\n> Say hello to the world.", "bob, who cannot push to the repo, wrote a comment (https://github.com/example/widgets/pull/1#discussion_r2). Loam leaves out its text.",
+		"Commit all the fixes in one commit", "A nitpick or a Minor point whose fix is not worth it needs no change",
 		"addPullRequestReviewThreadReply", "resolveReviewThread", "pushes the fix to #1",
 	} {
 		if !strings.Contains(prompts[0], want) {
@@ -121,6 +122,7 @@ func TestRunTickSendsAReviewWithNoThreadsOnce(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 	if p := resumes(t); len(p) != 1 || !strings.Contains(p[0], "> Two things before this merges.") ||
+		!strings.Contains(p[0], "commit all the fixes in one commit") || !strings.Contains(p[0], "make no commit") ||
 		strings.Contains(p[0], "resolveReviewThread") {
 		t.Fatalf("prompts %q", p)
 	}

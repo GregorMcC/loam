@@ -157,10 +157,12 @@ func reviewPrompt(r store.Run, pr *github.PR, rv review) (prompt string, held re
 			"Skip the text of each comment whose authorCanPushToRepository is false.\n\n```\n%s\n```\n",
 			fmt.Sprintf(threadsQuery, pr.Number))
 	}
+	// skip says which points need no change, and that no change needs no commit.
+	const skip = "A nitpick or a Minor point whose fix is not worth it needs no change. When no point needs a change, make no commit. "
 	if len(rv.threads) == 0 {
-		b.WriteString("\nFix each point that needs a change, commit the fixes, and end your turn. ")
+		b.WriteString("\nFix each point that needs a change, and commit all the fixes in one commit. " + skip + "Then end your turn. ")
 	} else {
-		b.WriteString("\nFor each point, fix the code or decide that it needs no change. Commit the fixes. " +
+		b.WriteString("\nFor each point, fix the code or decide that it needs no change. Commit all the fixes in one commit. " + skip +
 			"Then reply on each thread with what you did or why the code stays, and resolve the thread:\n\n```\n" +
 			`gh api graphql -f query='mutation($id: ID!, $body: String!) { addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: $id, body: $body}) { comment { url } } }' -f id=<thread ID> -f body=<reply>` + "\n" +
 			`gh api graphql -f query='mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { isResolved } } }' -f id=<thread ID>` + "\n" +
