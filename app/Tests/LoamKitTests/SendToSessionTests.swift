@@ -150,6 +150,12 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
         #expect(moved.kind == .failures)
         #expect(moved.text == "Work in the worktree at `/work/app  fix rm-\u{2764}\u{FE0F}`. " + prompt.text,
                 "a run of spaces and a variation selector stay")
+        // A backtick in the path cannot end the code span.
+        #expect(FixPrompt.codeSpan("/w/fix-`x`y") == "``/w/fix-`x`y``")
+        #expect(FixPrompt.codeSpan("/w/a``b`") == "``` /w/a``b` ```")
+        #expect(FixPrompt.codeSpan("/w/``\u{FE0F}run") == "```/w/``\u{FE0F}run```", "a backtick with a variation selector counts")
+        #expect(FixPrompt.codeSpan("`\u{FE0F}/w") == "`` `\u{FE0F}/w ``", "a first backtick with a variation selector gets a space")
+        #expect(prompt.inFolder("/w/fix-`push`-now").text.hasPrefix("Work in the worktree at ``/w/fix-`push`-now``. "))
         #expect(try PaneText.withoutReturn(moved.text) == moved.text)
     }
 

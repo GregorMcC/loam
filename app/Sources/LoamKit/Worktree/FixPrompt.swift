@@ -68,9 +68,25 @@ public struct FixPrompt: Equatable, Sendable {
     }
 
     /// The prompt for a session that works in the worktree but started in another folder (TAS-55). Its commands
-    /// run in that other folder, so the prompt names the worktree folder first.
+    /// run in that other folder, so the prompt names the worktree folder first, as a code span that the path cannot
+    /// end. The folder name comes from the branch name, and a branch name can have backticks.
     public func inFolder(_ path: String) -> FixPrompt {
-        FixPrompt(kind: kind, text: "Work in the worktree at `\(Self.onePathLine(path))`. \(text)")
+        FixPrompt(kind: kind, text: "Work in the worktree at \(Self.codeSpan(Self.onePathLine(path))). \(text)")
+    }
+
+    /// The text as a Markdown code span that the text cannot end (CommonMark): the fence is one backtick longer
+    /// than the longest run of backticks in the text. Text that starts or ends with a backtick gets a space inside
+    /// each fence, which CommonMark removes. It counts code points, as CommonMark does: Swift joins a backtick and
+    /// a variation selector after it into one character.
+    static func codeSpan(_ text: String) -> String {
+        var longest = 0, run = 0
+        for scalar in text.unicodeScalars {
+            run = scalar == "`" ? run + 1 : 0
+            longest = max(longest, run)
+        }
+        let fence = String(repeating: "`", count: longest + 1)
+        let pad = text.unicodeScalars.first == "`" || text.unicodeScalars.last == "`" ? " " : ""
+        return fence + pad + text + pad + fence
     }
 
     private init(kind: Kind, text: String) {
