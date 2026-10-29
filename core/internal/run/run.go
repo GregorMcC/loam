@@ -77,6 +77,9 @@ type StartOptions struct {
 	ApproveSetup bool
 	// Loam is the absolute path of the loam binary, for the hook command.
 	Loam string
+	// Fixes is the ID of the landed run of the plot that this run fixes, or
+	// empty (see [checkFixes]).
+	Fixes string
 }
 
 // StartResult is a started run.
@@ -113,6 +116,9 @@ func Start(ctx context.Context, s *store.Store, o StartOptions) (*StartResult, e
 	if err != nil {
 		return nil, err
 	}
+	if err := checkFixes(s, plot.ID, o.Fixes); err != nil {
+		return nil, err
+	}
 	usageForHold(ctx, s) // before Loam makes anything, so a probe that is cut short leaves nothing
 	res := &StartResult{}
 	wt, err := prepare(s, plot, o, title, ticket, res)
@@ -121,7 +127,7 @@ func Start(ctx context.Context, s *store.Store, o StartOptions) (*StartResult, e
 	}
 	r, err := s.AddRun(store.Run{
 		PlotID: plot.ID, WorktreeID: wt.ID, Folder: wt.Path, Title: title, Goal: strings.TrimSpace(o.Goal),
-		DoneWhen: o.DoneWhen, MaxTries: o.MaxTries, Source: cmp.Or(ticket, o.Source, sourceOf(wt.Link)),
+		DoneWhen: o.DoneWhen, MaxTries: o.MaxTries, Source: cmp.Or(ticket, o.Source, sourceOf(wt.Link)), Fixes: o.Fixes,
 	})
 	if err != nil {
 		return nil, err
@@ -135,6 +141,26 @@ func Start(ctx context.Context, s *store.Store, o StartOptions) (*StartResult, e
 		return res, nil
 	}
 	return launch(ctx, s, r, o, res)
+}
+
+// checkFixes checks the run that a new run fixes, when id is not empty: it
+// is a landed run of the plot. The change failure rate of the run metrics
+// counts it as failed.
+func checkFixes(s *store.Store, plotID, id string) error {
+	if id == "" {
+		return nil
+	}
+	r, err := s.GetRun(id)
+	if err != nil {
+		return err
+	}
+	if r.PlotID != plotID {
+		return fmt.Errorf("run %s is in another plot, and a run fixes a run of its own plot: %w", id, store.ErrInvalid)
+	}
+	if r.State != store.RunLanded {
+		return fmt.Errorf("run %s is %s, and a run fixes a landed run: %w", id, r.State, store.ErrInvalid)
+	}
+	return nil
 }
 
 // withDefaults checks the effort of a run and fills the model and the effort

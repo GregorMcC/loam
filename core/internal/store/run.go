@@ -394,8 +394,11 @@ type Run struct {
 	// ReviewReplies is what Loam sent back of the last review, until Loam
 	// posts the replies of the session, or nil. It is not in the JSON.
 	ReviewReplies *RunReviewReplies `json:"-"`
-	CreatedAt     time.Time         `json:"created_at"`
-	UpdatedAt     time.Time         `json:"updated_at"`
+	// Fixes is the ID of the landed run that this run fixes, or empty. The
+	// change failure rate counts the landed runs that a later run fixes.
+	Fixes     string    `json:"fixes"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // RunEvent is one line of a run's history: a state, a try, or a note.
@@ -405,6 +408,27 @@ type RunEvent struct {
 	At     time.Time `json:"at"`
 	Kind   string    `json:"kind"`
 	Detail string    `json:"detail"`
+	// Stage is where a try failed: [TryGate] or [TryCI]. It is empty for
+	// the other kinds. It is not in the JSON.
+	Stage string `json:"-"`
+}
+
+// The stages of a try.
+const (
+	// TryGate is a try that the gate counted: a Done when check failed.
+	TryGate = "gate"
+	// TryCI is a try that CI counted on the PR of the run.
+	TryCI = "ci"
+)
+
+// tryStage is the stage of a try that a run counts in the state from. The
+// gate runs while the session works. CI runs while the run ships or is
+// Ready, so a try in Shipping or Ready is a CI try.
+func tryStage(from RunState) string {
+	if from == RunShipping || from == RunReady {
+		return TryCI
+	}
+	return TryGate
 }
 
 // FeedLimit is the most events that [Store.RunFeed] returns.
@@ -438,6 +462,9 @@ func (r *Run) check() error {
 		if strings.TrimSpace(c.Name) == "" || strings.TrimSpace(c.Command) == "" {
 			return fmt.Errorf("each Done when check needs a name and a command: %w", ErrInvalid)
 		}
+	}
+	if r.Fixes != "" && r.Fixes == r.ID {
+		return fmt.Errorf("a run cannot fix itself: %w", ErrInvalid)
 	}
 	if r.MaxTries < 1 || r.MaxTries > MaxTriesLimit {
 		return fmt.Errorf("a run has 1 to %d tries, because Claude Code lets a session stop after %d blocked stops in a row: %w",
@@ -486,9 +513,9 @@ func (s *Store) AddRun(r Run) (Run, error) {
 	r.ReviewReplies = nil // nor a review that waits for replies
 	r.CreatedAt, r.UpdatedAt = tm(now), tm(now)
 	checks, src, pr, shape, queue, notes, draft, sent, review, replies := encodeRun(r)
-	if err := tx.exec(`INSERT INTO runs(`+runCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, 0, ?, ?, ?, ?, ?)`,
+	if err := tx.exec(`INSERT INTO runs(`+runCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`,
 		r.ID, r.PlotID, r.WorktreeID, r.Folder, r.Title, r.Goal, checks, r.State, r.MaxTries, r.SessionID, r.Note,
-		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, r.GroupID, queue, notes, draft, sent, review, replies, now, now); err != nil {
+		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, r.GroupID, queue, notes, draft, sent, review, replies, r.Fixes, now, now); err != nil {
 		return Run{}, err
 	}
 	if err := addRunEvent(tx, r.ID, now, "state", string(r.State)); err != nil {
@@ -607,10 +634,10 @@ func updateRun(tx *writeTx, id string, fn func(*Run) error, tryNote *string) (Ru
 	if err := tx.exec(`UPDATE runs SET worktree_id = ?, folder = ?, title = ?, goal = ?, done_when = ?, state = ?, tries = ?,
   max_tries = ?, session_id = ?, note = ?, source_kind = ?, source_key = ?, source_url = ?, pr_number = ?, pr_url = ?,
   shape = ?, group_id = ?, turns = ?, turn_base = ?, queue = ?, notes = ?, pr_draft = ?, review_tries = ?, reviews_sent = ?,
-  code_review = ?, review_replies = ?, updated_at = ? WHERE id = ?`,
+  code_review = ?, review_replies = ?, fixes = ?, updated_at = ? WHERE id = ?`,
 		r.WorktreeID, r.Folder, r.Title, r.Goal, checks, r.State, r.Tries, r.MaxTries, r.SessionID, r.Note,
 		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, r.GroupID, r.Turns, r.TurnBase, queue, notes, draft,
-		r.ReviewTries, sent, review, replies, now, r.ID); err != nil {
+		r.ReviewTries, sent, review, replies, r.Fixes, now, r.ID); err != nil {
 		return Run{}, err
 	}
 	if r.Tries != old.Tries {
@@ -618,7 +645,7 @@ func updateRun(tx *writeTx, id string, fn func(*Run) error, tryNote *string) (Ru
 		if tryNote != nil && *tryNote != "" {
 			note = *tryNote
 		}
-		if err := addRunEvent(tx, r.ID, now, "try", note); err != nil {
+		if err := addTryEvent(tx, r.ID, now, note, tryStage(old.State)); err != nil {
 			return Run{}, err
 		}
 	}
@@ -658,15 +685,55 @@ func (s *Store) RunEvents(runID string) ([]RunEvent, error) {
 		return scanRows(q, func(rows *sql.Rows) error {
 			var e RunEvent
 			var at int64
-			if err := rows.Scan(&e.ID, &e.RunID, &at, &e.Kind, &e.Detail); err != nil {
+			if err := rows.Scan(&e.ID, &e.RunID, &at, &e.Kind, &e.Detail, &e.Stage); err != nil {
 				return err
 			}
 			e.At = tm(at)
 			out = append(out, e)
 			return nil
-		}, `SELECT id, run_id, at, kind, detail FROM run_events WHERE run_id = ? ORDER BY id`, runID)
+		}, `SELECT id, run_id, at, kind, detail, stage FROM run_events WHERE run_id = ? ORDER BY id`, runID)
 	})
 	return out, err
+}
+
+// RunHistory returns the runs of a plot, or of every plot when plotID is
+// empty, and the events of those runs, oldest first, in one read. The run
+// metrics read it.
+func (s *Store) RunHistory(plotID string) ([]Run, []RunEvent, error) {
+	runs, events := []Run{}, []RunEvent{}
+	runQuery := `SELECT ` + runCols + ` FROM runs`
+	eventQuery := `SELECT e.id, e.run_id, e.at, e.kind, e.detail, e.stage FROM run_events e JOIN runs r ON r.id = e.run_id`
+	var args []any
+	if plotID != "" {
+		runQuery += ` WHERE plot_id = ?`
+		eventQuery += ` WHERE r.plot_id = ?`
+		args = append(args, plotID)
+	}
+	runQuery += ` ORDER BY created_at, rowid`
+	eventQuery += ` ORDER BY e.id`
+	err := s.readTx(func(q queryer) error {
+		if err := scanRows(q, func(rows *sql.Rows) error {
+			r, err := scanRun(rows)
+			if err != nil {
+				return err
+			}
+			runs = append(runs, r)
+			return nil
+		}, runQuery, args...); err != nil {
+			return err
+		}
+		return scanRows(q, func(rows *sql.Rows) error {
+			var e RunEvent
+			var at int64
+			if err := rows.Scan(&e.ID, &e.RunID, &at, &e.Kind, &e.Detail, &e.Stage); err != nil {
+				return err
+			}
+			e.At = tm(at)
+			events = append(events, e)
+			return nil
+		}, eventQuery, args...)
+	})
+	return runs, events, err
 }
 
 // RunFeed returns the events of every run of the plot, or of every plot when
@@ -705,7 +772,7 @@ func (s *Store) RunFeed(plotID string, since time.Time) ([]FeedEvent, error) {
 // runCols are the columns of a run record.
 const runCols = `id, plot_id, worktree_id, folder, title, goal, done_when, state, tries, max_tries, session_id, note,
   source_kind, source_key, source_url, pr_number, pr_url, shape, group_id, turns, turn_base, queue, notes, pr_draft,
-  review_tries, reviews_sent, code_review, review_replies, created_at, updated_at`
+  review_tries, reviews_sent, code_review, review_replies, fixes, created_at, updated_at`
 
 // encodeRun returns the columns of a run that are not plain values. notes is
 // NULL when the run has none, and draft, sent, review, and replies are ""
@@ -800,7 +867,7 @@ func scanRun(sc interface{ Scan(...any) error }) (Run, error) {
 	var created, updated int64
 	err := sc.Scan(&r.ID, &r.PlotID, &r.WorktreeID, &r.Folder, &r.Title, &r.Goal, &checks, &r.State, &r.Tries,
 		&r.MaxTries, &r.SessionID, &r.Note, &src.Kind, &src.Key, &src.URL, &pr.Number, &pr.URL, &shape, &r.GroupID,
-		&r.Turns, &r.TurnBase, &queue, &notes, &draft, &r.ReviewTries, &sent, &review, &replies, &created, &updated)
+		&r.Turns, &r.TurnBase, &queue, &notes, &draft, &r.ReviewTries, &sent, &review, &replies, &r.Fixes, &created, &updated)
 	if err != nil {
 		return Run{}, err
 	}
@@ -874,4 +941,9 @@ func loadRun(q queryer, where string, arg any) (Run, error) {
 
 func addRunEvent(tx *writeTx, runID string, at int64, kind, detail string) error {
 	return tx.exec(`INSERT INTO run_events(run_id, at, kind, detail) VALUES (?, ?, ?, ?)`, runID, at, kind, detail)
+}
+
+// addTryEvent adds the event of one try, with the stage that counted it.
+func addTryEvent(tx *writeTx, runID string, at int64, note, stage string) error {
+	return tx.exec(`INSERT INTO run_events(run_id, at, kind, detail, stage) VALUES (?, ?, 'try', ?, ?)`, runID, at, note, stage)
 }

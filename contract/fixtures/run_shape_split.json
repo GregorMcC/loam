@@ -7,6 +7,7 @@
         "name": "Go tests"
       }
     ],
+    "fixes": "",
     "folder": "/tmp/loam-contract/repos/web",
     "goal": "The app names the setting Plan view.",
     "group_id": "runraaaaaj",
@@ -52,6 +53,7 @@
           "name": "Go tests"
         }
       ],
+      "fixes": "",
       "folder": "/tmp/loam-contract/repos/web",
       "goal": "The app names the setting Plan view.",
       "group_id": "runraaaaaj",
@@ -96,6 +98,7 @@
           "name": "Docs"
         }
       ],
+      "fixes": "",
       "folder": "/tmp/loam-contract/repos/docs",
       "goal": "The docs name the setting Plan view.",
       "group_id": "runraaaaaj",

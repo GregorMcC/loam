@@ -746,6 +746,8 @@ func scenario(t *testing.T) *harness {
 	h.run("run_land_dry_run", "run-land", 0, "run", "land", tidy.Run.ID, "--dry-run")
 	h.run("run_land", "run-land", 0, "run", "land", tidy.Run.ID, "--where-it-stands", "--no-linear-done")
 	h.run("error_run_land_not_ready", "error", 2, "run", "land", started.Run.ID)
+	// Metrics (TAS-176): the landed run counts in the window.
+	h.run("run_metrics", "run-metrics", 0, "run", "metrics", "--plot", "Runs")
 
 	// Shape (ticket 207). The fake claude prints a draft for claude -p. A
 	// redraft takes a change, and the approve starts the run with your edits.

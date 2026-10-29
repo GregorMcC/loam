@@ -1186,6 +1186,18 @@
     "schema": "error"
   },
   {
+    "name": "run_metrics",
+    "args": [
+      "run",
+      "metrics",
+      "--plot",
+      "Runs",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "run-metrics"
+  },
+  {
     "name": "run_shape",
     "args": [
       "run",

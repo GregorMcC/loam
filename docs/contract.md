@@ -531,7 +531,7 @@ A run is one goal that a background Claude Code session (`claude --bg`) works on
   "state": "running", "tries": 1, "max_tries": 3, "review_tries": 0, "turns": 2,
   "source": { "kind": "github", "key": "#57", "url": "https://github.com/example/widgets/issues/57" },
   "pr": { "number": 147, "url": "https://github.com/example/widgets/pull/147" },
-  "session_id": "c57ef956-3136-4e86-bfde-da8facfe0523", "note": "Try 1 failed: Go tests", "group_id": "", "notes": null,
+  "session_id": "c57ef956-3136-4e86-bfde-da8facfe0523", "note": "Try 1 failed: Go tests", "group_id": "", "notes": null, "fixes": "",
   "created_at": "2026-10-02T09:00:00Z", "updated_at": "2026-10-02T09:04:00Z"
 }
 ```
@@ -556,6 +556,7 @@ A run is one goal that a background Claude Code session (`claude --bg`) works on
 - `source` is the issue of the worktree's link, or the map ticket that `--ticket` names (`kind` `map`, `key` such as `map 135`, `url` the path of the ticket file). It is left out when there is none.
 - `group_id` links the runs that one split shape made for one issue, one in each repo (see Shape). It is the ID of the first run of the group. It is always there, and it is empty for a run alone. `run list` and `run status` show it.
 - `notes` are the ship notes that Claude wrote when Loam opened the PR of the run (see Ship). It is always there. It is null before Loam opens the PR, and when Claude wrote no notes.
+- `fixes` is the ID of the landed run that this run fixes, from `--fixes` of `run start` or `run shape`. It is always there, and it is empty for a run that fixes none. The run metrics count a landed run that a later run fixes as a change failure (see Metrics).
 
 ```json
 {
@@ -576,7 +577,7 @@ The gate is the Stop hook of the session. Each time the session ends a turn, Loa
 
 | Command | Output |
 | :- | :- |
-| `loam run start <plot> --title <text> [--goal <text>] [--check <name>=<command>]... [--worktree <name>] [--repo <repo>] [--base <branch>] [--link <link-id or URL> \| --ticket <file>] [--max-tries <n>] [--model <model>] [--effort <level>] [--approve-setup]` | `{ "run": {...}, "worktree": {...} }` |
+| `loam run start <plot> --title <text> [--goal <text>] [--check <name>=<command>]... [--worktree <name>] [--repo <repo>] [--base <branch>] [--link <link-id or URL> \| --ticket <file>] [--max-tries <n>] [--model <model>] [--effort <level>] [--approve-setup] [--fixes <run>]` | `{ "run": {...}, "worktree": {...} }` |
 | `loam run list [<plot>]` | An array of runs, newest first. It is `[]` when none exists. |
 | `loam run events [--since <time>] [--plot <plot>]` | `{ "events": [{ "run_id": "...", "plot_id": "...", "run_title": "...", "at": "...", "kind": "state", "detail": "running" }] }` |
 | `loam run status <run>` | `{ "run": {...}, "events": [{ "id": 1, "run_id": "...", "at": "...", "kind": "state", "detail": "running" }] }`. `kind` is `state`, `try`, `check`, `linear`, `ship`, `ci`, `code_review`, `review`, `note`, `land`, `shape`, `draft`, or `followup`. |
@@ -586,6 +587,8 @@ The gate is the Stop hook of the session. Each time the session ends a turn, Loa
 `run events` lists the events of every run of every plot, or of the runs of one plot with `--plot`, newest first, at most 200. `--since` takes an RFC 3339 time and lists only the events after it. A time that does not parse gives exit code 2. `run_title` and `plot_id` are those of the run. `kind` is as in `run status`. The Today screen shows the list as "While you were away".
 
 `run start` uses the worktree that `--worktree` names, or makes it. With no `--worktree`, it makes a worktree with a name from the key of the link or the ticket, and the title. With no `--repo`, a new worktree is in the repo of the plot whose origin the `--link` is a GitHub issue of, else in the main repo. `--repo` always wins. `run shape` picks its repo in the same way. A run has `--link` or `--ticket`, not both (exit code 2). It refuses, with exit code 1, a folder that Claude Code does not trust: a background session cannot show the trust prompt. In git, Claude Code trusts a worktree when it trusts the main checkout of the repo. A setup command that you have not approved gives exit code 2 (`invalid`); `--approve-setup` approves it. When `claude --bg` fails, the run is `stopped` with the output in `note`, and the command exits 0. When no slot is free, the run is `queued` with the reason in `note`, and the command exits 0 (see [Limits, the queue, and usage](#limits-the-queue-and-usage)).
+
+`--fixes` takes the ID of a run of the same plot that is `landed`. Another run gives exit code 2 (`invalid`), and a run that does not exist gives exit code 1. Nothing is made. `run shape` takes `--fixes` too, and each run of a split fixes the same run.
 
 #### Sandbox
 
@@ -697,7 +700,7 @@ Neither applies while a land waits for GitHub (an auto merge, or a PR in a merge
 
 | Command | Output |
 | :- | :- |
-| `loam run shape <plot> --title <text> [--repo <repo> \| --split] [--base <branch>] [--link <link> \| --ticket <file>] [--max-tries <n>] [--model <model>] [--effort <level>]` | `{ "run": { ..., "state": "shaping", "shape": { "assumptions": [{ "text": "...", "answer": "" }], "follow_ups": [{ "title": "...", "body": "...", "target": { "kind": "github", "label": "owner/name", "url": "https://github.com/owner/name" }, "kept": true }], "plan": ["..."], "size": "...", "drafted_at": "...", "repo": "repoaaaaag", "base": "", "link": "", "model": "", "effort": "" } }, "runs": [{ ... }] }` |
+| `loam run shape <plot> --title <text> [--repo <repo> \| --split] [--base <branch>] [--link <link> \| --ticket <file>] [--max-tries <n>] [--model <model>] [--effort <level>] [--fixes <run>]` | `{ "run": { ..., "state": "shaping", "shape": { "assumptions": [{ "text": "...", "answer": "" }], "follow_ups": [{ "title": "...", "body": "...", "target": { "kind": "github", "label": "owner/name", "url": "https://github.com/owner/name" }, "kept": true }], "plan": ["..."], "size": "...", "drafted_at": "...", "repo": "repoaaaaag", "base": "", "link": "", "model": "", "effort": "" } }, "runs": [{ ... }] }` |
 | `loam run redraft <run> [--change <text>]` | `{ "run": { ... }, "runs": [{ ... }] }` |
 | `loam run approve <run> [--goal <text>] [--check <name>=<command>]... [--no-checks] [--answer <n>=<text>]... [--drop-follow-up <n>]... [--approve-setup]` | `{ "run": { ... }, "worktree": { ... } }`, as for `run start` |
 
@@ -802,6 +805,38 @@ The usage is the last usage that Claude Code reported to Loam. It is not in the 
 - At each Stop of a `running` run, when the checks fail and `max_turns` is not 0 and the turns since Loam last resumed the session reach `max_turns`, the run is `stopped` with the note "Stopped after 40 turns, the limit for each run". Loam resumes the session with your notes (`run send-back`) and with a CI failure, also from the queue, and each resume starts the count again. `turns` stays the total. No try counts. A Stop whose checks pass ships as always.
 - Loam records the usage from each `claude -p` call that it makes with `--output-format stream-json`: a Shape draft, and the probe. Claude Code reports it as a `rate_limit_event` line, whose `rate_limit_info.unifiedWindows` holds `five_hour` and `seven_day`, each with `utilization` and `resetsAt` in Unix seconds. A window that a report does not have keeps its last value.
 - `usage --refresh` runs the probe: `claude -p "Reply with ok" --model haiku --output-format stream-json --verbose --no-session-persistence --tools ""` in a new temp folder, for at most 60 seconds. It records the usage and prints it. A probe that fails, or that reports no usage, exits 1.
+
+#### Metrics
+
+`loam run metrics` shows where the time of the runs goes, from approve to landed (TAS-176). It reads the run events in the store, so it covers every run since Loam had runs. A run that you delete with its plot leaves the metrics. All times are wall time.
+
+| Command | Output |
+| :- | :- |
+| `loam run metrics [--plot <plot>] [--since <time>]` | `{ "current": {...}, "previous": {...} }` |
+
+`current` is the window from `--since` up to now, or the last 30 days. `previous` is the window of the same length that ends where `current` starts. `--since` takes an RFC 3339 time. A time that does not parse, or that is not before now, gives exit code 2. With `--plot`, the metrics hold the runs of that plot only. Each window is:
+
+```json
+{
+  "from": "2026-09-29T09:00:00Z", "to": "2026-10-29T09:00:00Z",
+  "landed": 5, "first_pass": 4, "fixed": 0,
+  "lead_time": { "count": 5, "median_seconds": 7843, "p90_seconds": 8768 },
+  "stations": { "approve": {...}, "queue": {...}, "build": {...}, "ship": {...}, "merge": {...}, "stopped": {...} },
+  "recovery": { "gate": {...}, "ci": {...} },
+  "rework": { "gate_tries": 1, "ci_tries": 0, "review_tries": 0, "code_review_rounds": 0, "redrafts": 2, "turns": 10 },
+  "not_landed": { "stopped": 0, "limited": 0, "cancelled": 0, "start_unknown": 0 }
+}
+```
+
+- A landed run counts in the window that it landed in. `landed`, `first_pass`, `fixed`, `lead_time`, `stations`, and `rework` hold the landed runs of the window.
+- A spread has `count`, and the median and the 90th percentile in seconds, by the nearest rank: the time at rank ceil(q × count) of the sorted times. Both are 0 when `count` is 0.
+- `lead_time` runs from approve, when the run leaves `shaping`, to `landed`. A run with no draft starts when Loam records it.
+- `stations` add each visit to a state, so a run that goes from `ready` back to `shipping` adds both visits. `approve` is `shaping`, `queue` is `queued`, `build` is `starting` and `running`, `ship` is `shipping`, `merge` is `ready`, and `stopped` is `stopped`, `limited`, and `start_unknown`. The stations other than `approve` add up to the lead time of a run. Each spread holds every landed run, with 0 for a station that the run did not pass. `approve` holds only the runs that had a draft.
+- `first_pass` counts the landed runs that used no try and no review try.
+- `fixed` counts the landed runs that a later run fixes (`--fixes`), unless you cancelled the fix. It is the change failure count, and it can grow after the window ends.
+- `recovery` times each failure to the next pass. `gate` is from a failed gate until the run is `shipping`, `ready`, or `landed`. `ci` is from a failed CI until the run is `ready` or `landed`. A gate that fails while the run fixes a CI failure is part of that CI failure. A failure counts in the window that it started in, for any run, and a failure that never passed does not count.
+- `rework` adds up the loops of the landed runs. A try of the gate and a try of CI each count once. `code_review_rounds` counts the code reviews before a push that found a Critical or Major issue. `redrafts` counts the drafts after the first one.
+- `not_landed` counts the runs whose last state is in the window and is `stopped`, `limited`, `cancelled`, or `start_unknown`.
 
 #### Rules
 

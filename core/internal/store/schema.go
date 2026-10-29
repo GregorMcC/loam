@@ -301,6 +301,19 @@ ALTER TABLE runs ADD COLUMN code_review TEXT NOT NULL DEFAULT '';
 	// 23: what Loam sent back of the last review of a run, as JSON, or '',
 	// so it posts the replies of the session to those threads only.
 	`ALTER TABLE runs ADD COLUMN review_replies TEXT NOT NULL DEFAULT '';`,
+	// 24: the run metrics (TAS-176). fixes is the ID of the landed run that a
+	// run fixes, or ''. stage is where a try failed: gate or ci, and '' for
+	// the other events. A try that a run counted in Shipping is a CI try, so
+	// the UPDATE gives the tries before this migration their stage from the
+	// state before them.
+	`
+ALTER TABLE runs ADD COLUMN fixes TEXT NOT NULL DEFAULT '';
+ALTER TABLE run_events ADD COLUMN stage TEXT NOT NULL DEFAULT '';
+UPDATE run_events SET stage = CASE (
+  SELECT p.detail FROM run_events p WHERE p.run_id = run_events.run_id AND p.kind = 'state' AND p.id < run_events.id
+  ORDER BY p.id DESC LIMIT 1) WHEN 'shipping' THEN 'ci' WHEN 'ready' THEN 'ci' ELSE 'gate' END
+WHERE kind = 'try';
+`,
 }
 
 // SchemaVersion is the schema version of this binary.

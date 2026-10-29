@@ -137,3 +137,53 @@ func TestMigrationTurnsTheCodeReviewOnForOldRunDefaults(t *testing.T) {
 		t.Fatalf("%+v", d)
 	}
 }
+
+// A store from before the metrics migration keeps its try events. A try
+// after a Shipping state is a CI try, and the others are gate tries. Its
+// runs fix no run.
+func TestMigrationGivesOldTriesTheirStage(t *testing.T) {
+	step := slices.IndexFunc(migrations, func(m string) bool { return strings.Contains(m, "ADD COLUMN stage ") })
+	if step < 0 {
+		t.Fatal("no migration adds the stage")
+	}
+	all := migrations
+	migrations, SchemaVersion = all[:step], step
+	s, err := Open(testutil.Home(t))
+	migrations, SchemaVersion = all, len(all)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	for _, q := range []string{
+		`INSERT INTO plots(id, name, created_at) VALUES ('oldplotaab', 'Old', 1)`,
+		`INSERT INTO runs(id, plot_id, folder, title, state, max_tries, created_at, updated_at)
+  VALUES ('oldrunaaab', 'oldplotaab', '/tmp/x', 'Old run', 'landed', 3, 1, 1)`,
+		`INSERT INTO run_events(run_id, at, kind, detail) VALUES
+  ('oldrunaaab', 1, 'state', 'starting'), ('oldrunaaab', 2, 'state', 'running'), ('oldrunaaab', 3, 'try', 'Try 1 failed: Go tests'),
+  ('oldrunaaab', 4, 'state', 'shipping'), ('oldrunaaab', 5, 'ci', 'CI failed on #3: core'),
+  ('oldrunaaab', 5, 'try', 'CI failed on #3: core'), ('oldrunaaab', 5, 'state', 'running')`,
+	} {
+		if _, err := s.db.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+
+	if err := s.migrate(); err != nil {
+		t.Fatal(err)
+	}
+	events, err := s.RunEvents("oldrunaaab")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stages []string
+	for _, e := range events {
+		stages = append(stages, e.Kind+":"+e.Stage)
+	}
+	want := []string{"state:", "state:", "try:gate", "state:", "ci:", "try:ci", "state:"}
+	if !slices.Equal(stages, want) {
+		t.Fatalf("stages %q, want %q", stages, want)
+	}
+	if r, err := s.GetRun("oldrunaaab"); err != nil || r.Fixes != "" {
+		t.Fatalf("run %+v, %v", r, err)
+	}
+}
