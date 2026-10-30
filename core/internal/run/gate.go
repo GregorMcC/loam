@@ -5,12 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
-	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/GregorMcC/loam/core/internal/sandbox"
@@ -65,8 +61,7 @@ type gateResult struct {
 // event. Each check runs in the sandbox of the run. A rule that Loam cannot
 // read is left out, with a log line.
 func gate(ctx context.Context, s *store.Store, r store.Run, logf func(string, ...any)) gateResult {
-	box := newCheckBox(s, r, logf)
-	defer box.close(logf)
+	box := newCheckBox(s, r)
 	g := gateResult{unsandboxed: box.err}
 	for _, c := range r.DoneWhen {
 		g.add(runCheck(ctx, r.Folder, box, c))
@@ -99,7 +94,7 @@ func (g *gateResult) add(res checkResult) {
 }
 
 // checkBox is the sandbox of the checks of one gate: sandbox-exec and the
-// file of the profile.
+// profile.
 type checkBox struct {
 	exec, profile string
 	// err is why Loam cannot sandbox the checks. Then each check fails and
@@ -108,19 +103,15 @@ type checkBox struct {
 	err error
 }
 
-// profilePrefix and profileSuffix name the profile files in the Loam home
-// folder: gate-<pid>-<random>.sb, with the process ID of the gate.
-const profilePrefix, profileSuffix = "gate-", ".sb"
-
 // sandboxProbeTimeout limits the start of the sandbox with no check.
 const sandboxProbeTimeout = 10 * time.Second
 
-// newCheckBox writes the rules of the run as a Seatbelt profile, to a file in
-// the Loam home folder that only the user can read. No check can write that
-// folder, so no check can change the profile of the next one. It then starts
-// the sandbox once with no check, so that a sandbox that cannot start, as in
-// a process that is already in a sandbox, fails the gate and not each check.
-func newCheckBox(s *store.Store, r store.Run, logf func(string, ...any)) checkBox {
+// newCheckBox builds the rules of the run as a Seatbelt profile. Loam passes
+// the profile to sandbox-exec with -p, not in a file, so no check can change
+// the profile of the next one. It then starts the sandbox once with no
+// check, so that a sandbox that cannot start, as in a process that is
+// already in a sandbox, fails the gate and not each check.
+func newCheckBox(s *store.Store, r store.Run) checkBox {
 	if err := sandbox.Available(); err != nil {
 		return checkBox{err: err}
 	}
@@ -128,78 +119,17 @@ func newCheckBox(s *store.Store, r store.Run, logf func(string, ...any)) checkBo
 	if err != nil {
 		return checkBox{err: err}
 	}
-	temps := sandbox.Temps()
-	text, err := rules.Profile(temps...)
+	profile, err := rules.Profile(sandbox.Temps()...)
 	if err != nil {
 		return checkBox{err: err}
 	}
-	if rules.Writable(s.Home(), temps...) {
-		return checkBox{err: fmt.Errorf("the checks could write the Loam home folder %s, which holds their sandbox profile", s.Home())}
-	}
-	removeOldProfiles(s.Home(), logf)
-	f, err := os.CreateTemp(s.Home(), fmt.Sprintf("%s%d-*%s", profilePrefix, os.Getpid(), profileSuffix))
-	if err != nil {
-		return checkBox{err: fmt.Errorf("write the sandbox profile: %w", err)}
-	}
-	box := checkBox{exec: sandbox.Exec(), profile: f.Name()}
-	_, err = f.WriteString(text)
-	if cerr := f.Close(); err == nil {
-		err = cerr
-	}
-	if err != nil {
-		box.close(logf)
-		return checkBox{err: fmt.Errorf("write the sandbox profile: %w", err)}
-	}
+	box := checkBox{exec: sandbox.Exec(), profile: profile}
 	ctx, cancel := context.WithTimeout(context.Background(), sandboxProbeTimeout)
 	defer cancel()
-	if out, err := exec.CommandContext(ctx, box.exec, "-f", box.profile, "/usr/bin/true").CombinedOutput(); err != nil {
-		box.close(logf)
+	if out, err := exec.CommandContext(ctx, box.exec, "-p", box.profile, "/usr/bin/true").CombinedOutput(); err != nil {
 		return checkBox{err: fmt.Errorf("sandbox-exec cannot start the sandbox: %v %s", err, strings.TrimSpace(string(out)))}
 	}
 	return box
-}
-
-// removeOldProfiles removes the profile files of the gates that ended with
-// no clean up, as when Claude Code killed the hook: the files whose process
-// has ended. A reused process ID only keeps a file.
-func removeOldProfiles(home string, logf func(string, ...any)) {
-	entries, err := os.ReadDir(home)
-	if err != nil {
-		logf("read the Loam home folder for old sandbox profiles: %v", err)
-		return
-	}
-	for _, e := range entries {
-		name := e.Name()
-		rest, ok := strings.CutPrefix(name, profilePrefix)
-		if !ok || !strings.HasSuffix(name, profileSuffix) {
-			continue
-		}
-		digits, _, _ := strings.Cut(rest, "-")
-		pid, err := strconv.Atoi(digits)
-		if err != nil || pid <= 0 || alive(pid) {
-			continue
-		}
-		if err := os.Remove(filepath.Join(home, name)); err != nil {
-			logf("remove the old sandbox profile %s: %v", name, err)
-		}
-	}
-}
-
-// alive reports whether a process with the ID runs. A process of another
-// user counts as alive.
-func alive(pid int) bool {
-	err := syscall.Kill(pid, 0)
-	return err == nil || errors.Is(err, syscall.EPERM)
-}
-
-// close removes the file of the profile.
-func (b checkBox) close(logf func(string, ...any)) {
-	if b.profile == "" {
-		return
-	}
-	if err := os.Remove(b.profile); err != nil {
-		logf("remove the sandbox profile %s: %v", b.profile, err)
-	}
 }
 
 // runCheck runs one check as sh -c in dir, in the sandbox of box. When ctx
@@ -215,7 +145,7 @@ func runCheck(ctx context.Context, dir string, box checkBox, c store.Check) chec
 	parent := ctx
 	ctx, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, box.exec, "-f", box.profile, "sh", "-c", c.Command)
+	cmd := exec.CommandContext(ctx, box.exec, "-p", box.profile, "sh", "-c", c.Command)
 	cmd.Dir = dir
 	cmd.WaitDelay = time.Second
 	var out bytes.Buffer

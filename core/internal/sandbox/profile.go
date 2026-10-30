@@ -7,13 +7,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
 
 // alwaysWrite are the folders outside home that a check can write: the
 // shared temp folder and the devices, such as /dev/null and /dev/tty.
-var alwaysWrite = []string{"/private/tmp", "/dev"}
+var alwaysWrite = []string{sharedTemp, "/dev"}
 
 // loopback lets a check run a server on this Mac and reach it, as the test
 // servers of Go's httptest do. A check can then reach any TCP service on
@@ -55,7 +56,7 @@ const others = `(deny lsopen)
 // sockets below the Write paths and the temp folders. Other sockets, such as
 // the SSH agent and the Docker socket, can act as the user. It returns an
 // error when the home folder is not absolute, because the profile would then
-// deny nothing.
+// deny nothing, and when the profile is longer than MaxProfile.
 func (r Rules) Profile(temps ...string) (string, error) {
 	if !filepath.IsAbs(r.Home) {
 		return "", errors.New("the sandbox profile needs the home folder, and it is not set")
@@ -67,7 +68,7 @@ func (r Rules) Profile(temps ...string) (string, error) {
 	b.WriteString(loopback)
 	// Seatbelt matches the real path of a socket, so a link to a socket
 	// elsewhere does not open it.
-	rule(&b, "allow", "network*", append(append([]string(nil), r.Write...), r.temps(temps)...),
+	rule(&b, "allow", "network*", append(append([]string(nil), r.Write...), r.socketTemps(temps)...),
 		"(local unix-socket (subpath %s))", "(remote unix-socket (subpath %s))")
 	rule(&b, "deny", "file-read*", []string{r.Home}, subpath)
 	rule(&b, "allow", "file-read*", append(append([]string(nil), r.Read...), r.temps(temps)...), subpath)
@@ -77,23 +78,10 @@ func (r Rules) Profile(temps ...string) (string, error) {
 	b.WriteString("(deny file-write*)\n")
 	rule(&b, "allow", "file-write*", r.writes(temps), subpath)
 	rule(&b, "deny", "file-write*", r.DenyWrite, subpath)
-	return b.String(), nil
-}
-
-// Writable reports whether a check can write path, or a folder above it, under
-// the profile of [Rules.Profile]. A check that can write a folder above a
-// file can move the folder and put another file in its place, so Writable
-// does not take DenyWrite into account. The gate keeps its profile file out
-// of these paths, so that no check can change the profile of the next one.
-// It ignores case, because macOS folders are not case sensitive by default.
-func (r Rules) Writable(path string, temps ...string) bool {
-	path = strings.ToLower(Real(path))
-	for _, w := range r.writes(temps) {
-		if within(path, strings.ToLower(w)) {
-			return true
-		}
+	if b.Len() > MaxProfile {
+		return "", fmt.Errorf("the sandbox profile is %d bytes, more than the %d bytes that Loam passes to sandbox-exec: the rules name too many paths", b.Len(), MaxProfile)
 	}
-	return false
+	return b.String(), nil
 }
 
 // writes returns the Write paths, the temp folders, and alwaysWrite.
@@ -114,17 +102,46 @@ func (r Rules) temps(temps []string) []string {
 	return out
 }
 
-// Temps returns the temp folders of this process that a check can write: the
-// temp folder, and the cache folder of the user, where clang and swift keep
-// their module caches. It leaves out the cache folder when getconf cannot
-// name it.
+// MaxProfile is the longest profile, in bytes, that Loam passes to
+// sandbox-exec. Loam passes it as an argument, and macOS limits the
+// arguments and the environment of a process together to 1 MiB (ARG_MAX).
+const MaxProfile = 256 << 10
+
+// sharedTemp holds the socket of the launchd SSH agent, so no unix socket in
+// it is allowed.
+const sharedTemp = "/private/tmp"
+
+// socketTemps returns the temp folders that can hold the unix sockets of a
+// check: each one but a folder that holds sharedTemp, as a TMPDIR of /tmp.
+func (r Rules) socketTemps(temps []string) []string {
+	var out []string
+	for _, t := range r.temps(temps) {
+		if !within(sharedTemp, t) {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// Temps returns the temp folders of this process that a check can write:
+// TMPDIR when it is an absolute path, and the temp and cache folders of the
+// user that macOS names. The xcrun shims, such as /usr/bin/python3, keep a
+// cache in the temp folder of the user, which can differ from TMPDIR. clang
+// and swift keep their module caches in the cache folder. It leaves out a
+// folder that getconf cannot name, and a folder that it already has.
 func Temps() []string {
-	out := []string{os.TempDir()}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	b, err := exec.CommandContext(ctx, "/usr/bin/getconf", "DARWIN_USER_CACHE_DIR").Output()
-	if p := strings.TrimSpace(string(b)); err == nil && filepath.IsAbs(p) {
-		out = append(out, p)
+	var out []string
+	if t := os.Getenv("TMPDIR"); filepath.IsAbs(t) {
+		out = append(out, t)
+	}
+	for _, name := range []string{"DARWIN_USER_TEMP_DIR", "DARWIN_USER_CACHE_DIR"} {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		b, err := exec.CommandContext(ctx, "/usr/bin/getconf", name).Output()
+		cancel()
+		p := strings.TrimSpace(string(b))
+		if err == nil && filepath.IsAbs(p) && !slices.ContainsFunc(out, func(o string) bool { return Real(o) == Real(p) }) {
+			out = append(out, p)
+		}
 	}
 	return out
 }

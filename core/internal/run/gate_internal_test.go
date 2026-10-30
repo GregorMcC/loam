@@ -17,11 +17,7 @@ import (
 func fakeBox(t *testing.T) checkBox {
 	t.Helper()
 	testutil.FakeSandbox(t)
-	profile := filepath.Join(t.TempDir(), "gate.sb")
-	if err := os.WriteFile(profile, []byte("(version 1)\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return checkBox{exec: os.Getenv("LOAM_SANDBOX_EXEC"), profile: profile}
+	return checkBox{exec: os.Getenv("LOAM_SANDBOX_EXEC"), profile: "(version 1)\n"}
 }
 
 // A check after the end of the gate budget fails and does not run.

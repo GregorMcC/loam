@@ -1,10 +1,12 @@
 package sandbox
 
 import (
+	"fmt"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -129,25 +131,19 @@ func TestProfileQuotesEachPath(t *testing.T) {
 	}
 }
 
-// Writable holds a path in a written folder and each path below one. A
-// DenyWrite path does not change it: a check can move a folder above it.
-func TestWritable(t *testing.T) {
-	r := Rules{Home: "/h", Write: []string{"/h/w"}, DenyWrite: []string{"/h/w/.git/hooks"}}
-	cases := map[string]bool{
-		"/h/w":                 true,
-		"/h/W/x":               true,
-		"/h/w/.git/hooks/a.sb": true,
-		"/t/a.sb":              true,
-		"/private/tmp/a.sb":    true,
-		"/h":                   false,
-		"/h/.loam/gate.sb":     false,
-		"/h/wx":                false,
-		"/elsewhere":           false,
+// TAS-175: a profile longer than MaxProfile is an error, not an argument
+// that sandbox-exec cannot take. Many settings paths can make one.
+func TestProfileRefusesTooManyPaths(t *testing.T) {
+	r := Rules{Home: "/h"}
+	for i := 0; len(r.Read)*40 < MaxProfile; i++ {
+		r.Read = append(r.Read, fmt.Sprintf("/h/some/long/folder/of/the/settings/%04d", i))
 	}
-	for path, want := range cases {
-		if got := r.Writable(path, "/t"); got != want {
-			t.Errorf("Writable(%s) = %v, want %v", path, got, want)
-		}
+	if _, err := r.Profile("/t"); err == nil || !strings.Contains(err.Error(), "more than the") {
+		t.Fatalf("a profile over the limit: %v", err)
+	}
+	r.Read = r.Read[:100]
+	if _, err := r.Profile("/t"); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -165,11 +161,7 @@ func sandboxedIn(t *testing.T, r Rules, temps []string, command string) (string,
 	if err != nil {
 		t.Fatal(err)
 	}
-	file := filepath.Join(t.TempDir(), "gate.sb")
-	if err := os.WriteFile(file, []byte(text), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	out, err := exec.Command("/usr/bin/sandbox-exec", "-f", file, "sh", "-c", command).CombinedOutput()
+	out, err := exec.Command("/usr/bin/sandbox-exec", "-p", text, "sh", "-c", command).CombinedOutput()
 	return string(out), err == nil
 }
 
@@ -269,20 +261,20 @@ except OSError as e:
     print(e)
 `
 
-// network runs one step of netScript under the profile of r. The temp
-// folder of the test is a temp folder of the profile too: the python3 of the
-// Xcode tools writes a cache there.
+// network runs one step of netScript under the profile of r, with the temp
+// folders of [Temps] too: the python3 shim of the Xcode tools writes a cache
+// in the temp folder of the user.
 func network(t *testing.T, r Rules, temp, step, arg string) string {
 	t.Helper()
-	out, _ := sandboxedIn(t, r, []string{temp, os.TempDir()}, "/usr/bin/python3 -I -c "+shellQuote(netScript)+" "+step+" "+shellQuote(arg))
+	out, _ := sandboxedIn(t, r, append([]string{temp}, Temps()...), "/usr/bin/python3 -I -c "+shellQuote(netScript)+" "+step+" "+shellQuote(arg))
 	return strings.TrimSpace(out)
 }
 
-// shortTemp returns a new folder in /private/tmp, whose path is short enough
-// for a unix socket.
-func shortTemp(t *testing.T) string {
+// shortTemp returns a new folder in parent, whose path is short enough for a
+// unix socket.
+func shortTemp(t *testing.T, parent string) string {
 	t.Helper()
-	dir, err := os.MkdirTemp("/private/tmp", "loam-sb")
+	dir, err := os.MkdirTemp(parent, "loam-sb")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +299,9 @@ func TestProfileAllowsOnlyLoopback(t *testing.T) {
 // but no socket elsewhere, such as the SSH agent, and no link to one.
 func TestProfileAllowsUnixSocketsOnlyBelowTheWrites(t *testing.T) {
 	r, _, _, _ := boxedHome(t)
-	temp, other := shortTemp(t), shortTemp(t)
+	// /private/var/tmp is in no temp folder. /private/tmp is in alwaysWrite,
+	// and is a temp folder when TMPDIR is /tmp.
+	temp, other := shortTemp(t, "/private/tmp"), shortTemp(t, "/private/var/tmp")
 	if got := network(t, r, temp, "serve", filepath.Join(temp, "s")); got != "ok" {
 		t.Fatalf("a socket in the temp folder: %s", got)
 	}
@@ -335,16 +329,17 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// TAS-175: the temp folders are the temp folder of the process and the cache
-// folder of the user, where clang keeps its module cache. A check writes in
-// both.
+// TAS-175: the temp folders are TMPDIR, and the temp and cache folders of
+// the user. clang keeps its module cache in the cache folder, and a check
+// writes there.
 func TestTempsHoldTheUserCache(t *testing.T) {
 	temps := Temps()
-	if len(temps) != 2 || temps[0] != os.TempDir() || !strings.HasSuffix(filepath.Clean(temps[1]), "/C") {
+	if len(temps) < 2 || !strings.HasSuffix(filepath.Clean(temps[len(temps)-1]), "/C") {
 		t.Fatalf("temps %q", temps)
 	}
+	cache := temps[len(temps)-1]
 	r, _, _, _ := boxedHome(t)
-	dir, err := os.MkdirTemp(temps[1], "loam-test")
+	dir, err := os.MkdirTemp(cache, "loam-test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -354,6 +349,20 @@ func TestTempsHoldTheUserCache(t *testing.T) {
 	}
 	if out, ok := sandboxedIn(t, r, temps, "touch "+shellQuote(filepath.Join(dir, "x"))); !ok {
 		t.Fatalf("a write to the user cache: %s", out)
+	}
+}
+
+// TAS-175: Temps leaves out a TMPDIR that is not absolute, and names a
+// folder once when TMPDIR is the temp folder of the user.
+func TestTempsTakeOnlyAnAbsoluteTMPDIR(t *testing.T) {
+	t.Setenv("TMPDIR", "tmp")
+	temps := Temps()
+	if slices.Contains(temps, "tmp") || len(temps) == 0 {
+		t.Fatalf("temps %q", temps)
+	}
+	t.Setenv("TMPDIR", temps[0])
+	if again := Temps(); !slices.Equal(again, temps) {
+		t.Fatalf("with TMPDIR %s: temps %q, want %q", temps[0], again, temps)
 	}
 }
 
@@ -380,5 +389,17 @@ func TestProfileDeniesOtherProcesses(t *testing.T) {
 	}
 	if out, ok := sandboxed(t, r, "", "/usr/bin/security list-keychains"); ok {
 		t.Errorf("the keychain list passed: %s", out)
+	}
+}
+
+// TAS-175: a TMPDIR of /tmp opens no unix socket in /private/tmp, which holds
+// the socket of the launchd SSH agent. A folder in /private/tmp can hold
+// sockets.
+func TestProfileOpensNoSocketInTheSharedTemp(t *testing.T) {
+	if got := mustProfile(t, Rules{Home: "/h"}, "/tmp"); strings.Contains(got, "unix-socket") {
+		t.Errorf("a TMPDIR of /tmp opens sockets:\n%s", got)
+	}
+	if got := mustProfile(t, Rules{Home: "/h"}, "/private/tmp/run"); !strings.Contains(got, `(remote unix-socket (subpath "/private/tmp/run"))`) {
+		t.Errorf("a folder in /private/tmp holds no sockets:\n%s", got)
 	}
 }

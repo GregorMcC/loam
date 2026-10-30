@@ -7,16 +7,14 @@ import (
 	"testing"
 )
 
-// fakeSandboxExec runs the command after -f <profile> with no sandbox. It
-// copies the profile to LOAM_FAKE_SANDBOX_PROFILE first, and the mode of the
-// profile file to that path with .mode added.
+// fakeSandboxExec runs the command after -p <profile> with no sandbox. It
+// writes the profile to LOAM_FAKE_SANDBOX_PROFILE first.
 const fakeSandboxExec = `#!/bin/sh
-if [ "$1" != -f ] || [ $# -lt 3 ]; then
-	echo "fake sandbox-exec: want -f <profile> <command>" >&2
+if [ "$1" != -p ] || [ $# -lt 3 ]; then
+	echo "fake sandbox-exec: want -p <profile> <command>" >&2
 	exit 64
 fi
-cp "$2" "$LOAM_FAKE_SANDBOX_PROFILE" || exit 65
-stat -f %Lp "$2" > "$LOAM_FAKE_SANDBOX_PROFILE.mode" || exit 65
+printf '%s' "$2" > "$LOAM_FAKE_SANDBOX_PROFILE" || exit 65
 shift 2
 exec "$@"
 `
@@ -24,10 +22,7 @@ exec "$@"
 // FakeSandbox points LOAM_SANDBOX_EXEC at a fake sandbox-exec, which runs a
 // check with no sandbox, and returns the file that holds the last profile it
 // got. A test of the gate then passes inside a sandbox too, where a real
-// sandbox-exec cannot start. It also points TMPDIR at a new folder: the
-// checks can write the temp folder, and the gate refuses to keep its profile
-// in a folder that the checks can write, such as a Loam home folder in the
-// old temp folder. Call it after [Home].
+// sandbox-exec cannot start.
 func FakeSandbox(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -38,7 +33,6 @@ func FakeSandbox(t *testing.T) string {
 	profile := filepath.Join(dir, "profile.sb")
 	t.Setenv("LOAM_SANDBOX_EXEC", bin)
 	t.Setenv("LOAM_FAKE_SANDBOX_PROFILE", profile)
-	t.Setenv("TMPDIR", t.TempDir())
 	return profile
 }
 
