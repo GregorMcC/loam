@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/GregorMcC/loam/core/internal/sandbox"
 	"github.com/GregorMcC/loam/core/internal/session"
 	"github.com/GregorMcC/loam/core/internal/store"
 )
@@ -38,28 +39,41 @@ type checkResult struct {
 	duration time.Duration
 }
 
+// nestedSandbox is the error of a sandbox that cannot start inside another
+// one, as SwiftPM's sandbox of its manifest inside the sandbox of a check.
+const nestedSandbox = "sandbox_apply: Operation not permitted"
+
+// nestedNote is the line that the failed log of a check gets when its output
+// has nestedSandbox. Loam does not change the commands of a check.
+const nestedNote = "Loam: a sandbox cannot start inside the sandbox of the checks. SwiftPM sandboxes its manifest, so pass --disable-sandbox to swift build, swift test, and swift package."
+
 // gateResult is what the gate found.
 type gateResult struct {
 	results []checkResult
 	failed  []checkResult
+	// unsandboxed is why Loam could not sandbox the checks. Then no check
+	// ran, and each one failed.
+	unsandboxed error
 }
 
 // gate runs each Done when check of the run in its folder, then each rule
 // of its plot, then the committed check, and records each result as a run
-// event. A rule that Loam cannot read is left out, with a log line.
+// event. Each check runs in the sandbox of the run. A rule that Loam cannot
+// read is left out, with a log line.
 func gate(ctx context.Context, s *store.Store, r store.Run, logf func(string, ...any)) gateResult {
-	var g gateResult
+	box := newCheckBox(s, r)
+	g := gateResult{unsandboxed: box.err}
 	for _, c := range r.DoneWhen {
-		g.add(runCheck(ctx, r.Folder, c))
+		g.add(runCheck(ctx, r.Folder, box, c))
 	}
 	rules, err := s.ListRules(r.PlotID)
 	if err != nil {
 		logf("run %s: read the rules: %v", r.ID, err)
 	}
 	for _, rule := range rules {
-		g.add(runCheck(ctx, r.Folder, rule.Check()))
+		g.add(runCheck(ctx, r.Folder, box, rule.Check()))
 	}
-	g.add(committed(ctx, r.Folder))
+	g.add(committed(ctx, r.Folder, box))
 	for _, res := range g.results {
 		detail := fmt.Sprintf("%s passed (%s)", res.check.Name, res.duration.Round(time.Second))
 		if !res.passed {
@@ -79,16 +93,59 @@ func (g *gateResult) add(res checkResult) {
 	}
 }
 
-// runCheck runs one check with sh -c in dir. When ctx has ended, as at the
-// end of the gate budget, the check fails and does not run.
-func runCheck(ctx context.Context, dir string, c store.Check) checkResult {
+// checkBox is the sandbox of the checks of one gate: sandbox-exec and the
+// profile.
+type checkBox struct {
+	exec, profile string
+	// err is why Loam cannot sandbox the checks. Then each check fails and
+	// does not run: a check runs code that the session wrote, and the gate
+	// works outside the sandbox of the session.
+	err error
+}
+
+// sandboxProbeTimeout limits the start of the sandbox with no check.
+const sandboxProbeTimeout = 10 * time.Second
+
+// newCheckBox builds the rules of the run as a Seatbelt profile. Loam passes
+// the profile to sandbox-exec with -p, not in a file, so no check can change
+// the profile of the next one. It then starts the sandbox once with no
+// check, so that a sandbox that cannot start, as in a process that is
+// already in a sandbox, fails the gate and not each check.
+func newCheckBox(s *store.Store, r store.Run) checkBox {
+	if err := sandbox.Available(); err != nil {
+		return checkBox{err: err}
+	}
+	rules, err := session.RunRules(s, r)
+	if err != nil {
+		return checkBox{err: err}
+	}
+	profile, err := rules.Profile(sandbox.Temps()...)
+	if err != nil {
+		return checkBox{err: err}
+	}
+	box := checkBox{exec: sandbox.Exec(), profile: profile}
+	ctx, cancel := context.WithTimeout(context.Background(), sandboxProbeTimeout)
+	defer cancel()
+	if out, err := exec.CommandContext(ctx, box.exec, "-p", box.profile, "/usr/bin/true").CombinedOutput(); err != nil {
+		return checkBox{err: fmt.Errorf("sandbox-exec cannot start the sandbox: %v %s", err, strings.TrimSpace(string(out)))}
+	}
+	return box
+}
+
+// runCheck runs one check as sh -c in dir, in the sandbox of box. When ctx
+// has ended, as at the end of the gate budget, or when box has no sandbox,
+// the check fails and does not run.
+func runCheck(ctx context.Context, dir string, box checkBox, c store.Check) checkResult {
 	if ctx.Err() != nil {
 		return checkResult{check: c, exit: -1, output: "Loam did not run the check: the checks ran out of time."}
+	}
+	if box.err != nil {
+		return checkResult{check: c, exit: -1, output: "Loam did not run the check, because it could not sandbox it: " + box.err.Error()}
 	}
 	parent := ctx
 	ctx, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "sh", "-c", c.Command)
+	cmd := exec.CommandContext(ctx, box.exec, "-p", box.profile, "sh", "-c", c.Command)
 	cmd.Dir = dir
 	cmd.WaitDelay = time.Second
 	var out bytes.Buffer
@@ -110,13 +167,16 @@ func runCheck(ctx context.Context, dir string, c store.Check) checkResult {
 		res.exit = -1
 		res.output += "\n" + err.Error()
 	}
+	if !res.passed && strings.Contains(res.output, nestedSandbox) {
+		res.output = strings.TrimRight(res.output, "\n") + "\n" + nestedNote
+	}
 	return res
 }
 
 // committed checks that git status in dir shows no work.
-func committed(ctx context.Context, dir string) checkResult {
+func committed(ctx context.Context, dir string, box checkBox) checkResult {
 	c := store.Check{Name: CommittedCheck, Command: "git status --porcelain"}
-	res := runCheck(ctx, dir, c)
+	res := runCheck(ctx, dir, box, c)
 	if res.passed && strings.TrimSpace(res.output) != "" {
 		res.passed, res.exit = false, 1
 		res.output = "These files are not committed. Commit them, or add them to .gitignore:\n" + res.output

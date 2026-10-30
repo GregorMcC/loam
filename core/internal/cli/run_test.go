@@ -13,12 +13,13 @@ import (
 	"github.com/GregorMcC/loam/core/internal/testutil"
 )
 
-// runCLI is a plot with one repo, a fake claude, and a Claude Code config
-// that trusts the repo, and so its worktrees.
+// runCLI is a plot with one repo, a fake claude, a fake sandbox-exec, and a
+// Claude Code config that trusts the repo, and so its worktrees.
 func runCLI(t *testing.T) (*store.Store, store.Plot) {
 	t.Helper()
 	s, p, repo := wtCLI(t)
 	testutil.FakeClaude(t)
+	testutil.FakeSandbox(t)
 	trustFolder(t, repo)
 	return s, p
 }

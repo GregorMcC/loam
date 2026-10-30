@@ -87,6 +87,9 @@ func newHarness(t *testing.T) *harness {
 	testutil.GitEnv(t)
 	h.bin = testutil.BuildLoam(t)
 	fake := testutil.FakeClaude(t)
+	// The gate runs the checks with a fake sandbox-exec, which works in a
+	// sandbox too.
+	testutil.FakeSandbox(t)
 	// A fake gh answers each refresh from a made-up GitHub repo.
 	state, err := os.ReadFile(filepath.Join("testdata", "github.json"))
 	if err != nil {

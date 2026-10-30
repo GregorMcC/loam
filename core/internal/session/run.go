@@ -107,15 +107,21 @@ func runSettings(runID string, box sandbox.Rules) settingsFunc {
 // when they need nothing. The first prompt of the run says it, and the run
 // hook says it again after a compact, which can drop that prompt.
 func RunSandboxNote(s *store.Store, r store.Run) (string, error) {
-	plot, err := s.GetPlot(r.PlotID)
-	if err != nil {
-		return "", err
-	}
-	box, err := runRules(s, plot, r.Folder)
+	box, err := RunRules(s, r)
 	if err != nil {
 		return "", err
 	}
 	return strings.TrimSpace(box.Prompt()), nil
+}
+
+// RunRules returns the sandbox rules of a run, which its session works in.
+// The gate runs the checks of the run with the same rules.
+func RunRules(s *store.Store, r store.Run) (sandbox.Rules, error) {
+	plot, err := s.GetPlot(r.PlotID)
+	if err != nil {
+		return sandbox.Rules{}, err
+	}
+	return runRules(s, plot, r.Folder)
 }
 
 // runRules returns the sandbox rules of a run that works in folder.
@@ -124,7 +130,11 @@ func runRules(s *store.Store, plot store.Plot, folder string) (sandbox.Rules, er
 	if err != nil {
 		return sandbox.Rules{}, fmt.Errorf("the sandbox needs the home folder: %w", err)
 	}
-	git, err := gitCommonDir(folder)
+	var repos []string
+	for _, r := range plot.Repos {
+		repos = append(repos, r.Path)
+	}
+	admin, git, err := gitDirs(folder, repos)
 	if err != nil {
 		return sandbox.Rules{}, err
 	}
@@ -143,13 +153,11 @@ func runRules(s *store.Store, plot store.Plot, folder string) (sandbox.Rules, er
 		Protected: []string{s.Home()},
 		Folder:    folder,
 		GitDir:    git,
-		GitConfig: gitConfigFiles(folder),
+		Repos:     repos,
+		GitConfig: gitConfigFiles(admin, git),
 		// The plot folder holds the seed, which only Loam writes.
 		NoWrite: []string{s.PlotDir(plot.ID)},
 		Getenv:  os.Getenv,
-	}
-	for _, r := range plot.Repos {
-		in.Repos = append(in.Repos, r.Path)
 	}
 	for _, l := range plot.Links {
 		if linkkind.IsLocal(l.Target) {
@@ -159,36 +167,106 @@ func runRules(s *store.Store, plot store.Plot, folder string) (sandbox.Rules, er
 	return sandbox.For(in)
 }
 
-// gitConfigFiles returns the config files that git reads in dir, with the
-// files that they include. A file that git cannot name is not read in the
-// sandbox, so an error gives none.
-func gitConfigFiles(dir string) []string {
+// gitConfigScopes are the config scopes whose files the sandbox reads. The
+// worktree scope is left out: with extensions.worktreeConfig, a run can write
+// config.worktree in the git folder, and an include there would name any file
+// for the next rules of the run. So is the command scope, which comes from
+// the environment.
+var gitConfigScopes = []string{"system", "global", "local"}
+
+// gitConfigFiles returns the config files that git reads in the worktree
+// with the git folder admin, with the files that they include, in the scopes
+// of gitConfigScopes. It names the common git folder, so that git does not
+// follow a commondir file that the run wrote. A file that git cannot name is
+// not read in the sandbox, so an error gives none.
+func gitConfigFiles(admin, common string) []string {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "git", "-C", dir, "config", "--list", "--show-origin", "-z").Output()
+	cmd := exec.CommandContext(ctx, "git", "config", "--list", "--show-scope", "--show-origin", "-z")
+	cmd.Env = append(os.Environ(), "GIT_DIR="+admin, "GIT_COMMON_DIR="+common)
+	out, err := cmd.Output()
 	if err != nil {
 		return nil
 	}
-	// Each entry is an origin and a key with its value, each one ended by NUL.
+	// Each entry is a scope, an origin, and a key with its value, each one
+	// ended by NUL.
 	var files []string
 	parts := strings.Split(string(out), "\x00")
-	for i := 0; i+1 < len(parts); i += 2 {
-		if f, ok := strings.CutPrefix(parts[i], "file:"); ok && filepath.IsAbs(f) && !slices.Contains(files, f) {
+	for i := 0; i+2 < len(parts); i += 3 {
+		if !slices.Contains(gitConfigScopes, parts[i]) {
+			continue
+		}
+		if f, ok := strings.CutPrefix(parts[i+1], "file:"); ok && filepath.IsAbs(f) && !slices.Contains(files, f) {
 			files = append(files, f)
 		}
 	}
 	return files
 }
 
-// gitCommonDir returns the git folder that the checkout in dir shares with its
-// worktrees. A commit in a worktree writes to it, so a run cannot commit
-// without it.
-func gitCommonDir(dir string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "--path-format=absolute", "--git-common-dir").Output()
+// gitDirs returns the git folder of the worktree in folder (admin) and the
+// git folder that it shares with the other worktrees of its repo (common). A
+// commit in a worktree writes to common, so a run cannot commit without it.
+// gitDirs does not ask git for common: git follows a commondir file in the
+// git folder, and the run can write one there to name another repo. It reads
+// the .git of folder, which the run cannot write, and takes the .git folder
+// of the repo of the plot that holds that worktree. It returns an error when
+// no repo of the plot holds it, and when folder is a repo of the plot whose
+// .git is not a folder.
+func gitDirs(folder string, repos []string) (admin, common string, err error) {
+	dotgit := filepath.Join(folder, ".git")
+	fi, err := os.Lstat(dotgit)
 	if err != nil {
-		return "", fmt.Errorf("find the git folder of %s for the sandbox: %w", dir, err)
+		return "", "", fmt.Errorf("find the git folder of %s for the sandbox: %w", folder, err)
 	}
-	return strings.TrimSpace(string(out)), nil
+	// The run can replace the .git folder of a repo that it works in with a
+	// .git file that names the git folder of another repo of the plot.
+	for _, repo := range repos {
+		if sandbox.Real(repo) == sandbox.Real(folder) && !fi.IsDir() {
+			return "", "", fmt.Errorf("the sandbox cannot hold the run in %s: it is a repo of the plot, and its .git is not a folder", folder)
+		}
+	}
+	var candidate string
+	switch {
+	case fi.IsDir():
+		admin, candidate = dotgit, dotgit
+	case fi.Mode().IsRegular():
+		b, err := os.ReadFile(dotgit)
+		if err != nil {
+			return "", "", fmt.Errorf("find the git folder of %s for the sandbox: %w", folder, err)
+		}
+		p, ok := strings.CutPrefix(strings.TrimSpace(string(b)), "gitdir: ")
+		if !ok {
+			return "", "", fmt.Errorf("find the git folder of %s for the sandbox: %s names no gitdir", folder, dotgit)
+		}
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(folder, p)
+		}
+		admin = filepath.Clean(p)
+		// The .git file names <git folder>/worktrees/<name>. The run can
+		// write the git folder, so it can put a link in place of either
+		// folder below it, to the git folder of another repo. Each one must
+		// be a folder, not a link.
+		parent := filepath.Dir(admin)
+		if filepath.Base(parent) != "worktrees" || !isRealDir(admin) || !isRealDir(parent) {
+			return "", "", fmt.Errorf("the sandbox cannot hold the run in %s: its git folder %s is not a worktree folder of a git folder", folder, admin)
+		}
+		candidate = filepath.Dir(parent)
+	default:
+		return "", "", fmt.Errorf("find the git folder of %s for the sandbox: %s is not a file or a folder", folder, dotgit)
+	}
+	if isRealDir(candidate) {
+		resolved := sandbox.Real(candidate)
+		for _, repo := range repos {
+			if git := sandbox.Real(filepath.Join(repo, ".git")); resolved == git && isRealDir(git) {
+				return admin, git, nil
+			}
+		}
+	}
+	return "", "", fmt.Errorf("the sandbox cannot hold the run in %s: its git folder %s is in no repo of the plot", folder, admin)
+}
+
+// isRealDir reports whether path is a folder, and not a link to one.
+func isRealDir(path string) bool {
+	fi, err := os.Lstat(path)
+	return err == nil && fi.IsDir()
 }

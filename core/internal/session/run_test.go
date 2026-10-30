@@ -202,3 +202,136 @@ func TestPrepareRunAddsTheSandboxSettings(t *testing.T) {
 		t.Errorf("the settings of another plot reached the run: %q %q", got.Sandbox.Network.AllowedDomains, fs.AllowRead)
 	}
 }
+
+// TAS-175: the gate builds the rules again after the session ran, so the
+// rules follow no git file that the run can write. A commondir file in the
+// git folder does not move the git folder to another repo, and an include in
+// config.worktree does not open a file.
+func TestRunRulesFollowNoGitFileOfTheRun(t *testing.T) {
+	e := setup(t)
+	testutil.GitEnv(t)
+	repo, _ := testutil.GitRepo(t)
+	other, _ := testutil.GitRepo(t)
+	wt := filepath.Join(t.TempDir(), "wt")
+	testutil.Git(t, repo, "worktree", "add", "-q", wt)
+	testutil.Git(t, repo, "config", "extensions.worktreeConfig", "true")
+	secret := filepath.Join(t.TempDir(), "secret.gitconfig")
+	if err := os.WriteFile(secret, []byte("[user]\n\tname = x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git := realpath(t, filepath.Join(repo, ".git"))
+	admin := filepath.Join(git, "worktrees", "wt")
+	write := func(name, text string) {
+		t.Helper()
+		if err := os.WriteFile(name, []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p := e.plot(t, store.PlotInput{Name: "Alpha", Repos: []store.RepoInput{{Path: repo}}})
+	run := store.Run{ID: "r1", PlotID: p.ID, Folder: wt}
+	write(filepath.Join(admin, "config.worktree"), "[include]\n\tpath = "+secret+"\n")
+	if got := testutil.Git(t, wt, "config", "user.name"); got != "x" {
+		t.Fatalf("git does not read config.worktree: user.name %q", got)
+	}
+	r, err := session.RunRules(e.store, run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(r.Read, realpath(t, secret)) {
+		t.Errorf("read = %q has the file that config.worktree includes", r.Read)
+	}
+	write(filepath.Join(admin, "commondir"), filepath.Join(other, ".git")+"\n")
+	write(filepath.Join(git, "commondir"), filepath.Join(other, ".git")+"\n")
+	if r, err = session.RunRules(e.store, run); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(r.Write, git) || slices.Contains(r.Write, realpath(t, filepath.Join(other, ".git"))) {
+		t.Errorf("write = %q, want %s and not the other repo", r.Write, git)
+	}
+}
+
+// TAS-175: a run folder whose git folder is in no repo of the plot gets no
+// rules.
+func TestRunRulesNeedTheGitFolderOfARepoOfThePlot(t *testing.T) {
+	e := setup(t)
+	testutil.GitEnv(t)
+	repo, _ := testutil.GitRepo(t)
+	other, _ := testutil.GitRepo(t)
+	p := e.plot(t, store.PlotInput{Name: "Alpha", Repos: []store.RepoInput{{Path: repo}}})
+	if _, err := session.RunRules(e.store, store.Run{ID: "r1", PlotID: p.ID, Folder: other}); err == nil || !strings.Contains(err.Error(), "in no repo of the plot") {
+		t.Fatalf("a run in another repo: %v", err)
+	}
+}
+
+// TAS-175: a run in a repo of the plot can write its .git folder. When it
+// puts a .git file there that names another repo of the plot, the run gets
+// no rules, so the other repo does not become writable.
+func TestRunRulesNeedTheGitFolderOfTheRepoOfTheRun(t *testing.T) {
+	e := setup(t)
+	testutil.GitEnv(t)
+	repo, _ := testutil.GitRepo(t)
+	other, _ := testutil.GitRepo(t)
+	p := e.plot(t, store.PlotInput{Name: "Alpha", Repos: []store.RepoInput{{Path: repo}, {Path: other}}})
+	run := store.Run{ID: "r1", PlotID: p.ID, Folder: repo}
+	if _, err := session.RunRules(e.store, run); err != nil {
+		t.Fatal(err)
+	}
+	dotgit := filepath.Join(repo, ".git")
+	if err := os.Rename(dotgit, filepath.Join(repo, "moved.git")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dotgit, []byte("gitdir: "+filepath.Join(other, ".git")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.RunRules(e.store, run); err == nil || !strings.Contains(err.Error(), "its .git is not a folder") {
+		t.Fatalf("a run whose .git names another repo: %v", err)
+	}
+}
+
+// TAS-175: the run can write the git folder of its repo, so it can put a link
+// in place of its worktree folder, or of the worktrees folder, to the git
+// folder of another repo of the plot. The run then gets no rules, so the other
+// repo does not become writable.
+func TestRunRulesFollowNoLinkInTheGitFolder(t *testing.T) {
+	e := setup(t)
+	testutil.GitEnv(t)
+	repo, _ := testutil.GitRepo(t)
+	other, _ := testutil.GitRepo(t)
+	wt := filepath.Join(t.TempDir(), "wt")
+	testutil.Git(t, repo, "worktree", "add", "-q", wt)
+	testutil.Git(t, other, "worktree", "add", "-q", filepath.Join(t.TempDir(), "x"))
+	p := e.plot(t, store.PlotInput{Name: "Alpha", Repos: []store.RepoInput{{Path: repo}, {Path: other}}})
+	run := store.Run{ID: "r1", PlotID: p.ID, Folder: wt}
+	if _, err := session.RunRules(e.store, run); err != nil {
+		t.Fatal(err)
+	}
+	git, otherGit := realpath(t, filepath.Join(repo, ".git")), realpath(t, filepath.Join(other, ".git"))
+	admin := filepath.Join(git, "worktrees", "wt")
+	if err := os.Rename(admin, filepath.Join(git, "moved")); err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range []string{otherGit, filepath.Join(otherGit, "worktrees", "x")} {
+		if err := os.Symlink(target, admin); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := session.RunRules(e.store, run); err == nil || !strings.Contains(err.Error(), "is not a worktree folder") {
+			t.Errorf("a link to %s: %v", target, err)
+		}
+		if err := os.Remove(admin); err != nil {
+			t.Fatal(err)
+		}
+	}
+	worktrees := filepath.Join(git, "worktrees")
+	if err := os.Rename(worktrees, filepath.Join(git, "moved-worktrees")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(otherGit, "worktrees"), worktrees); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(otherGit, "worktrees", "x"), filepath.Join(otherGit, "worktrees", "wt")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.RunRules(e.store, run); err == nil || !strings.Contains(err.Error(), "is not a worktree folder") {
+		t.Errorf("a link in place of the worktrees folder: %v", err)
+	}
+}
