@@ -56,6 +56,8 @@ import Testing
         // Only the two reads ran. Neither change wrote a list from the old value.
         #expect(fake.args().allSatisfy { !$0.contains("--read") })
         #expect(model.error != nil)
+        // The stale lists are gone, so the view offers a new read.
+        #expect(model.settings == nil)
     }
 
     @Test func aRemovedItemSendsOnlyItsOwnList() async throws {

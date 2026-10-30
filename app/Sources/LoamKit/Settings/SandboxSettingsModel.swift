@@ -87,6 +87,8 @@ public final class SandboxSettingsModel {
             errorList = nil
             return true
         } catch {
+            // The old lists may be stale, so the view shows the error and Read again instead of them.
+            settings = nil
             self.error = AppModel.message(for: error)
             errorList = nil
             return false
