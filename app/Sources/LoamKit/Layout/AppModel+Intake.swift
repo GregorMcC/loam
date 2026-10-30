@@ -94,12 +94,10 @@ extension AppModel {
         try? await client.linearUpdates().inProgress
     }
 
-    /// Reads the run defaults that a run of the plot gets when it names none. A failed read leaves none. A read drops
-    /// the change of a save of the plot that failed: the pickers then show what the core has, and a change that the
-    /// core refuses, such as a flag that an older core does not know, would fail each later save.
+    /// Reads the model, the effort, the MCP servers, and the code review that a run of the plot gets when it names
+    /// none. A failed read leaves none.
     public func readRunDefaults(plot: String) async {
         runDefaults = try? await client.runDefaults(plot: plot)
-        if runDefaults != nil { unsavedRunDefaults[plot] = nil }
     }
 
     /// Reads the MCP servers that a run default can select. A failed read leaves none, so the picker does not offer
@@ -119,14 +117,16 @@ extension AppModel {
     /// name clears the servers.
     /// The saves of a plot go one after the other. While a save of the plot runs, a new request waits. It merges
     /// with a request that waits already: the fields of the new one replace those of the old one, so no change is
-    /// lost. The fields of a save that failed go again with the next save of the plot, under its own. Saves of other
-    /// plots do not wait for it.
+    /// lost. Saves of other plots do not wait for it.
+    /// When a save fails, the core keeps what it had, and the model reads it again. When the saves of the plot end,
+    /// `runDefaultsSaves` goes up, so the page sets its pickers from `runDefaults`: they show what the core has, also
+    /// after a save that failed.
     public func setRunDefaults(plot: String, model: String? = nil, effort: String? = nil, mcpServers: [String]? = nil,
                                review: Bool? = nil, reviewEffort: String? = nil) async {
         let change = RunDefaultsChange(
             model: model, effort: effort, servers: mcpServers, review: review, reviewEffort: reviewEffort)
-        let earlier = pendingRunDefaults[plot]?.change ?? unsavedRunDefaults.removeValue(forKey: plot)
-        pendingRunDefaults[plot] = RunDefaultsRequest(plot: plot, change: earlier?.overlaid(by: change) ?? change)
+        let waiting = pendingRunDefaults[plot]?.change
+        pendingRunDefaults[plot] = RunDefaultsRequest(plot: plot, change: waiting?.overlaid(by: change) ?? change)
         guard savingRunDefaults.insert(plot).inserted else { return }
         defer { savingRunDefaults.remove(plot) }
         while let request = pendingRunDefaults[plot] {
@@ -136,13 +136,14 @@ extension AppModel {
                 runDefaultsError = nil
             } catch {
                 runDefaultsError = Self.message(for: error)
-                if let next = pendingRunDefaults[plot] {
-                    pendingRunDefaults[plot] = RunDefaultsRequest(plot: plot, change: request.change.overlaid(by: next.change))
-                } else {
-                    unsavedRunDefaults[plot] = request.change
+                // A request that waits saves next. Else read what the core kept. A request that comes while the
+                // read runs is still in the queue when the loop checks it again.
+                if pendingRunDefaults[plot] == nil, let read = try? await client.runDefaults(plot: plot) {
+                    runDefaults = read
                 }
             }
         }
+        runDefaultsSaves += 1
     }
 
     /// A shape in progress: its plot, and the runs that were there before it.

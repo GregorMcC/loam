@@ -221,37 +221,33 @@ import Testing
         #expect(decoded.review == true && decoded.reviewEffort == "")
     }
 
-    /// A save that fails keeps its fields, and the next save of the plot sends them again under its own.
-    @Test func theFieldsOfAFailedSaveGoWithTheNextSave() async throws {
-        let (model, fake) = try model([("error_generic", 1), ("run_defaults_review", 0)])
-        await model.setRunDefaults(plot: "plotaaaaae", review: false)
-        #expect(model.runDefaultsError != nil)
-        await model.setRunDefaults(plot: "plotaaaaae", model: "opus")
-        let saves = fake.args().filter { $0.hasPrefix("run defaults") }
-        #expect(saves.last == "run defaults --model opus --review off --json -- plotaaaaae")
-        #expect(model.runDefaultsError == nil)
-    }
-
-    /// A read of the defaults drops the change of a failed save, so a change that the core refuses does not fail
-    /// each later save.
-    @Test func aReadDropsTheFieldsOfAFailedSave() async throws {
+    /// A save that fails reads what the core kept, so the page shows it, and the end of the saves is counted. The next
+    /// save sends only its own fields, so a change that the core refuses does not fail each later save.
+    @Test func aFailedSaveReadsWhatTheCoreKept() async throws {
         let (model, fake) = try model([("error_generic", 1), ("run_defaults_clear", 0), ("run_defaults_set_mcp", 0)])
         await model.setRunDefaults(plot: "plotaaaaae", review: false)
-        await model.readRunDefaults(plot: "plotaaaaae")
+        #expect(model.runDefaultsError != nil)
+        #expect(model.runDefaults?.review == true)
+        #expect(model.runDefaultsSaves == 1)
         await model.setRunDefaults(plot: "plotaaaaae", mcpServers: ["a"])
-        let saves = fake.args().filter { $0.hasPrefix("run defaults --") }
-        #expect(saves.last == "run defaults --mcp a --json -- plotaaaaae")
+        #expect(fake.args().filter { $0.hasPrefix("run defaults") } == [
+            "run defaults --review off --json -- plotaaaaae", "run defaults --json -- plotaaaaae",
+            "run defaults --mcp a --json -- plotaaaaae",
+        ])
+        #expect(model.runDefaultsError == nil && model.runDefaultsSaves == 2)
     }
 
-    /// A save fails while another waits: the waiting one sends the fields of both.
-    @Test func aWaitingSaveTakesTheFieldsOfASaveThatFails() async throws {
-        let (model, fake) = try model([("error_generic", 1), ("run_defaults_review", 0)])
+    /// A save fails while another waits: the waiting one saves next, with its own fields, and no read runs between.
+    @Test func aWaitingSaveGoesNextWhenASaveFails() async throws {
+        let (model, fake) = try model([("error_generic", 1), ("run_defaults_set_mcp", 0)])
         let failing = Task { await model.setRunDefaults(plot: "plotaaaaae", review: false) }
-        let waiting = Task { await model.setRunDefaults(plot: "plotaaaaae", model: "opus") }
+        let waiting = Task { await model.setRunDefaults(plot: "plotaaaaae", mcpServers: ["a"]) }
         await failing.value
         await waiting.value
-        let saves = fake.args().filter { $0.hasPrefix("run defaults") }
-        #expect(saves.last == "run defaults --model opus --review off --json -- plotaaaaae")
+        #expect(fake.args().filter { $0.hasPrefix("run defaults") } == [
+            "run defaults --review off --json -- plotaaaaae", "run defaults --mcp a --json -- plotaaaaae",
+        ])
+        #expect(model.runDefaultsSaves == 1)
     }
 
     /// A pick that comes while a save runs waits, and the last pick is the last one saved.

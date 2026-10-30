@@ -288,6 +288,16 @@ private struct RunDefaultsSection: View {
         _sandbox = State(initialValue: SandboxSettingsModel(client: model.client, plot: plotID))
     }
 
+    /// Sets the pickers to `choice`, as the core has it. `requested` takes it too, so the pickers do not save it back.
+    private func show(_ choice: RunDefaultsChoice) {
+        requested = choice
+        chosenModel = choice.model
+        chosenEffort = choice.effort
+        chosenServers = choice.servers
+        chosenReview = choice.review
+        chosenReviewEffort = choice.reviewEffort
+    }
+
     /// The switch for the code review before a push, and the effort of that review. The effort is off while the
     /// review is off.
     private var reviewControls: some View {
@@ -361,14 +371,14 @@ private struct RunDefaultsSection: View {
                 readFailed = true
                 return await servers
             }
-            requested = RunDefaultsChoice(model.runDefaults)
-            chosenModel = requested.model
-            chosenEffort = requested.effort
-            chosenServers = requested.servers
-            chosenReview = requested.review
-            chosenReviewEffort = requested.reviewEffort
+            show(RunDefaultsChoice(model.runDefaults))
             isLoaded = true
             await servers
+        }
+        .onChange(of: model.runDefaultsSaves) {
+            // The saves ended: show what the core has, also when a save failed.
+            guard isLoaded, let saved = model.runDefaults, saved.plotID == plotID else { return }
+            show(RunDefaultsChoice(saved))
         }
         .onChange(of: RunDefaultsChoice(
             model: chosenModel, effort: chosenEffort, servers: chosenServers, review: chosenReview,
