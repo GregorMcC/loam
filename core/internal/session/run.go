@@ -225,9 +225,10 @@ func gitDirs(folder string, repos []string) (admin, common string, err error) {
 			return "", "", fmt.Errorf("the sandbox cannot hold the run in %s: it is a repo of the plot, and its .git is not a folder", folder)
 		}
 	}
+	var candidate string
 	switch {
 	case fi.IsDir():
-		admin = dotgit
+		admin, candidate = dotgit, dotgit
 	case fi.Mode().IsRegular():
 		b, err := os.ReadFile(dotgit)
 		if err != nil {
@@ -240,19 +241,32 @@ func gitDirs(folder string, repos []string) (admin, common string, err error) {
 		if !filepath.IsAbs(p) {
 			p = filepath.Join(folder, p)
 		}
-		admin = p
+		admin = filepath.Clean(p)
+		// The .git file names <git folder>/worktrees/<name>. The run can
+		// write the git folder, so it can put a link in place of either
+		// folder below it, to the git folder of another repo. Each one must
+		// be a folder, not a link.
+		parent := filepath.Dir(admin)
+		if filepath.Base(parent) != "worktrees" || !isRealDir(admin) || !isRealDir(parent) {
+			return "", "", fmt.Errorf("the sandbox cannot hold the run in %s: its git folder %s is not a worktree folder of a git folder", folder, admin)
+		}
+		candidate = filepath.Dir(parent)
 	default:
 		return "", "", fmt.Errorf("find the git folder of %s for the sandbox: %s is not a file or a folder", folder, dotgit)
 	}
-	resolved := sandbox.Real(admin)
-	for _, repo := range repos {
-		git := sandbox.Real(filepath.Join(repo, ".git"))
-		if fi, err := os.Lstat(git); err != nil || !fi.IsDir() {
-			continue
-		}
-		if resolved == git || filepath.Dir(resolved) == filepath.Join(git, "worktrees") {
-			return admin, git, nil
+	if isRealDir(candidate) {
+		resolved := sandbox.Real(candidate)
+		for _, repo := range repos {
+			if git := sandbox.Real(filepath.Join(repo, ".git")); resolved == git && isRealDir(git) {
+				return admin, git, nil
+			}
 		}
 	}
 	return "", "", fmt.Errorf("the sandbox cannot hold the run in %s: its git folder %s is in no repo of the plot", folder, admin)
+}
+
+// isRealDir reports whether path is a folder, and not a link to one.
+func isRealDir(path string) bool {
+	fi, err := os.Lstat(path)
+	return err == nil && fi.IsDir()
 }

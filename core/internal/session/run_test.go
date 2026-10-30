@@ -287,3 +287,51 @@ func TestRunRulesNeedTheGitFolderOfTheRepoOfTheRun(t *testing.T) {
 		t.Fatalf("a run whose .git names another repo: %v", err)
 	}
 }
+
+// TAS-175: the run can write the git folder of its repo, so it can put a link
+// in place of its worktree folder, or of the worktrees folder, to the git
+// folder of another repo of the plot. The run then gets no rules, so the other
+// repo does not become writable.
+func TestRunRulesFollowNoLinkInTheGitFolder(t *testing.T) {
+	e := setup(t)
+	testutil.GitEnv(t)
+	repo, _ := testutil.GitRepo(t)
+	other, _ := testutil.GitRepo(t)
+	wt := filepath.Join(t.TempDir(), "wt")
+	testutil.Git(t, repo, "worktree", "add", "-q", wt)
+	testutil.Git(t, other, "worktree", "add", "-q", filepath.Join(t.TempDir(), "x"))
+	p := e.plot(t, store.PlotInput{Name: "Alpha", Repos: []store.RepoInput{{Path: repo}, {Path: other}}})
+	run := store.Run{ID: "r1", PlotID: p.ID, Folder: wt}
+	if _, err := session.RunRules(e.store, run); err != nil {
+		t.Fatal(err)
+	}
+	git, otherGit := realpath(t, filepath.Join(repo, ".git")), realpath(t, filepath.Join(other, ".git"))
+	admin := filepath.Join(git, "worktrees", "wt")
+	if err := os.Rename(admin, filepath.Join(git, "moved")); err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range []string{otherGit, filepath.Join(otherGit, "worktrees", "x")} {
+		if err := os.Symlink(target, admin); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := session.RunRules(e.store, run); err == nil || !strings.Contains(err.Error(), "is not a worktree folder") {
+			t.Errorf("a link to %s: %v", target, err)
+		}
+		if err := os.Remove(admin); err != nil {
+			t.Fatal(err)
+		}
+	}
+	worktrees := filepath.Join(git, "worktrees")
+	if err := os.Rename(worktrees, filepath.Join(git, "moved-worktrees")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(otherGit, "worktrees"), worktrees); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(otherGit, "worktrees", "x"), filepath.Join(otherGit, "worktrees", "wt")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.RunRules(e.store, run); err == nil || !strings.Contains(err.Error(), "is not a worktree folder") {
+		t.Errorf("a link in place of the worktrees folder: %v", err)
+	}
+}
