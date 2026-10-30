@@ -75,22 +75,26 @@ type SandboxChange struct {
 // of the hosts. A plot that does not exist wraps [ErrNotFound]. It returns the
 // settings as stored.
 func (s *Store) UpdateSandboxSettings(plotID string, c SandboxChange) (SandboxSettings, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return SandboxSettings{}, fmt.Errorf("the sandbox needs the home folder: %w", err)
-	}
-	checkPath := func(p string) (string, error) { return sandbox.CheckPath(home, p, s.home) }
-	// Each named list is checked into out, and applied to to in the write.
+	// Each named list is checked into out, and applied to the list that to
+	// picks in the write.
 	type change struct {
 		kind  string
 		items *[]string
-		check func(string) (string, error)
+		path  bool
+		to    func(*SandboxSettings) *[]string
 		out   []string
 	}
 	changes := []*change{
-		{kind: "read path", items: c.Read, check: checkPath},
-		{kind: "write path", items: c.Write, check: checkPath},
-		{kind: "host", items: c.Hosts, check: sandbox.CheckHost},
+		{kind: "read path", items: c.Read, path: true, to: func(d *SandboxSettings) *[]string { return &d.Read }},
+		{kind: "write path", items: c.Write, path: true, to: func(d *SandboxSettings) *[]string { return &d.Write }},
+		{kind: "host", items: c.Hosts, to: func(d *SandboxSettings) *[]string { return &d.Hosts }},
+	}
+	home := ""
+	if c.Read != nil || c.Write != nil {
+		var err error
+		if home, err = os.UserHomeDir(); err != nil {
+			return SandboxSettings{}, fmt.Errorf("the sandbox needs the home folder: %w", err)
+		}
 	}
 	for _, f := range changes {
 		if f.items == nil {
@@ -98,7 +102,12 @@ func (s *Store) UpdateSandboxSettings(plotID string, c SandboxChange) (SandboxSe
 		}
 		out := []string{}
 		for _, it := range cleanNames(*f.items) {
-			it, err := f.check(it)
+			var err error
+			if f.path {
+				it, err = sandbox.CheckPath(home, it, s.home)
+			} else {
+				it, err = sandbox.CheckHost(it)
+			}
 			if err != nil {
 				return SandboxSettings{}, fmt.Errorf("%s: %v: %w", f.kind, err, ErrInvalid)
 			}
@@ -126,10 +135,15 @@ func (s *Store) UpdateSandboxSettings(plotID string, c SandboxChange) (SandboxSe
 	if err != nil {
 		return SandboxSettings{}, err
 	}
-	for i, to := range []*[]string{&d.Read, &d.Write, &d.Hosts} {
-		if changes[i].items != nil {
-			*to = changes[i].out
+	named := false
+	for _, f := range changes {
+		if f.items != nil {
+			*f.to(&d) = f.out
+			named = true
 		}
+	}
+	if !named { // nothing to write
+		return d, nil
 	}
 	var cols [3]string
 	for i, items := range [][]string{d.Read, d.Write, d.Hosts} {
@@ -149,7 +163,9 @@ ON CONFLICT(scope) DO UPDATE SET read_paths = excluded.read_paths, write_paths =
 }
 
 // SetSandboxSettings replaces all three lists of a scope, as
-// [Store.UpdateSandboxSettings] does with the three lists named.
+// [Store.UpdateSandboxSettings] does with the three lists named. A caller that
+// changes some of the lists must use UpdateSandboxSettings, because this call
+// writes back the lists that it read earlier.
 func (s *Store) SetSandboxSettings(d SandboxSettings) (SandboxSettings, error) {
 	return s.UpdateSandboxSettings(d.PlotID, SandboxChange{Read: &d.Read, Write: &d.Write, Hosts: &d.Hosts})
 }

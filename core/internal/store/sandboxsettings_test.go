@@ -119,23 +119,30 @@ func TestUpdateSandboxSettingsKeepsTheListsThatItDoesNotName(t *testing.T) {
 	if _, err := s.SetSandboxSettings(store.SandboxSettings{Read: []string{"~/a"}, Write: []string{"~/w"}, Hosts: []string{"a.example.com", "b.example.com"}}); err != nil {
 		t.Fatal(err)
 	}
-	var wg sync.WaitGroup
-	for _, c := range []store.SandboxChange{
-		{Hosts: &[]string{"a.example.com"}},
-		{Read: &[]string{"~/a", "~/b"}},
-	} {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if _, err := s.UpdateSandboxSettings("", c); err != nil {
-				t.Error(err)
-			}
-		}()
+	// Many rounds of two updates at once, so a read-then-write race would show.
+	for round := 0; round < 25; round++ {
+		var wg sync.WaitGroup
+		for _, c := range []store.SandboxChange{
+			{Hosts: &[]string{"a.example.com"}},
+			{Read: &[]string{"~/a", "~/b"}},
+		} {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if _, err := s.UpdateSandboxSettings("", c); err != nil {
+					t.Error(err)
+				}
+			}()
+		}
+		wg.Wait()
 	}
-	wg.Wait()
 	want := store.SandboxSettings{Read: []string{"~/a", "~/b"}, Write: []string{"~/w"}, Hosts: []string{"a.example.com"}}
-	if got, _ := s.GetSandboxSettings(""); !reflect.DeepEqual(got, want) {
-		t.Fatalf("got %+v, want %+v", got, want)
+	if got, err := s.GetSandboxSettings(""); err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v %v, want %+v", got, err, want)
+	}
+	// An update that names no list changes nothing.
+	if got, err := s.UpdateSandboxSettings("", store.SandboxChange{}); err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("empty update: %+v %v", got, err)
 	}
 	if _, err := s.UpdateSandboxSettings("nosuchplot", store.SandboxChange{Hosts: &[]string{"c.example.com"}}); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("no plot: %v", err)
