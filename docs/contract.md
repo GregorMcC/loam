@@ -600,7 +600,7 @@ The session of a run works in the Bash sandbox of Claude Code (Seatbelt on macOS
 - `failIfUnavailable` stops a session that has no sandbox, and `allowUnsandboxedCommands: false` ignores a command's request to run outside it.
 - `permissions.deny` denies the Read and Edit tools the credential paths: `~/.ssh`, `~/.gnupg`, `~/.config/gh`, `~/.config/gcloud`, `~/.config/op`, `~/.aws`, `~/.azure`, `~/.kube`, `~/.docker`, `~/Library/Keychains`, `~/.netrc`, `~/.git-credentials`, `~/.config/git/credentials`, `~/.claude.json`, `~/.cargo/credentials.toml`, `~/.npmrc`, and `~/.pypirc`. It also denies the Edit tool, which covers the Write tool, each `denyWrite` path.
 
-You can add paths and hosts to the sandbox, for a stack that has no preset or for a toolchain folder such as `~/.nvm`. There are two scopes. The machine scope holds for the runs of every plot. The plot scope holds for the runs of one plot. Each scope has three lists: `read`, `write`, and `hosts`. They are stored, not in the change log, and Loam reads them each time it starts or resumes a session, so a change holds for the next session.
+You can add paths and hosts to the sandbox, for a stack that has no preset or for a toolchain folder such as `~/.nvm`. There are two scopes. The machine scope holds for the runs of every plot. The plot scope holds for the runs of one plot. Each scope has three lists: `read`, `write`, and `hosts`. They are stored, not in the change log, and Loam reads them each time it starts a session. A session that Loam resumes keeps the settings file that it started with, so a change holds for the next new session of a run.
 
 ```json
 { "plot_id": "k3v9q2mxa7", "read": ["~/notes"], "write": ["~/Library/Caches/Loam"], "hosts": ["*.example.org"] }
