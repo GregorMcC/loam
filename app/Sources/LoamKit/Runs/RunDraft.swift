@@ -37,7 +37,8 @@ public struct RunDraft: Equatable, Sendable {
     /// The tries of a new run.
     public static let defaultTries = 3
 
-    /// A draft of a run that fixes a landed run: the issue and the repo of that run, and `--fixes` with its ID.
+    /// A draft of a run that fixes a landed run: the issue of that run, and `--fixes` with its ID. With no repo, the
+    /// core puts the fix in the repo of that run.
     public init(fixing run: Run) {
         title = run.title.hasPrefix("Fix: ") ? run.title : "Fix: \(run.title)"
         switch run.source?.kind {
@@ -45,7 +46,6 @@ public struct RunDraft: Equatable, Sendable {
         case "linear", "github": link = run.source?.url
         default: break
         }
-        repo = run.shape.flatMap { $0.repo.isEmpty ? nil : $0.repo }
         fixes = run.id
     }
 

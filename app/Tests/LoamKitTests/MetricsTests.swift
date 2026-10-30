@@ -71,7 +71,7 @@ import Testing
         #expect(fake.args().filter { $0.hasPrefix("run metrics") }.count == 2)
     }
 
-    @Test func aFixDraftsFromTheIssueAndTheRepoOfTheLandedRun() throws {
+    @Test func aFixDraftsFromTheIssueOfTheLandedRun() throws {
         var run = try landedRun()
         run.source = RunSource(kind: "linear", key: "ENG-523", url: "https://linear.app/acme/issue/ENG-523/x")
         var draft = RunDraft(fixing: run)
