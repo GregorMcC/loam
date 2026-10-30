@@ -912,24 +912,25 @@ func newRunSandboxCmd() *cobra.Command {
 				}
 				scope = p.ID
 			}
-			cur, err := s.GetSandboxSettings(scope)
-			if err != nil {
-				return err
-			}
 			f := cmd.Flags()
+			var cur store.SandboxSettings
 			if f.Changed("read") || f.Changed("write") || f.Changed("host") {
+				// Only the lists of a flag change, in one transaction.
+				var change store.SandboxChange
 				if f.Changed("read") {
-					cur.Read = read
+					change.Read = &read
 				}
 				if f.Changed("write") {
-					cur.Write = write
+					change.Write = &write
 				}
 				if f.Changed("host") {
-					cur.Hosts = hosts
+					change.Hosts = &hosts
 				}
-				if cur, err = s.SetSandboxSettings(cur); err != nil {
+				if cur, err = s.UpdateSandboxSettings(scope, change); err != nil {
 					return err
 				}
+			} else if cur, err = s.GetSandboxSettings(scope); err != nil {
+				return err
 			}
 			if JSON(cmd) {
 				return printJSON(cmd, map[string]any{"sandbox": cur})
