@@ -51,8 +51,7 @@ struct MetricsView: View {
             }
             Spacer(minLength: LoamTheme.space4)
             Picker("Plot", selection: Binding(
-                // A plot that is gone from the list shows as every plot.
-                get: { model.metricsPlot.flatMap { id in model.plots.contains { $0.id == id } ? id : nil } ?? "" },
+                get: { model.metricsPlot ?? "" },
                 set: { id in Task { await model.showMetrics(plot: id.isEmpty ? nil : id) } }
             )) {
                 Text("All plots").tag("")

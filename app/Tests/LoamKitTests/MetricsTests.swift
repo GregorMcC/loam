@@ -48,11 +48,19 @@ import Testing
     }
 
     @Test func aFailedFirstReadSaysWhyAndAReadThatWorksClearsIt() async throws {
-        let (model, _) = try model([("error_invalid", 2), ("run_metrics", 0)])
+        let (model, _) = try model([("run_list", 0), ("error_invalid", 2), ("run_list", 0), ("run_metrics", 0)])
+        await model.reloadRuns()
         await model.showMetrics()
         #expect(model.metrics == nil && model.metricsError?.isEmpty == false)
-        await model.reloadMetrics()
+        // The next read of the runs tries again, though no run changed.
+        await model.reloadRuns()
         #expect(model.metrics != nil && model.metricsError == nil)
+    }
+
+    @Test func aPlotThatIsGoneShowsTheMetricsOfEveryPlot() async throws {
+        let (model, fake) = try model([("run_metrics", 0)])
+        await model.showMetrics(plot: "plotgonexx")
+        #expect(model.metricsPlot == nil && fake.args() == ["run metrics --json"])
     }
 
     @Test func theRunsReadTheMetricsAgainOnlyWhenARunChanged() async throws {

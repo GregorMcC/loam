@@ -29,8 +29,8 @@ extension AppModel {
         if case .run(let id) = page { await readRunStatus(id) }
         if page == .today { await readAwayEvents() }
         if page == .desk { await followDeskQueue(from: place) }
-        // A full read of the history, so only when a run changed.
-        if page == .metrics, changed { await reloadMetrics() }
+        // A full read of the history, so only when a run changed, or when no read worked yet.
+        if page == .metrics, changed || metrics == nil { await reloadMetrics() }
     }
 
     /// `loam run tick`: ships the runs whose checks passed. When the tick moved a run, the runs are
