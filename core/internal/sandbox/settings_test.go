@@ -16,7 +16,7 @@ func TestSettingsBlock(t *testing.T) {
 	}
 	const want = `{"allowUnsandboxedCommands":false,"enabled":true,"failIfUnavailable":true,` +
 		`"filesystem":{"allowRead":["/w","/h/.gitconfig"],"allowWrite":["/w"],"denyRead":["/h"],"denyWrite":[]},` +
-		`"network":{"allowLocalBinding":true,"allowedDomains":[],"strictAllowlist":true}}`
+		`"network":{"allowedDomains":[],"strictAllowlist":true}}`
 	if string(got) != want {
 		t.Errorf("Settings =\n  %s\nwant\n  %s", got, want)
 	}

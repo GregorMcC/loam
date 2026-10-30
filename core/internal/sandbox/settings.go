@@ -17,10 +17,9 @@ func (r Rules) Settings() map[string]any {
 			// A host off the list is refused, not asked about: nobody answers
 			// the prompts of a background session.
 			"strictAllowlist": true,
-			// Tests bind servers on localhost, such as Go's httptest. It lets
-			// a command reach a service on localhost too. Other hosts stay
-			// denied.
-			"allowLocalBinding": true,
+			// No allowLocalBinding: it lets Bash bind 0.0.0.0, and a server
+			// there reaches the network. The gate runs tests that start a
+			// server on localhost.
 		},
 		"filesystem": map[string]any{
 			"denyRead":   []string{r.Home},
@@ -70,13 +69,13 @@ func (r Rules) ToolDenies() []string {
 	return out
 }
 
+// localServer is the note of every run: Bash cannot bind a port.
+const localServer = "A test that starts a server, even on localhost, fails in Bash: the sandbox does not let Bash bind a port. Do not work around it. The Done when checks run those tests."
+
 // Prompt returns the text that the first prompt of a run adds about the
-// sandbox, or "" when its stacks need nothing.
+// sandbox.
 func (r Rules) Prompt() string {
-	if len(r.Notes) == 0 {
-		return ""
-	}
-	return "\n\nBash works in a sandbox. " + strings.Join(r.Notes, " ")
+	return "\n\nBash works in a sandbox. " + strings.Join(append([]string{localServer}, r.Notes...), " ")
 }
 
 func nonNil(s []string) []string {

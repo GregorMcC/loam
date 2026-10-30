@@ -229,7 +229,8 @@ func TestForResolvesTheCachePaths(t *testing.T) {
 
 // SwiftPM runs its manifest in a sandbox of its own, which cannot start inside
 // the run's sandbox. So the prompt of a run with a Swift repo asks for
-// --disable-sandbox. A run with no such stack gets no sandbox text.
+// --disable-sandbox. A run with no such stack gets only the note that every
+// run gets.
 func TestPromptNamesWhatTheSandboxNeeds(t *testing.T) {
 	swift := realTemp(t)
 	mkfile(t, filepath.Join(swift, "Package.swift"))
@@ -237,9 +238,15 @@ func TestPromptNamesWhatTheSandboxNeeds(t *testing.T) {
 	if !strings.Contains(got, "--disable-sandbox") {
 		t.Errorf("Prompt = %q, want --disable-sandbox", got)
 	}
+	// Every run hears that a local server fails in Bash: the sandbox does
+	// not let Bash bind a port, because a port on 0.0.0.0 reaches the network.
+	if !strings.Contains(got, "starts a server") {
+		t.Errorf("Prompt = %q, want the local server note", got)
+	}
 	plain := realTemp(t)
-	if got := mustFor(t, Input{Home: "/h", Folder: plain, Repos: []string{plain}, Getenv: noEnv}).Prompt(); got != "" {
-		t.Errorf("Prompt = %q, want none", got)
+	got = mustFor(t, Input{Home: "/h", Folder: plain, Repos: []string{plain}, Getenv: noEnv}).Prompt()
+	if strings.Contains(got, "--disable-sandbox") || !strings.Contains(got, "starts a server") {
+		t.Errorf("Prompt = %q, want the local server note only", got)
 	}
 }
 
@@ -273,5 +280,16 @@ func TestForDeniesWritesToTheGitFileOfAWorktree(t *testing.T) {
 	got = mustFor(t, Input{Home: "/h", Folder: repo, GitDir: filepath.Join(repo, ".git"), Getenv: noEnv})
 	if slices.Contains(got.DenyWrite, filepath.Join(repo, ".git")) {
 		t.Errorf("DenyWrite = %q denies the git folder of a checkout", got.DenyWrite)
+	}
+}
+
+// The config files that git names are read paths, unless they open home.
+func TestForAllowsTheGitConfigFiles(t *testing.T) {
+	repo := realTemp(t)
+	home := realTemp(t)
+	inc := filepath.Join(home, "dotfiles", "git.inc")
+	got := mustFor(t, Input{Home: home, Folder: repo, GitConfig: []string{inc, filepath.Join(home, ".ssh", "config")}, Getenv: noEnv})
+	if !slices.Contains(got.Read, inc) || slices.Contains(got.Read, filepath.Join(home, ".ssh", "config")) {
+		t.Errorf("Read = %q, want %s and no credential path", got.Read, inc)
 	}
 }

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -127,9 +129,10 @@ func runRules(s *store.Store, plot store.Plot, folder string) (sandbox.Rules, er
 		return sandbox.Rules{}, err
 	}
 	in := sandbox.Input{
-		Home:   home,
-		Folder: folder,
-		GitDir: git,
+		Home:      home,
+		Folder:    folder,
+		GitDir:    git,
+		GitConfig: gitConfigFiles(folder),
 		// The plot folder holds the seed, which only Loam writes.
 		NoWrite: []string{s.PlotDir(plot.ID)},
 		Getenv:  os.Getenv,
@@ -143,6 +146,27 @@ func runRules(s *store.Store, plot store.Plot, folder string) (sandbox.Rules, er
 		}
 	}
 	return sandbox.For(in)
+}
+
+// gitConfigFiles returns the config files that git reads in dir, with the
+// files that they include. A file that git cannot name is not read in the
+// sandbox, so an error gives none.
+func gitConfigFiles(dir string) []string {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "git", "-C", dir, "config", "--list", "--show-origin", "-z").Output()
+	if err != nil {
+		return nil
+	}
+	// Each entry is an origin and a key with its value, each one ended by NUL.
+	var files []string
+	parts := strings.Split(string(out), "\x00")
+	for i := 0; i+1 < len(parts); i += 2 {
+		if f, ok := strings.CutPrefix(parts[i], "file:"); ok && filepath.IsAbs(f) && !slices.Contains(files, f) {
+			files = append(files, f)
+		}
+	}
+	return files
 }
 
 // gitCommonDir returns the git folder that the checkout in dir shares with its

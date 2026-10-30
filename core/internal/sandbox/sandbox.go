@@ -23,6 +23,9 @@ type Input struct {
 	Folder, GitDir string
 	// Repos are the repo paths of the plot. Links are its local links.
 	Repos, Links []string
+	// GitConfig are the config files that git reads in Folder, with the
+	// files that they include.
+	GitConfig []string
 	// NoWrite are folders that the run must not write, even when Claude Code
 	// allows them, as it allows each --add-dir folder. A denied folder wins
 	// over an allowed folder inside it, so it must not hold Folder or GitDir.
@@ -155,6 +158,7 @@ func For(in Input) (Rules, error) {
 	allow(&read, in.Repos...)
 	allow(&read, in.Links...)
 	allow(&read, gitConfig(in.Home)...)
+	allow(&read, in.GitConfig...)
 	allow(&write, in.Folder, in.GitDir)
 	for _, p := range presets {
 		if !anyRepoHas(in.Repos, p.files) {

@@ -110,3 +110,46 @@ func TestPrepareRunSandboxesTheSession(t *testing.T) {
 		t.Errorf("permissions.deny = %q, want the credential paths", got.Permissions.Deny)
 	}
 }
+
+// Git reads the files that a git config includes, so the sandbox allows each
+// config file that git names for the run folder, and not only the usual ones.
+func TestPrepareRunAllowsTheGitConfigFilesThatGitReads(t *testing.T) {
+	e := setup(t)
+	testutil.GitEnv(t)
+	global := os.Getenv("GIT_CONFIG_GLOBAL")
+	extra := filepath.Join(filepath.Dir(global), "extra.gitconfig")
+	if err := os.WriteFile(extra, []byte("[core]\n\tautocrlf = false\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.OpenFile(global, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("[include]\n\tpath = extra.gitconfig\n"); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	repo, _ := testutil.GitRepo(t)
+	p := e.plot(t, store.PlotInput{Name: "Alpha", Repos: []store.RepoInput{{Path: repo}}})
+	plan, err := session.PrepareRun(e.store, store.Run{ID: "r1", PlotID: p.ID, Folder: repo}, "go", "loam", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(argValues(plan.Args, "--settings")[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Sandbox struct {
+			Filesystem struct{ AllowRead []string }
+		}
+	}
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{realpath(t, global), realpath(t, extra)} {
+		if !slices.Contains(got.Sandbox.Filesystem.AllowRead, want) {
+			t.Errorf("allowRead = %q, want %s", got.Sandbox.Filesystem.AllowRead, want)
+		}
+	}
+}
