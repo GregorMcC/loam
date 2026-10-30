@@ -116,6 +116,8 @@ func TestPrepareRunSandboxesTheSession(t *testing.T) {
 func TestPrepareRunAllowsTheGitConfigFilesThatGitReads(t *testing.T) {
 	e := setup(t)
 	testutil.GitEnv(t)
+	// The test configs are in the temporary folder, which a run can write.
+	defer session.SetRunTemps(func() []string { return nil })()
 	global := os.Getenv("GIT_CONFIG_GLOBAL")
 	extra := filepath.Join(filepath.Dir(global), "extra.gitconfig")
 	if err := os.WriteFile(extra, []byte("[core]\n\tautocrlf = false\n"), 0o644); err != nil {
@@ -163,6 +165,8 @@ func TestPrepareRunAllowsTheGitConfigFilesThatGitReads(t *testing.T) {
 func TestPrepareRunAllowsTheFilesOfEachIncludeIf(t *testing.T) {
 	e := setup(t)
 	testutil.GitEnv(t)
+	// The test configs are in the temporary folder, which a run can write.
+	defer session.SetRunTemps(func() []string { return nil })()
 	global := os.Getenv("GIT_CONFIG_GLOBAL")
 	dir := filepath.Dir(global)
 	repo, _ := testutil.GitRepo(t)

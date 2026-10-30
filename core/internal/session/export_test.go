@@ -8,3 +8,11 @@ func SetPaneDial(f func(string) (net.Conn, error)) func() {
 	paneDial = f
 	return func() { paneDial = old }
 }
+
+// SetRunTemps replaces the temporary folders that a run can write. It returns
+// the undo.
+func SetRunTemps(f func() []string) func() {
+	old := runTemps
+	runTemps = f
+	return func() { runTemps = old }
+}

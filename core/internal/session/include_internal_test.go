@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
 )
 
@@ -60,12 +59,9 @@ func TestGitIncludesEndsOnACycle(t *testing.T) {
 // includes. It names such a file in skipped.
 func TestGitIncludesSkipsAFileThatItDoesNotFollow(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := os.Stat(strings.ToUpper(dir)); err != nil {
-		t.Skip("the folder is case-sensitive, and the test names one file in two cases")
-	}
-	a, b, c := filepath.Join(dir, "a.gitconfig"), filepath.Join(dir, "B.gitconfig"), filepath.Join(dir, "c.gitconfig")
+	a, b, c := filepath.Join(dir, "a.gitconfig"), filepath.Join(dir, "b.gitconfig"), filepath.Join(dir, "c.gitconfig")
 	for f, text := range map[string]string{
-		a: "[include]\n\tpath = B.gitconfig\n\tpath = b.gitconfig\n",
+		a: "[include]\n\tpath = b.gitconfig\n",
 		b: "[include]\n\tpath = c.gitconfig\n",
 		c: "",
 	} {
@@ -75,6 +71,6 @@ func TestGitIncludesSkipsAFileThatItDoesNotFollow(t *testing.T) {
 	}
 	got := gitIncludes("/home", []string{a}, func(f string) bool { return f != b })
 	if !slices.Equal(got.files, []string{b}) || !slices.Equal(got.skipped, []string{b}) || got.late {
-		t.Errorf("gitIncludes = %+v, want %s once, and skipped", got, b)
+		t.Errorf("gitIncludes = %+v, want %s, and skipped", got, b)
 	}
 }

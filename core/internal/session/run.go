@@ -172,7 +172,8 @@ func runRules(s *store.Store, plot store.Plot, folder string) (sandbox.Rules, er
 	}
 	// The includes come after the rules, so that Loam knows which files the
 	// run can write.
-	inc := gitIncludes(home, base, func(f string) bool { return !r.Writable(f) && !r.Refuses(f) })
+	temps := runTemps()
+	inc := gitIncludes(home, base, func(f string) bool { return !r.Writable(f, temps...) && !r.Refuses(f) })
 	for _, p := range r.AllowRead(inc.files...) {
 		if _, err := os.Stat(p); err == nil {
 			r.Notes = append(r.Notes, gitStops("A git config includes "+p+", and Bash cannot read it."))
@@ -201,6 +202,10 @@ func gitStops(what string) string {
 // for the next rules of the run. So is the command scope, which comes from
 // the environment.
 var gitConfigScopes = []string{"system", "global", "local"}
+
+// runTemps returns the folders that the sandbox of Claude Code lets the run
+// write besides the rules: the temporary folders.
+var runTemps = func() []string { return append(sandbox.Temps(), "/tmp") }
 
 // gitConfigFiles returns the config files that git reads in the worktree
 // with the git folder admin, in the scopes of gitConfigScopes, without the
@@ -257,9 +262,11 @@ type includes struct {
 func gitIncludes(home string, base []string, follow func(string) bool) includes {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	// macOS folders ignore case, so the same file can have two names.
+	// On a volume that does not ignore case, two names that differ in case are
+	// two files, so the key keeps the case. A file with two names is then read
+	// twice, and the depth ends a cycle through such names.
 	seen := map[string]bool{}
-	key := func(f string) string { return strings.ToLower(sandbox.Real(f)) }
+	key := sandbox.Real
 	for _, f := range base {
 		seen[key(f)] = true
 	}

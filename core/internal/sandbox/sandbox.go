@@ -222,10 +222,14 @@ func opens(home, path string) bool {
 }
 
 // Writable reports whether the run can write path: it is in a write path of
-// the rules and in no path that they deny. It checks the path as given and
-// with its symlinks resolved, because the run can point a link in a write
-// path at another file. The compare ignores case, as macOS folders do.
-func (r Rules) Writable(path string) bool {
+// the rules, or in one of also, and in no path that the rules deny. also are
+// folders that the sandbox lets the run write besides the rules, such as the
+// temporary folders. It checks the path as given and with its symlinks
+// resolved, because the run can point a link in a write path at another file.
+// The compare ignores case, as macOS folders do by default. On a volume that
+// does not, the check can take a file for writable when it is not, which is
+// the safe side.
+func (r Rules) Writable(path string, also ...string) bool {
 	in := func(p string, dirs []string) bool {
 		for _, d := range dirs {
 			if within(p, strings.ToLower(d)) {
@@ -234,8 +238,12 @@ func (r Rules) Writable(path string) bool {
 		}
 		return false
 	}
+	write := slices.Clone(r.Write)
+	for _, d := range also {
+		write = append(write, filepath.Clean(d), Real(d))
+	}
 	for _, p := range []string{filepath.Clean(path), Real(path)} {
-		if p = strings.ToLower(p); in(p, r.Write) && !in(p, r.DenyWrite) {
+		if p = strings.ToLower(p); in(p, write) && !in(p, r.DenyWrite) {
 			return true
 		}
 	}
@@ -250,7 +258,8 @@ func (r Rules) Refuses(path string) bool {
 
 // AllowRead adds read paths to the rules with the check of For: it leaves
 // out a path that the rules refuse. It returns the paths that it left out. It
-// adds a path once, whatever its case, as macOS folders ignore case.
+// adds a path once. Two names of a path that differ in case stay two paths:
+// on a volume that does not ignore case, they are two files.
 func (r *Rules) AllowRead(paths ...string) (left []string) {
 	for _, p := range paths {
 		p = Real(p)
@@ -258,7 +267,7 @@ func (r *Rules) AllowRead(paths ...string) (left []string) {
 		case p == "":
 		case r.Refuses(p):
 			left = append(left, p)
-		case !slices.ContainsFunc(r.Read, func(q string) bool { return strings.EqualFold(q, p) }):
+		case !slices.Contains(r.Read, p):
 			r.Read = append(r.Read, p)
 		}
 	}

@@ -307,6 +307,10 @@ func TestRulesWritable(t *testing.T) {
 	if !(Rules{Write: []string{dir}}).Writable(link) {
 		t.Errorf("Writable(%s) = false for a link in a write path", link)
 	}
+	// A folder of also is a write path too.
+	if !(Rules{}).Writable(filepath.Join(other, "y.gitconfig"), other) || (Rules{}).Writable(link) {
+		t.Errorf("Writable does not take the folders of also as write paths")
+	}
 }
 
 // AllowRead adds a path once, and leaves out and returns a path that opens
