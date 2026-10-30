@@ -588,7 +588,7 @@ The gate is the Stop hook of the session. Each time the session ends a turn, Loa
 
 `run start` uses the worktree that `--worktree` names, or makes it. With no `--worktree`, it makes a worktree with a name from the key of the link or the ticket, and the title. With no `--repo`, a new worktree is in the repo of the plot whose origin the `--link` is a GitHub issue of, else in the main repo. `--repo` always wins. `run shape` picks its repo in the same way. A run has `--link` or `--ticket`, not both (exit code 2). It refuses, with exit code 1, a folder that Claude Code does not trust: a background session cannot show the trust prompt. In git, Claude Code trusts a worktree when it trusts the main checkout of the repo. A setup command that you have not approved gives exit code 2 (`invalid`); `--approve-setup` approves it. When `claude --bg` fails, the run is `stopped` with the output in `note`, and the command exits 0. When no slot is free, the run is `queued` with the reason in `note`, and the command exits 0 (see [Limits, the queue, and usage](#limits-the-queue-and-usage)).
 
-`--fixes` takes the ID of a run of the same plot that is `landed`. Another run gives exit code 2 (`invalid`), and a run that does not exist gives exit code 1. Nothing is made. With no `--repo`, the new run goes in the repo of the run that it fixes: the repo of its draft, else of its worktree, else its folder. When that repo is no longer in the plot, the run takes the usual repo. `run shape` takes `--fixes` too, and each run of a split fixes the same run.
+`--fixes` takes the ID of a run of the same plot that is `landed`. Another run gives exit code 2 (`invalid`), and a run that does not exist gives exit code 1. Nothing is made. With no `--repo` and no `--worktree`, the new run goes in the repo of the run that it fixes: the repo of its draft, else of its worktree, else its folder. When that repo is no longer in the plot, the run takes the usual repo. `run shape` takes `--fixes` too, and each run of a split fixes the same run.
 
 #### Sandbox
 
@@ -837,7 +837,7 @@ The usage is the last usage that Claude Code reported to Loam. It is not in the 
 - `fixed` counts the landed runs that a later run fixes (`--fixes`), unless you cancelled the fix. It is the change failure count, and it can grow after the window ends.
 - `recovery` times each failure to the next pass. `gate` is from a failed gate until the run is `shipping`, `ready`, or `landed`. `ci` is from a failed CI until the run is `ready` or `landed`. A gate that fails while the run fixes a CI failure is part of that CI failure. A failure counts in the window that it started in, for any run. A failure that never passed does not count, and nor does a failure whose run stopped or was cancelled before it passed, for any reason: the `stopped` station holds that wait.
 - `rework` adds up the loops of the landed runs. A try of the gate and a try of CI each count once. `code_review_rounds` counts the code reviews before a push that found a Critical or Major issue. `redrafts` counts the drafts after the first one, with the drafts that failed.
-- `slowest` holds the landed runs of the window with the longest lead time, longest first, at most 5. It is `[]` when no run landed.
+- `slowest` holds the landed runs of the window with the longest lead time, longest first, at most 5. Runs with the same lead time go in the order of their IDs. It is `[]` when no run landed.
 - `not_landed` counts the runs whose last state is in the window and is `stopped`, `limited`, `cancelled`, or `start_unknown`.
 
 #### Rules

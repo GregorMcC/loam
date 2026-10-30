@@ -49,8 +49,9 @@ type StartOptions struct {
 	Goal     string
 	DoneWhen []store.Check
 	// Repo is the repo of a new worktree: an ID or a path. Empty means the
-	// repo of the run that Fixes names, else the repo of the plot that a
-	// GitHub issue link belongs to, else the main repo.
+	// repo of the run that Fixes names when no Worktree is named, else the
+	// repo of the plot that a GitHub issue link belongs to, else the main
+	// repo.
 	Repo string
 	// Worktree is the name of the worktree. Loam uses the worktree when it
 	// exists, and makes it when it does not. Empty means a new worktree with
@@ -120,8 +121,8 @@ func Start(ctx context.Context, s *store.Store, o StartOptions) (*StartResult, e
 	if err != nil {
 		return nil, err
 	}
-	if o.Repo == "" {
-		o.Repo = fixed
+	if o.Repo == "" && o.Worktree == "" {
+		o.Repo = fixed // a named worktree keeps its own repo
 	}
 	usageForHold(ctx, s) // before Loam makes anything, so a probe that is cut short leaves nothing
 	res := &StartResult{}

@@ -319,7 +319,9 @@ func measure(paths []runPath, from, to time.Time) MetricsPeriod {
 		m.Rework.Redrafts += max(0, p.shapes-1)
 		m.Rework.Turns += p.run.Turns
 	}
-	slices.SortStableFunc(m.Slowest, func(a, b SlowRun) int { return cmp.Compare(b.LeadSeconds, a.LeadSeconds) })
+	slices.SortFunc(m.Slowest, func(a, b SlowRun) int {
+		return cmp.Or(cmp.Compare(b.LeadSeconds, a.LeadSeconds), cmp.Compare(a.RunID, b.RunID))
+	})
 	m.Slowest = m.Slowest[:min(len(m.Slowest), SlowestLimit)]
 	m.LeadTime = spreadOf(lead)
 	m.Stations = Stations{

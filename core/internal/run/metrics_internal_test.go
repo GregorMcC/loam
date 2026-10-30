@@ -3,6 +3,7 @@ package run
 import (
 	"encoding/json"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -114,6 +115,22 @@ func TestMetricsKeepTheSlowestRunsOnly(t *testing.T) {
 	c := ComputeMetrics(runs, events, metricsStart, metricsStart.Add(time.Hour)).Current
 	if len(c.Slowest) != SlowestLimit || c.Slowest[0].RunID != "g" || c.Slowest[SlowestLimit-1].RunID != "c" {
 		t.Fatalf("slowest %+v", c.Slowest)
+	}
+}
+
+// Runs with the same lead time go in the order of their IDs, whatever the
+// order of the store.
+func TestMetricsOrderTheSlowestRunsOfOneLeadTimeByID(t *testing.T) {
+	var runs []store.Run
+	var events []store.RunEvent
+	for _, id := range []string{"c", "a", "b"} {
+		h := (&history{run: id}).state(store.RunStarting, 0).state(store.RunLanded, 10)
+		runs = append(runs, store.Run{ID: id, State: store.RunLanded})
+		events = append(events, h.events...)
+	}
+	c := ComputeMetrics(runs, events, metricsStart, metricsStart.Add(time.Hour)).Current
+	if got := []string{c.Slowest[0].RunID, c.Slowest[1].RunID, c.Slowest[2].RunID}; !slices.Equal(got, []string{"a", "b", "c"}) {
+		t.Fatalf("slowest %v", got)
 	}
 }
 
