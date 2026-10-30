@@ -573,7 +573,7 @@ A run is one goal that a background Claude Code session (`claude --bg`) works on
 - `risk.level` is `low`, `medium`, or `high`. `reasons` are short sentences: Claude's first, then the facts that Loam adds.
 - `where_it_stands` is a new text for the Where it stands of the plot: the text that the plot had, moved on by this change. `run land --where-it-stands` sets it.
 
-The gate is the Stop hook of the session. Each time the session ends a turn, Loam runs each check with `sh -c` in the folder, then checks that `git status --porcelain` is empty ("Work committed"). When all pass, the run is `shipping` when the origin of its repo is on GitHub, else `ready`. When one fails, the try counts. With tries left, the hook exits 2 and the failures go back to the session as its next prompt. With no tries left, the session stops and the run is `stopped`.
+The gate is the Stop hook of the session. Each time the session ends a turn, Loam runs each check with `sh -c` in the folder, then checks that `git status --porcelain` is empty ("Work committed"). Each of these runs in the sandbox of the run (see Sandbox below). When all pass, the run is `shipping` when the origin of its repo is on GitHub, else `ready`. When one fails, the try counts. With tries left, the hook exits 2 and the failures go back to the session as its next prompt. With no tries left, the session stops and the run is `stopped`.
 
 | Command | Output |
 | :- | :- |
@@ -630,6 +630,19 @@ A stack preset applies when a repo of the plot has its file at the root or one f
 SwiftPM runs a manifest in a sandbox of its own, and a sandbox cannot start inside another one. So the first prompt of a run with a `Package.swift` repo tells the session to pass `--disable-sandbox` to `swift build`, `swift test`, and `swift package`. A compact can drop the first prompt, so the SessionStart hook prints the note again after a compact, with the seed. SwiftPM reads no environment variable for this.
 
 Loam resolves each path through its symlinks, because the sandbox matches real paths. Before it starts a session, Loam checks that `/usr/bin/sandbox-exec` is an executable file. It does not run it, because a nested sandbox fails, as in the Bash of a run. When the file is missing, the run is `queued` with `Waits for the sandbox: <reason>` in `note`, and `run start` exits 0. A tick with no sandbox starts no new session and writes a note only when it changed. A queued resume goes on, because its session already has its sandbox. A sandbox that fails to start stops the session (`failIfUnavailable`), and the run is `stopped` with the output in `note`.
+
+**Gate.** The Stop hook works outside the sandbox of the session, and the checks run code that the session wrote. So the gate runs each check of the run, each rule of the plot, and "Work committed" as `sandbox-exec -f <profile> sh -c <command>` in the folder of the run. The profile is a Seatbelt profile of the same rules. In a profile, the last rule that matches wins, so the rules come in this order:
+
+1. Network: deny all, so a check uses the caches that the session filled, and the hosts of the stack presets do not apply. Then allow loopback: a check can bind and accept on `localhost`, and connect to `localhost`, as the test servers of Go's `httptest` do. So a check can reach any TCP service on `localhost`. Then allow the unix sockets below each path of `allowWrite` and the temp folders of the gate, and no other unix socket, such as the SSH agent or the Docker socket, which act as you. `/private/tmp` is not in that list, because it holds the socket of the launchd SSH agent. Seatbelt matches the real path of a socket, so a link to another socket does not open it.
+2. Read: deny the home folder, then allow each path of `allowRead` and the temp folders of the gate. Allow `file-read-metadata` everywhere, because git reads the metadata of each folder above the repo. Metadata gives names and sizes, not the content of a file.
+3. Write: deny all, then allow each path of `allowWrite`, the temp folders of the gate, `/private/tmp`, and `/dev`. The temp folders are the temp folder of the gate and the cache folder of the user (`getconf DARWIN_USER_CACHE_DIR`), where clang and swift keep their module caches, each by its real path.
+4. Deny each `denyWrite` path last, so a denied path wins over an allowed folder that holds it.
+
+Loam escapes each quote, backslash, and control character in a path, so no path can change the profile. Loam writes the profile to a file in the Loam home folder that only you can read, and removes the file after the gate. A gate also removes the profile files that are older than the hook timeout, which a killed hook left. When a check can write the Loam home folder, for example because it is in the temp folder of the gate, no check runs: a check could then change the profile of the next check.
+
+When `sandbox-exec` is not an executable file, when the rules fail (such as when git cannot name the git folder of the run), when Loam cannot write the profile, or when `sandbox-exec -f <profile> /usr/bin/true` fails (such as in a process that is already in a sandbox), no check runs either. Each check fails with exit -1 and the reason in its output, and the run is `stopped` with "Loam did not run the checks, because it could not sandbox them: <reason>" in `note`. No try counts, because the session cannot fix the sandbox.
+
+SwiftPM sandboxes its manifest, and that sandbox cannot start in the sandbox of a check. When a check fails and its output has `sandbox_apply: Operation not permitted`, its failed log gets one more line: pass `--disable-sandbox` to `swift build`, `swift test`, and `swift package`. Loam does not change the commands of a check.
 
 #### Ship
 
@@ -871,7 +884,7 @@ A rule is a check that every run of a plot must pass, such as "Views use the col
 | `loam rule list [<plot>]` | `{ "rules": [...] }`, oldest first |
 | `loam rule rm <rule>` | `{ "rule": {...} }`, the one that it removed |
 
-- The gate runs the rules of the plot after the checks of the run, each as the check `Rule: <name>`, with `sh -c` in the folder of the run. A rule that fails blocks the stop as a check does. The session prompt lists the rules with the checks.
+- The gate runs the rules of the plot after the checks of the run, each as the check `Rule: <name>`, with `sh -c` in the folder of the run and in the sandbox of the run. A rule that fails blocks the stop as a check does. The session prompt lists the rules with the checks.
 - `note` is the note that the rule came from. A note like it gets no `rule_offer`.
 - A name or a command that is empty exits 2.
 

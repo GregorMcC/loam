@@ -59,9 +59,10 @@ func Hook(s *store.Store, runID string, in io.Reader, out, errOut io.Writer) int
 
 // stopped is the gate. Each Stop counts a turn of the run. It runs the
 // checks of a running run. When they pass, the run goes to Ship when its repo
-// is on GitHub, else to Ready. When they fail, and the run has used the
-// turns that the run limits allow since Loam last resumed its session, the
-// run is Stopped, and no try counts.
+// is on GitHub, else to Ready. When Loam cannot sandbox them, they do not
+// run: the run is Stopped with the reason, and no try counts. When they
+// fail, and the run has used the turns that the run limits allow since Loam
+// last resumed its session, the run is Stopped, and no try counts.
 // Else the try counts: the stop is blocked with the failures as the reason,
 // or the run is Stopped when it has no tries left. A run that is not running
 // lets the session stop: you may have typed in it after it was Ready.
@@ -97,6 +98,11 @@ func stopped(s *store.Store, runID string, errOut io.Writer, logf func(string, .
 			if !ships {
 				r.State, r.Note = store.RunReady, r.Note+". The repo has no GitHub origin, so Loam opens no PR"
 			}
+			return nil
+		}
+		if g.unsandboxed != nil {
+			// The session cannot fix the sandbox, so no try counts.
+			r.State, r.Note = store.RunStopped, "Loam did not run the checks, because it could not sandbox them: "+g.unsandboxed.Error()
 			return nil
 		}
 		if turns := r.Turns - r.TurnBase; limits.MaxTurns > 0 && turns >= limits.MaxTurns {

@@ -107,15 +107,21 @@ func runSettings(runID string, box sandbox.Rules) settingsFunc {
 // when they need nothing. The first prompt of the run says it, and the run
 // hook says it again after a compact, which can drop that prompt.
 func RunSandboxNote(s *store.Store, r store.Run) (string, error) {
-	plot, err := s.GetPlot(r.PlotID)
-	if err != nil {
-		return "", err
-	}
-	box, err := runRules(s, plot, r.Folder)
+	box, err := RunRules(s, r)
 	if err != nil {
 		return "", err
 	}
 	return strings.TrimSpace(box.Prompt()), nil
+}
+
+// RunRules returns the sandbox rules of a run, which its session works in.
+// The gate runs the checks of the run with the same rules.
+func RunRules(s *store.Store, r store.Run) (sandbox.Rules, error) {
+	plot, err := s.GetPlot(r.PlotID)
+	if err != nil {
+		return sandbox.Rules{}, err
+	}
+	return runRules(s, plot, r.Folder)
 }
 
 // runRules returns the sandbox rules of a run that works in folder.
