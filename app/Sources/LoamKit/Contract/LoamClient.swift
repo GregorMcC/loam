@@ -283,6 +283,7 @@ public struct LoamClient: Sendable {
         if let ticket = draft.ticket { args += ["--ticket", ticket] }
         args += Self.modelArgs(model: draft.model, effort: draft.effort)
         if draft.approveSetup { args.append("--approve-setup") }
+        if let fixes = draft.fixes { args += ["--fixes", fixes] }
         return try await read(args, positionals: [plot])
     }
 
@@ -304,7 +305,14 @@ public struct LoamClient: Sendable {
         if let link = draft.link { args += ["--link", link] }
         if let ticket = draft.ticket { args += ["--ticket", ticket] }
         args += Self.modelArgs(model: draft.model, effort: draft.effort)
+        if let fixes = draft.fixes { args += ["--fixes", fixes] }
         return try await read(args, positionals: [plot])
+    }
+
+    /// `loam run metrics`: the run metrics of the last 30 days and of the 30 days before, for the plot, or for every
+    /// plot when it is nil (TAS-176).
+    public func runMetrics(plot: String?) async throws -> RunMetrics {
+        try await read(["run", "metrics"] + (plot.map { ["--plot", $0] } ?? []))
     }
 
     /// `loam run redraft <run>`: Claude drafts the run again, with your change to the last draft.

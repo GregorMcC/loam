@@ -692,6 +692,13 @@ private struct SidebarTop: View {
                 } trailing: {
                     PlainCount(count: model.intakeCount)
                 }
+                // Metrics (TAS-176): where the time of the runs goes. It has no count.
+                AttentionRow(title: "Metrics", count: 0, id: "sidebar-metrics", alwaysOn: true,
+                             selected: sidebar.pageRow == .metrics, action: { Task { await model.showMetrics() } }) {
+                    Image(systemName: "chart.bar").font(.system(size: 12, weight: .medium)).foregroundStyle(LoamColor.inkMuted)
+                } trailing: {
+                    EmptyView()
+                }
                 // Ship state, not an alert: the symbol is `ink-muted` and the count is plain (ADR 0007).
                 if sidebar.showsReadyToMerge {
                     AttentionRow(title: WorktreeStage.readyToMerge.words, count: sidebar.readyToMergeCount,

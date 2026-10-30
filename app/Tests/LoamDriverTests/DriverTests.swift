@@ -375,6 +375,12 @@ struct DriverTests {
         try await expectPass("shape-shot", environment: ["LOAM_DRIVER_LOAM": Self.loamBinary])
     }
 
+    /// TAS-176: the Metrics page shows where the time of the landed runs goes, a slow run opens its page, and Fix this
+    /// drafts a run that fixes it.
+    @Test func showsTheMetricsAndFixesALandedRun() async throws {
+        try await expectPass("metrics-shot", environment: ["LOAM_DRIVER_LOAM": Self.loamBinary])
+    }
+
     /// Ticket 208: a skipped chore shows on the Recurring page, a new Shape run is typed and added, Run now drafts
     /// a run, and the switch installs the launchd agent.
     @Test func addsARecurringRunAndRunsItNow() async throws {

@@ -22,6 +22,8 @@ public struct RunDraft: Equatable, Sendable {
     public var repo: String?
     /// True to have Claude split the issue across the repos of the plot (`run shape --split`). Shape only.
     public var split = false
+    /// The landed run that the new run fixes, for `--fixes`, or nil (TAS-176).
+    public var fixes: String?
 
     /// The value of the Repo picker: the repo, or `RunChoices.split`.
     public var repoChoice: String {
@@ -34,6 +36,18 @@ public struct RunDraft: Equatable, Sendable {
 
     /// The tries of a new run.
     public static let defaultTries = 3
+
+    /// A draft of a run that fixes a landed run: the issue of that run, and `--fixes` with its ID. With no repo, the
+    /// core puts the fix in the repo of that run.
+    public init(fixing run: Run) {
+        title = run.title.hasPrefix("Fix: ") ? run.title : "Fix: \(run.title)"
+        switch run.source?.kind {
+        case "map": ticket = run.source?.url
+        case "linear", "github": link = run.source?.url
+        default: break
+        }
+        fixes = run.id
+    }
 
     /// A draft that starts from the item: an issue gives `--link`, a map ticket gives `--ticket`.
     public init(item: IntakeItem) {

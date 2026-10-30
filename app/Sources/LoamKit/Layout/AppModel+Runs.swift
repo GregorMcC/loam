@@ -12,6 +12,9 @@ public enum AppPage: Equatable, Sendable {
     case recurring(String)
     /// The desk: the runs that wait for you, one at a time (ticket 207). `AppModel.desk` says which.
     case desk
+    /// The run metrics: where the time of the runs goes, from approve to landed (TAS-176). `AppModel.metricsPlot`
+    /// says which plot, or every plot.
+    case metrics
 }
 
 extension AppModel {
@@ -20,11 +23,14 @@ extension AppModel {
     public func reloadRuns() async {
         guard let all = try? await client.runs() else { return }
         let place = deskQueue.firstIndex { $0.id == desk.runID }
+        let changed = all != runs
         runs = all
         if await openNewDraft() { return }
         if case .run(let id) = page { await readRunStatus(id) }
         if page == .today { await readAwayEvents() }
         if page == .desk { await followDeskQueue(from: place) }
+        // A full read of the history, so only when a run changed, or when the first read failed.
+        if page == .metrics, changed || metricsError != nil { await reloadMetrics() }
     }
 
     /// `loam run tick`: ships the runs whose checks passed. When the tick moved a run, the runs are
@@ -74,6 +80,7 @@ extension AppModel {
             return
         }
         if runStatus?.run.id != id { runStatus = nil }
+        fixError = nil
         page = .run(id)
         await readRunStatus(id)
     }

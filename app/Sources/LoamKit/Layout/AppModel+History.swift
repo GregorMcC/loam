@@ -30,7 +30,7 @@ extension AppModel {
     /// True for a place that you cannot go back to: a run that is not in the list, or a plot that is archived or deleted.
     func isGone(_ place: PageHistory.Place) -> Bool {
         switch place {
-        case .page(.today, _), .page(.desk, _), .space(.home):
+        case .page(.today, _), .page(.desk, _), .page(.metrics, _), .space(.home):
             false
         case .page(.run(let id), _):
             !runs.contains { $0.id == id }
@@ -73,6 +73,7 @@ extension AppModel {
         case .page(.run(let id), _): await openRun(id)
         case .page(.intake(let plot), _): await showIntake(plot: plot)
         case .page(.recurring(let plot), _): await showRecurring(plot: plot)
+        case .page(.metrics, _): await showMetrics(plot: metricsPlot)
         case .space(let space): show(space)
         }
     }

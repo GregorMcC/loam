@@ -208,6 +208,16 @@ public final class AppModel {
     var hasRecurring = false
     /// The rules of the plot that the Recurring page shows (ticket 209).
     public internal(set) var rules: [Rule] = []
+    /// The run metrics that the Metrics page shows, as the core last read them (TAS-176). Nil before the first read.
+    public internal(set) var metrics: RunMetrics?
+    /// The plot that the Metrics page shows, or nil for every plot.
+    public internal(set) var metricsPlot: String?
+    /// Why the first read of the metrics failed, for the page to say. Nil after a read that worked.
+    public internal(set) var metricsError: String?
+    /// Counts the reads of the metrics, so a read that ends after a newer one changes nothing.
+    var metricsReads = 0
+    /// Why the last Fix this did not draft a run, with the landed run, for its run page. Nil after a fix that worked.
+    public internal(set) var fixError: FixError?
     /// Set when the launch check fails. The window shows it and loads nothing else.
     public private(set) var launchBlock: String?
     /// The setup steps that are not done. A non-empty list shows the setup banner.
