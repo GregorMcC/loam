@@ -262,11 +262,15 @@ type includes struct {
 func gitIncludes(home string, base []string, follow func(string) bool) includes {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	// On a volume that does not ignore case, two names that differ in case are
-	// two files, so the key keeps the case. A file with two names is then read
-	// twice, and the depth ends a cycle through such names.
-	seen := map[string]bool{}
-	key := sandbox.Real
+	// Git resolves a relative include from the folder of the name that it
+	// opened, so a file that two links in two folders name can include two
+	// files. The key holds that folder and the real path. On a volume that
+	// does not ignore case, two names that differ in case are two files, so
+	// the key keeps the case. A file with two names is then read twice, and
+	// the depth ends a cycle through such names.
+	type fileKey struct{ real, dir string }
+	seen := map[fileKey]bool{}
+	key := func(f string) fileKey { return fileKey{sandbox.Real(f), filepath.Dir(filepath.Clean(f))} }
 	for _, f := range base {
 		seen[key(f)] = true
 	}

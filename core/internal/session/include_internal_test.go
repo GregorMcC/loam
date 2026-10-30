@@ -72,6 +72,37 @@ func TestGitIncludesEndsOnACycleThroughTwoNames(t *testing.T) {
 	}
 }
 
+// Git resolves a relative include from the folder of the name that it opened.
+// Two links in two folders name one file, which includes child.gitconfig, so
+// gitIncludes gives the child of each folder.
+func TestGitIncludesFollowsOneFileThroughLinksInTwoFolders(t *testing.T) {
+	dir := t.TempDir()
+	shared := filepath.Join(dir, "shared.gitconfig")
+	if err := os.WriteFile(shared, []byte("[include]\n\tpath = child.gitconfig\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var want []string
+	for _, d := range []string{"one", "two"} {
+		if err := os.Mkdir(filepath.Join(dir, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(shared, filepath.Join(dir, d, "x.gitconfig")); err != nil {
+			t.Fatal(err)
+		}
+		want = append(want, filepath.Join(dir, d, "child.gitconfig"))
+	}
+	a := filepath.Join(dir, "a.gitconfig")
+	if err := os.WriteFile(a, []byte("[include]\n\tpath = one/x.gitconfig\n\tpath = two/x.gitconfig\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := gitIncludes("/home", []string{a}, func(string) bool { return true })
+	for _, w := range want {
+		if !slices.Contains(got.files, w) {
+			t.Errorf("gitIncludes = %+v, want %s", got, w)
+		}
+	}
+}
+
 // gitIncludes takes the file of an entry in a file that it does not follow,
 // such as one that the run can write, but not the files that that file
 // includes. It names such a file in skipped.
