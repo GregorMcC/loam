@@ -249,15 +249,16 @@ func (r Rules) Refuses(path string) bool {
 }
 
 // AllowRead adds read paths to the rules with the check of For: it leaves
-// out a path that would open home. It returns the paths that it left out.
+// out a path that the rules refuse. It returns the paths that it left out. It
+// adds a path once, whatever its case, as macOS folders ignore case.
 func (r *Rules) AllowRead(paths ...string) (left []string) {
 	for _, p := range paths {
 		p = Real(p)
 		switch {
 		case p == "":
-		case opens(r.Home, p):
+		case r.Refuses(p):
 			left = append(left, p)
-		case !slices.Contains(r.Read, p):
+		case !slices.ContainsFunc(r.Read, func(q string) bool { return strings.EqualFold(q, p) }):
 			r.Read = append(r.Read, p)
 		}
 	}

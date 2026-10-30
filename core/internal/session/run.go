@@ -286,7 +286,10 @@ func gitIncludes(home string, base []string, follow func(string) bool) includes 
 				if !seen[key(p)] {
 					seen[key(p)] = true
 					inc.files = append(inc.files, p)
-					found = append(found, p)
+					// Git skips a missing file, so it has no includes to follow.
+					if _, err := os.Stat(p); err == nil {
+						found = append(found, p)
+					}
 				}
 			}
 		}
@@ -296,12 +299,11 @@ func gitIncludes(home string, base []string, follow func(string) bool) includes 
 }
 
 // includeEntries returns the files that the include entries of the config
-// file f name. Git reads
-// a relative path from the folder of f, and ~/ from home. It leaves out a
-// path that git would not expand in the same way, such as ~user/ or
-// %(prefix)/, and returns it in unread. It also leaves out a folder, which
-// git cannot read as a config file. A file with no include gives none. err
-// is not nil when git cannot read f.
+// file f name. Git reads a relative path from the folder of f, and ~/ from
+// home. includeEntries leaves out a path that git would not expand in the
+// same way, such as ~user/ or %(prefix)/, and returns it in unread. It also
+// leaves out a folder, which git cannot read as a config file. A file with
+// no include gives none. err is not nil when git cannot read f.
 func includeEntries(ctx context.Context, home, f string) (paths, unread []string, err error) {
 	out, err := exec.CommandContext(ctx, "git", "config", "--file", f, "--no-includes", "-z", "--get-regexp", `^include(if\..*)?\.path$`).Output()
 	// git config exits 1 when it finds no entry.
