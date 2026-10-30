@@ -267,11 +267,19 @@ func walk(r store.Run, events []store.RunEvent) runPath {
 	return p
 }
 
+// slowRun is a landed run of the slowest list, with its lead time before it
+// is rounded to seconds.
+type slowRun struct {
+	lead time.Duration
+	run  SlowRun
+}
+
 // measure is the metrics of one window.
 func measure(paths []runPath, from, to time.Time) MetricsPeriod {
 	in := func(t time.Time) bool { return !t.IsZero() && !t.Before(from) && t.Before(to) }
 	m := MetricsPeriod{From: from, To: to, Slowest: []SlowRun{}}
 	var lead []time.Duration
+	var slow []slowRun
 	var stations [stationCount][]time.Duration
 	var gate, ci []time.Duration
 	for _, p := range paths {
@@ -296,8 +304,8 @@ func measure(paths []runPath, from, to time.Time) MetricsPeriod {
 		}
 		m.Landed++
 		lead = append(lead, p.landed.Sub(p.start))
-		m.Slowest = append(m.Slowest, SlowRun{RunID: p.run.ID, PlotID: p.run.PlotID, Title: p.run.Title,
-			LeadSeconds: seconds(p.landed.Sub(p.start))})
+		slow = append(slow, slowRun{p.landed.Sub(p.start), SlowRun{RunID: p.run.ID, PlotID: p.run.PlotID, Title: p.run.Title,
+			LeadSeconds: seconds(p.landed.Sub(p.start))}})
 		for i, d := range p.stations {
 			if i != stationApprove || p.shaped {
 				stations[i] = append(stations[i], d)
@@ -319,10 +327,14 @@ func measure(paths []runPath, from, to time.Time) MetricsPeriod {
 		m.Rework.Redrafts += max(0, p.shapes-1)
 		m.Rework.Turns += p.run.Turns
 	}
-	slices.SortFunc(m.Slowest, func(a, b SlowRun) int {
-		return cmp.Or(cmp.Compare(b.LeadSeconds, a.LeadSeconds), cmp.Compare(a.RunID, b.RunID))
+	// By the lead time before it is rounded, so a run that is slower by less
+	// than a second still goes first.
+	slices.SortFunc(slow, func(a, b slowRun) int {
+		return cmp.Or(cmp.Compare(b.lead, a.lead), cmp.Compare(a.run.RunID, b.run.RunID))
 	})
-	m.Slowest = m.Slowest[:min(len(m.Slowest), SlowestLimit)]
+	for _, r := range slow[:min(len(slow), SlowestLimit)] {
+		m.Slowest = append(m.Slowest, r.run)
+	}
 	m.LeadTime = spreadOf(lead)
 	m.Stations = Stations{
 		Approve: spreadOf(stations[stationApprove]), Queue: spreadOf(stations[stationQueue]),

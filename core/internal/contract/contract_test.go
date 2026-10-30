@@ -62,6 +62,10 @@ var timeRE = regexp.MustCompile(`\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?(Z|[+-]\d
 
 const fixedTime = "2026-01-01T00:00:00Z"
 
+// secondsRE finds a time in seconds, such as the lead time of `run metrics`.
+// The run takes wall time, so each run of the test gives other numbers.
+var secondsRE = regexp.MustCompile(`("[a-z0-9_]*seconds"):\s*\d+`)
+
 // headStandIn is the PR head in testdata/github.json that the scenario
 // replaces with the commit of the worktrees. fixedHead replaces that commit
 // in the fixtures.
@@ -254,7 +258,7 @@ func (h *harness) normalize(s string) string {
 	s = strings.NewReplacer(append(pairs,
 		h.home, "/tmp/loam-contract/loamhome",
 		h.root, "/tmp/loam-contract")...).Replace(s)
-	return timeRE.ReplaceAllString(s, fixedTime)
+	return secondsRE.ReplaceAllString(timeRE.ReplaceAllString(s, fixedTime), "${1}: 60")
 }
 
 // run runs loam with --json, checks the exit code, checks that stderr is

@@ -49,9 +49,8 @@ type StartOptions struct {
 	Goal     string
 	DoneWhen []store.Check
 	// Repo is the repo of a new worktree: an ID or a path. Empty means the
-	// repo of the run that Fixes names when no Worktree is named, else the
-	// repo of the plot that a GitHub issue link belongs to, else the main
-	// repo.
+	// repo of the run that Fixes names, else the repo of the plot that a
+	// GitHub issue link belongs to, else the main repo.
 	Repo string
 	// Worktree is the name of the worktree. Loam uses the worktree when it
 	// exists, and makes it when it does not. Empty means a new worktree with
@@ -81,6 +80,10 @@ type StartOptions struct {
 	// Fixes is the ID of the landed run of the plot that this run fixes, or
 	// empty (see [checkFixes]).
 	Fixes string
+	// fixedRepo is the repo of the run that Fixes names, from [checkFixes].
+	// A new worktree with no Repo goes in it. The search for a named
+	// worktree does not use it, so it finds a worktree of any repo.
+	fixedRepo string
 }
 
 // StartResult is a started run.
@@ -121,9 +124,7 @@ func Start(ctx context.Context, s *store.Store, o StartOptions) (*StartResult, e
 	if err != nil {
 		return nil, err
 	}
-	if o.Repo == "" && o.Worktree == "" {
-		o.Repo = fixed // a named worktree keeps its own repo
-	}
+	o.fixedRepo = fixed
 	usageForHold(ctx, s) // before Loam makes anything, so a probe that is cut short leaves nothing
 	res := &StartResult{}
 	wt, err := prepare(s, plot, o, title, ticket, res)
@@ -373,7 +374,7 @@ func findOrMakeWorktree(s *store.Store, plot store.Plot, o StartOptions, title s
 			return store.Worktree{}, nil, err
 		}
 	}
-	repo, err := runRepo(plot, o.Repo, o.Link)
+	repo, err := runRepo(plot, cmp.Or(o.Repo, o.fixedRepo), o.Link)
 	if err != nil {
 		return store.Worktree{}, nil, err
 	}

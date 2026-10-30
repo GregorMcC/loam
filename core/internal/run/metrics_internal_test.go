@@ -134,6 +134,24 @@ func TestMetricsOrderTheSlowestRunsOfOneLeadTimeByID(t *testing.T) {
 	}
 }
 
+// A run that is slower by less than a second goes first, though both show
+// the same whole seconds.
+func TestMetricsOrderTheSlowestRunsBeforeTheyAreRounded(t *testing.T) {
+	var runs []store.Run
+	var events []store.RunEvent
+	for i, lead := range []time.Duration{10*time.Second + 100*time.Millisecond, 10*time.Second + 400*time.Millisecond} {
+		id := string(rune('a' + i))
+		runs = append(runs, store.Run{ID: id, State: store.RunLanded})
+		events = append(events,
+			store.RunEvent{RunID: id, At: metricsStart, Kind: "state", Detail: string(store.RunStarting)},
+			store.RunEvent{RunID: id, At: metricsStart.Add(lead), Kind: "state", Detail: string(store.RunLanded)})
+	}
+	c := ComputeMetrics(runs, events, metricsStart, metricsStart.Add(time.Hour)).Current
+	if c.Slowest[0].RunID != "b" || c.Slowest[0].LeadSeconds != 10 || c.Slowest[1].LeadSeconds != 10 {
+		t.Fatalf("slowest %+v", c.Slowest)
+	}
+}
+
 func TestMetricsCountFirstPassFixesReworkAndRunsThatDidNotLand(t *testing.T) {
 	runs, events := metricsFixture()
 	c := ComputeMetrics(runs, events, metricsStart, metricsStart.Add(24*time.Hour)).Current
