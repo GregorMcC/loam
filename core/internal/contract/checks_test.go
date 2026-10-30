@@ -139,6 +139,7 @@ func TestContractFixtures(t *testing.T) {
 			t.Fatal(err)
 		}
 		for name, b := range h.outputs {
+			b = fixtureOf(t, b)
 			if err := os.WriteFile(filepath.Join(fixtures, name+".json"), b, 0o644); err != nil {
 				t.Fatal(err)
 			}
@@ -160,6 +161,22 @@ func TestContractFixtures(t *testing.T) {
 			t.Errorf("%s: the output shape differs from the fixture. Run with -update if the change is on purpose.\noutput:  %s\nfixture: %s", e.Name, a, b)
 		}
 	}
+}
+
+// fixtureOf is an output as its fixture file holds it, with fixed seconds
+// (see fixSeconds).
+func fixtureOf(t *testing.T, b []byte) []byte {
+	t.Helper()
+	var v any
+	if err := json.Unmarshal(b, &v); err != nil {
+		t.Fatal(err)
+	}
+	fixSeconds(v)
+	out, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return append(out, '\n')
 }
 
 func readEntries(t *testing.T) []Entry {

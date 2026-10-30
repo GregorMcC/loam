@@ -258,8 +258,9 @@ func (h *harness) normalize(s string) string {
 }
 
 // fixSeconds sets each time in seconds in v, such as the lead time of `run
-// metrics`, to 60. The runs of the test take wall time, so each run gives
-// other numbers. A spread with no count keeps its 0.
+// metrics`, to 60, for the fixture file. The runs of the test take wall
+// time, so each run gives other numbers. A spread with no count keeps its 0.
+// The schema checks the output before this.
 func fixSeconds(v any) {
 	switch v := v.(type) {
 	case map[string]any:
@@ -309,7 +310,6 @@ func (h *harness) record(name, schema string, wantExit int, args []string) []byt
 	if err := json.Unmarshal([]byte(norm), &v); err != nil {
 		h.t.Fatalf("%s: stdout is not one JSON document: %v\n%s", name, err, out)
 	}
-	fixSeconds(v)
 	pretty, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		h.t.Fatal(err)
