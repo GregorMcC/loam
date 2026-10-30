@@ -47,6 +47,17 @@ import Testing
         #expect(model.errorList == .read)
     }
 
+    @Test func aFailedReadStopsTheChange() async throws {
+        let fake = try FakeLoam([("run_sandbox_get", 0), ("error_run_sandbox_opens_home", 2)])
+        let model = SandboxSettingsModel(client: fake.client())
+        await model.load()
+        #expect(await !model.add(.read, "~/.nvm"))
+        await model.remove(.read, "~/.nvm")
+        // Only the two reads ran. Neither change wrote a list from the old value.
+        #expect(fake.args().allSatisfy { !$0.contains("--read") })
+        #expect(model.error != nil)
+    }
+
     @Test func aRemovedItemSendsOnlyItsOwnList() async throws {
         let fake = try FakeLoam([("run_sandbox_machine", 0), ("run_sandbox_machine", 0), ("run_sandbox_clear", 0)])
         let model = SandboxSettingsModel(client: fake.client(), plot: "plotaaaaab")

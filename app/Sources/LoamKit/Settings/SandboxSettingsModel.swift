@@ -78,14 +78,18 @@ public final class SandboxSettingsModel {
         }
     }
 
-    private func read() async {
+    /// Reads the scope. It returns false when the read fails, and a change must then stop.
+    @discardableResult
+    private func read() async -> Bool {
         do {
             settings = try await client.sandboxSettings(plot: plot)
             error = nil
             errorList = nil
+            return true
         } catch {
             self.error = AppModel.message(for: error)
             errorList = nil
+            return false
         }
     }
 
@@ -101,8 +105,7 @@ public final class SandboxSettingsModel {
         guard !item.isEmpty, settings != nil else { return false }
         return await serial { [self] in
             // Read the list again, so an item that the CLI added since the last read stays.
-            await read()
-            guard let current = settings else { return false }
+            guard await read(), let current = settings else { return false }
             guard !list.items(of: current).contains(item) else { return true }
             return await save(list, list.items(of: current) + [item])
         }
@@ -111,8 +114,7 @@ public final class SandboxSettingsModel {
     public func remove(_ list: SandboxList, _ item: String) async {
         guard settings != nil else { return }
         await serial { [self] in
-            await read()
-            guard let current = settings else { return }
+            guard await read(), let current = settings else { return }
             await save(list, list.items(of: current).filter { $0 != item })
         }
     }
