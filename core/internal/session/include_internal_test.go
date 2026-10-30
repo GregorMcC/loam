@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -21,10 +22,21 @@ func TestIncludeEntries(t *testing.T) {
 	if err := os.WriteFile(f, []byte(text), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got, ok := includeEntries(context.Background(), "/home", f)
+	got, unread, err := includeEntries(context.Background(), "/home", f)
 	want := []string{"/home/a.gitconfig", filepath.Join(dir, "rel", "b.gitconfig"), "/abs/e.gitconfig"}
-	if !ok || !slices.Equal(got, want) {
-		t.Errorf("includeEntries = %q, %v, want %q", got, ok, want)
+	if err != nil || !slices.Equal(got, want) || !slices.Equal(unread, []string{"~user/c", "%(prefix)/d"}) {
+		t.Errorf("includeEntries = %q, %q, %v, want %q and the two paths that Loam does not expand", got, unread, err, want)
+	}
+	// Git skips a missing include file, so it gives none.
+	if got, unread, err := includeEntries(context.Background(), "/home", filepath.Join(dir, "missing")); got != nil || unread != nil || err != nil {
+		t.Errorf("includeEntries of a missing file = %q, %q, %v, want none", got, unread, err)
+	}
+	bad := filepath.Join(dir, "bad")
+	if err := os.WriteFile(bad, []byte("[bad\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := includeEntries(context.Background(), "/home", bad); err == nil {
+		t.Error("includeEntries of a file that git cannot read gives no error")
 	}
 }
 
@@ -48,6 +60,9 @@ func TestGitIncludesEndsOnACycle(t *testing.T) {
 // includes. It names such a file in skipped.
 func TestGitIncludesSkipsAFileThatItDoesNotFollow(t *testing.T) {
 	dir := t.TempDir()
+	if _, err := os.Stat(strings.ToUpper(dir)); err != nil {
+		t.Skip("the folder is case-sensitive, and the test names one file in two cases")
+	}
 	a, b, c := filepath.Join(dir, "a.gitconfig"), filepath.Join(dir, "B.gitconfig"), filepath.Join(dir, "c.gitconfig")
 	for f, text := range map[string]string{
 		a: "[include]\n\tpath = B.gitconfig\n\tpath = b.gitconfig\n",

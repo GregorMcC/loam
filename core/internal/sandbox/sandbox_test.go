@@ -298,6 +298,15 @@ func TestRulesWritable(t *testing.T) {
 			t.Errorf("Writable(%s) = %v, want %v", path, got, want)
 		}
 	}
+	// The run can point a link in a write path at another file.
+	dir, other := realTemp(t), realTemp(t)
+	link := filepath.Join(dir, "x.gitconfig")
+	if err := os.Symlink(filepath.Join(other, "x.gitconfig"), link); err != nil {
+		t.Fatal(err)
+	}
+	if !(Rules{Write: []string{dir}}).Writable(link) {
+		t.Errorf("Writable(%s) = false for a link in a write path", link)
+	}
 }
 
 // AllowRead adds a path once, and leaves out and returns a path that opens

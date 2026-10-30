@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -180,6 +181,9 @@ func runRules(s *store.Store, plot store.Plot, folder string) (sandbox.Rules, er
 	for _, f := range inc.skipped {
 		r.Notes = append(r.Notes, gitStops("Loam did not follow the includes of the git config "+f+", because the run can write it or the sandbox refuses it. So Bash cannot read the files that it includes."))
 	}
+	for _, what := range inc.unread {
+		r.Notes = append(r.Notes, gitStops("Loam could not follow the git config include "+what+"."))
+	}
 	if inc.late {
 		r.Notes = append(r.Notes, gitStops("Loam did not read every git config include in time."))
 	}
@@ -233,11 +237,12 @@ const includeDepth = 10
 
 // includes are the files that the sandbox reads for the git config includes.
 // skipped are files with includes that Loam did not follow, because the run
-// can write them or the sandbox refuses them. late is true when git did not
-// answer in time.
+// can write them or the sandbox refuses them. unread are config files that
+// git could not read and include paths that Loam does not expand. late is
+// true when git did not answer in time.
 type includes struct {
-	files, skipped []string
-	late           bool
+	files, skipped, unread []string
+	late                   bool
 }
 
 // gitIncludes follows the include.path and includeIf.*.path entries of the
@@ -263,10 +268,15 @@ func gitIncludes(home string, base []string, follow func(string) bool) includes 
 	for depth := 0; depth < includeDepth && len(next) > 0; depth++ {
 		var found []string
 		for _, f := range next {
-			entries, ok := includeEntries(ctx, home, f)
-			if !ok {
+			entries, unread, err := includeEntries(ctx, home, f)
+			if ctx.Err() != nil {
 				inc.late = true
 				return inc
+			}
+			inc.unread = append(inc.unread, unread...)
+			if err != nil {
+				inc.unread = append(inc.unread, f)
+				continue
 			}
 			if len(entries) > 0 && !follow(f) {
 				inc.skipped = append(inc.skipped, f)
@@ -289,16 +299,17 @@ func gitIncludes(home string, base []string, follow func(string) bool) includes 
 // file f name. Git reads
 // a relative path from the folder of f, and ~/ from home. It leaves out a
 // path that git would not expand in the same way, such as ~user/ or
-// %(prefix)/. It also leaves out a folder, which git cannot read as a config
-// file. A file with no include, or one that git cannot read, gives none. ok
-// is false when git did not answer in time.
-func includeEntries(ctx context.Context, home, f string) (paths []string, ok bool) {
+// %(prefix)/, and returns it in unread. It also leaves out a folder, which
+// git cannot read as a config file. A file with no include gives none. err
+// is not nil when git cannot read f.
+func includeEntries(ctx context.Context, home, f string) (paths, unread []string, err error) {
 	out, err := exec.CommandContext(ctx, "git", "config", "--file", f, "--no-includes", "-z", "--get-regexp", `^include(if\..*)?\.path$`).Output()
-	if ctx.Err() != nil {
-		return nil, false
+	// git config exits 1 when it finds no entry.
+	if exit := (*exec.ExitError)(nil); errors.As(err, &exit) && exit.ExitCode() == 1 {
+		return nil, nil, nil
 	}
 	if err != nil {
-		return nil, true
+		return nil, nil, err
 	}
 	// Each entry is a key and its value, with a newline between them, ended
 	// by NUL.
@@ -310,6 +321,7 @@ func includeEntries(ctx context.Context, home, f string) (paths []string, ok boo
 		case strings.HasPrefix(p, "~/"):
 			p = filepath.Join(home, p[2:])
 		case strings.HasPrefix(p, "~"), strings.HasPrefix(p, "%("):
+			unread = append(unread, p)
 			continue
 		case !filepath.IsAbs(p):
 			p = filepath.Join(filepath.Dir(f), p)
@@ -319,7 +331,7 @@ func includeEntries(ctx context.Context, home, f string) (paths []string, ok boo
 		}
 		paths = append(paths, filepath.Clean(p))
 	}
-	return paths, true
+	return paths, unread, nil
 }
 
 // gitDirs returns the git folder of the worktree in folder (admin) and the

@@ -222,19 +222,24 @@ func opens(home, path string) bool {
 }
 
 // Writable reports whether the run can write path: it is in a write path of
-// the rules and in no path that they deny. The compare ignores case, as
-// macOS folders do.
+// the rules and in no path that they deny. It checks the path as given and
+// with its symlinks resolved, because the run can point a link in a write
+// path at another file. The compare ignores case, as macOS folders do.
 func (r Rules) Writable(path string) bool {
-	path = strings.ToLower(Real(path))
-	in := func(dirs []string) bool {
+	in := func(p string, dirs []string) bool {
 		for _, d := range dirs {
-			if within(path, strings.ToLower(d)) {
+			if within(p, strings.ToLower(d)) {
 				return true
 			}
 		}
 		return false
 	}
-	return in(r.Write) && !in(r.DenyWrite)
+	for _, p := range []string{filepath.Clean(path), Real(path)} {
+		if p = strings.ToLower(p); in(p, r.Write) && !in(p, r.DenyWrite) {
+			return true
+		}
+	}
+	return false
 }
 
 // Refuses reports whether the rules never let the run read path, because it
