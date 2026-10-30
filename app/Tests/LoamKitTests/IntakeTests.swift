@@ -214,6 +214,13 @@ import Testing
         #expect(pick.change(from: saved).servers == [])
     }
 
+    /// A core that is older than the code review prints neither field: the review is on, with the default effort.
+    @Test func anOlderCoreMeansReviewOnWithTheDefaultEffort() throws {
+        let json = #"{"plot_id":"plotaaaaae","model":"","effort":"","mcp_servers":[]}"#
+        let decoded = try JSONDecoder().decode(RunDefaults.self, from: Data(json.utf8))
+        #expect(decoded.review == true && decoded.reviewEffort == "")
+    }
+
     /// A save that fails keeps its fields, and the next save of the plot sends them again under its own.
     @Test func theFieldsOfAFailedSaveGoWithTheNextSave() async throws {
         let (model, fake) = try model([("error_generic", 1), ("run_defaults_review", 0)])
@@ -223,6 +230,17 @@ import Testing
         let saves = fake.args().filter { $0.hasPrefix("run defaults") }
         #expect(saves.last == "run defaults --model opus --review off --json -- plotaaaaae")
         #expect(model.runDefaultsError == nil)
+    }
+
+    /// A read of the defaults drops the change of a failed save, so a change that the core refuses does not fail
+    /// each later save.
+    @Test func aReadDropsTheFieldsOfAFailedSave() async throws {
+        let (model, fake) = try model([("error_generic", 1), ("run_defaults_clear", 0), ("run_defaults_set_mcp", 0)])
+        await model.setRunDefaults(plot: "plotaaaaae", review: false)
+        await model.readRunDefaults(plot: "plotaaaaae")
+        await model.setRunDefaults(plot: "plotaaaaae", mcpServers: ["a"])
+        let saves = fake.args().filter { $0.hasPrefix("run defaults --") }
+        #expect(saves.last == "run defaults --mcp a --json -- plotaaaaae")
     }
 
     /// A save fails while another waits: the waiting one sends the fields of both.

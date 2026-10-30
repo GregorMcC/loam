@@ -94,9 +94,12 @@ extension AppModel {
         try? await client.linearUpdates().inProgress
     }
 
-    /// Reads the model, the effort, and the MCP servers that a run of the plot gets when it names none. A failed read leaves none.
+    /// Reads the run defaults that a run of the plot gets when it names none. A failed read leaves none. A read drops
+    /// the change of a save of the plot that failed: the pickers then show what the core has, and a change that the
+    /// core refuses, such as a flag that an older core does not know, would fail each later save.
     public func readRunDefaults(plot: String) async {
         runDefaults = try? await client.runDefaults(plot: plot)
+        if runDefaults != nil { unsavedRunDefaults[plot] = nil }
     }
 
     /// Reads the MCP servers that a run default can select. A failed read leaves none, so the picker does not offer
