@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -51,6 +52,23 @@ func TestGitIncludesEndsOnACycle(t *testing.T) {
 	got := gitIncludes("/home", []string{a}, func(string) bool { return true })
 	if !slices.Equal(got.files, []string{b}) || got.late || got.skipped != nil {
 		t.Errorf("gitIncludes = %+v, want only %s", got, b)
+	}
+}
+
+// On a volume that ignores case, a cycle through two names of one file ends,
+// and gitIncludes gives the other name once.
+func TestGitIncludesEndsOnACycleThroughTwoNames(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := os.Stat(strings.ToUpper(dir)); err != nil {
+		t.Skip("the folder is case-sensitive, so the two names are two files")
+	}
+	a := filepath.Join(dir, "a.gitconfig")
+	if err := os.WriteFile(a, []byte("[include]\n\tpath = A.gitconfig\n\tpath = a.gitconfig\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := gitIncludes("/home", []string{a}, func(string) bool { return true })
+	if want := []string{filepath.Join(dir, "A.gitconfig")}; !slices.Equal(got.files, want) || got.late {
+		t.Errorf("gitIncludes = %+v, want only %s", got, want)
 	}
 }
 

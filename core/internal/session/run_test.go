@@ -235,6 +235,52 @@ func TestPrepareRunAllowsTheFilesOfEachIncludeIf(t *testing.T) {
 	}
 }
 
+// The run can write a temporary folder, so Loam does not follow the includes
+// of a git config there, and the prompt says so.
+func TestPrepareRunDoesNotFollowTheIncludesOfAConfigInATempFolder(t *testing.T) {
+	e := setup(t)
+	testutil.GitEnv(t)
+	global := os.Getenv("GIT_CONFIG_GLOBAL")
+	dir := filepath.Dir(global)
+	defer session.SetRunTemps(func() []string { return []string{dir} })()
+	extra := filepath.Join(dir, "extra.gitconfig")
+	if err := os.WriteFile(extra, []byte("[core]\n\tautocrlf = false\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.OpenFile(global, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("[include]\n\tpath = extra.gitconfig\n"); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	repo, _ := testutil.GitRepo(t)
+	p := e.plot(t, store.PlotInput{Name: "Alpha", Repos: []store.RepoInput{{Path: repo}}})
+	plan, err := session.PrepareRun(e.store, store.Run{ID: "r1", PlotID: p.ID, Folder: repo}, "go", "loam", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(argValues(plan.Args, "--settings")[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Sandbox struct {
+			Filesystem struct{ AllowRead []string }
+		}
+	}
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	if read := got.Sandbox.Filesystem.AllowRead; slices.Contains(read, realpath(t, extra)) {
+		t.Errorf("allowRead = %q has %s, which a config in a temporary folder includes", read, extra)
+	}
+	if prompt := plan.Args[len(plan.Args)-1]; !strings.Contains(prompt, "the includes of the git config "+global) {
+		t.Errorf("prompt = %q, want a note on %s", prompt, global)
+	}
+}
+
 // TAS-175: the machine settings and the plot settings of the sandbox reach
 // the settings file of a run. The settings of another plot do not.
 func TestPrepareRunAddsTheSandboxSettings(t *testing.T) {
