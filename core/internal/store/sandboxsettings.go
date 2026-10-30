@@ -67,8 +67,8 @@ func (s *Store) SetSandboxSettings(d SandboxSettings) (SandboxSettings, error) {
 		items *[]string
 		check func(string) (string, error)
 	}{
-		{"read path", &d.Read, func(p string) (string, error) { return sandbox.CheckPath(home, p) }},
-		{"write path", &d.Write, func(p string) (string, error) { return sandbox.CheckPath(home, p) }},
+		{"read path", &d.Read, func(p string) (string, error) { return sandbox.CheckPath(home, p, s.home) }},
+		{"write path", &d.Write, func(p string) (string, error) { return sandbox.CheckPath(home, p, s.home) }},
 		{"host", &d.Hosts, sandbox.CheckHost},
 	} {
 		clean := []string{}

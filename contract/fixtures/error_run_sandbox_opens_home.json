@@ -2,6 +2,6 @@
   "error": {
     "exit_code": 2,
     "kind": "invalid",
-    "message": "read path: \"~/.ssh\" is not allowed: it is the home folder, a folder above it, the root, a credential folder, or a folder that holds one: invalid input"
+    "message": "read path: \"~/.ssh\" is not allowed: it is the home folder, a folder above it, the root, a credential folder, a protected folder, or a folder that holds one: invalid input"
   }
 }

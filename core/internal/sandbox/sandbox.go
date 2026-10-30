@@ -34,6 +34,9 @@ type Input struct {
 	// plot and for this plot. For checks them again with the same rules as the
 	// settings, and leaves out a value that fails.
 	Machine, Plot Extra
+	// Protected are folders that no setting may open, besides ~/.loam and
+	// ~/.claude: the Loam home when LOAM_HOME moves it.
+	Protected []string
 	// Getenv reads the environment, for the cache paths that a user moved.
 	Getenv func(string) string
 }
@@ -175,8 +178,8 @@ func For(in Input) (Rules, error) {
 		hosts.add(p.hosts...)
 		notes.add(p.note)
 	}
-	addExtra(in.Home, in.Machine, &read, &write, &hosts)
-	addExtra(in.Home, in.Plot, &read, &write, &hosts)
+	addExtra(in.Home, in.Protected, in.Machine, &read, &write, &hosts)
+	addExtra(in.Home, in.Protected, in.Plot, &read, &write, &hosts)
 	for _, p := range in.NoWrite {
 		deny.add(Real(p))
 	}

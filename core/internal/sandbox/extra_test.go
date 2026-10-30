@@ -33,9 +33,12 @@ func TestCheckPath(t *testing.T) {
 		"~/..",      // above home
 		"~/.nvm/*", "~/.nvm/[a]", "~/.nvm/?", "~/.{nvm,ssh}",
 		"~/a\nb", "~/a\x00b", "~/a\"b",
+		"~/.loam", "~/.loam/loam.db", "~/.claude", "~/.claude/settings.json", // the settings of Loam and Claude Code
+		"/System/Volumes/Data" + home + "/.ssh", // the firmlink of the same folder
+		"/srv/loam", "/srv/loam/plots", "/srv",  // a Loam home elsewhere, passed as protected
 	}
 	for _, in := range bad {
-		if got, err := CheckPath(home, in); err == nil {
+		if got, err := CheckPath(home, in, "/srv/loam"); err == nil {
 			t.Errorf("CheckPath(%q) = %q, want an error", in, got)
 		}
 	}
@@ -50,7 +53,6 @@ func TestCheckHost(t *testing.T) {
 		"*.example.com":      "*.example.com",
 		"registry.npmjs.org": "registry.npmjs.org",
 		"a-b.example.co.uk":  "a-b.example.co.uk",
-		"localhost":          "localhost",
 		" example.com ":      "example.com",
 	}
 	for in, want := range good {
@@ -59,7 +61,7 @@ func TestCheckHost(t *testing.T) {
 		}
 	}
 	for _, in := range []string{
-		"", "*", "*.", "*.com", "**.example.com", "a.*.example.com", "*example.com", "ex*.example.com",
+		"", "*", "*.", "*.com", "localhost", "intranet", "127.0.0.1", "10.0.0.1", "*.0.1", "169.254.169.254", "::1", "[::1]", "**.example.com", "a.*.example.com", "*example.com", "ex*.example.com",
 		"https://example.com", "example.com/path", "example.com:443", "user@example.com", "example.com.",
 		".example.com", "a..b.com", "-a.com", "a-.com", "a b.com", "exämple.com", "a_b.com",
 		strings.Repeat("a", 64) + ".com", strings.Repeat("a.", 130) + "com",
@@ -119,11 +121,11 @@ func TestForLeavesOutASettingThatOpensHome(t *testing.T) {
 	dir := realTemp(t)
 	home := dir + "/home"
 	bad := Extra{
-		Read:  []string{"~", "/", "~/.ssh", "~/.config", "relative", "~/*", dir},
+		Read:  []string{"~", "/", "~/.ssh", "~/.config", "relative", "~/*", dir, "~/.loam", "~/.claude/x", "/srv/loam"},
 		Write: []string{"~/", "~/.aws/x", "~/a\nb"},
-		Hosts: []string{"*", "https://example.com", "*.com", ""},
+		Hosts: []string{"*", "https://example.com", "*.com", "", "localhost", "127.0.0.1"},
 	}
-	got := mustFor(t, Input{Home: home, Folder: dir + "/work", GitDir: dir + "/repo/.git", Getenv: noEnv, Machine: bad, Plot: bad})
+	got := mustFor(t, Input{Home: home, Folder: dir + "/work", GitDir: dir + "/repo/.git", Getenv: noEnv, Machine: bad, Plot: bad, Protected: []string{"/srv/loam"}})
 	want := mustFor(t, Input{Home: home, Folder: dir + "/work", GitDir: dir + "/repo/.git", Getenv: noEnv})
 	if !slices.Equal(got.Read, want.Read) || !slices.Equal(got.Write, want.Write) || !slices.Equal(got.Hosts, want.Hosts) {
 		t.Errorf("rules changed:\n got %+v\nwant %+v", got, want)
