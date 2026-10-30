@@ -214,12 +214,18 @@ import Testing
         #expect(pick.change(from: saved).servers == [])
     }
 
-    /// A core that is older than the code review prints neither field: the review is on, with the default effort.
-    @Test func anOlderCoreMeansReviewOnWithTheDefaultEffort() throws {
-        let json = #"{"plot_id":"plotaaaaae","model":"","effort":"","mcp_servers":[]}"#
-        let decoded = try JSONDecoder().decode(RunDefaults.self, from: Data(json.utf8))
-        #expect(decoded.review == true && decoded.reviewEffort == "")
-        #expect(RunDefaultsChoice(decoded) == RunDefaultsChoice(model: "", effort: "", servers: [], review: true, reviewEffort: ""))
+    /// A field that a failed save did not write differs from what the core has, so the next save sends it again. A
+    /// field that the user set back while a save ran differs from the last request, so the save sends it too.
+    @Test func theChangeOfAPickHoldsTheFieldsThatDifferFromTheCoreOrTheLastRequest() {
+        let core = RunDefaultsChoice(model: "", effort: "", servers: [], review: true, reviewEffort: "")
+        var failed = core
+        failed.review = false
+        var pick = failed
+        pick.model = "opus"
+        #expect(pick.change(from: failed, core) == RunDefaultsChange(model: "opus", review: false))
+        var inFlight = core
+        inFlight.model = "opus"
+        #expect(core.change(from: inFlight, core) == RunDefaultsChange(model: ""))
     }
 
     /// A pick that comes while a save runs waits, and the last pick is the last one saved.
@@ -252,7 +258,7 @@ import Testing
     @Test func aPickBeforeTheReadEndsSavesNothing() {
         let pick = RunDefaultsChoice(model: "opus", effort: "", servers: [])
         let empty = RunDefaultsChoice(model: "", effort: "", servers: [])
-        let read = RunDefaults(plotID: "plotaaaaae", model: "", effort: "", mcpServers: [])
+        let read = RunDefaults(plotID: "plotaaaaae", model: "", effort: "", mcpServers: [], review: true, reviewEffort: "")
         #expect(!RunDefaultsChoice.needsSave(pick, requested: empty, loaded: nil, plot: "plotaaaaae"))
         #expect(!RunDefaultsChoice.needsSave(pick, requested: empty, loaded: read, plot: "plotaaaaaf"))
         #expect(RunDefaultsChoice.needsSave(pick, requested: empty, loaded: read, plot: "plotaaaaae"))

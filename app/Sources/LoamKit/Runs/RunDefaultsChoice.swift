@@ -45,12 +45,17 @@ public struct RunDefaultsChoice: Equatable, Sendable {
                   review: defaults?.review ?? true, reviewEffort: defaults?.reviewEffort ?? "")
     }
 
-    /// The fields of this pick that differ from `saved`. The others are nil.
-    public func change(from saved: RunDefaultsChoice) -> RunDefaultsChange {
-        RunDefaultsChange(
-            model: model == saved.model ? nil : model, effort: effort == saved.effort ? nil : effort,
-            servers: servers == saved.servers ? nil : servers, review: review == saved.review ? nil : review,
-            reviewEffort: reviewEffort == saved.reviewEffort ? nil : reviewEffort)
+    /// The fields of this pick that differ from one of `bases` or more. The others are nil. The page passes the last
+    /// pick that it asked for and the defaults that the core last returned: a field that a save did not write yet,
+    /// or that a failed save did not write, differs from the second, and a field that the user set back while a save
+    /// ran differs from the first.
+    public func change(from bases: RunDefaultsChoice...) -> RunDefaultsChange {
+        func differs<T: Equatable>(_ field: KeyPath<RunDefaultsChoice, T>) -> T? {
+            bases.contains { $0[keyPath: field] != self[keyPath: field] } ? self[keyPath: field] : nil
+        }
+        return RunDefaultsChange(
+            model: differs(\.model), effort: differs(\.effort), servers: differs(\.servers), review: differs(\.review),
+            reviewEffort: differs(\.reviewEffort))
     }
 
     /// True when a pick must be saved: the pickers hold the defaults of `plot`, as the core read them, and the pick
