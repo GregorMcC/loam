@@ -170,7 +170,14 @@ func sandboxedIn(t *testing.T, r Rules, temps []string, command string) (string,
 func boxedHome(t *testing.T) (r Rules, run, secret, outside string) {
 	t.Helper()
 	testutil.NeedSandbox(t)
-	root := realTemp(t)
+	// The fake home is outside the temp folders of the user: a temp folder
+	// that holds home is not a temp folder of the profile, and the python3
+	// shim of the network tests writes a cache in the temp folder.
+	root, err := os.MkdirTemp("/private/var/tmp", "loam-box")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(root) })
 	home := filepath.Join(root, "home")
 	run = filepath.Join(home, "run")
 	secret = filepath.Join(home, ".ssh", "id_ed25519")
@@ -266,7 +273,11 @@ except OSError as e:
 // in the temp folder of the user.
 func network(t *testing.T, r Rules, temp, step, arg string) string {
 	t.Helper()
-	out, _ := sandboxedIn(t, r, append([]string{temp}, Temps()...), "/usr/bin/python3 -I -c "+shellQuote(netScript)+" "+step+" "+shellQuote(arg))
+	temps := Temps()
+	if kept := r.temps(temps); len(kept) != len(temps) {
+		t.Fatalf("the profile keeps the temp folders %q of %q", kept, temps)
+	}
+	out, _ := sandboxedIn(t, r, append([]string{temp}, temps...), "/usr/bin/python3 -I -c "+shellQuote(netScript)+" "+step+" "+shellQuote(arg))
 	return strings.TrimSpace(out)
 }
 
