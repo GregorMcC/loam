@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -21,9 +22,10 @@ func mustProfile(t *testing.T, r Rules, temp string) string {
 }
 
 // TAS-175: in SBPL the last rule that matches wins. So the profile denies
-// the network before it allows loopback and the unix sockets below the write
-// paths, denies home before it allows the Read paths, denies every write
-// before it allows the write paths, and denies the DenyWrite paths last.
+// the ways out through other processes, denies the network before it allows
+// loopback and the unix sockets below the write paths, denies home before it
+// allows the Read paths, denies every write before it allows the write
+// paths, and denies the DenyWrite paths last.
 func TestProfileOrder(t *testing.T) {
 	r := Rules{
 		Home:      "/h",
@@ -34,8 +36,17 @@ func TestProfileOrder(t *testing.T) {
 	}
 	const want = `(version 1)
 (allow default)
+(deny lsopen)
+(deny appleevent-send)
+(deny mach-lookup
+  (global-name "com.apple.coreservices.launchservicesd")
+  (global-name "com.apple.coreservices.appleevents")
+  (global-name "com.apple.CoreServices.coreservicesd")
+  (global-name "com.apple.SecurityServer")
+  (global-name "com.apple.securityd.xpc"))
+(deny signal)
+(allow signal (target same-sandbox))
 (deny network*)
-(allow network-bind (local ip "localhost:*"))
 (allow network-inbound (local ip "localhost:*"))
 (allow network-outbound (remote ip "localhost:*"))
 (allow network*
@@ -341,5 +352,31 @@ func TestTempsHoldTheUserCache(t *testing.T) {
 	}
 	if out, ok := sandboxedIn(t, r, temps, "touch "+shellQuote(filepath.Join(dir, "x"))); !ok {
 		t.Fatalf("a write to the user cache: %s", out)
+	}
+}
+
+// TAS-175: a check cannot signal a process outside the sandbox, such as the
+// Loam hook, or ask the security services for the keychain. It can signal
+// its own processes. The test does not try Launch Services or Apple Events:
+// a failed deny would open an app on this Mac.
+func TestProfileDeniesOtherProcesses(t *testing.T) {
+	r, _, _, _ := boxedHome(t)
+	other := exec.Command("/bin/sleep", "60")
+	if err := other.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = other.Process.Kill(); _ = other.Wait() })
+	pid := strconv.Itoa(other.Process.Pid)
+	if out, ok := sandboxed(t, r, "", "kill -0 "+pid); ok {
+		t.Errorf("a signal to a process outside the sandbox passed: %s", out)
+	}
+	if out, ok := sandboxed(t, r, "", "/bin/sleep 60 & kill $!"); !ok {
+		t.Errorf("a signal to its own process: %s", out)
+	}
+	if out, err := exec.Command("/usr/bin/security", "list-keychains").CombinedOutput(); err != nil {
+		t.Skipf("security list-keychains fails with no sandbox: %v %s", err, out)
+	}
+	if out, ok := sandboxed(t, r, "", "/usr/bin/security list-keychains"); ok {
+		t.Errorf("the keychain list passed: %s", out)
 	}
 }

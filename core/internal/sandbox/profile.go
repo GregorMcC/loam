@@ -17,23 +17,41 @@ var alwaysWrite = []string{"/private/tmp", "/dev"}
 
 // loopback lets a check run a server on this Mac and reach it, as the test
 // servers of Go's httptest do. A check can then reach any TCP service on
-// localhost. A rule on the local address alone, such as (local ip
-// "localhost:*"), would also match a connection to any host, so each rule
-// names its operation.
-const loopback = `(allow network-bind (local ip "localhost:*"))
-(allow network-inbound (local ip "localhost:*"))
+// localhost. Seatbelt checks a bind as an inbound operation, and a rule on
+// localhost also matches a bind to 0.0.0.0 or ::. So a host on the network
+// can connect to a server that a check starts. A check cannot connect out to
+// another host: a rule on the remote address does not match it.
+const loopback = `(allow network-inbound (local ip "localhost:*"))
 (allow network-outbound (remote ip "localhost:*"))
+`
+
+// others denies the ways that a check can make another process act for it,
+// outside the sandbox: Launch Services opens an app or a script, Apple
+// Events drive an app, the security services read the keychain, and a
+// signal can stop a process of the user.
+const others = `(deny lsopen)
+(deny appleevent-send)
+(deny mach-lookup
+  (global-name "com.apple.coreservices.launchservicesd")
+  (global-name "com.apple.coreservices.appleevents")
+  (global-name "com.apple.CoreServices.coreservicesd")
+  (global-name "com.apple.SecurityServer")
+  (global-name "com.apple.securityd.xpc"))
+(deny signal)
+(allow signal (target same-sandbox))
 `
 
 // Profile returns the rules as a Seatbelt profile for sandbox-exec, which
 // the gate runs each check with. temps are the temp folders of the gate, from
-// [Temps], which the checks can read and write. In a profile, the last rule that matches an operation
-// wins. So the profile denies home and then allows the Read paths and the
-// temp folders, denies every write and then allows the Write paths, the temp
-// folders, and alwaysWrite, and denies each DenyWrite path last.
+// [Temps], which the checks can read and write. In a profile, the last rule
+// that matches an operation wins. So the profile denies home and then allows
+// the Read paths and the temp folders, denies every write and then allows
+// the Write paths, the temp folders, and alwaysWrite, and denies each
+// DenyWrite path last.
 //
-// The profile denies the network, so a check uses the caches that the
-// session filled, and Hosts do not apply. It allows loopback, and the unix
+// The profile denies the ways out through other processes (see others). It
+// denies the network, so a check uses the caches that the session filled,
+// and Hosts do not apply. It allows loopback, and the unix
 // sockets below the Write paths and the temp folders. Other sockets, such as
 // the SSH agent and the Docker socket, can act as the user. It returns an
 // error when the home folder is not absolute, because the profile would then
@@ -44,6 +62,7 @@ func (r Rules) Profile(temps ...string) (string, error) {
 	}
 	var b strings.Builder
 	b.WriteString("(version 1)\n(allow default)\n")
+	b.WriteString(others)
 	b.WriteString("(deny network*)\n")
 	b.WriteString(loopback)
 	// Seatbelt matches the real path of a socket, so a link to a socket

@@ -2,13 +2,13 @@ package cli
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/GregorMcC/loam/core/internal/session"
 	"github.com/GregorMcC/loam/core/internal/store"
 	"github.com/GregorMcC/loam/core/internal/testutil"
 )
@@ -179,21 +179,22 @@ func TestRunGateWithASandboxThatCannotStartRunsNoCheck(t *testing.T) {
 }
 
 // TAS-175: the gate removes the profile files that a killed gate left, and
-// keeps the file of a gate that may still run.
+// keeps the file of a gate whose process still runs.
 func TestRunGateRemovesOldProfiles(t *testing.T) {
 	s, r := gateRun(t, "3")
-	old, fresh := filepath.Join(s.Home(), "gate-old.sb"), filepath.Join(s.Home(), "gate-fresh.sb")
-	for _, f := range []string{old, fresh} {
+	ended := exec.Command("/usr/bin/true")
+	if err := ended.Run(); err != nil {
+		t.Fatal(err)
+	}
+	old := filepath.Join(s.Home(), fmt.Sprintf("gate-%d-x.sb", ended.Process.Pid))
+	live := filepath.Join(s.Home(), fmt.Sprintf("gate-%d-x.sb", os.Getppid()))
+	for _, f := range []string{old, live} {
 		if err := os.WriteFile(f, nil, 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
-	long := time.Now().Add(-2 * session.RunHookTimeout * time.Second)
-	if err := os.Chtimes(old, long, long); err != nil {
-		t.Fatal(err)
-	}
 	stopHook(t, r, "Stop")
-	if left := gateProfiles(t, s); len(left) != 1 || left[0] != fresh {
-		t.Fatalf("left %q, want only %s", left, fresh)
+	if left := gateProfiles(t, s); len(left) != 1 || left[0] != live {
+		t.Fatalf("left %q, want only %s", left, live)
 	}
 }

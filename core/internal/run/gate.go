@@ -8,7 +8,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/GregorMcC/loam/core/internal/sandbox"
@@ -106,8 +108,9 @@ type checkBox struct {
 	err error
 }
 
-// profilePattern names the profile files in the Loam home folder.
-const profilePattern = "gate-*.sb"
+// profilePrefix and profileSuffix name the profile files in the Loam home
+// folder: gate-<pid>-<random>.sb, with the process ID of the gate.
+const profilePrefix, profileSuffix = "gate-", ".sb"
 
 // sandboxProbeTimeout limits the start of the sandbox with no check.
 const sandboxProbeTimeout = 10 * time.Second
@@ -134,7 +137,7 @@ func newCheckBox(s *store.Store, r store.Run, logf func(string, ...any)) checkBo
 		return checkBox{err: fmt.Errorf("the checks could write the Loam home folder %s, which holds their sandbox profile", s.Home())}
 	}
 	removeOldProfiles(s.Home(), logf)
-	f, err := os.CreateTemp(s.Home(), profilePattern)
+	f, err := os.CreateTemp(s.Home(), fmt.Sprintf("%s%d-*%s", profilePrefix, os.Getpid(), profileSuffix))
 	if err != nil {
 		return checkBox{err: fmt.Errorf("write the sandbox profile: %w", err)}
 	}
@@ -157,19 +160,36 @@ func newCheckBox(s *store.Store, r store.Run, logf func(string, ...any)) checkBo
 }
 
 // removeOldProfiles removes the profile files of the gates that ended with
-// no clean up, as when Claude Code killed the hook. A gate ends before the
-// hook timeout, so an older file has no gate.
+// no clean up, as when Claude Code killed the hook: the files whose process
+// has ended. A reused process ID only keeps a file.
 func removeOldProfiles(home string, logf func(string, ...any)) {
-	files, _ := filepath.Glob(filepath.Join(home, profilePattern))
-	for _, f := range files {
-		info, err := os.Stat(f)
-		if err != nil || time.Since(info.ModTime()) < session.RunHookTimeout*time.Second {
+	entries, err := os.ReadDir(home)
+	if err != nil {
+		logf("read the Loam home folder for old sandbox profiles: %v", err)
+		return
+	}
+	for _, e := range entries {
+		name := e.Name()
+		rest, ok := strings.CutPrefix(name, profilePrefix)
+		if !ok || !strings.HasSuffix(name, profileSuffix) {
 			continue
 		}
-		if err := os.Remove(f); err != nil {
-			logf("remove the old sandbox profile %s: %v", f, err)
+		digits, _, _ := strings.Cut(rest, "-")
+		pid, err := strconv.Atoi(digits)
+		if err != nil || pid <= 0 || alive(pid) {
+			continue
+		}
+		if err := os.Remove(filepath.Join(home, name)); err != nil {
+			logf("remove the old sandbox profile %s: %v", name, err)
 		}
 	}
+}
+
+// alive reports whether a process with the ID runs. A process of another
+// user counts as alive.
+func alive(pid int) bool {
+	err := syscall.Kill(pid, 0)
+	return err == nil || errors.Is(err, syscall.EPERM)
 }
 
 // close removes the file of the profile.
