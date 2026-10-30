@@ -30,6 +30,10 @@ type Input struct {
 	// allows them, as it allows each --add-dir folder. A denied folder wins
 	// over an allowed folder inside it, so it must not hold Folder or GitDir.
 	NoWrite []string
+	// Machine and Plot are the paths and hosts that the user added for every
+	// plot and for this plot. For checks them again with the same rules as the
+	// settings, and leaves out a value that fails.
+	Machine, Plot Extra
 	// Getenv reads the environment, for the cache paths that a user moved.
 	Getenv func(string) string
 }
@@ -171,6 +175,8 @@ func For(in Input) (Rules, error) {
 		hosts.add(p.hosts...)
 		notes.add(p.note)
 	}
+	addExtra(in.Home, in.Machine, &read, &write, &hosts)
+	addExtra(in.Home, in.Plot, &read, &write, &hosts)
 	for _, p := range in.NoWrite {
 		deny.add(Real(p))
 	}

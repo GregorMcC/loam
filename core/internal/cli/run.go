@@ -34,7 +34,7 @@ func newRunCmd() *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
-	c.AddCommand(newRunStartCmd(), newRunShapeCmd(), newRunRedraftCmd(), newRunApproveCmd(), newRunListCmd(), newRunStatusCmd(), newRunEventsCmd(), newRunStopCmd(), newRunDiffCmd(), newRunSendBackCmd(), newRunSendReviewCmd(), newRunLandCmd(), newRunTickCmd(), newRunHookCmd(), newRunDefaultsCmd(), newRunMCPServersCmd(), newRunLimitsCmd(), newRunMetricsCmd())
+	c.AddCommand(newRunStartCmd(), newRunShapeCmd(), newRunRedraftCmd(), newRunApproveCmd(), newRunListCmd(), newRunStatusCmd(), newRunEventsCmd(), newRunStopCmd(), newRunDiffCmd(), newRunSendBackCmd(), newRunSendReviewCmd(), newRunLandCmd(), newRunTickCmd(), newRunHookCmd(), newRunDefaultsCmd(), newRunMCPServersCmd(), newRunLimitsCmd(), newRunMetricsCmd(), newRunSandboxCmd())
 	return c
 }
 
@@ -883,5 +883,65 @@ func newRunLimitsCmd() *cobra.Command {
 	f.IntVar(&l.AtATime, "at-a-time", 0, "how many runs can work at once")
 	f.IntVar(&l.MaxTurns, "max-turns", 0, "how many turns a run can take; 0 means no limit")
 	f.IntVar(&l.HoldAt, "hold-at", 0, "the percent of the 7-day usage at which new runs wait; 0 turns the hold off")
+	return c
+}
+
+func newRunSandboxCmd() *cobra.Command {
+	var read, write, hosts []string
+	c := &cobra.Command{
+		Use:   "sandbox [<plot>] [--read <path>]... [--write <path>]... [--host <host>]...",
+		Short: "Show or set the paths and hosts that you add to the sandbox of a run",
+		Long: "A run session works in a sandbox (see the Sandbox section of docs/contract.md). The stack presets give it the caches and hosts that builds need. This command adds more.\n" +
+			"With a plot, the settings hold for the runs of that plot. With no plot, they hold for the runs of every plot, which suits a toolchain folder such as ~/.nvm.\n" +
+			"--read and --write are paths, absolute or starting with ~/. A write path is also a read path. --host is a DNS name or *. and a name, such as *.example.com. " +
+			"Repeat a flag to add more than one item. A flag sets the whole list of its kind, and an empty value empties it.\n" +
+			"Loam refuses a path that opens your home folder: the home folder, a folder above it, the root, a credential folder such as ~/.ssh, or a folder that holds one. It refuses * as a host and a URL.\n" +
+			"Only you can set these, with this command and the app. The MCP tools cannot, so a run session cannot widen its own sandbox. With no flag, this shows the settings. They are not in the change log.",
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := openStore()
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+			scope := ""
+			if len(args) == 1 {
+				p, err := resolvePlot(s, args[0])
+				if err != nil {
+					return err
+				}
+				scope = p.ID
+			}
+			cur, err := s.GetSandboxSettings(scope)
+			if err != nil {
+				return err
+			}
+			f := cmd.Flags()
+			if f.Changed("read") || f.Changed("write") || f.Changed("host") {
+				if f.Changed("read") {
+					cur.Read = read
+				}
+				if f.Changed("write") {
+					cur.Write = write
+				}
+				if f.Changed("host") {
+					cur.Hosts = hosts
+				}
+				if cur, err = s.SetSandboxSettings(cur); err != nil {
+					return err
+				}
+			}
+			if JSON(cmd) {
+				return printJSON(cmd, map[string]any{"sandbox": cur})
+			}
+			list := func(items []string) string { return cmp.Or(strings.Join(items, ", "), "(none)") }
+			fmt.Fprintf(cmd.OutOrStdout(), "read paths: %s\nwrite paths: %s\nhosts: %s\n", list(cur.Read), list(cur.Write), list(cur.Hosts))
+			return nil
+		},
+	}
+	f := c.Flags()
+	f.StringArrayVar(&read, "read", nil, "set the paths that the sandbox can read; repeat the flag for more than one; empty empties the list")
+	f.StringArrayVar(&write, "write", nil, "set the paths that the sandbox can write and read; repeat the flag for more than one; empty empties the list")
+	f.StringArrayVar(&hosts, "host", nil, "set the hosts that the sandbox can reach, such as example.com or *.example.com; repeat the flag for more than one; empty empties the list")
 	return c
 }

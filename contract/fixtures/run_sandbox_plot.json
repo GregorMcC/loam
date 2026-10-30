@@ -1,0 +1,14 @@
+{
+  "sandbox": {
+    "hosts": [
+      "*.example.org"
+    ],
+    "plot_id": "plotaaaaae",
+    "read": [
+      "~/notes"
+    ],
+    "write": [
+      "~/Library/Caches/Loam"
+    ]
+  }
+}

@@ -1519,6 +1519,89 @@
     "schema": "run-defaults"
   },
   {
+    "name": "run_sandbox_get",
+    "args": [
+      "run",
+      "sandbox",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "run-sandbox"
+  },
+  {
+    "name": "run_sandbox_machine",
+    "args": [
+      "run",
+      "sandbox",
+      "--read",
+      "~/.nvm",
+      "--host",
+      "registry.example.com",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "run-sandbox"
+  },
+  {
+    "name": "run_sandbox_plot",
+    "args": [
+      "run",
+      "sandbox",
+      "Runs",
+      "--read",
+      "~/notes",
+      "--write",
+      "~/Library/Caches/Loam",
+      "--host",
+      "*.example.org",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "run-sandbox"
+  },
+  {
+    "name": "run_sandbox_clear",
+    "args": [
+      "run",
+      "sandbox",
+      "Runs",
+      "--read",
+      "",
+      "--write",
+      "",
+      "--host",
+      "",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "run-sandbox"
+  },
+  {
+    "name": "error_run_sandbox_opens_home",
+    "args": [
+      "run",
+      "sandbox",
+      "--read",
+      "~/.ssh",
+      "--json"
+    ],
+    "exit_code": 2,
+    "schema": "error"
+  },
+  {
+    "name": "error_run_sandbox_bad_host",
+    "args": [
+      "run",
+      "sandbox",
+      "Runs",
+      "--host",
+      "*",
+      "--json"
+    ],
+    "exit_code": 2,
+    "schema": "error"
+  },
+  {
     "name": "run_mcp_servers_none",
     "args": [
       "run",

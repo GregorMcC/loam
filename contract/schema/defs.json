@@ -523,6 +523,18 @@
         "review_effort": { "$ref": "#/$defs/effort" }
       }
     },
+    "sandboxSettings": {
+      "description": "The paths and hosts that the user adds to the sandbox of a run (loam run sandbox). An empty plot_id is the machine scope.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plot_id", "read", "write", "hosts"],
+      "properties": {
+        "plot_id": { "description": "The plot, or empty for the settings that hold for every plot.", "anyOf": [{ "$ref": "#/$defs/id" }, { "const": "" }] },
+        "read": { "description": "Paths the sandbox can read: absolute, or starting with ~/.", "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "write": { "description": "Paths the sandbox can write and read.", "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "hosts": { "description": "Hosts the sandbox can reach: a DNS name, or *. and a name. Lower case.", "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+      }
+    },
     "runLimits": {
       "description": "The limits of every run (loam run limits).",
       "type": "object",

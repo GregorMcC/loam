@@ -1,0 +1,12 @@
+{
+  "sandbox": {
+    "hosts": [
+      "registry.example.com"
+    ],
+    "plot_id": "",
+    "read": [
+      "~/.nvm"
+    ],
+    "write": []
+  }
+}

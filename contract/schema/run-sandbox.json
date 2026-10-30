@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam run sandbox --json",
+  "description": "The sandbox settings of a plot, or of the machine, after the command applied any flag. A scope with none has empty lists.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sandbox"
+  ],
+  "properties": {
+    "sandbox": {
+      "$ref": "defs.json#/$defs/sandboxSettings"
+    }
+  }
+}

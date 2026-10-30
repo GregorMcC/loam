@@ -314,6 +314,18 @@ UPDATE run_events SET stage = CASE (
   ORDER BY p.id DESC LIMIT 1) WHEN 'shipping' THEN 'ci' WHEN 'ready' THEN 'ci' ELSE 'gate' END
 WHERE kind = 'try';
 `,
+	// 25: the paths and hosts that the user adds to the sandbox of a run. scope
+	// is a plot ID, or '' for the machine. Each list is JSON. Not in the change
+	// log.
+	`
+CREATE TABLE sandbox_settings (
+  scope TEXT PRIMARY KEY,
+  read_paths TEXT NOT NULL,
+  write_paths TEXT NOT NULL,
+  hosts TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+`,
 }
 
 // SchemaVersion is the schema version of this binary.
