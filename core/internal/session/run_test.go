@@ -158,7 +158,8 @@ func TestPrepareRunAllowsTheGitConfigFilesThatGitReads(t *testing.T) {
 // when the condition is hasconfig, and stops when the sandbox denies it. So
 // the sandbox allows the file of each include and includeIf, and the files
 // that it includes. It does not follow an include in a file that the run can
-// write, which would let the run name any file as a read path.
+// write, also when git takes that include, because the run could name any
+// file there.
 func TestPrepareRunAllowsTheFilesOfEachIncludeIf(t *testing.T) {
 	e := setup(t)
 	testutil.GitEnv(t)
@@ -173,7 +174,7 @@ func TestPrepareRunAllowsTheFilesOfEachIncludeIf(t *testing.T) {
 		work:   "[include]\n\tpath = nested/more.gitconfig\n",
 		nested: "[core]\n\tautocrlf = false\n",
 		local:  "[include]\n\tpath = " + secret + "\n",
-		secret: "",
+		secret: "[user]\n\tname = secret\n",
 	} {
 		if err := os.MkdirAll(filepath.Dir(f), 0o755); err != nil {
 			t.Fatal(err)
@@ -187,7 +188,7 @@ func TestPrepareRunAllowsTheFilesOfEachIncludeIf(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := f.WriteString("[includeIf \"hasconfig:remote.*.url:git@example.com:org/**\"]\n\tpath = work.gitconfig\n" +
-		"[includeIf \"gitdir:/nowhere/\"]\n\tpath = " + local + "\n"); err != nil {
+		"[include]\n\tpath = " + local + "\n"); err != nil {
 		t.Fatal(err)
 	}
 	f.Close()

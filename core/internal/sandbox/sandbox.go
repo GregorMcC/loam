@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -217,6 +218,38 @@ func opens(home, path string) bool {
 		}
 	}
 	return false
+}
+
+// Writable reports whether the run can write path: it is in a write path of
+// the rules and in no path that they deny. The compare ignores case, as
+// macOS folders do.
+func (r Rules) Writable(path string) bool {
+	path = strings.ToLower(Real(path))
+	in := func(dirs []string) bool {
+		for _, d := range dirs {
+			if within(path, strings.ToLower(d)) {
+				return true
+			}
+		}
+		return false
+	}
+	return in(r.Write) && !in(r.DenyWrite)
+}
+
+// AllowRead adds read paths to the rules with the check of For: it leaves
+// out a path that would open home. It returns the paths that it left out.
+func (r *Rules) AllowRead(paths ...string) (left []string) {
+	for _, p := range paths {
+		p = Real(p)
+		switch {
+		case p == "":
+		case opens(r.Home, p):
+			left = append(left, p)
+		case !slices.Contains(r.Read, p):
+			r.Read = append(r.Read, p)
+		}
+	}
+	return left
 }
 
 // within reports whether path is dir or a path inside it.

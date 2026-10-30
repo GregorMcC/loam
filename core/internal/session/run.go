@@ -146,6 +146,7 @@ func runRules(s *store.Store, plot store.Plot, folder string) (sandbox.Rules, er
 	if err != nil {
 		return sandbox.Rules{}, err
 	}
+	config := gitConfigFiles(admin, git)
 	in := sandbox.Input{
 		Home:      home,
 		Machine:   sandbox.Extra{Read: machine.Read, Write: machine.Write, Hosts: machine.Hosts},
@@ -154,7 +155,7 @@ func runRules(s *store.Store, plot store.Plot, folder string) (sandbox.Rules, er
 		Folder:    folder,
 		GitDir:    git,
 		Repos:     repos,
-		GitConfig: gitConfigFiles(home, folder, admin, git),
+		GitConfig: config,
 		// The plot folder holds the seed, which only Loam writes.
 		NoWrite: []string{s.PlotDir(plot.ID)},
 		Getenv:  os.Getenv,
@@ -164,7 +165,20 @@ func runRules(s *store.Store, plot store.Plot, folder string) (sandbox.Rules, er
 			in.Links = append(in.Links, linkkind.Expand(l.Target))
 		}
 	}
-	return sandbox.For(in)
+	r, err := sandbox.For(in)
+	if err != nil {
+		return sandbox.Rules{}, err
+	}
+	// The includes come after the rules, so that Loam knows which files the
+	// run can write.
+	included, err := gitIncludes(home, config, r.Writable)
+	if err != nil {
+		return sandbox.Rules{}, err
+	}
+	for _, p := range r.AllowRead(included...) {
+		r.Notes = append(r.Notes, fmt.Sprintf("A git config includes %s, which the sandbox does not let Bash read, so git can stop. Do not work around it: say so in your last message.", p))
+	}
+	return r, nil
 }
 
 // gitConfigScopes are the config scopes whose files the sandbox reads. The
@@ -174,25 +188,15 @@ func runRules(s *store.Store, plot store.Plot, folder string) (sandbox.Rules, er
 // the environment.
 var gitConfigScopes = []string{"system", "global", "local"}
 
-// includeDepth is how deep git follows includes (MAX_INCLUDE_DEPTH).
-const includeDepth = 10
-
 // gitConfigFiles returns the config files that git reads in the worktree
-// folder with the git folder admin, with the files that they include, in the
-// scopes of gitConfigScopes. It names the common git folder, so that git
-// does not follow a commondir file that the run wrote. A file that git
-// cannot name is not read in the sandbox, so an error gives none.
-//
-// git config --list names only the includes that git took. Git also opens
-// the file of an includeIf whose condition does not hold: for a hasconfig
-// condition it reads the file to find the remote URLs, and it stops when
-// the sandbox denies the file (TAS-194). So gitConfigFiles adds the file of
-// each include and includeIf, to the depth that git follows. It does not
-// follow the includes of a file that the run can write.
-func gitConfigFiles(home, folder, admin, common string) []string {
+// with the git folder admin, in the scopes of gitConfigScopes, without the
+// files that they include (see gitIncludes). It names the common git folder,
+// so that git does not follow a commondir file that the run wrote. A file
+// that git cannot name is not read in the sandbox, so an error gives none.
+func gitConfigFiles(admin, common string) []string {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "config", "--list", "--show-scope", "--show-origin", "-z")
+	cmd := exec.CommandContext(ctx, "git", "config", "--list", "--no-includes", "--show-scope", "--show-origin", "-z")
 	cmd.Env = append(os.Environ(), "GIT_DIR="+admin, "GIT_COMMON_DIR="+common)
 	out, err := cmd.Output()
 	if err != nil {
@@ -210,43 +214,70 @@ func gitConfigFiles(home, folder, admin, common string) []string {
 			files = append(files, f)
 		}
 	}
-	// The run writes its folder and the git folders, except the config of
-	// the repo, which the rules deny.
-	writable := func(f string) bool {
-		f = sandbox.Real(f)
-		return inside(f, folder) || inside(f, admin) || inside(f, common) && f != sandbox.Real(filepath.Join(common, "config"))
+	return files
+}
+
+// includeDepth is how deep git follows includes (MAX_INCLUDE_DEPTH). Git
+// counts the config file that it starts from as the first.
+const includeDepth = 10
+
+// gitIncludes returns the files that the include.path and includeIf.*.path
+// entries of the config files name, and the files that those include, to
+// the depth that git follows. It takes each entry whatever its condition:
+// git opens the file of an includeIf with a hasconfig condition to find the
+// remote URLs, also when the condition does not hold, and it stops when the
+// sandbox denies the file (TAS-194). It does not follow the includes of a
+// file that the run can write, because the run could name any file there.
+// It returns an error when git does not answer in time, because a list with
+// files left out would stop git in the run.
+func gitIncludes(home string, files []string, writable func(string) bool) ([]string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	seen := map[string]bool{}
+	for _, f := range files {
+		seen[f] = true
 	}
+	var all []string
 	next := files
-	for depth := 0; depth < includeDepth && len(next) > 0; depth++ {
+	for depth := 1; depth < includeDepth && len(next) > 0; depth++ {
 		var found []string
 		for _, f := range next {
 			if writable(f) {
 				continue
 			}
-			for _, inc := range gitIncludes(ctx, home, f) {
-				if !slices.Contains(files, inc) {
-					files = append(files, inc)
-					found = append(found, inc)
+			paths, err := includePaths(ctx, home, f)
+			if err != nil {
+				return nil, err
+			}
+			for _, p := range paths {
+				if !seen[p] {
+					seen[p] = true
+					all = append(all, p)
+					found = append(found, p)
 				}
 			}
 		}
 		next = found
 	}
-	return files
+	return all, nil
 }
 
-// gitIncludes returns the files that the include.path and includeIf.*.path
-// entries of the config file f name, whatever their condition. Git reads a
-// relative path from the folder of f, and ~/ from home. It leaves out a path
-// that git would not expand, such as ~user/.
-func gitIncludes(ctx context.Context, home, f string) []string {
+// includePaths returns the files that the include entries of the config file
+// f name. Git reads a relative path from the folder of f, and ~/ from home.
+// It leaves out a path that git would not expand in the same way, such as
+// ~user/ or %(prefix)/, and a folder, which git cannot read as a config file.
+// A file with no include, or one that git cannot read, gives none.
+func includePaths(ctx context.Context, home, f string) ([]string, error) {
 	out, err := exec.CommandContext(ctx, "git", "config", "--file", f, "--no-includes", "-z", "--get-regexp", `^include(if\..*)?\.path$`).Output()
+	if ctx.Err() != nil {
+		return nil, fmt.Errorf("read the includes of the git config %s for the sandbox: %w", f, ctx.Err())
+	}
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 	// Each entry is a key and its value, with a newline between them, ended
 	// by NUL.
-	var files []string
+	var paths []string
 	for _, entry := range strings.Split(string(out), "\x00") {
 		_, p, ok := strings.Cut(entry, "\n")
 		switch {
@@ -254,24 +285,17 @@ func gitIncludes(ctx context.Context, home, f string) []string {
 			continue
 		case strings.HasPrefix(p, "~/"):
 			p = filepath.Join(home, p[2:])
-		case strings.HasPrefix(p, "~"):
+		case strings.HasPrefix(p, "~"), strings.HasPrefix(p, "%("):
 			continue
 		case !filepath.IsAbs(p):
 			p = filepath.Join(filepath.Dir(f), p)
 		}
-		files = append(files, filepath.Clean(p))
+		if fi, err := os.Stat(p); err == nil && fi.IsDir() {
+			continue
+		}
+		paths = append(paths, filepath.Clean(p))
 	}
-	return files
-}
-
-// inside reports whether path, with its symlinks resolved, is dir or a path
-// inside it. It resolves the symlinks of dir.
-func inside(path, dir string) bool {
-	if dir == "" {
-		return false
-	}
-	dir = sandbox.Real(dir)
-	return path == dir || strings.HasPrefix(path, dir+string(filepath.Separator))
+	return paths, nil
 }
 
 // gitDirs returns the git folder of the worktree in folder (admin) and the
