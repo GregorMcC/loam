@@ -128,8 +128,19 @@ func runRules(s *store.Store, plot store.Plot, folder string) (sandbox.Rules, er
 	if err != nil {
 		return sandbox.Rules{}, err
 	}
+	machine, err := s.GetSandboxSettings("")
+	if err != nil {
+		return sandbox.Rules{}, err
+	}
+	forPlot, err := s.GetSandboxSettings(plot.ID)
+	if err != nil {
+		return sandbox.Rules{}, err
+	}
 	in := sandbox.Input{
 		Home:      home,
+		Machine:   sandbox.Extra{Read: machine.Read, Write: machine.Write, Hosts: machine.Hosts},
+		Plot:      sandbox.Extra{Read: forPlot.Read, Write: forPlot.Write, Hosts: forPlot.Hosts},
+		Protected: []string{s.Home()},
 		Folder:    folder,
 		GitDir:    git,
 		GitConfig: gitConfigFiles(folder),

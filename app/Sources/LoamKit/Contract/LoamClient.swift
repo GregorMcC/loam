@@ -388,6 +388,26 @@ public struct LoamClient: Sendable {
         return one.limits
     }
 
+    /// `loam run sandbox [<plot>]`: the paths and hosts that you add to the sandbox of a run. With no plot, the
+    /// machine scope.
+    public func sandboxSettings(plot: String? = nil) async throws -> SandboxSettings {
+        let one: SandboxSettingsOne = try await read(["run", "sandbox"], positionals: plot.map { [$0] } ?? [])
+        return one.sandbox
+    }
+
+    /// `loam run sandbox [<plot>] --read <path>... --write <path>... --host <host>...`: replaces the three lists. A
+    /// list with no item passes an empty value, which empties it. The command refuses a path that opens home or a
+    /// host that is not a name, and its error comes back as a `LoamError`.
+    public func setSandboxSettings(plot: String? = nil, _ settings: SandboxSettings) async throws -> SandboxSettings {
+        func flag(_ name: String, _ items: [String]) -> [String] {
+            (items.isEmpty ? [""] : items).flatMap { [name, $0] }
+        }
+        let one: SandboxSettingsOne = try await read(
+            ["run", "sandbox"] + flag("--read", settings.read) + flag("--write", settings.write) + flag("--host", settings.hosts),
+            positionals: plot.map { [$0] } ?? [])
+        return one.sandbox
+    }
+
     /// `loam usage`: the last usage that Claude Code reported. With `refresh`, `loam usage --refresh` asks Claude
     /// Code now, with a small `claude -p` call. Do not refresh each time the change feed wakes the app: a refresh
     /// writes the store.

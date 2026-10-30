@@ -858,6 +858,15 @@ func scenario(t *testing.T) *harness {
 	h.run("run_defaults_clear", "run-defaults", 0, "run", "defaults", "Runs", "--model", "", "--effort", "", "--mcp", "",
 		"--review", "on", "--review-effort", "")
 
+	// The paths and hosts that the user adds to the sandbox of a run: the
+	// machine scope, then a plot.
+	h.run("run_sandbox_get", "run-sandbox", 0, "run", "sandbox")
+	h.run("run_sandbox_machine", "run-sandbox", 0, "run", "sandbox", "--read", "~/.nvm", "--host", "registry.example.com")
+	h.run("run_sandbox_plot", "run-sandbox", 0, "run", "sandbox", "Runs", "--read", "~/notes", "--write", "~/Library/Caches/Loam", "--host", "*.example.org")
+	h.run("run_sandbox_clear", "run-sandbox", 0, "run", "sandbox", "Runs", "--read", "", "--write", "", "--host", "")
+	h.run("error_run_sandbox_opens_home", "error", 2, "run", "sandbox", "--read", "~/.ssh")
+	h.run("error_run_sandbox_bad_host", "error", 2, "run", "sandbox", "Runs", "--host", "*")
+
 	// The MCP servers that --mcp can select: the user scope, without a
 	// server that has a headersHelper. No config file gives an empty list.
 	h.run("run_mcp_servers_none", "run-mcp-servers", 0, "run", "mcp-servers")

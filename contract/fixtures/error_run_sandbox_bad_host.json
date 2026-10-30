@@ -1,0 +1,7 @@
+{
+  "error": {
+    "exit_code": 2,
+    "kind": "invalid",
+    "message": "host: \"*\" is not a host: use a DNS name such as example.com, or *. and a name such as *.example.com: invalid input"
+  }
+}

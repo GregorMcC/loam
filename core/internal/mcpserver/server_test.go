@@ -148,6 +148,13 @@ func TestListToolsAndReadOnlyHints(t *testing.T) {
 	if len(ro) != len(want) {
 		t.Fatalf("tools %v", ro)
 	}
+	// TAS-175: only the user widens the sandbox of a run, with the CLI and the
+	// app. A run session has the tools of this server, so it has none for it.
+	for n := range ro {
+		if strings.Contains(strings.ToLower(n), "sandbox") {
+			t.Errorf("tool %s: no MCP tool reads or writes the sandbox settings", n)
+		}
+	}
 	for n, w := range want {
 		if got, ok := ro[n]; !ok || got != w {
 			t.Errorf("tool %s: present %v readOnly %v, want %v", n, ok, got, w)

@@ -153,3 +153,52 @@ func TestPrepareRunAllowsTheGitConfigFilesThatGitReads(t *testing.T) {
 		}
 	}
 }
+
+// TAS-175: the machine settings and the plot settings of the sandbox reach
+// the settings file of a run. The settings of another plot do not.
+func TestPrepareRunAddsTheSandboxSettings(t *testing.T) {
+	e := setup(t)
+	repo, _ := testutil.GitRepo(t)
+	p := e.plot(t, store.PlotInput{Name: "Alpha", Repos: []store.RepoInput{{Path: repo}}})
+	other := e.plot(t, store.PlotInput{Name: "Beta"})
+	home, _ := os.UserHomeDir()
+	for _, set := range []store.SandboxSettings{
+		{Read: []string{"~/.nvm"}, Hosts: []string{"machine.example.com"}},
+		{PlotID: p.ID, Write: []string{"~/Library/Caches/Loam"}, Hosts: []string{"*.example.org"}},
+		{PlotID: other.ID, Read: []string{"~/beta-only"}, Hosts: []string{"beta.example.com"}},
+	} {
+		if _, err := e.store.SetSandboxSettings(set); err != nil {
+			t.Fatal(err)
+		}
+	}
+	plan, err := session.PrepareRun(e.store, store.Run{ID: "r1", PlotID: p.ID, Folder: repo}, "go", "loam", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(argValues(plan.Args, "--settings")[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Sandbox struct {
+			Network    struct{ AllowedDomains []string }
+			Filesystem struct{ AllowRead, AllowWrite []string }
+		}
+	}
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	fs := got.Sandbox.Filesystem
+	cache := filepath.Join(realpath(t, home), "Library", "Caches", "Loam")
+	if !slices.Contains(fs.AllowRead, filepath.Join(realpath(t, home), ".nvm")) || !slices.Contains(fs.AllowRead, cache) || !slices.Contains(fs.AllowWrite, cache) {
+		t.Errorf("allowRead = %q, allowWrite = %q, want ~/.nvm and the Loam cache", fs.AllowRead, fs.AllowWrite)
+	}
+	for _, d := range []string{"machine.example.com", "*.example.org"} {
+		if !slices.Contains(got.Sandbox.Network.AllowedDomains, d) {
+			t.Errorf("allowedDomains = %q, want %s", got.Sandbox.Network.AllowedDomains, d)
+		}
+	}
+	if slices.Contains(got.Sandbox.Network.AllowedDomains, "beta.example.com") || slices.Contains(fs.AllowRead, filepath.Join(realpath(t, home), "beta-only")) {
+		t.Errorf("the settings of another plot reached the run: %q %q", got.Sandbox.Network.AllowedDomains, fs.AllowRead)
+	}
+}
