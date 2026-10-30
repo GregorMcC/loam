@@ -138,7 +138,8 @@ extension Scenarios {
         NSApp.appearance = nil
     }
 
-    /// Scrolls the page to its end and then up, until the element `id` is on screen, then `above` points further up, clear of the toolbar.
+    /// Scrolls the page to its end and then up, until the element `id` is on screen. Then it scrolls `above` points
+    /// further up, so the element is clear of the toolbar. It throws when the element never shows.
     private static func scrollIntoView(_ app: DriverApp, _ id: String, above: CGFloat = 160) async throws {
         let scroll = try unwrap(scrollView(in: app.window.contentView), "scroll view of the page")
         let end = max(0, (scroll.documentView?.frame.height ?? 0) - scroll.contentView.bounds.height)
@@ -151,6 +152,7 @@ extension Scenarios {
             if app.windowPoint(of: id) != nil || y <= 0 { break }
             y = max(0, y - 120)
         }
+        guard app.windowPoint(of: id) != nil else { throw DriverFailure("\(id) never came on screen") }
         guard above > 0 else { return }
         scroll.contentView.scroll(to: NSPoint(x: 0, y: max(0, y - above)))
         scroll.reflectScrolledClipView(scroll.contentView)

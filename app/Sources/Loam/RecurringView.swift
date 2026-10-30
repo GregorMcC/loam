@@ -331,7 +331,7 @@ private struct RunDefaultsSection: View {
             .disabled(!isLoaded)
             .frame(maxWidth: 560, alignment: .leading)
             reviewControls
-            Text("The MCP servers load when Claude drafts a run and writes its PR text. Only servers added with "
+            Text("The MCP servers load when Claude drafts a run, writes its PR text, and reviews the code. Only servers added with "
                  + "claude mcp add --scope user show up. Claude.ai connectors cannot be selected. The tools of a selected "
                  + "server run as your Claude Code permissions allow.")
                 .loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
@@ -375,10 +375,13 @@ private struct RunDefaultsSection: View {
             reviewEffort: chosenReviewEffort)) { _, now in
             guard RunDefaultsChoice.needsSave(now, requested: requested, loaded: isLoaded ? model.runDefaults : nil, plot: plotID)
             else { return }
+            let previous = requested
             requested = now
+            let change = now.change(from: previous)
             Task {
-                await model.setRunDefaults(plot: plotID, model: now.model, effort: now.effort, mcpServers: now.servers,
-                                           review: now.review, reviewEffort: now.reviewEffort)
+                await model.setRunDefaults(
+                    plot: plotID, model: change.model, effort: change.effort, mcpServers: change.servers,
+                    review: change.review, reviewEffort: change.reviewEffort)
             }
         }
         .accessibilityElement(children: .contain)

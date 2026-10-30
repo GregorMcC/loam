@@ -176,6 +176,44 @@ import Testing
         #expect(model.runDefaults?.review == true)
     }
 
+    /// A save of one field passes only its flag, so the other defaults stay as the core has them.
+    @Test func aChangeOfOneFieldPassesOnlyItsFlag() async throws {
+        let (model, fake) = try model([("run_defaults_set", 0), ("run_defaults_review", 0), ("run_defaults_set", 0)])
+        await model.setRunDefaults(plot: "plotaaaaae", model: "opus")
+        #expect(fake.args().last == "run defaults --model opus --json -- plotaaaaae")
+        await model.setRunDefaults(plot: "plotaaaaae", review: false)
+        #expect(fake.args().last == "run defaults --review off --json -- plotaaaaae")
+        await model.setRunDefaults(plot: "plotaaaaae", reviewEffort: "")
+        #expect(fake.args().last == "run defaults --review-effort  --json -- plotaaaaae")
+    }
+
+    /// A request that waits merges with a new one: a review change and a model change both reach the core.
+    @Test func twoWaitingRequestsMergeAndLoseNoChange() async throws {
+        let (model, fake) = try model([("run_defaults_set_mcp", 0), ("run_defaults_review", 0)])
+        let running = Task { await model.setRunDefaults(plot: "plotaaaaae", mcpServers: ["a"]) }
+        let review = Task { await model.setRunDefaults(plot: "plotaaaaae", review: false) }
+        let picked = Task { await model.setRunDefaults(plot: "plotaaaaae", model: "opus") }
+        await running.value
+        await review.value
+        await picked.value
+        let saves = fake.args().filter { $0.hasPrefix("run defaults") }
+        #expect(saves == ["run defaults --mcp a --json -- plotaaaaae", "run defaults --model opus --review off --json -- plotaaaaae"])
+    }
+
+    /// The change of a pick is the fields that differ from the saved pick.
+    @Test func theChangeOfAPickHoldsOnlyTheFieldsThatDiffer() {
+        let saved = RunDefaultsChoice(model: "opus", effort: "", servers: ["a"], review: true, reviewEffort: "low")
+        #expect(saved.change(from: saved) == RunDefaultsChange())
+        var pick = saved
+        pick.review = false
+        #expect(pick.change(from: saved) == RunDefaultsChange(review: false))
+        pick.model = ""
+        pick.reviewEffort = ""
+        #expect(pick.change(from: saved) == RunDefaultsChange(model: "", review: false, reviewEffort: ""))
+        pick.servers = []
+        #expect(pick.change(from: saved).servers == [])
+    }
+
     /// A core that is older than the code review prints neither field: the review is on, with the default effort.
     @Test func anOlderCoreMeansReviewOnWithTheDefaultEffort() throws {
         let json = #"{"plot_id":"plotaaaaae","model":"","effort":"","mcp_servers":[]}"#
