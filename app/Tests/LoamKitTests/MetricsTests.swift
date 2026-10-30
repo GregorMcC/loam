@@ -123,6 +123,7 @@ import Testing
         #expect(MetricsWords.duration(290) == "5m" && MetricsWords.duration(3600) == "1h")
         #expect(MetricsWords.duration(7843) == "2h 11m" && MetricsWords.duration(86400 * 2 + 3600 * 4) == "2d 4h")
         #expect(MetricsWords.duration(-5) == "0s")
+        #expect(MetricsWords.duration(3599) == "1h" && MetricsWords.duration(86399) == "1d")
     }
 
     static func period(landed: Int, lead: Int, stations: [Int], from: String = "2026-10-01T00:00:00Z",

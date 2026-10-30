@@ -19,16 +19,13 @@ public enum MetricsWords {
     /// A time for a person: "45s", "22m", "1h 32m", or "2d 4h".
     public static func duration(_ seconds: Int) -> String {
         let s = max(0, seconds)
-        switch s {
-        case ..<60: return "\(s)s"
-        case ..<3600: return "\((s + 30) / 60)m"
-        case ..<86400:
-            let minutes = (s + 30) / 60
-            return minutes % 60 == 0 ? "\(minutes / 60)h" : "\(minutes / 60)h \(minutes % 60)m"
-        default:
-            let hours = (s + 1800) / 3600
-            return hours % 24 == 0 ? "\(hours / 24)d" : "\(hours / 24)d \(hours % 24)h"
-        }
+        if s < 60 { return "\(s)s" }
+        // The unit comes from the rounded minutes, so 59m 59s is "1h", not "60m".
+        let minutes = (s + 30) / 60
+        if minutes < 60 { return "\(minutes)m" }
+        if minutes < 1440 { return minutes % 60 == 0 ? "\(minutes / 60)h" : "\(minutes / 60)h \(minutes % 60)m" }
+        let hours = (s + 1800) / 3600
+        return hours % 24 == 0 ? "\(hours / 24)d" : "\(hours / 24)d \(hours % 24)h"
     }
 
     /// The median and the 90th percentile of a spread, such as "22m, 90th 50m", or "None" when it is empty.
