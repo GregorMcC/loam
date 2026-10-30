@@ -24,8 +24,9 @@ type Input struct {
 	Folder, GitDir string
 	// Repos are the repo paths of the plot. Links are its local links.
 	Repos, Links []string
-	// GitConfig are the config files that git reads in Folder, with the
-	// files that they include.
+	// GitConfig are the config files that git reads in Folder. The caller
+	// adds the files that they include with AllowRead, after For, because it
+	// must know which files the run can write.
 	GitConfig []string
 	// NoWrite are folders that the run must not write, even when Claude Code
 	// allows them, as it allows each --add-dir folder. A denied folder wins

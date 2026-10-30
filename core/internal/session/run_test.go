@@ -170,7 +170,9 @@ func TestPrepareRunAllowsTheFilesOfEachIncludeIf(t *testing.T) {
 	nested := filepath.Join(dir, "nested", "more.gitconfig")
 	local := filepath.Join(repo, "local.gitconfig")
 	secret := filepath.Join(dir, "secret")
+	other := filepath.Join(dir, "other.gitconfig")
 	for f, text := range map[string]string{
+		other:  "[user]\n\tname = other\n",
 		work:   "[include]\n\tpath = nested/more.gitconfig\n",
 		nested: "[core]\n\tautocrlf = false\n",
 		local:  "[include]\n\tpath = " + secret + "\n",
@@ -188,7 +190,8 @@ func TestPrepareRunAllowsTheFilesOfEachIncludeIf(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := f.WriteString("[includeIf \"hasconfig:remote.*.url:git@example.com:org/**\"]\n\tpath = work.gitconfig\n" +
-		"[include]\n\tpath = " + local + "\n"); err != nil {
+		"[include]\n\tpath = " + local + "\n" +
+		"[includeIf \"gitdir:/nowhere/\"]\n\tpath = other.gitconfig\n"); err != nil {
 		t.Fatal(err)
 	}
 	f.Close()
@@ -217,6 +220,13 @@ func TestPrepareRunAllowsTheFilesOfEachIncludeIf(t *testing.T) {
 	}
 	if slices.Contains(read, realpath(t, secret)) {
 		t.Errorf("allowRead = %q has %s, which an include in a file of the run names", read, secret)
+	}
+	// Git does not open the file of a gitdir condition that does not hold.
+	if slices.Contains(read, realpath(t, other)) {
+		t.Errorf("allowRead = %q has %s, whose includeIf does not hold", read, other)
+	}
+	if prompt := plan.Args[len(plan.Args)-1]; !strings.Contains(prompt, "The run can write the git config "+realpath(t, local)) && !strings.Contains(prompt, "The run can write the git config "+local) {
+		t.Errorf("prompt = %q, want a note on %s", prompt, local)
 	}
 }
 
