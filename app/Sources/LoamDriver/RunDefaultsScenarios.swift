@@ -46,12 +46,19 @@ extension Scenarios {
             try await app.waitUntil("the picker lists the servers") {
                 model.page == .recurring(plot) && app.exists("run-defaults-mcp") && model.mcpServers?.count == 3
             }
-            // The section is at the foot of the page, so the page scrolls to its end.
+            // The picker is above the sandbox section, so the page scrolls to its end
+            // and then back up until the picker is on screen.
             let scroll = try unwrap(scrollView(in: app.window.contentView), "scroll view of the page")
-            scroll.contentView.scroll(to: NSPoint(x: 0, y: max(0, (scroll.documentView?.frame.height ?? 0) - scroll.contentView.bounds.height)))
-            scroll.reflectScrolledClipView(scroll.contentView)
-            await app.sleep(0.5)
-            AccessibilityProbe.shared.rescan()
+            let end = max(0, (scroll.documentView?.frame.height ?? 0) - scroll.contentView.bounds.height)
+            var y = end
+            while true {
+                scroll.contentView.scroll(to: NSPoint(x: 0, y: y))
+                scroll.reflectScrolledClipView(scroll.contentView)
+                await app.sleep(0.4)
+                AccessibilityProbe.shared.rescan()
+                if app.windowPoint(of: "run-defaults-mcp") != nil || y <= 0 { break }
+                y = max(0, y - 120)
+            }
         }
         try await showPicker()
         try confirm(model.mcpServers?.map(\.name) == ["docs-search", "notes-server", "ticket-tracker"],

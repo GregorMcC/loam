@@ -13,6 +13,8 @@ public final class RunsSettingsModel {
     /// The limits as the core last gave them. Nil before the first read.
     public private(set) var limits: RunLimits?
     public private(set) var usage: Usage?
+    /// The paths and hosts that you add to the sandbox of every run.
+    public let sandbox: SandboxSettingsModel
     /// Why the last change failed, or nil.
     public private(set) var error: String?
     @ObservationIgnored private var refreshing = false
@@ -20,6 +22,7 @@ public final class RunsSettingsModel {
     public init(client: LoamClient, now: @escaping () -> Date = Date.init) {
         self.client = client
         self.now = now
+        self.sandbox = SandboxSettingsModel(client: client)
     }
 
     /// Reads the limits and the last usage. The usage is read again only when it is older than 30 minutes.

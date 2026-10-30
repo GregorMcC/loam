@@ -315,6 +315,13 @@ struct RunsSettingsView: View {
                             .accessibilityIdentifier("settings-runs-usage")
                     }
                 }
+                SettingsGroup(
+                    title: "Sandbox",
+                    caption: "A run works in a sandbox. Add toolchain folders and hosts for every plot here. "
+                        + "A plot can add more in its run defaults. Loam refuses a path that opens your home folder. A change holds for the next new session of a run."
+                ) {
+                    SandboxListsView(model: model.sandbox, scope: "machine").padding(14)
+                }
                 if let error = model.error {
                     Label(error, systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(LoamColor.needsYou)
@@ -323,7 +330,7 @@ struct RunsSettingsView: View {
             }
             .padding(20)
         }
-        .frame(width: 640, height: 420)
+        .frame(width: 640, height: 640)
         .task { await model.load() }
     }
 

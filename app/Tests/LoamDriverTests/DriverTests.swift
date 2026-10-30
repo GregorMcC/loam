@@ -393,6 +393,12 @@ struct DriverTests {
         try await expectPass("run-defaults-mcp-shot", environment: ["LOAM_DRIVER_LOAM": Self.loamBinary])
     }
 
+    /// TAS-175: the sandbox settings. You add a host and a path in the run defaults of a plot, a path that opens home
+    /// is refused with its reason, and Settings > Runs holds the machine scope apart from the plot scope.
+    @Test func addsPathsAndHostsToTheSandbox() async throws {
+        try await expectPass("sandbox-settings-shot", environment: ["LOAM_DRIVER_LOAM": Self.loamBinary])
+    }
+
     /// Ticket 107: two plots with a worktree each that is ready to merge. The Ready to merge row counts 2,
     /// ⌘⇧L selects the first, then the second, then the first again, and the row goes while gh is missing.
     @Test func reachesTheWorktreesThatAreReadyToMergeWithCommandShiftL() async throws {

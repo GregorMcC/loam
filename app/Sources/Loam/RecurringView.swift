@@ -268,6 +268,7 @@ private struct RecurringForm: View {
 private struct RunDefaultsSection: View {
     let model: AppModel
     let plotID: String
+    @State private var sandbox: SandboxSettingsModel
     @State private var chosenModel = ""
     @State private var chosenEffort = ""
     @State private var chosenServers: [String] = []
@@ -278,6 +279,12 @@ private struct RunDefaultsSection: View {
     @State private var isLoaded = false
     /// True when the read of the defaults of this plot failed. The pickers stay off, so no save writes empty values.
     @State private var readFailed = false
+
+    init(model: AppModel, plotID: String) {
+        self.model = model
+        self.plotID = plotID
+        _sandbox = State(initialValue: SandboxSettingsModel(client: model.client, plot: plotID))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: LoamTheme.space3) {
@@ -304,6 +311,14 @@ private struct RunDefaultsSection: View {
                 Text(error).loamText(LoamTheme.captionStyle, LoamColor.rust).textSelection(.enabled)
                     .accessibilityIdentifier("run-defaults-error")
             }
+            Divider()
+            Text("Sandbox").loamText(LoamTheme.rowStyle)
+            Text("A run works in a sandbox. Add what this plot needs beyond the presets for its stacks. "
+                 + "The settings in Settings > Runs hold for every plot. Loam refuses a path that opens your home folder. A change holds for the next new session of a run.")
+                .loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+                .fixedSize(horizontal: false, vertical: true)
+            SandboxListsView(model: sandbox, scope: "plot")
+                .frame(maxWidth: 560, alignment: .leading)
         }
         .task {
             async let servers: Void = model.readMCPServers()

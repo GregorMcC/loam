@@ -403,16 +403,13 @@ public struct LoamClient: Sendable {
         return one.sandbox
     }
 
-    /// `loam run sandbox [<plot>] --read <path>... --write <path>... --host <host>...`: replaces the three lists. A
-    /// list with no item passes an empty value, which empties it. The command refuses a path that opens home or a
-    /// host that is not a name, and its error comes back as a `LoamError`.
-    public func setSandboxSettings(plot: String? = nil, _ settings: SandboxSettings) async throws -> SandboxSettings {
-        func flag(_ name: String, _ items: [String]) -> [String] {
-            (items.isEmpty ? [""] : items).flatMap { [name, $0] }
-        }
+    /// `loam run sandbox [<plot>] --read|--write|--host <item>...`: replaces one list and leaves the other two. A list
+    /// with no item passes an empty value, which empties it. The command refuses a path that opens home or a host that
+    /// is not a name, and its error comes back as a `LoamError`.
+    public func setSandboxList(plot: String? = nil, _ list: SandboxList, _ items: [String]) async throws -> SandboxSettings {
+        let flag = list == .hosts ? "--host" : "--\(list.rawValue)"
         let one: SandboxSettingsOne = try await read(
-            ["run", "sandbox"] + flag("--read", settings.read) + flag("--write", settings.write) + flag("--host", settings.hosts),
-            positionals: plot.map { [$0] } ?? [])
+            ["run", "sandbox"] + (items.isEmpty ? [""] : items).flatMap { [flag, $0] }, positionals: plot.map { [$0] } ?? [])
         return one.sandbox
     }
 
