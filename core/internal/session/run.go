@@ -210,13 +210,22 @@ func gitConfigFiles(admin, common string) []string {
 // git folder, and the run can write one there to name another repo. It reads
 // the .git of folder, which the run cannot write, and takes the .git folder
 // of the repo of the plot that holds that worktree. It returns an error when
-// no repo of the plot holds it.
+// no repo of the plot holds it, and when folder is a repo of the plot whose
+// .git is not a folder.
 func gitDirs(folder string, repos []string) (admin, common string, err error) {
 	dotgit := filepath.Join(folder, ".git")
 	fi, err := os.Lstat(dotgit)
-	switch {
-	case err != nil:
+	if err != nil {
 		return "", "", fmt.Errorf("find the git folder of %s for the sandbox: %w", folder, err)
+	}
+	// The run can replace the .git folder of a repo that it works in with a
+	// .git file that names the git folder of another repo of the plot.
+	for _, repo := range repos {
+		if sandbox.Real(repo) == sandbox.Real(folder) && !fi.IsDir() {
+			return "", "", fmt.Errorf("the sandbox cannot hold the run in %s: it is a repo of the plot, and its .git is not a folder", folder)
+		}
+	}
+	switch {
 	case fi.IsDir():
 		admin = dotgit
 	case fi.Mode().IsRegular():

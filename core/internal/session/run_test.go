@@ -262,3 +262,28 @@ func TestRunRulesNeedTheGitFolderOfARepoOfThePlot(t *testing.T) {
 		t.Fatalf("a run in another repo: %v", err)
 	}
 }
+
+// TAS-175: a run in a repo of the plot can write its .git folder. When it
+// puts a .git file there that names another repo of the plot, the run gets
+// no rules, so the other repo does not become writable.
+func TestRunRulesNeedTheGitFolderOfTheRepoOfTheRun(t *testing.T) {
+	e := setup(t)
+	testutil.GitEnv(t)
+	repo, _ := testutil.GitRepo(t)
+	other, _ := testutil.GitRepo(t)
+	p := e.plot(t, store.PlotInput{Name: "Alpha", Repos: []store.RepoInput{{Path: repo}, {Path: other}}})
+	run := store.Run{ID: "r1", PlotID: p.ID, Folder: repo}
+	if _, err := session.RunRules(e.store, run); err != nil {
+		t.Fatal(err)
+	}
+	dotgit := filepath.Join(repo, ".git")
+	if err := os.Rename(dotgit, filepath.Join(repo, "moved.git")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dotgit, []byte("gitdir: "+filepath.Join(other, ".git")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.RunRules(e.store, run); err == nil || !strings.Contains(err.Error(), "its .git is not a folder") {
+		t.Fatalf("a run whose .git names another repo: %v", err)
+	}
+}

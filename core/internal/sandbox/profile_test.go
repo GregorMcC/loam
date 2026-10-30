@@ -273,6 +273,10 @@ except OSError as e:
 // in the temp folder of the user.
 func network(t *testing.T, r Rules, temp, step, arg string) string {
 	t.Helper()
+	// A TMPDIR that holds the fake home, such as /private/var/tmp, is not a
+	// temp folder of the profile. The temp folders of the user from getconf
+	// are enough for the python3 shim.
+	t.Setenv("TMPDIR", "")
 	temps := Temps()
 	if kept := r.temps(temps); len(kept) != len(temps) {
 		t.Fatalf("the profile keeps the temp folders %q of %q", kept, temps)
