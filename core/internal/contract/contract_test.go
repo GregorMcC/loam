@@ -62,10 +62,6 @@ var timeRE = regexp.MustCompile(`\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?(Z|[+-]\d
 
 const fixedTime = "2026-01-01T00:00:00Z"
 
-// secondsRE finds a time in seconds, such as the lead time of `run metrics`.
-// The run takes wall time, so each run of the test gives other numbers.
-var secondsRE = regexp.MustCompile(`("[a-z0-9_]*seconds"):\s*\d+`)
-
 // headStandIn is the PR head in testdata/github.json that the scenario
 // replaces with the commit of the worktrees. fixedHead replaces that commit
 // in the fixtures.
@@ -258,7 +254,27 @@ func (h *harness) normalize(s string) string {
 	s = strings.NewReplacer(append(pairs,
 		h.home, "/tmp/loam-contract/loamhome",
 		h.root, "/tmp/loam-contract")...).Replace(s)
-	return secondsRE.ReplaceAllString(timeRE.ReplaceAllString(s, fixedTime), "${1}: 60")
+	return timeRE.ReplaceAllString(s, fixedTime)
+}
+
+// fixSeconds sets each time in seconds in v, such as the lead time of `run
+// metrics`, to 60. The runs of the test take wall time, so each run gives
+// other numbers. A spread with no count keeps its 0.
+func fixSeconds(v any) {
+	switch v := v.(type) {
+	case map[string]any:
+		count, spread := v["count"].(float64)
+		for k, x := range v {
+			if _, ok := x.(float64); ok && strings.HasSuffix(k, "_seconds") && (!spread || count > 0) {
+				v[k] = 60
+			}
+			fixSeconds(x)
+		}
+	case []any:
+		for _, x := range v {
+			fixSeconds(x)
+		}
+	}
 }
 
 // run runs loam with --json, checks the exit code, checks that stderr is
@@ -293,6 +309,7 @@ func (h *harness) record(name, schema string, wantExit int, args []string) []byt
 	if err := json.Unmarshal([]byte(norm), &v); err != nil {
 		h.t.Fatalf("%s: stdout is not one JSON document: %v\n%s", name, err, out)
 	}
+	fixSeconds(v)
 	pretty, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		h.t.Fatal(err)

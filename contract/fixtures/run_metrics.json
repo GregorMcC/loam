@@ -18,13 +18,13 @@
     "recovery": {
       "ci": {
         "count": 0,
-        "median_seconds": 60,
-        "p90_seconds": 60
+        "median_seconds": 0,
+        "p90_seconds": 0
       },
       "gate": {
         "count": 0,
-        "median_seconds": 60,
-        "p90_seconds": 60
+        "median_seconds": 0,
+        "p90_seconds": 0
       }
     },
     "rework": {
@@ -46,8 +46,8 @@
     "stations": {
       "approve": {
         "count": 0,
-        "median_seconds": 60,
-        "p90_seconds": 60
+        "median_seconds": 0,
+        "p90_seconds": 0
       },
       "build": {
         "count": 1,
@@ -84,8 +84,8 @@
     "landed": 0,
     "lead_time": {
       "count": 0,
-      "median_seconds": 60,
-      "p90_seconds": 60
+      "median_seconds": 0,
+      "p90_seconds": 0
     },
     "not_landed": {
       "cancelled": 0,
@@ -96,13 +96,13 @@
     "recovery": {
       "ci": {
         "count": 0,
-        "median_seconds": 60,
-        "p90_seconds": 60
+        "median_seconds": 0,
+        "p90_seconds": 0
       },
       "gate": {
         "count": 0,
-        "median_seconds": 60,
-        "p90_seconds": 60
+        "median_seconds": 0,
+        "p90_seconds": 0
       }
     },
     "rework": {
@@ -117,33 +117,33 @@
     "stations": {
       "approve": {
         "count": 0,
-        "median_seconds": 60,
-        "p90_seconds": 60
+        "median_seconds": 0,
+        "p90_seconds": 0
       },
       "build": {
         "count": 0,
-        "median_seconds": 60,
-        "p90_seconds": 60
+        "median_seconds": 0,
+        "p90_seconds": 0
       },
       "merge": {
         "count": 0,
-        "median_seconds": 60,
-        "p90_seconds": 60
+        "median_seconds": 0,
+        "p90_seconds": 0
       },
       "queue": {
         "count": 0,
-        "median_seconds": 60,
-        "p90_seconds": 60
+        "median_seconds": 0,
+        "p90_seconds": 0
       },
       "ship": {
         "count": 0,
-        "median_seconds": 60,
-        "p90_seconds": 60
+        "median_seconds": 0,
+        "p90_seconds": 0
       },
       "stopped": {
         "count": 0,
-        "median_seconds": 60,
-        "p90_seconds": 60
+        "median_seconds": 0,
+        "p90_seconds": 0
       }
     },
     "to": "2026-01-01T00:00:00Z"
