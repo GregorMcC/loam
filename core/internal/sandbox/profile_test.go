@@ -269,10 +269,12 @@ except OSError as e:
     print(e)
 `
 
-// network runs one step of netScript under the profile of r.
+// network runs one step of netScript under the profile of r. The temp
+// folder of the test is a temp folder of the profile too: the python3 of the
+// Xcode tools writes a cache there.
 func network(t *testing.T, r Rules, temp, step, arg string) string {
 	t.Helper()
-	out, _ := sandboxed(t, r, temp, "/usr/bin/python3 -I -c "+shellQuote(netScript)+" "+step+" "+shellQuote(arg))
+	out, _ := sandboxedIn(t, r, []string{temp, os.TempDir()}, "/usr/bin/python3 -I -c "+shellQuote(netScript)+" "+step+" "+shellQuote(arg))
 	return strings.TrimSpace(out)
 }
 
