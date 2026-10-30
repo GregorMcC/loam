@@ -119,9 +119,15 @@ func goCaches(home string, getenv func(string) string) []string {
 	return []string{mod, build, filepath.Join(home, "Library", "Application Support", "go", "telemetry")}
 }
 
-// gitConfig are the git config files that git reads in each command.
+// gitConfig are the git config files that git reads in each command. They
+// are files, not the folder: ~/.config/git/credentials holds a token.
 func gitConfig(home string) []string {
-	return []string{filepath.Join(home, ".gitconfig"), filepath.Join(home, ".config", "git")}
+	return []string{
+		filepath.Join(home, ".gitconfig"),
+		filepath.Join(home, ".config", "git", "config"),
+		filepath.Join(home, ".config", "git", "ignore"),
+		filepath.Join(home, ".config", "git", "attributes"),
+	}
 }
 
 // For returns the rules of a run. It leaves out a repo or a link that would
@@ -180,8 +186,9 @@ func For(in Input) (Rules, error) {
 }
 
 // opens reports whether allowing path would open what the sandbox denies:
-// the root, home, a folder above home, or a path in a credential folder. It
-// ignores case, because macOS folders are not case sensitive by default.
+// the root, home, a folder above home, a credential path, a path in one, or a
+// folder that holds one. It ignores case, because macOS folders are not case
+// sensitive by default.
 func opens(home, path string) bool {
 	if path == "" {
 		return false
@@ -192,7 +199,7 @@ func opens(home, path string) bool {
 	}
 	for _, c := range credentials {
 		c = filepath.Join(home, strings.ToLower(strings.TrimSuffix(strings.TrimPrefix(c, "~/"), "/**")))
-		if within(path, c) {
+		if within(path, c) || within(c, path) {
 			return true
 		}
 	}

@@ -67,7 +67,7 @@ func TestForAGoRepoASwiftRepoAndALink(t *testing.T) {
 	}{
 		{"Read", got.Read, []string{
 			work, git, api, app, spec,
-			"/h/.gitconfig", "/h/.config/git",
+			"/h/.gitconfig", "/h/.config/git/config", "/h/.config/git/ignore", "/h/.config/git/attributes",
 			"/h/go/pkg/mod", "/h/Library/Caches/go-build", "/h/Library/Application Support/go/telemetry",
 			"/h/Library/Caches/org.swift.swiftpm", "/h/Library/org.swift.swiftpm",
 		}},
@@ -125,7 +125,7 @@ func TestForPicksThePresetOfEachStackFile(t *testing.T) {
 			repo := realTemp(t)
 			mkfile(t, filepath.Join(repo, c.file))
 			got := mustFor(t, Input{Home: "/h", Folder: repo, Repos: []string{repo}, Getenv: noEnv})
-			base := []string{repo, "/h/.gitconfig", "/h/.config/git"}
+			base := []string{repo, "/h/.gitconfig", "/h/.config/git/config", "/h/.config/git/ignore", "/h/.config/git/attributes"}
 			if want := append(base, c.read...); !slices.Equal(got.Read, want) {
 				t.Errorf("Read = %q, want %q", got.Read, want)
 			}
@@ -176,11 +176,15 @@ func TestForLeavesOutPathsThatOpenHome(t *testing.T) {
 		Links: []string{
 			home, filepath.Dir(home), "/",
 			filepath.Join(home, ".ssh"), filepath.Join(home, ".ssh", "config"), filepath.Join(home, ".config", "gh"),
+			// These hold credential folders: ~/.config/gh, ~/Library/Keychains.
+			filepath.Join(home, ".config"), filepath.Join(home, "Library"),
+			filepath.Join(home, ".config", "git", "credentials"),
 			filepath.Join(home, "notes"),
 		},
 		Getenv: noEnv,
 	})
-	want := []string{repo, filepath.Join(home, "notes"), filepath.Join(home, ".gitconfig"), filepath.Join(home, ".config", "git")}
+	want := []string{repo, filepath.Join(home, "notes"), filepath.Join(home, ".gitconfig"),
+		filepath.Join(home, ".config", "git", "config"), filepath.Join(home, ".config", "git", "ignore"), filepath.Join(home, ".config", "git", "attributes")}
 	if !slices.Equal(got.Read, want) {
 		t.Errorf("Read =\n  %q\nwant\n  %q", got.Read, want)
 	}
@@ -247,7 +251,7 @@ func TestForComparesPathsWithNoCase(t *testing.T) {
 	got := mustFor(t, Input{Home: home, Folder: repo, Links: []string{
 		filepath.Join(home, ".SSH"), filepath.Join(strings.ToUpper(home), ".aws", "x"), strings.ToUpper(home),
 	}, Getenv: noEnv})
-	if len(got.Read) != 3 {
+	if len(got.Read) != 5 {
 		t.Errorf("Read = %q, want only the folder and the git config", got.Read)
 	}
 }

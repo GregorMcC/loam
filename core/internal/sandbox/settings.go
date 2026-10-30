@@ -17,6 +17,10 @@ func (r Rules) Settings() map[string]any {
 			// A host off the list is refused, not asked about: nobody answers
 			// the prompts of a background session.
 			"strictAllowlist": true,
+			// Tests bind servers on localhost, such as Go's httptest. It lets
+			// a command reach a service on localhost too. Other hosts stay
+			// denied.
+			"allowLocalBinding": true,
 		},
 		"filesystem": map[string]any{
 			"denyRead":   []string{r.Home},
@@ -43,6 +47,7 @@ var credentials = []string{
 	"~/Library/Keychains/**",
 	"~/.netrc",
 	"~/.git-credentials",
+	"~/.config/git/credentials",
 	"~/.claude.json",
 	"~/.cargo/credentials.toml",
 	"~/.npmrc",
