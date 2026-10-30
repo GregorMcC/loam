@@ -94,7 +94,7 @@ import Testing
         await model.fixRun(run.id)
         let shape = try #require(fake.args().first)
         #expect(shape.hasPrefix("run shape --title Fix: Tidy the README "))
-        #expect(shape.hasSuffix("--fixes \(run.id) --json -- plotaaaaae"))
+        #expect(shape.hasSuffix("--fixes \(run.id) --json -- plotaaaaae") && !shape.contains("--repo"))
         #expect(model.fixError == nil)
     }
 

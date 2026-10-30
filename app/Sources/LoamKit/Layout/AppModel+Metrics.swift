@@ -21,7 +21,9 @@ extension AppModel {
     public func reloadMetrics() async {
         guard page == .metrics else { return }
         // A plot that is gone shows the metrics of every plot.
-        if let id = metricsPlot, !plots.contains(where: { $0.id == id }) { (metricsPlot, metrics) = (nil, nil) }
+        if let id = metricsPlot, !plots.isEmpty, !plots.contains(where: { $0.id == id }) {
+            (metricsPlot, metrics, metricsError) = (nil, nil, nil)
+        }
         metricsReads += 1
         let (plot, read) = (metricsPlot, metricsReads)
         do {

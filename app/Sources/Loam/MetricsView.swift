@@ -51,7 +51,8 @@ struct MetricsView: View {
             }
             Spacer(minLength: LoamTheme.space4)
             Picker("Plot", selection: Binding(
-                get: { model.metricsPlot ?? "" },
+                // Until the next read resets it, a plot that is gone shows as every plot.
+                get: { model.metricsPlot.flatMap { id in model.plots.contains { $0.id == id } ? id : nil } ?? "" },
                 set: { id in Task { await model.showMetrics(plot: id.isEmpty ? nil : id) } }
             )) {
                 Text("All plots").tag("")
