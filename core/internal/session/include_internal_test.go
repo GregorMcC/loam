@@ -22,11 +22,7 @@ func TestIncludeEntries(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, ok := includeEntries(context.Background(), "/home", f)
-	want := []includeEntry{
-		{"include.path", "/home/a.gitconfig"},
-		{"include.path", filepath.Join(dir, "rel", "b.gitconfig")},
-		{"includeif.hasconfig:remote.*.url:git@example.com:org/**.path", "/abs/e.gitconfig"},
-	}
+	want := []string{"/home/a.gitconfig", filepath.Join(dir, "rel", "b.gitconfig"), "/abs/e.gitconfig"}
 	if !ok || !slices.Equal(got, want) {
 		t.Errorf("includeEntries = %q, %v, want %q", got, ok, want)
 	}
@@ -41,8 +37,29 @@ func TestGitIncludesEndsOnACycle(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	got := gitIncludes("/home", []string{a}, nil, func(string) bool { return false })
+	got := gitIncludes("/home", []string{a}, func(string) bool { return true })
 	if !slices.Equal(got.files, []string{b}) || got.late || got.skipped != nil {
 		t.Errorf("gitIncludes = %+v, want only %s", got, b)
+	}
+}
+
+// gitIncludes takes the file of an entry in a file that it does not follow,
+// such as one that the run can write, but not the files that that file
+// includes. It names such a file in skipped.
+func TestGitIncludesSkipsAFileThatItDoesNotFollow(t *testing.T) {
+	dir := t.TempDir()
+	a, b, c := filepath.Join(dir, "a.gitconfig"), filepath.Join(dir, "B.gitconfig"), filepath.Join(dir, "c.gitconfig")
+	for f, text := range map[string]string{
+		a: "[include]\n\tpath = B.gitconfig\n\tpath = b.gitconfig\n",
+		b: "[include]\n\tpath = c.gitconfig\n",
+		c: "",
+	} {
+		if err := os.WriteFile(f, []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := gitIncludes("/home", []string{a}, func(f string) bool { return f != b })
+	if !slices.Equal(got.files, []string{b}) || !slices.Equal(got.skipped, []string{b}) || got.late {
+		t.Errorf("gitIncludes = %+v, want %s once, and skipped", got, b)
 	}
 }

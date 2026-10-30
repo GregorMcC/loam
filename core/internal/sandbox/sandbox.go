@@ -237,6 +237,12 @@ func (r Rules) Writable(path string) bool {
 	return in(r.Write) && !in(r.DenyWrite)
 }
 
+// Refuses reports whether the rules never let the run read path, because it
+// would open home, as For checks for each path that it allows.
+func (r Rules) Refuses(path string) bool {
+	return opens(r.Home, Real(path))
+}
+
 // AllowRead adds read paths to the rules with the check of For: it leaves
 // out a path that would open home. It returns the paths that it left out.
 func (r *Rules) AllowRead(paths ...string) (left []string) {

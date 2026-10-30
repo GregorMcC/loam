@@ -146,7 +146,7 @@ func runRules(s *store.Store, plot store.Plot, folder string) (sandbox.Rules, er
 	if err != nil {
 		return sandbox.Rules{}, err
 	}
-	base, taken := gitConfigFiles(admin, git)
+	base := gitConfigFiles(admin, git)
 	in := sandbox.Input{
 		Home:      home,
 		Machine:   sandbox.Extra{Read: machine.Read, Write: machine.Write, Hosts: machine.Hosts},
@@ -171,14 +171,14 @@ func runRules(s *store.Store, plot store.Plot, folder string) (sandbox.Rules, er
 	}
 	// The includes come after the rules, so that Loam knows which files the
 	// run can write.
-	inc := gitIncludes(home, base, taken, r.Writable)
+	inc := gitIncludes(home, base, func(f string) bool { return !r.Writable(f) && !r.Refuses(f) })
 	for _, p := range r.AllowRead(inc.files...) {
 		if _, err := os.Stat(p); err == nil {
 			r.Notes = append(r.Notes, gitStops("A git config includes "+p+", and Bash cannot read it."))
 		}
 	}
 	for _, f := range inc.skipped {
-		r.Notes = append(r.Notes, gitStops("The run can write the git config "+f+". So Bash cannot read the files that it includes."))
+		r.Notes = append(r.Notes, gitStops("Loam did not follow the includes of the git config "+f+", because the run can write it or the sandbox refuses it. So Bash cannot read the files that it includes."))
 	}
 	if inc.late {
 		r.Notes = append(r.Notes, gitStops("Loam did not read every git config include in time."))
@@ -199,21 +199,14 @@ func gitStops(what string) string {
 var gitConfigScopes = []string{"system", "global", "local"}
 
 // gitConfigFiles returns the config files that git reads in the worktree
-// with the git folder admin, in the scopes of gitConfigScopes. base are the
-// files without their includes. taken are the files that git also reads
-// through an include whose condition holds. It names the common git folder,
+// with the git folder admin, in the scopes of gitConfigScopes, without the
+// files that they include (see gitIncludes). It names the common git folder,
 // so that git does not follow a commondir file that the run wrote. A file
 // that git cannot name is not read in the sandbox, so an error gives none.
-func gitConfigFiles(admin, common string) (base, taken []string) {
-	return configOrigins(admin, common, "--no-includes"), configOrigins(admin, common, "--includes")
-}
-
-// configOrigins returns the files of the entries that git config --list
-// gives with the flag, in the scopes of gitConfigScopes.
-func configOrigins(admin, common, flag string) []string {
+func gitConfigFiles(admin, common string) []string {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "config", "--list", flag, "--show-scope", "--show-origin", "-z")
+	cmd := exec.CommandContext(ctx, "git", "config", "--list", "--no-includes", "--show-scope", "--show-origin", "-z")
 	cmd.Env = append(os.Environ(), "GIT_DIR="+admin, "GIT_COMMON_DIR="+common)
 	out, err := cmd.Output()
 	if err != nil {
@@ -240,33 +233,30 @@ const includeDepth = 10
 
 // includes are the files that the sandbox reads for the git config includes.
 // skipped are files with includes that Loam did not follow, because the run
-// can write them. late is true when git did not answer in time.
+// can write them or the sandbox refuses them. late is true when git did not
+// answer in time.
 type includes struct {
 	files, skipped []string
 	late           bool
 }
 
-// gitIncludes follows the include entries of the base config files, to the
-// depth that git follows. It takes the file of an entry that git opens:
+// gitIncludes follows the include.path and includeIf.*.path entries of the
+// base config files, to the depth that git follows, and takes the file of
+// each entry whatever its condition. Git opens the file of a hasconfig
+// condition also when the condition does not hold (TAS-194). The run can
+// change its branch, so an onbranch condition can hold later in the run.
 //
-//   - an include.path;
-//   - an includeIf with a hasconfig condition. Git reads that file to find
-//     the remote URLs, also when the condition does not hold (TAS-194);
-//   - another includeIf, when its file is in taken.
-//
-// It does not follow the includes of a file that the run can write, because
-// the run could name any file there. taken comes from git, which follows
-// them, so Loam only uses it to check a condition of a file that it reached.
-func gitIncludes(home string, base, taken []string, writable func(string) bool) includes {
+// It follows the includes of a file only when follow is true for it. The
+// caller gives false for a file that the run can write, because the run
+// could name any file there, and for a file that the sandbox refuses.
+func gitIncludes(home string, base []string, follow func(string) bool) includes {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	held := map[string]bool{}
-	for _, f := range taken {
-		held[sandbox.Real(f)] = true
-	}
+	// macOS folders ignore case, so the same file can have two names.
 	seen := map[string]bool{}
+	key := func(f string) string { return strings.ToLower(sandbox.Real(f)) }
 	for _, f := range base {
-		seen[f] = true
+		seen[key(f)] = true
 	}
 	var inc includes
 	next := base
@@ -278,16 +268,15 @@ func gitIncludes(home string, base, taken []string, writable func(string) bool) 
 				inc.late = true
 				return inc
 			}
-			if len(entries) > 0 && writable(f) {
+			if len(entries) > 0 && !follow(f) {
 				inc.skipped = append(inc.skipped, f)
 				continue
 			}
-			for _, e := range entries {
-				opened := e.key == "include.path" || strings.HasPrefix(e.key, "includeif.hasconfig:") || held[sandbox.Real(e.path)]
-				if opened && !seen[e.path] {
-					seen[e.path] = true
-					inc.files = append(inc.files, e.path)
-					found = append(found, e.path)
+			for _, p := range entries {
+				if !seen[key(p)] {
+					seen[key(p)] = true
+					inc.files = append(inc.files, p)
+					found = append(found, p)
 				}
 			}
 		}
@@ -296,17 +285,14 @@ func gitIncludes(home string, base, taken []string, writable func(string) bool) 
 	return inc
 }
 
-// includeEntry is an include entry of a git config file: its key, in lower
-// case, and the file that it names.
-type includeEntry struct{ key, path string }
-
-// includeEntries returns the include entries of the config file f. Git reads
+// includeEntries returns the files that the include entries of the config
+// file f name. Git reads
 // a relative path from the folder of f, and ~/ from home. It leaves out a
 // path that git would not expand in the same way, such as ~user/ or
 // %(prefix)/. It also leaves out a folder, which git cannot read as a config
 // file. A file with no include, or one that git cannot read, gives none. ok
 // is false when git did not answer in time.
-func includeEntries(ctx context.Context, home, f string) (entries []includeEntry, ok bool) {
+func includeEntries(ctx context.Context, home, f string) (paths []string, ok bool) {
 	out, err := exec.CommandContext(ctx, "git", "config", "--file", f, "--no-includes", "-z", "--get-regexp", `^include(if\..*)?\.path$`).Output()
 	if ctx.Err() != nil {
 		return nil, false
@@ -317,7 +303,7 @@ func includeEntries(ctx context.Context, home, f string) (entries []includeEntry
 	// Each entry is a key and its value, with a newline between them, ended
 	// by NUL.
 	for _, entry := range strings.Split(string(out), "\x00") {
-		key, p, found := strings.Cut(entry, "\n")
+		_, p, found := strings.Cut(entry, "\n")
 		switch {
 		case !found || p == "":
 			continue
@@ -331,9 +317,9 @@ func includeEntries(ctx context.Context, home, f string) (entries []includeEntry
 		if fi, err := os.Stat(p); err == nil && fi.IsDir() {
 			continue
 		}
-		entries = append(entries, includeEntry{key: strings.ToLower(key), path: filepath.Clean(p)})
+		paths = append(paths, filepath.Clean(p))
 	}
-	return entries, true
+	return paths, true
 }
 
 // gitDirs returns the git folder of the worktree in folder (admin) and the

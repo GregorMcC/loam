@@ -159,7 +159,7 @@ func TestPrepareRunAllowsTheGitConfigFilesThatGitReads(t *testing.T) {
 // the sandbox allows the file of each include and includeIf, and the files
 // that it includes. It does not follow an include in a file that the run can
 // write, also when git takes that include, because the run could name any
-// file there.
+// file there. The prompt says so.
 func TestPrepareRunAllowsTheFilesOfEachIncludeIf(t *testing.T) {
 	e := setup(t)
 	testutil.GitEnv(t)
@@ -221,11 +221,12 @@ func TestPrepareRunAllowsTheFilesOfEachIncludeIf(t *testing.T) {
 	if slices.Contains(read, realpath(t, secret)) {
 		t.Errorf("allowRead = %q has %s, which an include in a file of the run names", read, secret)
 	}
-	// Git does not open the file of a gitdir condition that does not hold.
-	if slices.Contains(read, realpath(t, other)) {
-		t.Errorf("allowRead = %q has %s, whose includeIf does not hold", read, other)
+	// The run can change its branch, so Loam takes the file of every
+	// includeIf, whatever its condition.
+	if !slices.Contains(read, realpath(t, other)) {
+		t.Errorf("allowRead = %q, want %s, whose includeIf does not hold", read, other)
 	}
-	if prompt := plan.Args[len(plan.Args)-1]; !strings.Contains(prompt, "The run can write the git config "+realpath(t, local)) && !strings.Contains(prompt, "The run can write the git config "+local) {
+	if prompt := plan.Args[len(plan.Args)-1]; !strings.Contains(prompt, "the includes of the git config "+local) {
 		t.Errorf("prompt = %q, want a note on %s", prompt, local)
 	}
 }
