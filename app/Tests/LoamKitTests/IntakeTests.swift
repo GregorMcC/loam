@@ -214,18 +214,26 @@ import Testing
         #expect(pick.change(from: saved).servers == [])
     }
 
-    /// A field that a failed save did not write differs from what the core has, so the next save sends it again. A
-    /// field that the user set back while a save ran differs from the last request, so the save sends it too.
-    @Test func theChangeOfAPickHoldsTheFieldsThatDifferFromTheCoreOrTheLastRequest() {
-        let core = RunDefaultsChoice(model: "", effort: "", servers: [], review: true, reviewEffort: "")
-        var failed = core
-        failed.review = false
-        var pick = failed
-        pick.model = "opus"
-        #expect(pick.change(from: failed, core) == RunDefaultsChange(model: "opus", review: false))
-        var inFlight = core
-        inFlight.model = "opus"
-        #expect(core.change(from: inFlight, core) == RunDefaultsChange(model: ""))
+    /// A save that fails keeps its fields, and the next save of the plot sends them again under its own.
+    @Test func theFieldsOfAFailedSaveGoWithTheNextSave() async throws {
+        let (model, fake) = try model([("error_generic", 1), ("run_defaults_review", 0)])
+        await model.setRunDefaults(plot: "plotaaaaae", review: false)
+        #expect(model.runDefaultsError != nil)
+        await model.setRunDefaults(plot: "plotaaaaae", model: "opus")
+        let saves = fake.args().filter { $0.hasPrefix("run defaults") }
+        #expect(saves.last == "run defaults --model opus --review off --json -- plotaaaaae")
+        #expect(model.runDefaultsError == nil)
+    }
+
+    /// A save fails while another waits: the waiting one sends the fields of both.
+    @Test func aWaitingSaveTakesTheFieldsOfASaveThatFails() async throws {
+        let (model, fake) = try model([("error_generic", 1), ("run_defaults_review", 0)])
+        let failing = Task { await model.setRunDefaults(plot: "plotaaaaae", review: false) }
+        let waiting = Task { await model.setRunDefaults(plot: "plotaaaaae", model: "opus") }
+        await failing.value
+        await waiting.value
+        let saves = fake.args().filter { $0.hasPrefix("run defaults") }
+        #expect(saves.last == "run defaults --model opus --review off --json -- plotaaaaae")
     }
 
     /// A pick that comes while a save runs waits, and the last pick is the last one saved.

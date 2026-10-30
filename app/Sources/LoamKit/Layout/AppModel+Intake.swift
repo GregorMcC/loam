@@ -116,13 +116,14 @@ extension AppModel {
     /// name clears the servers.
     /// The saves of a plot go one after the other. While a save of the plot runs, a new request waits. It merges
     /// with a request that waits already: the fields of the new one replace those of the old one, so no change is
-    /// lost. Saves of other plots do not wait for it.
+    /// lost. The fields of a save that failed go again with the next save of the plot, under its own. Saves of other
+    /// plots do not wait for it.
     public func setRunDefaults(plot: String, model: String? = nil, effort: String? = nil, mcpServers: [String]? = nil,
                                review: Bool? = nil, reviewEffort: String? = nil) async {
         let change = RunDefaultsChange(
             model: model, effort: effort, servers: mcpServers, review: review, reviewEffort: reviewEffort)
-        let waiting = pendingRunDefaults[plot]?.change
-        pendingRunDefaults[plot] = RunDefaultsRequest(plot: plot, change: waiting?.overlaid(by: change) ?? change)
+        let earlier = pendingRunDefaults[plot]?.change ?? unsavedRunDefaults.removeValue(forKey: plot)
+        pendingRunDefaults[plot] = RunDefaultsRequest(plot: plot, change: earlier?.overlaid(by: change) ?? change)
         guard savingRunDefaults.insert(plot).inserted else { return }
         defer { savingRunDefaults.remove(plot) }
         while let request = pendingRunDefaults[plot] {
@@ -132,6 +133,11 @@ extension AppModel {
                 runDefaultsError = nil
             } catch {
                 runDefaultsError = Self.message(for: error)
+                if let next = pendingRunDefaults[plot] {
+                    pendingRunDefaults[plot] = RunDefaultsRequest(plot: plot, change: request.change.overlaid(by: next.change))
+                } else {
+                    unsavedRunDefaults[plot] = request.change
+                }
             }
         }
     }
