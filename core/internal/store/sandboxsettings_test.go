@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"reflect"
+	"sync"
 	"testing"
 
 	"github.com/GregorMcC/loam/core/internal/store"
@@ -108,5 +109,38 @@ func TestDeletingAPlotDeletesItsSandboxSettings(t *testing.T) {
 	}
 	if got, _ := s.GetSandboxSettings(""); len(got.Hosts) != 1 {
 		t.Fatalf("machine scope %+v", got)
+	}
+}
+
+// TAS-189: an update changes only the lists that it names, in one write, so
+// two updates of different lists both stay.
+func TestUpdateSandboxSettingsKeepsTheListsThatItDoesNotName(t *testing.T) {
+	s := openStore(t)
+	if _, err := s.SetSandboxSettings(store.SandboxSettings{Read: []string{"~/a"}, Write: []string{"~/w"}, Hosts: []string{"a.example.com", "b.example.com"}}); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	for _, c := range []store.SandboxChange{
+		{Hosts: &[]string{"a.example.com"}},
+		{Read: &[]string{"~/a", "~/b"}},
+	} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := s.UpdateSandboxSettings("", c); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	want := store.SandboxSettings{Read: []string{"~/a", "~/b"}, Write: []string{"~/w"}, Hosts: []string{"a.example.com"}}
+	if got, _ := s.GetSandboxSettings(""); !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+	if _, err := s.UpdateSandboxSettings("nosuchplot", store.SandboxChange{Hosts: &[]string{"c.example.com"}}); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("no plot: %v", err)
+	}
+	if _, err := s.UpdateSandboxSettings("", store.SandboxChange{Hosts: &[]string{"*"}}); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("bad host: %v", err)
 	}
 }
