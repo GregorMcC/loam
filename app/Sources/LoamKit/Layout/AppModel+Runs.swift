@@ -12,6 +12,9 @@ public enum AppPage: Equatable, Sendable {
     case recurring(String)
     /// The desk: the runs that wait for you, one at a time (ticket 207). `AppModel.desk` says which.
     case desk
+    /// The run metrics: where the time of the runs goes, from approve to landed (TAS-176). `AppModel.metricsPlot`
+    /// says which plot, or every plot.
+    case metrics
 }
 
 extension AppModel {
@@ -25,6 +28,7 @@ extension AppModel {
         if case .run(let id) = page { await readRunStatus(id) }
         if page == .today { await readAwayEvents() }
         if page == .desk { await followDeskQueue(from: place) }
+        if page == .metrics { await reloadMetrics() }
     }
 
     /// `loam run tick`: ships the runs whose checks passed. When the tick moved a run, the runs are

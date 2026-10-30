@@ -555,6 +555,7 @@ struct AttentionCycleTests {
         s.ws.focus(s.fix2)
         let pages: [(AppPage?, SidebarModel.PageRow?)] = [
             (.today, .today), (.desk, .today), (.run("r1"), .today), (.intake("a"), .intake), (.recurring("a"), .intake),
+            (.metrics, .metrics),
         ]
         for (page, row) in pages {
             let model = SidebarModel(plots: plots, workspace: s.ws, collapsed: false, page: page)

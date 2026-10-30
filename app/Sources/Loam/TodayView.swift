@@ -14,6 +14,7 @@ struct PageView: View {
             case .intake(let plot): IntakeView(model: model, plotID: plot).id(plot)
             case .recurring(let plot): RecurringView(model: model, plotID: plot)
             case .desk: DeskView(model: model)
+            case .metrics: MetricsView(model: model)
             case .today, nil: TodayView(model: model)
             }
         }
@@ -484,6 +485,12 @@ struct RunPageView: View {
                 if let run {
                     RunHeader(run: run, plotName: model.plots.first { $0.id == run.plotID }?.name ?? "", model: model)
                     RunGroupLinks(model: model, run: run)
+                    if let error = model.fixError, error.run == run.id {
+                        Text(error.message).loamText(LoamTheme.bodyStyle, LoamColor.rust).textSelection(.enabled)
+                            .padding(LoamTheme.space4).frame(maxWidth: .infinity, alignment: .leading)
+                            .loamCard(LoamColor.rustWash)
+                            .accessibilityIdentifier("run-page-fix-error")
+                    }
                     if !run.note.isEmpty {
                         Text(run.note).loamText(LoamTheme.bodyStyle, LoamColor.ink).textSelection(.enabled)
                             .padding(LoamTheme.space4).frame(maxWidth: .infinity, alignment: .leading).loamCard()
@@ -563,6 +570,14 @@ private struct RunHeader: View {
                 Button("Stop run") { Task { await model.stopRun(run.id) } }
                     .loamSecondaryButton()
                     .accessibilityIdentifier("run-page-stop")
+            }
+            // TAS-176: a run that fixes a landed run counts it as a change failure on the Metrics page.
+            if run.state == .landed {
+                Button("Fix this") { Task { await model.fixRun(run.id) } }
+                    .loamSecondaryButton()
+                    .disabled(model.isStartingRun)
+                    .help("Have Claude draft a run that fixes this one. The draft waits at the desk.")
+                    .accessibilityIdentifier("run-page-fix")
             }
             if atDesk {
                 Button("Watch") { model.watchRun(run) }

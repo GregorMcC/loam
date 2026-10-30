@@ -248,11 +248,13 @@ public struct Run: Codable, Equatable, Sendable, Identifiable {
     public var groupID: String = ""
     /// The ship notes that Claude wrote when Loam opened the PR. Nil before that, and when Claude wrote none.
     public var notes: RunNotes? = nil
+    /// The landed run that this run fixes (TAS-176), or empty.
+    public var fixes: String = ""
     /// The run waits on GitHub, so a tick can move it: it ships, or it is ready with a PR that GitHub can merge.
     public var waitsOnGitHub: Bool { state == .shipping || (state == .ready && pr != nil) }
 
     enum CodingKeys: String, CodingKey {
-        case id, folder, title, goal, state, tries, turns, source, pr, shape, note, notes
+        case id, folder, title, goal, state, tries, turns, source, pr, shape, note, notes, fixes
         case plotID = "plot_id", worktreeID = "worktree_id", doneWhen = "done_when", maxTries = "max_tries"
         case sessionID = "session_id", createdAt = "created_at", updatedAt = "updated_at", groupID = "group_id"
     }

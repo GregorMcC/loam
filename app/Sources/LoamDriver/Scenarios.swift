@@ -81,6 +81,7 @@ enum Scenarios {
         Scenario(name: "desk-no-ci-shot", limit: 120, body: deskNoCIShot),
         Scenario(name: "desk-review-shot", limit: 120, body: deskReviewShot),
         Scenario(name: "shape-shot", limit: 120, body: shapeShot),
+        Scenario(name: "metrics-shot", limit: 120, body: metricsShot),
         Scenario(name: "key-sweep", limit: 180, body: keySweep),
         Scenario(name: "key-sweep-desk", limit: 180, body: keySweepDesk),
         Scenario(name: "recurring-shot", limit: 120, body: recurringShot),

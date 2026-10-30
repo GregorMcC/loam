@@ -225,7 +225,7 @@ public struct SidebarModel: Equatable, Sendable {
     public let selection: RowID?
 
     /// A fixed row at the top of the sidebar that a page belongs to.
-    public enum PageRow: Equatable, Sendable { case today, intake }
+    public enum PageRow: Equatable, Sendable { case today, intake, metrics }
     /// The fixed row of the page that the well shows, or nil while it shows the panes. The desk and a run page
     /// belong to Today, and the recurring page to Intake.
     public let pageRow: PageRow?
@@ -313,6 +313,7 @@ public struct SidebarModel: Equatable, Sendable {
         case nil: nil
         case .today, .desk, .run: .today
         case .intake, .recurring: .intake
+        case .metrics: .metrics
         }
         selection = page != nil ? nil : activeSpace.map { space -> RowID in
             if let selectedWorktree, ordered.contains(where: { $0.id == selectedWorktree && $0.plotID == space.plotID }) {
