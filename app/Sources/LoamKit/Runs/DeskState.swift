@@ -24,6 +24,15 @@ public struct DeskState: Equatable, Sendable {
     public var setup: String?
     /// The title of the recurring run that shaped the run in Shaping, or nil.
     public var recurringTitle: String?
+    /// The review of the PR of the run that the desk shows, when the run is ready with a PR (TAS-61). Nil before the
+    /// read, and when it failed.
+    public var review: DeskReview?
+    /// Why the core could not read the review, such as gh signed out.
+    public var reviewError: String?
+    /// The `updated_at` of the run when the desk read its review. The review is read again when the run changes.
+    public var reviewStamp: String?
+    /// The review row shows its comments. It starts closed, so a long review does not push Merge down.
+    public var reviewOpen = false
     /// Why the last send-back or merge failed.
     public var error: String?
     /// A send-back, a merge, or an approval runs.

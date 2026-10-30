@@ -471,7 +471,7 @@ func (sh *shipper) passCI(ctx context.Context, pr *github.PR, note string) (bool
 	case sh.r.ReviewTries >= store.DefaultMaxReviewTries:
 		return sh.move(store.RunReady, fmt.Sprintf("%s. The review tries are used up, and changes are requested on #%d", note, pr.Number))
 	}
-	return sh.sendReview(ctx, pr, rv)
+	return sh.sendReview(ctx, pr, rv, false)
 }
 
 // failCI counts a try, and sends the failed logs back to the session. On the

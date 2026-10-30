@@ -59,6 +59,7 @@ func decodeFixture(schema: String, data: Data) throws {
     case "run-events": _ = try d.decode(RunEventFeed.self, from: data)
     case "run-status": _ = try d.decode(RunStatus.self, from: data)
     case "run-stop", "run-send-back", "run-shape": _ = try d.decode(RunResult.self, from: data)
+    case "run-send-review": _ = try d.decode(RunReview.self, from: data)
     case "run-land": _ = try d.decode(RunLandResult.self, from: data)
     case "run-diff": _ = try d.decode(RunDiff.self, from: data)
     case "run-tick": _ = try d.decode(RunTickResult.self, from: data)
@@ -136,6 +137,11 @@ func decodeFixture(schema: String, data: Data) throws {
     /// Ticket 209: a send-back whose note is like an earlier note offers a rule.
     @Test func aSendBackDecodesItsRuleOffer() throws {
         #expect(try JSONDecoder().decode(RunResult.self, from: Fixtures.data("run_send_back")).ruleOffer == nil)
+        // TAS-61: the review of the PR of a run, with its threads.
+        let review = try JSONDecoder().decode(RunReview.self, from: Fixtures.data("run_send_review_dry_run"))
+        #expect(review.threads == 1 && review.reviews == 0 && review.pr.reviewThreads?.first?.path == "README.md"
+            && review.pr.reviewThreads?.first?.comments.first?.writer == true && review.pr.changeRequests == [])
+        #expect(try JSONDecoder().decode(RunReview.self, from: Fixtures.data("run_send_review")).run.state == .running)
         let offer = try #require(try JSONDecoder().decode(RunResult.self, from: Fixtures.data("run_send_back_rule_offer")).ruleOffer)
         #expect(offer.note == "Keep the README short, please." && offer.earlier == "Keep the README short.")
         #expect(offer.earlierTitle == "Tidy the README" && !offer.earlierRunID.isEmpty)

@@ -1,3 +1,4 @@
+import AppKit
 import LoamKit
 import SwiftUI
 
@@ -254,6 +255,11 @@ struct DeskKeyLabel: View {
 }
 
 extension View {
+    /// The primary or the secondary style of a button of the desk.
+    @ViewBuilder func loamButton(primary: Bool) -> some View {
+        if primary { loamPrimaryButton() } else { loamSecondaryButton() }
+    }
+
     /// The heading of a part of the desk, such as Goal or Evidence: semibold, in `ink-faint`.
     func deskHeading() -> some View {
         font(.system(size: 12, weight: .semibold)).foregroundStyle(LoamColor.inkFaint)
@@ -695,6 +701,9 @@ private struct DeskEvidence: View {
     let field: FocusState<DeskField?>.Binding
     @State private var draft = ""
 
+    /// A ready run with a PR has a review row: the review, or why the core could not read it.
+    private var showsReview: Bool { model.desk.review != nil || model.desk.reviewError != nil }
+
     var body: some View {
         let events = model.runStatus?.run.id == run.id ? model.runStatus?.events ?? [] : []
         let lines = DeskContent.evidence(run, events: events)
@@ -707,12 +716,16 @@ private struct DeskEvidence: View {
                         .frame(maxWidth: .infinity, alignment: .leading).loamCard()
                         .accessibilityIdentifier("desk-run-note")
                 }
-                if !lines.isEmpty {
+                if !lines.isEmpty || showsReview {
                     section("Evidence") {
                         VStack(alignment: .leading, spacing: 0) {
                             ForEach(Array(lines.enumerated()), id: \.element.id) { i, line in
                                 if i > 0 { Rectangle().fill(LoamColor.inkHairline).frame(height: 1) }
-                                evidence(line)
+                                DeskEvidenceLine(line: line)
+                            }
+                            if showsReview {
+                                if !lines.isEmpty { Rectangle().fill(LoamColor.inkHairline).frame(height: 1) }
+                                DeskReviewRow(model: model)
                             }
                         }
                     }
@@ -792,9 +805,15 @@ private struct DeskEvidence: View {
         }
         .accessibilityElement(children: .contain)
     }
+}
 
-    /// One line of the evidence: a tick or a count, the title, and its caption.
-    private func evidence(_ line: DeskContent.EvidenceLine) -> some View {
+/// One line of the evidence: a tick or a count, the title, and its caption. `open` adds a chevron that says whether
+/// the line opens to more, and which way it is now.
+private struct DeskEvidenceLine: View {
+    let line: DeskContent.EvidenceLine
+    var open: Bool?
+
+    var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: LoamTheme.space2) {
             Group {
                 switch line.mark {
@@ -813,9 +832,73 @@ private struct DeskEvidence: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            if let open {
+                Image(systemName: open ? "chevron.down" : "chevron.right").font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(LoamColor.inkMuted)
+            }
         }
         .padding(.vertical, 6)
+        .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// The review of the PR (TAS-61): the decision and the open threads in one line. A click opens the comments, each
+/// with its reviewer, its place, its first lines as plain text, and a link to the thread on GitHub. The row starts
+/// closed, so a long review does not push Merge down.
+private struct DeskReviewRow: View {
+    let model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let review = model.desk.review {
+                if review.comments.isEmpty {
+                    DeskEvidenceLine(line: review.line).accessibilityIdentifier("desk-review")
+                } else {
+                    Button { model.toggleDeskReview() } label: {
+                        DeskEvidenceLine(line: review.line, open: model.desk.reviewOpen)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("desk-review")
+                    if model.desk.reviewOpen {
+                        VStack(alignment: .leading, spacing: LoamTheme.space2) {
+                            ForEach(Array(review.comments.enumerated()), id: \.element.id) { i, comment in
+                                commentView(comment, index: i)
+                            }
+                        }
+                        .padding(.leading, 24).padding(.bottom, LoamTheme.space2)
+                    }
+                }
+            } else if let error = model.desk.reviewError {
+                DeskEvidenceLine(line: DeskReview.unreadLine(error)).accessibilityIdentifier("desk-review")
+            }
+        }
+    }
+
+    private func commentView(_ comment: DeskReview.Comment, index: Int) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline, spacing: LoamTheme.space2) {
+                Text(comment.reviewer).font(.system(size: 12, weight: .semibold)).foregroundStyle(LoamColor.ink)
+                Text(comment.place).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(LoamColor.inkMuted)
+                    .lineLimit(1).truncationMode(.middle)
+                Spacer(minLength: 0)
+                if let url = URL(string: comment.url), !comment.url.isEmpty {
+                    Button("Open on GitHub") { NSWorkspace.shared.open(url) }
+                        .buttonStyle(.plain).loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+                        .accessibilityIdentifier("desk-review-open-\(index)")
+                }
+            }
+            if !comment.excerpt.isEmpty {
+                Text(comment.excerpt).loamText(LoamTheme.bodyStyle).textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.horizontal, LoamTheme.space3).padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .loamCard()
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("desk-review-comment-\(index)")
     }
 }
 
@@ -840,14 +923,15 @@ private struct DeskActions: View {
             .help("Resume the run's session with your notes. The checks run again before the run comes back. (S)")
             .accessibilityIdentifier("desk-send-back")
             if run.state == .ready, let pr = run.pr {
-                Button { Task { await model.landDeskRun() } } label: {
-                    DeskKeyLabel(title: "Merge #\(pr.number)", key: "\u{2318}\u{21A9}", primary: true)
+                // The review decides the main action (TAS-61): with changes requested and a review to send back, Send
+                // review back is primary and Merge is not. The main action is the last button and has Command-Return.
+                if let review = model.desk.review, review.sendBackIsPrimary {
+                    mergeButton(pr, primary: false)
+                    sendReviewButton(primary: true)
+                } else {
+                    if model.desk.review?.canSendBack == true { sendReviewButton(primary: false) }
+                    mergeButton(pr, primary: true)
                 }
-                .loamPrimaryButton()
-                .keyboardShortcut(.return, modifiers: .command)
-                .disabled(model.desk.busy || model.desk.diff == nil)
-                .help("Merge the PR with the repo's default method (\u{2318}\u{21A9})")
-                .accessibilityIdentifier("desk-merge")
             }
             if model.desk.busy { ProgressView().controlSize(.small) }
             Group {
@@ -866,6 +950,31 @@ private struct DeskActions: View {
         .controlSize(.large)
         .padding(.horizontal, 20)
         .frame(height: 64)
+    }
+
+    private func mergeButton(_ pr: RunPR, primary: Bool) -> some View {
+        Button { Task { await model.landDeskRun() } } label: {
+            // Only the main action has a key.
+            if primary { DeskKeyLabel(title: "Merge #\(pr.number)", key: "\u{2318}\u{21A9}", primary: true) } else { Text("Merge #\(pr.number)") }
+        }
+        .loamButton(primary: primary)
+        .keyboardShortcut(primary ? KeyboardShortcut(.return, modifiers: .command) : nil)
+        .disabled(model.desk.busy || model.desk.diff == nil)
+        .help("Merge the PR with the repo's default method\(primary ? " (\u{2318}\u{21A9})" : "")")
+        .accessibilityIdentifier("desk-merge")
+    }
+
+    private func sendReviewButton(primary: Bool) -> some View {
+        Button { Task { await model.sendBackDeskReview() } } label: {
+            DeskKeyLabel(title: "Send review back", key: primary ? "\u{2318}\u{21A9}" : "R", primary: primary)
+        }
+        .loamButton(primary: primary)
+        .keyboardShortcut(primary ? KeyboardShortcut(.return, modifiers: .command)
+                          : field.wrappedValue == nil ? KeyboardShortcut("r", modifiers: []) : nil)
+        .disabled(model.desk.busy)
+        .help("Resume the run's session with the open review threads of the PR. "
+              + "The text of a reader who cannot push to the repo stays out.\(primary ? " (\u{2318}\u{21A9})" : " (R)")")
+        .accessibilityIdentifier("desk-send-review")
     }
 
     private var hint: String {

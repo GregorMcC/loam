@@ -360,6 +360,15 @@ struct DriverTests {
         ])
     }
 
+    /// TAS-61: the desk shows the review of the PR of a Ready run. With no review, Merge is the main action. With changes
+    /// requested and 2 open threads, the Review row opens to the 2 comments as plain text, and Send review back is the
+    /// main action and resumes the session. An approved PR keeps Merge as the main action.
+    @Test func showsTheReviewOfAReadyRunAtTheDeskAndSendsItBack() async throws {
+        try await expectPass("desk-review-shot", environment: [
+            "LOAM_DRIVER_LOAM": Self.loamBinary, "LOAM_DRIVER_FAKE_GH": Self.fakeGH,
+        ])
+    }
+
     /// Ticket 207: Claude drafts a run from a ticket. The Shape tile opens the desk on the draft, a changed
     /// assumption is typed, and A approves the run, which starts with the change.
     @Test func shapesARunAtTheDeskChangesAnAssumptionAndApprovesIt() async throws {

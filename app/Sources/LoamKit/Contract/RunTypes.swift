@@ -329,6 +329,17 @@ public struct RunResult: Codable, Equatable, Sendable {
     }
 }
 
+/// Output of `loam run send-review` (TAS-61): the run, its PR as GitHub has it now, and what the core sends of the
+/// review, or would send with `--dry-run`.
+public struct RunReview: Codable, Equatable, Sendable {
+    public var run: Run
+    public var pr: PullRequest
+    /// The threads that are not resolved and have a comment by someone who can push to the repo.
+    public var threads: Int
+    /// The reviews that request changes and that the core has not sent.
+    public var reviews: Int
+}
+
 /// Output of `loam run land` (ticket 207): the run after the land, and what the land of its worktree did.
 public struct RunLandResult: Codable, Equatable, Sendable {
     public var run: Run

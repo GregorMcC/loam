@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam run send-review --json",
+  "description": "The run after the send-review: Running, with the review of its PR sent to its session. With --dry-run, the run is as it was, and threads and reviews say what Loam would send.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run",
+    "pr",
+    "threads",
+    "reviews"
+  ],
+  "properties": {
+    "run": {
+      "$ref": "defs.json#/$defs/run"
+    },
+    "pr": {
+      "description": "The PR as GitHub has it now, with its review threads and the reviews that request changes.",
+      "$ref": "defs.json#/$defs/pullRequest"
+    },
+    "threads": {
+      "description": "The threads that are not resolved and have a comment by someone who can push to the repo.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "reviews": {
+      "description": "The reviews that request changes and that Loam has not sent.",
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}

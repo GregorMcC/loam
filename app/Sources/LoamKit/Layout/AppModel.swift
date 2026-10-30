@@ -465,6 +465,7 @@ public final class AppModel {
             recheckGitHubNotes(except: plot)
         }
         followMerges(of: askedAbout.map(\.worktree.id))
+        await rereadDeskReview(plot: plot)
     }
 
     /// Asks GitHub about one worktree (`loam worktree list <plot> --refresh --worktree <id>`) and shows the

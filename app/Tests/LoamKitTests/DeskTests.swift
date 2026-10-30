@@ -142,6 +142,53 @@ import Testing
         #expect(model.desk.runID == nil && model.desk.diff == nil)
     }
 
+    /// TAS-61: a ready run with a PR reads the review of its PR when the desk shows it, and the row starts closed.
+    @Test func aReadyRunWithAPRReadsItsReview() async throws {
+        let (model, fake) = try model([("run_diff", 0), ("run_status", 0), ("run_send_review_dry_run", 0)])
+        model.runs[3].pr = RunPR(number: 25, url: "https://github.com/example/widgets/pull/25")
+        await model.openDesk()
+        #expect(fake.args().last == "run send-review --dry-run --json -- r1")
+        let review = try #require(model.desk.review)
+        #expect(review.number == 25 && review.threads == 1 && review.canSendBack && review.comments.map(\.place) == ["README.md:3"])
+        #expect(model.desk.reviewError == nil && !model.desk.reviewOpen)
+        model.toggleDeskReview()
+        #expect(model.desk.reviewOpen)
+        // The next item starts with its row closed and with no review of the last one.
+        await model.openDesk("r3")
+        #expect(model.desk.review == nil && !model.desk.reviewOpen)
+    }
+
+    @Test func aRunWithNoPRHasNoReviewRow() async throws {
+        let (model, fake) = try model([("run_diff", 0), ("run_status", 0)])
+        await model.openDesk()
+        #expect(model.desk.review == nil && model.desk.reviewError == nil && fake.args().count == 2)
+    }
+
+    @Test func aReviewThatCannotBeReadSaysWhyAndKeepsTheItem() async throws {
+        let (model, _) = try model([("run_diff", 0), ("run_status", 0), ("error_run_send_review_nothing", 2)])
+        model.runs[3].pr = RunPR(number: 25, url: "")
+        await model.openDesk()
+        #expect(model.desk.review == nil && model.desk.reviewError?.contains("no review to send back") == true)
+        #expect(model.desk.runID == "r1" && model.desk.diff != nil)
+    }
+
+    @Test func sendReviewBackAsksTheCoreAndShowsTheNextRun() async throws {
+        let (model, fake) = try model([("run_diff", 0), ("run_status", 0), ("run_send_review_dry_run", 0),
+                                       ("run_send_review", 0), ("run_list", 0)])
+        model.runs[3].pr = RunPR(number: 25, url: "")
+        await model.openDesk()
+        await model.sendBackDeskReview()
+        #expect(fake.args().dropFirst(3).first == "run send-review --json -- r1")
+        #expect(model.desk.error == nil && !model.desk.busy)
+    }
+
+    @Test func sendReviewBackDoesNothingWithoutAReviewToSend() async throws {
+        let (model, fake) = try model([("run_diff", 0), ("run_status", 0)])
+        await model.openDesk()
+        await model.sendBackDeskReview()
+        #expect(fake.args().count == 2)
+    }
+
     @Test func aMergeThatFailsKeepsTheItemAndSaysWhy() async throws {
         let (model, _) = try model([("run_diff", 0), ("run_status", 0), ("error_run_land_not_ready", 2)])
         await model.openDesk()
