@@ -338,7 +338,10 @@ func includeEntries(ctx context.Context, home, f string) (paths, unread []string
 			unread = append(unread, p)
 			continue
 		case !filepath.IsAbs(p):
-			p = filepath.Join(filepath.Dir(f), p)
+			// Git joins the path to the folder of f and the system follows
+			// each link before a "..". Join cleans ".." by the text, so it
+			// joins to the real folder, which has no link.
+			p = filepath.Join(sandbox.Real(filepath.Dir(f)), p)
 		}
 		if fi, err := os.Stat(p); err == nil && fi.IsDir() {
 			continue
