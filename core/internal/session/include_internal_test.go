@@ -103,6 +103,23 @@ func TestGitIncludesFollowsOneFileThroughLinksInTwoFolders(t *testing.T) {
 	}
 }
 
+// A link to its own folder gives a new name on each pass of a cycle, but the
+// same real file and folder, so the cycle ends at once.
+func TestGitIncludesEndsOnACycleThroughALinkToItsFolder(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Symlink(".", filepath.Join(dir, "self")); err != nil {
+		t.Fatal(err)
+	}
+	a := filepath.Join(dir, "a.gitconfig")
+	if err := os.WriteFile(a, []byte("[include]\n\tpath = self/a.gitconfig\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := gitIncludes("/home", []string{a}, func(string) bool { return true })
+	if got.files != nil || got.late {
+		t.Errorf("gitIncludes = %+v, want no file", got)
+	}
+}
+
 // gitIncludes takes the file of an entry in a file that it does not follow,
 // such as one that the run can write, but not the files that that file
 // includes. It names such a file in skipped.

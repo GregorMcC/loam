@@ -264,13 +264,14 @@ func gitIncludes(home string, base []string, follow func(string) bool) includes 
 	defer cancel()
 	// Git resolves a relative include from the folder of the name that it
 	// opened, so a file that two links in two folders name can include two
-	// files. The key holds that folder and the real path. On a volume that
-	// does not ignore case, two names that differ in case are two files, so
-	// the key keeps the case. A file with two names is then read twice, and
+	// files. The key holds the real path of the file and of that folder, so a
+	// link to its own folder does not give a new key on each pass. On a volume
+	// that does not ignore case, two names that differ in case are two files,
+	// so the key keeps the case. A file with two names is then read twice, and
 	// the depth ends a cycle through such names.
 	type fileKey struct{ real, dir string }
 	seen := map[fileKey]bool{}
-	key := func(f string) fileKey { return fileKey{sandbox.Real(f), filepath.Dir(filepath.Clean(f))} }
+	key := func(f string) fileKey { return fileKey{sandbox.Real(f), sandbox.Real(filepath.Dir(f))} }
 	for _, f := range base {
 		seen[key(f)] = true
 	}
@@ -294,8 +295,8 @@ func gitIncludes(home string, base []string, follow func(string) bool) includes 
 				continue
 			}
 			for _, p := range entries {
-				if !seen[key(p)] {
-					seen[key(p)] = true
+				if k := key(p); !seen[k] {
+					seen[k] = true
 					inc.files = append(inc.files, p)
 					// Git skips a missing file, so it has no includes to follow.
 					if _, err := os.Stat(p); err == nil {
