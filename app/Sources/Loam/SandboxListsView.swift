@@ -12,16 +12,21 @@ struct SandboxListsView: View {
         VStack(alignment: .leading, spacing: LoamTheme.space3) {
             ForEach(SandboxList.allCases, id: \.self) { list in
                 SandboxListRow(model: model, list: list, scope: scope)
+                    .disabled(model.settings == nil)
             }
-            if let error = model.error {
-                Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .loamText(LoamTheme.captionStyle, LoamColor.rust)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("sandbox-\(scope)-error")
+            // A failed read leaves the lists off, so offer a new read.
+            if let error = model.error, model.errorList == nil {
+                HStack {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .loamText(LoamTheme.captionStyle, LoamColor.rust)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("sandbox-\(scope)-error")
+                    Button("Read again") { Task { await model.load() } }
+                        .accessibilityIdentifier("sandbox-\(scope)-reload")
+                }
             }
         }
-        .disabled(model.settings == nil)
         .task { await model.load() }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("sandbox-\(scope)")
@@ -78,6 +83,14 @@ private struct SandboxListRow: View {
             .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(LoamColor.inkHairline))
             Text(list.caption).loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
                 .fixedSize(horizontal: false, vertical: true)
+            // The reason of a refusal shows under the list that it concerns.
+            if let error = model.error, model.errorList == list {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .loamText(LoamTheme.captionStyle, LoamColor.rust)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("sandbox-\(scope)-error")
+            }
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("sandbox-\(scope)-\(list.rawValue)")
@@ -89,7 +102,8 @@ private struct SandboxListRow: View {
         guard !busy, !item.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         busy = true
         Task {
-            if await model.add(list, item) { text = "" }
+            // A new text that you typed while the core saved stays.
+            if await model.add(list, item), text == item { text = "" }
             busy = false
         }
     }

@@ -18,7 +18,7 @@ public enum SandboxList: String, CaseIterable, Sendable {
         switch self {
         case .read: "Folders that a run can read, such as a toolchain."
         case .write: "Folders that a run can write and read, such as a cache."
-        case .hosts: "Hosts that a run can reach. A name, or *. and a name."
+        case .hosts: "Hosts that a run can reach: a name such as registry.example.com, or *.example.com for all its subdomains."
         }
     }
 
@@ -51,18 +51,41 @@ public final class SandboxSettingsModel {
     public private(set) var settings: SandboxSettings?
     /// Why the last read or change failed, or nil.
     public private(set) var error: String?
+    /// The list of the last change that failed, or nil when the failure was a read.
+    public private(set) var errorList: SandboxList?
+    /// The end of the queue of reads and changes. Each one waits for the one before it, so a change never works from
+    /// a list that the one before it is still changing.
+    @ObservationIgnored private var tail: Task<Void, Never>?
 
     public init(client: LoamClient, plot: String? = nil) {
         self.client = client
         self.plot = plot
     }
 
+    private func serial<T: Sendable>(_ body: @escaping @MainActor () async -> T) async -> T {
+        let previous = tail
+        let task = Task { @MainActor in
+            await previous?.value
+            return await body()
+        }
+        tail = Task { _ = await task.value }
+        return await task.value
+    }
+
     public func load() async {
+        await serial { [self] in
+            await read()
+        }
+    }
+
+    private func read() async {
         do {
             settings = try await client.sandboxSettings(plot: plot)
             error = nil
+            errorList = nil
         } catch {
             self.error = AppModel.message(for: error)
+            errorList = nil
         }
     }
 
@@ -75,23 +98,35 @@ public final class SandboxSettingsModel {
     @discardableResult
     public func add(_ list: SandboxList, _ text: String) async -> Bool {
         let item = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !item.isEmpty, let current = settings else { return false }
-        guard !list.items(of: current).contains(item) else { return true }
-        return await save(list, list.items(of: current) + [item])
+        guard !item.isEmpty, settings != nil else { return false }
+        return await serial { [self] in
+            // Read the list again, so an item that the CLI added since the last read stays.
+            await read()
+            guard let current = settings else { return false }
+            guard !list.items(of: current).contains(item) else { return true }
+            return await save(list, list.items(of: current) + [item])
+        }
     }
 
     public func remove(_ list: SandboxList, _ item: String) async {
-        guard let current = settings else { return }
-        await save(list, list.items(of: current).filter { $0 != item })
+        guard settings != nil else { return }
+        await serial { [self] in
+            await read()
+            guard let current = settings else { return }
+            await save(list, list.items(of: current).filter { $0 != item })
+        }
     }
 
+    @discardableResult
     private func save(_ list: SandboxList, _ items: [String]) async -> Bool {
         do {
             settings = try await client.setSandboxList(plot: plot, list, items)
             error = nil
+            errorList = nil
             return true
         } catch {
             self.error = AppModel.message(for: error)
+            errorList = list
             return false
         }
     }

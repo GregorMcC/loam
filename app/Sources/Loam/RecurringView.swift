@@ -314,7 +314,7 @@ private struct RunDefaultsSection: View {
             Divider()
             Text("Sandbox").loamText(LoamTheme.rowStyle)
             Text("A run works in a sandbox. Add what this plot needs beyond the presets for its stacks. "
-                 + "The settings in Settings > Runs hold for every plot. Loam refuses a path that opens your home folder.")
+                 + "The settings in Settings > Runs hold for every plot. Loam refuses a path that opens your home folder. A change holds for the next new session of a run.")
                 .loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
                 .fixedSize(horizontal: false, vertical: true)
             SandboxListsView(model: sandbox, scope: "plot")

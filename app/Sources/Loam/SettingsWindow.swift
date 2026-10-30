@@ -318,7 +318,7 @@ struct RunsSettingsView: View {
                 SettingsGroup(
                     title: "Sandbox",
                     caption: "A run works in a sandbox. Add toolchain folders and hosts for every plot here. "
-                        + "A plot can add more in its run defaults. Loam refuses a path that opens your home folder."
+                        + "A plot can add more in its run defaults. Loam refuses a path that opens your home folder. A change holds for the next new session of a run."
                 ) {
                     SandboxListsView(model: model.sandbox, scope: "machine").padding(14)
                 }
@@ -330,7 +330,7 @@ struct RunsSettingsView: View {
             }
             .padding(20)
         }
-        .frame(width: 640, height: 700)
+        .frame(width: 640, height: 640)
         .task { await model.load() }
     }
 
