@@ -377,19 +377,18 @@ struct FakeLoam {
         #expect(fake.args() == ["run limits --json", "run limits --at-a-time 2 --max-turns 30 --hold-at 90 --json"])
     }
 
-    /// The sandbox settings: a read, and a write that passes the three lists. An empty list passes an empty value.
-    @Test func sandboxSettingsReadAndSet() async throws {
+    /// The sandbox settings: a read, and a write that passes one list. An empty list passes an empty value.
+    @Test func sandboxSettingsReadAndSetOneList() async throws {
         let fake = try FakeLoam([("run_sandbox_get", 0), ("run_sandbox_plot", 0), ("run_sandbox_machine", 0)])
         let client = fake.client()
         #expect(try await client.sandboxSettings() == SandboxSettings())
-        let set = try await client.setSandboxSettings(
-            plot: "plotaaaaab", SandboxSettings(plotID: "plotaaaaab", read: ["~/notes"], write: [], hosts: ["*.example.org"]))
+        let set = try await client.setSandboxList(plot: "plotaaaaab", .hosts, ["*.example.org"])
         #expect(set.read == ["~/notes"] && set.write == ["~/Library/Caches/Loam"] && set.hosts == ["*.example.org"])
-        _ = try await client.setSandboxSettings(SandboxSettings(read: ["~/.nvm"]))
+        _ = try await client.setSandboxList(.read, [])
         #expect(fake.args() == [
             "run sandbox --json",
-            "run sandbox --read ~/notes --write  --host *.example.org --json -- plotaaaaab",
-            "run sandbox --read ~/.nvm --write  --host  --json",
+            "run sandbox --host *.example.org --json -- plotaaaaab",
+            "run sandbox --read  --json",
         ])
     }
 
