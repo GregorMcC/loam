@@ -124,8 +124,12 @@ func Shape(ctx context.Context, s *store.Store, o ShapeOptions) ([]store.Run, er
 	if err != nil {
 		return nil, err
 	}
-	if err := checkFixes(s, plot.ID, o.Fixes); err != nil {
+	fixed, err := checkFixes(s, plot, o.Fixes)
+	if err != nil {
 		return nil, err
+	}
+	if o.Repo == "" && !o.Split {
+		o.Repo = fixed
 	}
 	// A split starts in the main repo, and Claude says which repos it needs.
 	split := o.Split && len(plot.Repos) > 1
