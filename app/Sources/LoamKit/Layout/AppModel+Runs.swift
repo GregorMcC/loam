@@ -23,12 +23,14 @@ extension AppModel {
     public func reloadRuns() async {
         guard let all = try? await client.runs() else { return }
         let place = deskQueue.firstIndex { $0.id == desk.runID }
+        let changed = all != runs
         runs = all
         if await openNewDraft() { return }
         if case .run(let id) = page { await readRunStatus(id) }
         if page == .today { await readAwayEvents() }
         if page == .desk { await followDeskQueue(from: place) }
-        if page == .metrics { await reloadMetrics() }
+        // A full read of the history, so only when a run changed.
+        if page == .metrics, changed { await reloadMetrics() }
     }
 
     /// `loam run tick`: ships the runs whose checks passed. When the tick moved a run, the runs are
@@ -78,6 +80,7 @@ extension AppModel {
             return
         }
         if runStatus?.run.id != id { runStatus = nil }
+        fixError = nil
         page = .run(id)
         await readRunStatus(id)
     }

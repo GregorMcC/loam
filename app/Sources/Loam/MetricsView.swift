@@ -10,7 +10,12 @@ struct MetricsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: LoamTheme.space6) {
                 header
-                if let metrics = model.metrics {
+                if let error = model.metricsError {
+                    Text("Loam could not read the metrics. \(error)")
+                        .loamText(LoamTheme.bodyStyle, LoamColor.inkMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("metrics-error")
+                } else if let metrics = model.metrics {
                     if metrics.current.landed == 0 {
                         Text("No run landed in the last \(MetricsWords.windowDays(metrics.current)) days. "
                              + "A run counts here when you land it.")
@@ -46,7 +51,8 @@ struct MetricsView: View {
             }
             Spacer(minLength: LoamTheme.space4)
             Picker("Plot", selection: Binding(
-                get: { model.metricsPlot ?? "" },
+                // A plot that is gone from the list shows as every plot.
+                get: { model.metricsPlot.flatMap { id in model.plots.contains { $0.id == id } ? id : nil } ?? "" },
                 set: { id in Task { await model.showMetrics(plot: id.isEmpty ? nil : id) } }
             )) {
                 Text("All plots").tag("")
@@ -122,7 +128,7 @@ private struct MetricTile: View {
         VStack(alignment: .leading, spacing: LoamTheme.space1) {
             Text(title).loamLabel()
             Text(value).loamText(LoamTheme.plotNameStyle).monospacedDigit()
-            ForEach(lines.filter { !$0.isEmpty }, id: \.self) { line in
+            ForEach(Array(lines.filter { !$0.isEmpty }.enumerated()), id: \.offset) { _, line in
                 Text(line).loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -146,11 +152,13 @@ private struct StationBar: View {
         VStack(alignment: .leading, spacing: LoamTheme.space2) {
             Text("Lead time by station").loamLabel()
             GeometryReader { geometry in
+                // Each segment has 2 pt at least, and the shares split the rest, so the bar fills the width exactly.
+                let free = max(0, geometry.size.width - CGFloat(stations.count * 2 - 1) * 2)
                 HStack(spacing: 2) {
                     ForEach(stations, id: \.name) { station in
                         RoundedRectangle(cornerRadius: LoamTheme.radiusXs)
                             .fill(station.name == top?.name ? LoamColor.moss : LoamColor.ink.opacity(0.16))
-                            .frame(width: max(2, (geometry.size.width - CGFloat(stations.count - 1) * 2) * station.share))
+                            .frame(width: 2 + free * station.share)
                             .help("\(station.name): \(MetricsWords.duration(station.spread.medianSeconds))")
                     }
                 }

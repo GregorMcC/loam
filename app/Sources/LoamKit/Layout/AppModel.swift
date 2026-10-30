@@ -212,6 +212,10 @@ public final class AppModel {
     public internal(set) var metrics: RunMetrics?
     /// The plot that the Metrics page shows, or nil for every plot.
     public internal(set) var metricsPlot: String?
+    /// Why the first read of the metrics failed, for the page to say. Nil after a read that worked.
+    public internal(set) var metricsError: String?
+    /// Counts the reads of the metrics, so a read that ends after a newer one changes nothing.
+    var metricsReads = 0
     /// Why the last Fix this did not draft a run, with the landed run, for its run page. Nil after a fix that worked.
     public internal(set) var fixError: FixError?
     /// Set when the launch check fails. The window shows it and loads nothing else.

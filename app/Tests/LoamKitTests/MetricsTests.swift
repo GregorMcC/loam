@@ -47,6 +47,22 @@ import Testing
         #expect(model.metrics?.current.landed == 1)
     }
 
+    @Test func aFailedFirstReadSaysWhyAndAReadThatWorksClearsIt() async throws {
+        let (model, _) = try model([("error_invalid", 2), ("run_metrics", 0)])
+        await model.showMetrics()
+        #expect(model.metrics == nil && model.metricsError?.isEmpty == false)
+        await model.reloadMetrics()
+        #expect(model.metrics != nil && model.metricsError == nil)
+    }
+
+    @Test func theRunsReadTheMetricsAgainOnlyWhenARunChanged() async throws {
+        let (model, fake) = try model([("run_metrics", 0), ("run_list", 0), ("run_metrics", 0), ("run_list", 0)])
+        await model.showMetrics()
+        await model.reloadRuns()
+        await model.reloadRuns()
+        #expect(fake.args().filter { $0.hasPrefix("run metrics") }.count == 2)
+    }
+
     @Test func aFixDraftsFromTheIssueAndTheRepoOfTheLandedRun() throws {
         var run = try landedRun()
         run.source = RunSource(kind: "linear", key: "ENG-523", url: "https://linear.app/acme/issue/ENG-523/x")
@@ -58,6 +74,9 @@ import Testing
         #expect(draft.ticket == "/maps/build/issues/12-plan.md" && draft.link == nil)
         run.source = nil
         #expect(RunDraft(fixing: run).link == nil && RunDraft(fixing: run).ticket == nil)
+        // A fix of a fix keeps one "Fix:".
+        run.title = "Fix: Tidy the README"
+        #expect(RunDraft(fixing: run).title == "Fix: Tidy the README")
     }
 
     @Test func fixThisShapesARunWithFixes() async throws {
@@ -72,11 +91,14 @@ import Testing
     }
 
     @Test func aFixThatFailsSaysWhyOnTheRunPage() async throws {
-        let (model, _) = try model([("error_invalid", 2)])
+        let (model, _) = try model([("error_invalid", 2), ("run_status", 0)])
         let run = try landedRun()
         model.runs = [run]
         await model.fixRun(run.id)
         #expect(model.fixError?.run == run.id && model.fixError?.message.isEmpty == false)
+        // The error goes when you open a run page again.
+        await model.openRun(run.id)
+        #expect(model.fixError == nil)
     }
 
     @Test func aRunThatHasNotLandedHasNoFix() async throws {

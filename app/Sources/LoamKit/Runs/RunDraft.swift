@@ -39,7 +39,7 @@ public struct RunDraft: Equatable, Sendable {
 
     /// A draft of a run that fixes a landed run: the issue and the repo of that run, and `--fixes` with its ID.
     public init(fixing run: Run) {
-        title = "Fix: \(run.title)"
+        title = run.title.hasPrefix("Fix: ") ? run.title : "Fix: \(run.title)"
         switch run.source?.kind {
         case "map": ticket = run.source?.url
         case "linear", "github": link = run.source?.url
