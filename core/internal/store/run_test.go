@@ -197,6 +197,48 @@ func TestUpdateRunKeepsTheReviewsSentBack(t *testing.T) {
 	}
 }
 
+// TAS-175: a run keeps the threads of the review that Loam sent back, so Loam posts the replies of the session to
+// those threads only. A new run has none, and the JSON leaves them out.
+func TestUpdateRunKeepsTheReviewRepliesOutOfTheJSON(t *testing.T) {
+	s := openStore(t)
+	p := newPlot(t, s, "A")
+	r := addTestRun(t, s, p.ID)
+	if r.ReviewReplies != nil {
+		t.Fatalf("a new run has review replies %+v", r.ReviewReplies)
+	}
+	cp := r
+	cp.ReviewReplies = &store.RunReviewReplies{PR: 7, Threads: []string{"PRRT_1"}}
+	if c, err := s.AddRun(cp); err != nil || c.ReviewReplies != nil {
+		t.Fatalf("a new run keeps the review replies of a copy: %+v, %v", c.ReviewReplies, err)
+	}
+	want := store.RunReviewReplies{PR: 7, Threads: []string{"PRRT_1", "PRRT_2"}, Cut: []string{"PRRT_2"}, Comment: true,
+		Replied: []string{"PRRT_1"}, Commented: true}
+	if _, err := s.UpdateRun(r.ID, func(r *store.Run) error { r.ReviewReplies = &want; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	// Another change keeps them.
+	if _, err := s.UpdateRun(r.ID, func(r *store.Run) error { r.Note = "later"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetRun(r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rr := got.ReviewReplies; rr == nil || rr.PR != 7 || !slices.Equal(rr.Threads, want.Threads) || !slices.Equal(rr.Cut, want.Cut) || !rr.Comment ||
+		!slices.Equal(rr.Replied, want.Replied) || !rr.Commented {
+		t.Fatalf("review replies %+v", got.ReviewReplies)
+	}
+	if b, err := json.Marshal(got); err != nil || strings.Contains(string(b), "PRRT_1") {
+		t.Fatalf("the run JSON has the review replies: %s, %v", b, err)
+	}
+	if _, err := s.UpdateRun(r.ID, func(r *store.Run) error { r.ReviewReplies = nil; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.GetRun(r.ID); err != nil || got.ReviewReplies != nil {
+		t.Fatalf("review replies after a clear %+v, %v", got.ReviewReplies, err)
+	}
+}
+
 func TestUpdateRunKeepsTheCodeReviewOutOfTheJSON(t *testing.T) {
 	s := openStore(t)
 	p := newPlot(t, s, "A")

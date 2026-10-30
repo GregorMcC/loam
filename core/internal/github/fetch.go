@@ -20,9 +20,10 @@ const prsPerHead = maxNodes
 // The other counts and the lists of checks are of the first page.
 const maxNodes = 100
 
-// commentsPerThread is how many comments Loam reads of each review thread,
-// oldest first. It keeps the second query small: a PR can have 100 threads.
-const commentsPerThread = 10
+// CommentsPerThread is how many comments Loam reads of each review thread,
+// oldest first. A thread with this many comments can have more. It keeps
+// the second query small: a PR can have 100 threads.
+const CommentsPerThread = 10
 
 // The first query reads the PRs and the ref of each branch. A branch has the
 // aliases pr<i> and ref<i>, and the variables h<i> (the branch) and q<i>
@@ -268,7 +269,7 @@ func (c *Client) Fetch(ctx context.Context, repo Repo, branches []string) (map[s
 			vars[fmt.Sprintf("h%d", i)] = b
 		}
 		fmt.Fprintf(&params, ", $n%d: Int!", i)
-		fmt.Fprintf(&fields, detailFields, i, maxNodes, compare, commentsPerThread)
+		fmt.Fprintf(&fields, detailFields, i, maxNodes, compare, CommentsPerThread)
 		vars[fmt.Sprintf("n%d", i)] = out[b].PR.Number
 	}
 	var second struct {

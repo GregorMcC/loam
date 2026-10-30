@@ -127,9 +127,11 @@ type shipper struct {
 }
 
 // ship does the next step of the run. It returns true when the run record
-// changed. An error leaves the run as it is, for the next tick: GitHub may
-// be out of reach, or the store may be busy. Only a worktree that the store
-// does not have is gone.
+// changed. Before it reads CI on the head of the branch, it posts the
+// replies to a review that Loam sent back (see [shipper.postReplies]). An
+// error leaves the run as it is, for the next tick: GitHub may be out of
+// reach, or the store may be busy. Only a worktree that the store does not
+// have is gone.
 func (sh *shipper) ship(ctx context.Context) (bool, error) {
 	r := sh.r
 	w, err := sh.s.GetWorktree(r.WorktreeID)
@@ -172,6 +174,13 @@ func (sh *shipper) ship(ctx context.Context) (bool, error) {
 	}
 	if pr == nil || pr.HeadOID != head {
 		return sh.push(ctx, repo, w, head, pr)
+	}
+	if sh.r.ReviewReplies != nil {
+		// The PR shows the fix of a review send-back, or the session made
+		// no commit: the reviewer can read the replies with the code.
+		if pr, err = sh.postReplies(ctx, repo, w, pr); err != nil {
+			return false, err
+		}
 	}
 	return sh.readCI(ctx, repo, pr)
 }
