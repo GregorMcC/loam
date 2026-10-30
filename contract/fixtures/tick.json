@@ -44,6 +44,7 @@
             "name": "Go tests"
           }
         ],
+        "fixes": "",
         "folder": "/tmp/loam-contract/repos/web",
         "goal": "Bump the Go modules that have updates.",
         "group_id": "",

@@ -7,6 +7,7 @@
         "name": "Go tests"
       }
     ],
+    "fixes": "",
     "folder": "/tmp/loam-contract/loamhome/worktrees/plotaaaaae/web-map-12-show-the-plan-on-the-run-page",
     "goal": "The run page shows the plan of the run, or says that it has none.",
     "group_id": "",

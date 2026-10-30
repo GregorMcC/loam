@@ -257,6 +257,27 @@ func (h *harness) normalize(s string) string {
 	return timeRE.ReplaceAllString(s, fixedTime)
 }
 
+// fixSeconds sets each time in seconds in v, such as the lead time of `run
+// metrics`, to 60, for the fixture file. The runs of the test take wall
+// time, so each run gives other numbers. A spread with no count keeps its 0.
+// The schema checks the output before this.
+func fixSeconds(v any) {
+	switch v := v.(type) {
+	case map[string]any:
+		count, spread := v["count"].(float64)
+		for k, x := range v {
+			if _, ok := x.(float64); ok && strings.HasSuffix(k, "_seconds") && (!spread || count > 0) {
+				v[k] = 60
+			}
+			fixSeconds(x)
+		}
+	case []any:
+		for _, x := range v {
+			fixSeconds(x)
+		}
+	}
+}
+
 // run runs loam with --json, checks the exit code, checks that stderr is
 // empty on a failure, and records the normalized output as a fixture.
 func (h *harness) run(name, schema string, wantExit int, args ...string) []byte {
@@ -746,6 +767,8 @@ func scenario(t *testing.T) *harness {
 	h.run("run_land_dry_run", "run-land", 0, "run", "land", tidy.Run.ID, "--dry-run")
 	h.run("run_land", "run-land", 0, "run", "land", tidy.Run.ID, "--where-it-stands", "--no-linear-done")
 	h.run("error_run_land_not_ready", "error", 2, "run", "land", started.Run.ID)
+	// Metrics (TAS-176): the landed run counts in the window.
+	h.run("run_metrics", "run-metrics", 0, "run", "metrics", "--plot", "Runs")
 
 	// Shape (ticket 207). The fake claude prints a draft for claude -p. A
 	// redraft takes a change, and the approve starts the run with your edits.

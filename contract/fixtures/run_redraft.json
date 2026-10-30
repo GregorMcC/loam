@@ -7,6 +7,7 @@
         "name": "Go tests"
       }
     ],
+    "fixes": "",
     "folder": "/tmp/loam-contract/repos/web",
     "goal": "The run page shows the plan of the run.",
     "group_id": "",
@@ -69,6 +70,7 @@
           "name": "Go tests"
         }
       ],
+      "fixes": "",
       "folder": "/tmp/loam-contract/repos/web",
       "goal": "The run page shows the plan of the run.",
       "group_id": "",

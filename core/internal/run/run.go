@@ -49,8 +49,8 @@ type StartOptions struct {
 	Goal     string
 	DoneWhen []store.Check
 	// Repo is the repo of a new worktree: an ID or a path. Empty means the
-	// repo of the plot that a GitHub issue link belongs to, else the main
-	// repo.
+	// repo of the run that Fixes names, else the repo of the plot that a
+	// GitHub issue link belongs to, else the main repo.
 	Repo string
 	// Worktree is the name of the worktree. Loam uses the worktree when it
 	// exists, and makes it when it does not. Empty means a new worktree with
@@ -77,6 +77,13 @@ type StartOptions struct {
 	ApproveSetup bool
 	// Loam is the absolute path of the loam binary, for the hook command.
 	Loam string
+	// Fixes is the ID of the landed run of the plot that this run fixes, or
+	// empty (see [checkFixes]).
+	Fixes string
+	// fixedRepo is the repo of the run that Fixes names, from [checkFixes].
+	// A new worktree with no Repo goes in it. The search for a named
+	// worktree does not use it, so it finds a worktree of any repo.
+	fixedRepo string
 }
 
 // StartResult is a started run.
@@ -113,6 +120,11 @@ func Start(ctx context.Context, s *store.Store, o StartOptions) (*StartResult, e
 	if err != nil {
 		return nil, err
 	}
+	fixed, err := checkFixes(s, plot, o.Fixes)
+	if err != nil {
+		return nil, err
+	}
+	o.fixedRepo = fixed
 	usageForHold(ctx, s) // before Loam makes anything, so a probe that is cut short leaves nothing
 	res := &StartResult{}
 	wt, err := prepare(s, plot, o, title, ticket, res)
@@ -121,7 +133,7 @@ func Start(ctx context.Context, s *store.Store, o StartOptions) (*StartResult, e
 	}
 	r, err := s.AddRun(store.Run{
 		PlotID: plot.ID, WorktreeID: wt.ID, Folder: wt.Path, Title: title, Goal: strings.TrimSpace(o.Goal),
-		DoneWhen: o.DoneWhen, MaxTries: o.MaxTries, Source: cmp.Or(ticket, o.Source, sourceOf(wt.Link)),
+		DoneWhen: o.DoneWhen, MaxTries: o.MaxTries, Source: cmp.Or(ticket, o.Source, sourceOf(wt.Link)), Fixes: o.Fixes,
 	})
 	if err != nil {
 		return nil, err
@@ -135,6 +147,50 @@ func Start(ctx context.Context, s *store.Store, o StartOptions) (*StartResult, e
 		return res, nil
 	}
 	return launch(ctx, s, r, o, res)
+}
+
+// checkFixes checks the run that a new run fixes, when id is not empty: it
+// must be a landed run of the plot. It returns the path of the repo of that
+// run, so the fix goes in the same repo when no --repo names one. The path
+// is empty when id is, or when the repo is no longer in the plot.
+func checkFixes(s *store.Store, plot store.Plot, id string) (string, error) {
+	if id == "" {
+		return "", nil
+	}
+	r, err := s.GetRun(id)
+	if err != nil {
+		return "", err
+	}
+	if r.PlotID != plot.ID {
+		return "", fmt.Errorf("run %s is in another plot, and a run fixes a run of its own plot: %w", id, store.ErrInvalid)
+	}
+	if r.State != store.RunLanded {
+		return "", fmt.Errorf("run %s is %s, and a run fixes a landed run: %w", id, r.State, store.ErrInvalid)
+	}
+	return fixedRepo(s, plot, r), nil
+}
+
+// fixedRepo is the path of the repo of a run: the repo of its draft, else
+// the repo of its worktree, else its folder when that is a repo of the plot.
+// A landed run's worktree can be gone, so each step can find nothing.
+func fixedRepo(s *store.Store, plot store.Plot, r store.Run) string {
+	var arg string
+	switch {
+	case r.Shape != nil && r.Shape.Repo != "":
+		arg = r.Shape.Repo
+	case r.WorktreeID != "":
+		if wt, err := s.GetWorktree(r.WorktreeID); err == nil {
+			arg = wt.Repo
+		}
+	}
+	if arg == "" {
+		arg = r.Folder
+	}
+	repo, err := worktree.FindRepo(plot, arg)
+	if err != nil {
+		return ""
+	}
+	return repo.Path
 }
 
 // withDefaults checks the effort of a run and fills the model and the effort
@@ -318,7 +374,7 @@ func findOrMakeWorktree(s *store.Store, plot store.Plot, o StartOptions, title s
 			return store.Worktree{}, nil, err
 		}
 	}
-	repo, err := runRepo(plot, o.Repo, o.Link)
+	repo, err := runRepo(plot, cmp.Or(o.Repo, o.fixedRepo), o.Link)
 	if err != nil {
 		return store.Worktree{}, nil, err
 	}

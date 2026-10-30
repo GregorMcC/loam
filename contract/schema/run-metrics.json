@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam run metrics --json",
+  "description": "The run metrics of one window and of the window before it, of the same length. A landed run counts in the window that it landed in. All times are wall time.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["current", "previous"],
+  "properties": {
+    "current": { "description": "The window from --since, or from 30 days ago, up to now.", "$ref": "#/$defs/period" },
+    "previous": { "description": "The window of the same length that ends where current starts.", "$ref": "#/$defs/period" }
+  },
+  "$defs": {
+    "count": { "type": "integer", "minimum": 0 },
+    "spread": {
+      "description": "The median and the 90th percentile of some times, in seconds, by the nearest rank. Both are 0 when count is 0.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count", "median_seconds", "p90_seconds"],
+      "properties": {
+        "count": { "$ref": "#/$defs/count" },
+        "median_seconds": { "$ref": "#/$defs/count" },
+        "p90_seconds": { "$ref": "#/$defs/count" }
+      }
+    },
+    "period": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to", "landed", "first_pass", "fixed", "lead_time", "stations", "recovery", "rework", "not_landed", "slowest"],
+      "properties": {
+        "from": { "$ref": "defs.json#/$defs/time" },
+        "to": { "$ref": "defs.json#/$defs/time" },
+        "landed": { "description": "The runs that landed in the window.", "$ref": "#/$defs/count" },
+        "first_pass": { "description": "The landed runs that used no try and no review try.", "$ref": "#/$defs/count" },
+        "fixed": { "description": "The landed runs that a later run fixes, unless the fix is cancelled.", "$ref": "#/$defs/count" },
+        "lead_time": { "description": "From approve to landed. A run with no draft starts when Loam records it.", "$ref": "#/$defs/spread" },
+        "stations": {
+          "description": "The time of the landed runs at each station. Each spread holds every landed run, except approve: it holds only the runs that had a draft.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["approve", "queue", "build", "ship", "merge", "stopped"],
+          "properties": {
+            "approve": { "description": "Shaping.", "$ref": "#/$defs/spread" },
+            "queue": { "description": "Queued.", "$ref": "#/$defs/spread" },
+            "build": { "description": "Starting and Running.", "$ref": "#/$defs/spread" },
+            "ship": { "description": "Shipping.", "$ref": "#/$defs/spread" },
+            "merge": { "description": "Ready.", "$ref": "#/$defs/spread" },
+            "stopped": { "description": "Stopped, Limited, and Start unknown.", "$ref": "#/$defs/spread" }
+          }
+        },
+        "recovery": {
+          "description": "From a failure that started in the window to the next pass.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["gate", "ci"],
+          "properties": {
+            "gate": { "description": "From a failed gate until the run ships, or is Ready.", "$ref": "#/$defs/spread" },
+            "ci": { "description": "From a failed CI until the run is Ready again.", "$ref": "#/$defs/spread" }
+          }
+        },
+        "rework": {
+          "description": "The sums of the loops of the landed runs.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["gate_tries", "ci_tries", "review_tries", "code_review_rounds", "redrafts", "turns"],
+          "properties": {
+            "gate_tries": { "$ref": "#/$defs/count" },
+            "ci_tries": { "$ref": "#/$defs/count" },
+            "review_tries": { "$ref": "#/$defs/count" },
+            "code_review_rounds": { "description": "The code reviews before a push that found a Critical or Major issue.", "$ref": "#/$defs/count" },
+            "redrafts": { "description": "The drafts after the first one.", "$ref": "#/$defs/count" },
+            "turns": { "$ref": "#/$defs/count" }
+          }
+        },
+        "slowest": {
+          "description": "The landed runs with the longest lead time, longest first, at most 5.",
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["run_id", "plot_id", "title", "lead_seconds"],
+            "properties": {
+              "run_id": { "$ref": "defs.json#/$defs/id" },
+              "plot_id": { "$ref": "defs.json#/$defs/id" },
+              "title": { "type": "string" },
+              "lead_seconds": { "$ref": "#/$defs/count" }
+            }
+          }
+        },
+        "not_landed": {
+          "description": "The runs that ended, or wait for you, in the window with no land, by state.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["stopped", "limited", "cancelled", "start_unknown"],
+          "properties": {
+            "stopped": { "$ref": "#/$defs/count" },
+            "limited": { "$ref": "#/$defs/count" },
+            "cancelled": { "$ref": "#/$defs/count" },
+            "start_unknown": { "$ref": "#/$defs/count" }
+          }
+        }
+      }
+    }
+  }
+}

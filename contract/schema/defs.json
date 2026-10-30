@@ -439,7 +439,7 @@
     "run": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "plot_id", "worktree_id", "folder", "title", "goal", "done_when", "state", "tries", "max_tries", "review_tries", "turns", "session_id", "note", "group_id", "notes", "created_at", "updated_at"],
+      "required": ["id", "plot_id", "worktree_id", "folder", "title", "goal", "done_when", "state", "tries", "max_tries", "review_tries", "turns", "session_id", "note", "group_id", "notes", "fixes", "created_at", "updated_at"],
       "properties": {
         "id": { "$ref": "#/$defs/id" },
         "plot_id": { "$ref": "#/$defs/id" },
@@ -463,6 +463,7 @@
           "description": "The ship notes that Claude wrote when Loam opened the PR. Null before Loam opens the PR, and when Claude wrote none.",
           "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/runNotes" }]
         },
+        "fixes": { "description": "The landed run that this run fixes (--fixes): its ID. Empty for a run that fixes none.", "anyOf": [{ "$ref": "#/$defs/id" }, { "const": "" }] },
         "created_at": { "$ref": "#/$defs/time" },
         "updated_at": { "$ref": "#/$defs/time" }
       }

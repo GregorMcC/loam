@@ -1,0 +1,151 @@
+{
+  "current": {
+    "first_pass": 1,
+    "fixed": 0,
+    "from": "2026-01-01T00:00:00Z",
+    "landed": 1,
+    "lead_time": {
+      "count": 1,
+      "median_seconds": 60,
+      "p90_seconds": 60
+    },
+    "not_landed": {
+      "cancelled": 1,
+      "limited": 0,
+      "start_unknown": 0,
+      "stopped": 0
+    },
+    "recovery": {
+      "ci": {
+        "count": 0,
+        "median_seconds": 0,
+        "p90_seconds": 0
+      },
+      "gate": {
+        "count": 0,
+        "median_seconds": 0,
+        "p90_seconds": 0
+      }
+    },
+    "rework": {
+      "ci_tries": 0,
+      "code_review_rounds": 0,
+      "gate_tries": 0,
+      "redrafts": 0,
+      "review_tries": 0,
+      "turns": 3
+    },
+    "slowest": [
+      {
+        "lead_seconds": 60,
+        "plot_id": "plotaaaaae",
+        "run_id": "runraaaaac",
+        "title": "Tidy the README"
+      }
+    ],
+    "stations": {
+      "approve": {
+        "count": 0,
+        "median_seconds": 0,
+        "p90_seconds": 0
+      },
+      "build": {
+        "count": 1,
+        "median_seconds": 60,
+        "p90_seconds": 60
+      },
+      "merge": {
+        "count": 1,
+        "median_seconds": 60,
+        "p90_seconds": 60
+      },
+      "queue": {
+        "count": 1,
+        "median_seconds": 60,
+        "p90_seconds": 60
+      },
+      "ship": {
+        "count": 1,
+        "median_seconds": 60,
+        "p90_seconds": 60
+      },
+      "stopped": {
+        "count": 1,
+        "median_seconds": 60,
+        "p90_seconds": 60
+      }
+    },
+    "to": "2026-01-01T00:00:00Z"
+  },
+  "previous": {
+    "first_pass": 0,
+    "fixed": 0,
+    "from": "2026-01-01T00:00:00Z",
+    "landed": 0,
+    "lead_time": {
+      "count": 0,
+      "median_seconds": 0,
+      "p90_seconds": 0
+    },
+    "not_landed": {
+      "cancelled": 0,
+      "limited": 0,
+      "start_unknown": 0,
+      "stopped": 0
+    },
+    "recovery": {
+      "ci": {
+        "count": 0,
+        "median_seconds": 0,
+        "p90_seconds": 0
+      },
+      "gate": {
+        "count": 0,
+        "median_seconds": 0,
+        "p90_seconds": 0
+      }
+    },
+    "rework": {
+      "ci_tries": 0,
+      "code_review_rounds": 0,
+      "gate_tries": 0,
+      "redrafts": 0,
+      "review_tries": 0,
+      "turns": 0
+    },
+    "slowest": [],
+    "stations": {
+      "approve": {
+        "count": 0,
+        "median_seconds": 0,
+        "p90_seconds": 0
+      },
+      "build": {
+        "count": 0,
+        "median_seconds": 0,
+        "p90_seconds": 0
+      },
+      "merge": {
+        "count": 0,
+        "median_seconds": 0,
+        "p90_seconds": 0
+      },
+      "queue": {
+        "count": 0,
+        "median_seconds": 0,
+        "p90_seconds": 0
+      },
+      "ship": {
+        "count": 0,
+        "median_seconds": 0,
+        "p90_seconds": 0
+      },
+      "stopped": {
+        "count": 0,
+        "median_seconds": 0,
+        "p90_seconds": 0
+      }
+    },
+    "to": "2026-01-01T00:00:00Z"
+  }
+}

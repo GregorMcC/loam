@@ -71,6 +71,7 @@ func decodeFixture(schema: String, data: Data) throws {
     case "run-defaults": _ = try d.decode(RunDefaultsOne.self, from: data)
     case "run-mcp-servers": _ = try d.decode(MCPServerList.self, from: data)
     case "run-limits": _ = try d.decode(RunLimitsOne.self, from: data)
+    case "run-metrics": _ = try d.decode(RunMetrics.self, from: data)
     case "usage": _ = try d.decode(UsageOne.self, from: data)
     case "tick": _ = try d.decode(TickResult.self, from: data)
     case "tick-status": _ = try d.decode(TickStatus.self, from: data)

@@ -88,6 +88,9 @@ type ShapeOptions struct {
 	// Split has Claude read every repo of the plot and draft one run for each
 	// repo that the issue needs changes in. It takes no Repo.
 	Split bool
+	// Fixes is the landed run that the run fixes, as for [StartOptions]. Each
+	// run of a split fixes it.
+	Fixes string
 }
 
 // Shape records a run in Shaping, in the folder of its repo, and has Claude
@@ -121,6 +124,13 @@ func Shape(ctx context.Context, s *store.Store, o ShapeOptions) ([]store.Run, er
 	if err != nil {
 		return nil, err
 	}
+	fixed, err := checkFixes(s, plot, o.Fixes)
+	if err != nil {
+		return nil, err
+	}
+	if o.Repo == "" && !o.Split {
+		o.Repo = fixed
+	}
 	// A split starts in the main repo, and Claude says which repos it needs.
 	split := o.Split && len(plot.Repos) > 1
 	link := o.Link
@@ -143,7 +153,7 @@ func Shape(ctx context.Context, s *store.Store, o ShapeOptions) ([]store.Run, er
 	}
 	r, err := s.AddRun(store.Run{
 		PlotID: plot.ID, Folder: repo.Path, Title: title, State: store.RunShaping, MaxTries: o.MaxTries,
-		Source: source, Note: draftingNote,
+		Source: source, Note: draftingNote, Fixes: o.Fixes,
 		Shape: &store.RunShape{Repo: repo.ID, Base: o.Base, Link: o.Link, Model: o.Model, Effort: o.Effort,
 			Brief: strings.TrimSpace(o.Brief), Split: split},
 	})
@@ -360,7 +370,7 @@ func splitRun(ctx context.Context, s *store.Store, plot store.Plot, r store.Run,
 	for i, d := range ds[1:] {
 		repo := repos[i+1]
 		n := store.Run{PlotID: r.PlotID, Folder: repo.Path, Title: r.Title, State: store.RunShaping, MaxTries: r.MaxTries,
-			Source: r.Source, GroupID: group,
+			Source: r.Source, GroupID: group, Fixes: r.Fixes,
 			Shape: &store.RunShape{Repo: repo.ID, Base: base(repo), Link: r.Shape.Link, Model: r.Shape.Model,
 				Effort: r.Shape.Effort, Brief: r.Shape.Brief}}
 		applyDraft(&n, d)

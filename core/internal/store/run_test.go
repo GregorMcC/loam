@@ -345,3 +345,90 @@ func TestRunFeedKeepsAtMostTwoHundredEvents(t *testing.T) {
 		t.Fatalf("%d events, first %q, %v", len(got), got[0].Detail, err)
 	}
 }
+
+// TAS-176: a try in Running is a gate try, and a try in Shipping is a CI
+// try. The stage stays out of the JSON.
+func TestUpdateRunGivesEachTryItsStage(t *testing.T) {
+	s := openStore(t)
+	p := newPlot(t, s, "A")
+	r := addTestRun(t, s, p.ID)
+	steps := []func(*store.Run){
+		func(r *store.Run) { r.State = store.RunRunning },
+		func(r *store.Run) { r.Tries++ },
+		func(r *store.Run) { r.State = store.RunShipping },
+		func(r *store.Run) { r.State, r.Tries = store.RunRunning, r.Tries+1 },
+	}
+	for _, step := range steps {
+		if _, err := s.UpdateRun(r.ID, func(r *store.Run) error { step(r); return nil }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	events, err := s.RunEvents(r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stages []string
+	for _, e := range events {
+		if e.Kind == "try" {
+			stages = append(stages, e.Stage)
+		}
+	}
+	if !slices.Equal(stages, []string{store.TryGate, store.TryCI}) {
+		t.Fatalf("stages %q", stages)
+	}
+	b, err := json.Marshal(events[0])
+	if err != nil || strings.Contains(string(b), "stage") {
+		t.Fatalf("json %s %v", b, err)
+	}
+}
+
+// TAS-176: a run keeps the run that it fixes.
+func TestARunKeepsTheRunThatItFixes(t *testing.T) {
+	s := openStore(t)
+	p := newPlot(t, s, "A")
+	landed := addTestRun(t, s, p.ID)
+	fix, err := s.AddRun(store.Run{PlotID: p.ID, Title: "Fix the drag", Folder: "/work/fix", Fixes: landed.ID})
+	if err != nil || fix.Fixes != landed.ID {
+		t.Fatalf("%+v %v", fix, err)
+	}
+	if got, err := s.GetRun(fix.ID); err != nil || got.Fixes != landed.ID {
+		t.Fatalf("%+v %v", got, err)
+	}
+	b, err := json.Marshal(landed)
+	if err != nil || !strings.Contains(string(b), `"fixes":""`) {
+		t.Fatalf("json %s %v", b, err)
+	}
+}
+
+// TAS-176: the history of a plot holds its runs, oldest first, and their
+// events in order, and leaves out the runs of other plots.
+func TestRunHistoryHoldsTheRunsAndEventsOfAPlot(t *testing.T) {
+	s := openStore(t)
+	a, b := newPlot(t, s, "A"), newPlot(t, s, "B")
+	first, second := addTestRun(t, s, a.ID), addTestRun(t, s, a.ID)
+	other := addTestRun(t, s, b.ID)
+	for _, kind := range []string{"shape", "check"} {
+		if err := s.AddRunEvent(first.ID, kind, "Drafted"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runs, events, err := s.RunHistory(a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 2 || runs[0].ID != first.ID || runs[1].ID != second.ID {
+		t.Fatalf("runs %+v", runs)
+	}
+	var got []string
+	for _, e := range events {
+		got = append(got, e.RunID+":"+e.Kind)
+	}
+	// A check event is not one that the metrics read.
+	want := []string{first.ID + ":state", second.ID + ":state", first.ID + ":shape"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("events %q, want %q", got, want)
+	}
+	if runs, events, err := s.RunHistory(""); err != nil || len(runs) != 3 || len(events) != 4 || runs[2].ID != other.ID {
+		t.Fatalf("all: %d runs, %d events, %v", len(runs), len(events), err)
+	}
+}
