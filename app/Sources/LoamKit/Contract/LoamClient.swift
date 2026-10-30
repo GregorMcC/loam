@@ -370,10 +370,13 @@ public struct LoamClient: Sendable {
         return one.defaults
     }
 
-    /// `loam run defaults <plot> --model <model> --effort <level> --mcp <names>`. An empty value clears it.
-    public func setRunDefaults(plot: String, model: String, effort: String, mcpServers: [String]) async throws -> RunDefaults {
+    /// `loam run defaults <plot> --model <model> --effort <level> --mcp <names> --review on|off
+    /// --review-effort <level>`. An empty value clears it.
+    public func setRunDefaults(plot: String, model: String, effort: String, mcpServers: [String], review: Bool,
+                               reviewEffort: String) async throws -> RunDefaults {
         let one: RunDefaultsOne = try await read(
-            ["run", "defaults", "--model", model, "--effort", effort, "--mcp", mcpServers.joined(separator: ",")], positionals: [plot])
+            ["run", "defaults", "--model", model, "--effort", effort, "--mcp", mcpServers.joined(separator: ","),
+             "--review", review ? "on" : "off", "--review-effort", reviewEffort], positionals: [plot])
         return one.defaults
     }
 

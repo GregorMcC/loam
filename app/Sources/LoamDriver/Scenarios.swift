@@ -87,6 +87,7 @@ enum Scenarios {
         Scenario(name: "recurring-shot", limit: 120, body: recurringShot),
         Scenario(name: "rule-shot", limit: 120, body: ruleShot),
         Scenario(name: "run-defaults-mcp-shot", limit: 120, body: runDefaultsMCPShot),
+        Scenario(name: "run-defaults-review-shot", limit: 120, body: runDefaultsReviewShot),
         Scenario(name: "sandbox-settings-shot", limit: 120, body: sandboxSettingsShot),
         Scenario(name: "readme-shots", limit: 1200, body: readmeShots),
     ]
