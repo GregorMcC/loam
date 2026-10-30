@@ -31,13 +31,20 @@
 //     prints it, by run ID.
 //   - "create_refusal": the message of GitHub for a gh pr create that it
 //     refuses. No PR opens.
+//   - "thread_replies": the replies that Loam posted, by thread ID.
+//   - "resolved": the IDs of the threads that Loam resolved.
+//   - "pr_comments": the comments that Loam posted, by PR number.
+//   - "thread_refusals": the message of GitHub for a reply on a thread, or a
+//     resolve of it, that it refuses, by thread ID.
 //
 // The fake answers these commands:
 //
 //   - gh api graphql --input -: a query, from the state. It reads the query
 //     variables as Loam names them: h<i> is a branch in the first query, n<i>
 //     is a PR number in the second query, and number is the PR of the merge
-//     settings.
+//     settings. A mutation that replies on a thread adds the reply to
+//     "thread_replies", and one that resolves a thread adds it to "resolved"
+//     and resolves the thread in "details".
 //   - gh api user --jq .login: prints "login".
 //   - gh api repos/<owner>/<repo>/git/ref/heads/<branch>: the head of a branch.
 //   - gh api --method DELETE repos/<owner>/<repo>/git/refs/heads/<branch>:
@@ -61,6 +68,7 @@
 //   - gh pr create --head <branch>: adds an open PR to "pulls", with the next
 //     free number, and prints its URL. The PR keeps its "title" and its "body".
 //   - gh run view <id> --log-failed: prints the log of "logs".
+//   - gh pr comment <number> --body-file -: adds the comment to "pr_comments".
 //
 // LOAM_FAKE_GH_FAIL makes each call fail as gh does, with the exit code and
 // the text that gh prints (see [failures]). "hang" waits for a minute, as a
@@ -97,11 +105,16 @@ type state struct {
 	Issues         []map[string]any           `json:"issues,omitempty"`
 	Login          string                     `json:"login,omitempty"`
 	Logs           map[string]string          `json:"logs,omitempty"`
+	ThreadReplies  map[string][]string        `json:"thread_replies,omitempty"`
+	Resolved       []string                   `json:"resolved,omitempty"`
+	PRComments     map[string][]string        `json:"pr_comments,omitempty"`
+	ThreadRefusals map[string]string          `json:"thread_refusals,omitempty"`
 }
 
 func main() {
 	args := os.Args[1:]
 	var vars map[string]any
+	var text string
 	isQuery := slices.Equal(args, []string{"api", "graphql", "--hostname", "github.com", "--input", "-"})
 	if isQuery {
 		body, err := io.ReadAll(os.Stdin)
@@ -109,12 +122,13 @@ func main() {
 			fail(2, "fakegh: "+err.Error())
 		}
 		var req struct {
+			Query     string         `json:"query"`
 			Variables map[string]any `json:"variables"`
 		}
 		if err := json.Unmarshal(body, &req); err != nil {
 			fail(2, "fakegh: the request body is not JSON: "+err.Error())
 		}
-		vars = req.Variables
+		text, vars = req.Query, req.Variables
 	}
 	call := logCall(args, vars)
 
@@ -131,6 +145,8 @@ func main() {
 
 	st := readState()
 	switch {
+	case isQuery && strings.HasPrefix(text, "mutation"):
+		mutate(st, text, vars)
 	case isQuery:
 		query(st, vars)
 	case len(args) > 1 && args[0] == "api":
@@ -151,6 +167,8 @@ func main() {
 		rerun(st, args[2])
 	case len(args) > 1 && args[0] == "pr" && args[1] == "create":
 		create(st, args[2:])
+	case len(args) > 2 && args[0] == "pr" && args[1] == "comment":
+		comment(st, args[2])
 	case len(args) > 2 && args[0] == "run" && args[1] == "view":
 		fmt.Print(st.Logs[args[2]])
 	default:
@@ -218,6 +236,68 @@ func query(st *state, vars map[string]any) {
 	}
 	out, _ := json.Marshal(map[string]any{"data": map[string]any{"repository": repo}})
 	fmt.Println(string(out))
+}
+
+// mutate answers a GraphQL mutation: a reply on a review thread, or a
+// resolve of one.
+func mutate(st *state, text string, vars map[string]any) {
+	thread, _ := vars["thread"].(string)
+	if msg, ok := st.ThreadRefusals[thread]; ok {
+		f := graphQLError("NOT_FOUND", msg)
+		fmt.Print(f.stdout)
+		fail(f.code, f.stderr)
+	}
+	switch {
+	case strings.Contains(text, "addPullRequestReviewThreadReply"):
+		body, _ := vars["body"].(string)
+		if st.ThreadReplies == nil {
+			st.ThreadReplies = map[string][]string{}
+		}
+		st.ThreadReplies[thread] = append(st.ThreadReplies[thread], body)
+	case strings.Contains(text, "resolveReviewThread"):
+		st.Resolved = append(st.Resolved, thread)
+		for number, raw := range st.Details {
+			st.Details[number] = resolveIn(raw, thread)
+		}
+	default:
+		fail(2, "fakegh: unknown mutation "+text)
+	}
+	st.write()
+	fmt.Println(`{"data": {}}`)
+}
+
+// resolveIn resolves the thread in the review threads of a PR node.
+func resolveIn(raw json.RawMessage, thread string) json.RawMessage {
+	var node map[string]any
+	if json.Unmarshal(raw, &node) != nil {
+		return raw
+	}
+	threads, _ := node["reviewThreads"].(map[string]any)
+	nodes, _ := threads["nodes"].([]any)
+	for _, n := range nodes {
+		if t, ok := n.(map[string]any); ok && t["id"] == thread {
+			t["isResolved"] = true
+		}
+	}
+	out, err := json.Marshal(node)
+	if err != nil {
+		return raw
+	}
+	return out
+}
+
+// comment adds the comment on stdin to the PR.
+func comment(st *state, number string) {
+	body, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		fail(2, "fakegh: "+err.Error())
+	}
+	if st.PRComments == nil {
+		st.PRComments = map[string][]string{}
+	}
+	st.PRComments[number] = append(st.PRComments[number], string(body))
+	st.write()
+	fmt.Printf("https://github.com/example/widgets/pull/%s#issuecomment-1\n", number)
 }
 
 // rest answers gh api for the ref of a branch: a read, or a delete.
@@ -483,7 +563,8 @@ var failures = map[string]failure{
 		"Resource protected by organization SAML enforcement. You must grant your OAuth token access to this organization.")),
 	"sso": graphQLError("FORBIDDEN",
 		"The 'example' organization has enabled or enforced SAML SSO. To access this repository, you must re-authorize the OAuth Application 'GitHub CLI'."),
-	"offline": {1, "", "error connecting to api.github.com\ncheck your internet connection or https://githubstatus.com"},
+	"offline":      {1, "", "error connecting to api.github.com\ncheck your internet connection or https://githubstatus.com"},
+	"server_error": {1, "", "gh: Bad Gateway (HTTP 502)"},
 	"not_mergeable": {1, "", "X Pull request example/widgets#15 is not mergeable: the base branch policy prohibits the merge.\n" +
 		"To have the pull request merged after all the requirements have been met, add the `--auto` flag."},
 	"reference_missing": {1, "", "gh: Reference does not exist (HTTP 422)"},

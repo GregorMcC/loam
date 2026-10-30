@@ -157,8 +157,8 @@ type Review struct {
 
 // ReviewThread is one review thread of a PR: comments on a line of a file.
 type ReviewThread struct {
-	// ID is the node ID of the thread on GitHub, which a session needs to
-	// resolve it.
+	// ID is the node ID of the thread on GitHub, which Loam and a session
+	// need to reply on it and to resolve it.
 	ID   string `json:"id"`
 	Path string `json:"path"`
 	// Line is the line in the head of the PR. It is 0 when the head no
@@ -167,7 +167,7 @@ type ReviewThread struct {
 	// URL is the page of the first comment.
 	URL string `json:"url"`
 	// Comments are the first comments of the thread, oldest first, at most
-	// [commentsPerThread].
+	// [CommentsPerThread].
 	Comments []ReviewComment `json:"comments"`
 }
 

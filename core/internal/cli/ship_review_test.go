@@ -2,7 +2,11 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -50,6 +54,40 @@ func resumes(t *testing.T) []string {
 	return out
 }
 
+// repliesFile is where the session of the run writes its replies to a review: below the git folder of its worktree.
+func repliesFile(t *testing.T, r store.Run) string {
+	t.Helper()
+	return filepath.Join(testutil.Git(t, r.Folder, "rev-parse", "--absolute-git-dir"), "loam", "review-replies.json")
+}
+
+// writeReplies writes the replies file of the run, as the session does.
+func writeReplies(t *testing.T, r store.Run, text string) {
+	t.Helper()
+	if err := os.WriteFile(repliesFile(t, r), []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// ghPosts is what Loam posted on the fake GitHub.
+type ghPosts struct {
+	ThreadReplies map[string][]string `json:"thread_replies"`
+	Resolved      []string            `json:"resolved"`
+	PRComments    map[string][]string `json:"pr_comments"`
+}
+
+func posts(t *testing.T) ghPosts {
+	t.Helper()
+	var p ghPosts
+	b, err := os.ReadFile(os.Getenv("LOAM_FAKE_GH_STATE"))
+	if err == nil {
+		err = json.Unmarshal(b, &p)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
 // passGate ends the turn of the session of a Running run, so its gate passes and it is Shipping again.
 func passGate(t *testing.T, s *store.Store, r store.Run) {
 	t.Helper()
@@ -85,7 +123,8 @@ func TestRunTickSendsAReviewThatRequestsChangesBackAsAReviewTry(t *testing.T) {
 		"## Thread on hello.txt:1", "Thread ID: T1", "https://github.com/example/widgets/pull/1#discussion_r1",
 		"alice wrote:\n> Say hello to the world.", "bob, who cannot push to the repo, wrote a comment (https://github.com/example/widgets/pull/1#discussion_r2). Loam leaves out its text.",
 		"Commit all the fixes in one commit", "A nitpick or a Minor point whose fix is not worth it needs no change",
-		"addPullRequestReviewThreadReply", "resolveReviewThread", "pushes the fix to #1",
+		repliesFile(t, r), `{"threads": [{"id": "<thread ID>", "body": "<reply>", "resolve": true}], "comment": "<comment>"}`,
+		"Do not run gh: Loam posts the replies on GitHub after it pushes the fix.", "pushes the fix to #1",
 	} {
 		if !strings.Contains(prompts[0], want) {
 			t.Errorf("the prompt misses %q:\n%s", want, prompts[0])
@@ -95,20 +134,106 @@ func TestRunTickSendsAReviewThatRequestsChangesBackAsAReviewTry(t *testing.T) {
 		t.Errorf("the prompt has a resolved thread, or the text of a reader:\n%s", prompts[0])
 	}
 
-	// The session fixes the code and resolves the thread. GitHub keeps the decision until alice reviews again: with
-	// the review sent and no thread open, the run is Ready, and Loam does not send the review twice.
+	// TAS-175: the session fixes the code and writes its replies to the file. When GitHub shows the fix, Loam posts
+	// the replies and resolves the thread. GitHub keeps the decision until alice reviews again: with the review sent
+	// and no thread open, the run is Ready, and Loam does not send the review twice.
 	writeAndCommit(t, r.Folder, "fix.txt", "fixed\n")
+	writeReplies(t, r, `{"threads": [{"id": "T1", "body": "It says hello to the world now.", "resolve": true}],
+  "comment": "The second thing stays: the name is in the contract."}`)
 	passGate(t, s, r)
 	tick(t) // pushes the fix
+	if p := posts(t); len(p.ThreadReplies) != 0 || len(p.PRComments) != 0 {
+		t.Fatalf("Loam posted before GitHub showed the fix: %+v", p)
+	}
 	head = testutil.Git(t, r.Folder, "rev-parse", "HEAD")
-	setGitHub(t, reviewState(w.Branch, head, "CHANGES_REQUESTED", "["+reviewR1+"]", "["+threadT0+"]"))
+	setGitHub(t, reviewState(w.Branch, head, "CHANGES_REQUESTED", "["+reviewR1+"]", "["+threadT1+", "+threadT0+"]"))
 	got = tick(t)
 	if len(got.Runs) != 1 || got.Runs[0].State != store.RunReady || got.Runs[0].Note != "CI passed on #1: 1 of 1 checks" ||
-		got.Runs[0].ReviewTries != 1 {
+		got.Runs[0].ReviewTries != 1 || len(got.Warnings) != 0 {
 		t.Fatalf("%+v", got)
 	}
 	if n := len(resumes(t)); n != 1 {
 		t.Fatalf("%d prompts", n)
+	}
+	p := posts(t)
+	if !slices.Equal(p.ThreadReplies["T1"], []string{"It says hello to the world now."}) || !slices.Equal(p.Resolved, []string{"T1"}) ||
+		!slices.Equal(p.PRComments["1"], []string{"The second thing stays: the name is in the contract."}) {
+		t.Fatalf("posts %+v", p)
+	}
+	want := "Posted 1 review reply and a comment on #1, and resolved 1 thread"
+	if e := events(t, s, r.ID, "review"); len(e) != 2 || e[1] != want {
+		t.Fatalf("review events %q", e)
+	}
+	if _, err := os.Stat(repliesFile(t, r)); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("the replies file stays: %v", err)
+	}
+	// A later tick posts nothing again.
+	if got := tick(t); len(got.Runs) != 0 || len(posts(t).ThreadReplies["T1"]) != 1 {
+		t.Fatalf("%+v", got)
+	}
+}
+
+// TAS-175: an old replies file never goes to a new review. Loam removes it before it sends the review, and leaves the
+// folder for the session.
+func TestRunTickRemovesAnOldReplyFileBeforeItSendsAReview(t *testing.T) {
+	_, r, w := shipRun(t, "3")
+	tick(t)
+	if err := os.MkdirAll(filepath.Dir(repliesFile(t, r)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeReplies(t, r, `{"threads": [{"id": "T1", "body": "An old reply.", "resolve": true}]}`)
+	setGitHub(t, reviewState(w.Branch, testutil.Git(t, r.Folder, "rev-parse", "HEAD"), "CHANGES_REQUESTED", "[]", "["+threadT1+"]"))
+	if got := tick(t); len(got.Runs) != 1 || got.Runs[0].State != store.RunRunning {
+		t.Fatalf("%+v", got)
+	}
+	if _, err := os.Stat(repliesFile(t, r)); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("the old file stays: %v", err)
+	}
+	if fi, err := os.Stat(filepath.Dir(repliesFile(t, r))); err != nil || !fi.IsDir() {
+		t.Fatalf("no folder for the replies: %v", err)
+	}
+}
+
+// TAS-175: a reply that GitHub refuses, or a file that Loam cannot read, does not stop the run. The event says why, a
+// refusal is a warning, and the file stays. The thread stays open, so the next review try sends it again.
+func TestRunTickKeepsTheRepliesThatItCouldNotPost(t *testing.T) {
+	s, r, w := shipRun(t, "3")
+	tick(t)
+	head := testutil.Git(t, r.Folder, "rev-parse", "HEAD")
+	state := reviewState(w.Branch, head, "CHANGES_REQUESTED", "[]", "["+threadT1+"]")
+	setGitHub(t, state)
+	tick(t) // sends the review
+	writeReplies(t, r, `{"threads": [{"id": "T1", "body": "Done.", "resolve": true}]}`)
+	passGate(t, s, r) // no commit: GitHub shows the head already
+	setGitHub(t, strings.Replace(state, `"refs":`, `"thread_refusals": {"T1": "Pull request review thread is locked"}, "refs":`, 1))
+	got := tick(t)
+	if len(got.Runs) != 1 || got.Runs[0].State != store.RunRunning || got.Runs[0].ReviewTries != 2 {
+		t.Fatalf("%+v", got)
+	}
+	path := repliesFile(t, r)
+	want := "Loam posted no review replies on #1. 1 post failed, the first with: could not reply on the review thread T1: " +
+		"Pull request review thread is locked. The replies stay in " + path
+	if e := events(t, s, r.ID, "review"); len(e) < 2 || e[1] != want {
+		t.Fatalf("review events %q", e)
+	}
+	if len(got.Warnings) != 1 || got.Warnings[0] != "Say hi: "+want {
+		t.Fatalf("warnings %q", got.Warnings)
+	}
+
+	// The second review try removed the file. A file that is not JSON gives an event, and the run is Ready.
+	writeReplies(t, r, "Done, all of it.")
+	passGate(t, s, r)
+	setGitHub(t, state)
+	got = tick(t)
+	if len(got.Runs) != 1 || got.Runs[0].State != store.RunReady {
+		t.Fatalf("%+v", got)
+	}
+	e := events(t, s, r.ID, "review")
+	if !strings.HasPrefix(e[len(e)-1], "Loam posted no review replies on #1: the file "+path+": it is not JSON in the format of the prompt") {
+		t.Fatalf("review events %q", e)
+	}
+	if b, err := os.ReadFile(path); err != nil || string(b) != "Done, all of it." {
+		t.Fatalf("the file: %q, %v", b, err)
 	}
 }
 
@@ -125,7 +250,7 @@ func TestRunTickSendsAReviewWithNoThreadsOnce(t *testing.T) {
 	}
 	if p := resumes(t); len(p) != 1 || !strings.Contains(p[0], "> Two things before this merges.") ||
 		!strings.Contains(p[0], "commit all the fixes in one commit") || !strings.Contains(p[0], "make no commit") ||
-		strings.Contains(p[0], "resolveReviewThread") {
+		!strings.Contains(p[0], `{"comment": "<comment>"}`) || strings.Contains(p[0], `"threads"`) {
 		t.Fatalf("prompts %q", p)
 	}
 	// The session ends its turn with no change: the head is the same, and CI passed on it.
@@ -159,6 +284,9 @@ func TestRunTickMakesARunReadyWhenTheReviewTriesAreUsedUp(t *testing.T) {
 		t.Fatalf("prompts %q", prompts)
 	}
 	got := tick(t)
+	if e := events(t, s, r.ID, "review"); e[len(e)-1] != "The session wrote no review replies, so Loam posted none on #1" {
+		t.Fatalf("review events %q", e)
+	}
 	note := "CI passed on #1: 1 of 1 checks. The review tries are used up, and changes are requested on #1"
 	if len(got.Runs) != 1 || got.Runs[0].State != store.RunReady || got.Runs[0].Note != note || got.Runs[0].Tries != 0 {
 		t.Fatalf("%+v", got)
@@ -254,7 +382,7 @@ func TestRunSendReviewSendsOpenThreadsWithNoChangeRequestAndUsesNoTry(t *testing
 	}
 	for _, want := range []string{
 		"I ask you to address the review of #1.", "Thread ID: T1", "alice wrote:\n> Say hello to the world.",
-		"bob, who cannot push to the repo, wrote a comment", "resolveReviewThread",
+		"bob, who cannot push to the repo, wrote a comment", repliesFile(t, r), "Do not run gh",
 	} {
 		if !strings.Contains(prompts[0], want) {
 			t.Errorf("the prompt misses %q:\n%s", want, prompts[0])

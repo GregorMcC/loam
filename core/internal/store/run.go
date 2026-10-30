@@ -236,6 +236,38 @@ func (c *RunCodeReview) clone() *RunCodeReview {
 	return &out
 }
 
+// RunReviewReplies is what Loam sent back of the review of a PR, so it posts
+// the replies that the session writes to those threads only.
+type RunReviewReplies struct {
+	// PR is the number of the PR of the review.
+	PR int `json:"pr"`
+	// Threads are the IDs of the review threads that the prompt holds.
+	Threads []string `json:"threads"`
+	// Cut are the IDs of the threads that the prompt holds in part. Loam
+	// posts their replies, and does not resolve them.
+	Cut []string `json:"cut"`
+	// Comment is true when the prompt holds a review, so Loam posts the
+	// comment of the session on the PR.
+	Comment bool `json:"comment"`
+	// Replied are the IDs of the threads that Loam has replied on, and
+	// Commented is true when it has posted the comment. A post that Loam
+	// tries again does not post them twice.
+	Replied   []string `json:"replied"`
+	Commented bool     `json:"commented"`
+}
+
+// clone copies the review replies, with empty lists where they have none.
+func (rr *RunReviewReplies) clone() *RunReviewReplies {
+	if rr == nil {
+		return nil
+	}
+	c := *rr
+	c.Threads = append([]string{}, rr.Threads...)
+	c.Cut = append([]string{}, rr.Cut...)
+	c.Replied = append([]string{}, rr.Replied...)
+	return &c
+}
+
 // RunNotes are the ship notes of a run: what Claude wrote about the change
 // when Loam opened its PR. The Land screen shows them.
 type RunNotes struct {
@@ -359,8 +391,11 @@ type Run struct {
 	// CodeReview is the state of the code review before each push, or nil
 	// before the first review. It is not in the JSON.
 	CodeReview *RunCodeReview `json:"-"`
-	CreatedAt  time.Time      `json:"created_at"`
-	UpdatedAt  time.Time      `json:"updated_at"`
+	// ReviewReplies is what Loam sent back of the last review, until Loam
+	// posts the replies of the session, or nil. It is not in the JSON.
+	ReviewReplies *RunReviewReplies `json:"-"`
+	CreatedAt     time.Time         `json:"created_at"`
+	UpdatedAt     time.Time         `json:"updated_at"`
 }
 
 // RunEvent is one line of a run's history: a state, a try, or a note.
@@ -447,12 +482,13 @@ func (s *Store) AddRun(r Run) (Run, error) {
 	}
 	now := time.Now().UnixMilli()
 	r.Tries, r.Turns, r.TurnBase, r.ReviewTries, r.ReviewsSent = 0, 0, 0, 0, nil
-	r.CodeReview = nil // a new run has no review of its head
+	r.CodeReview = nil    // a new run has no review of its head
+	r.ReviewReplies = nil // nor a review that waits for replies
 	r.CreatedAt, r.UpdatedAt = tm(now), tm(now)
-	checks, src, pr, shape, queue, notes, draft, sent, review := encodeRun(r)
-	if err := tx.exec(`INSERT INTO runs(`+runCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, 0, ?, ?, ?, ?)`,
+	checks, src, pr, shape, queue, notes, draft, sent, review, replies := encodeRun(r)
+	if err := tx.exec(`INSERT INTO runs(`+runCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, 0, ?, ?, ?, ?, ?)`,
 		r.ID, r.PlotID, r.WorktreeID, r.Folder, r.Title, r.Goal, checks, r.State, r.MaxTries, r.SessionID, r.Note,
-		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, r.GroupID, queue, notes, draft, sent, review, now, now); err != nil {
+		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, r.GroupID, queue, notes, draft, sent, review, replies, now, now); err != nil {
 		return Run{}, err
 	}
 	if err := addRunEvent(tx, r.ID, now, "state", string(r.State)); err != nil {
@@ -555,6 +591,7 @@ func updateRun(tx *writeTx, id string, fn func(*Run) error, tryNote *string) (Ru
 	r.PRDraft = old.PRDraft.clone()
 	r.ReviewsSent = slices.Clone(old.ReviewsSent)
 	r.CodeReview = old.CodeReview.clone()
+	r.ReviewReplies = old.ReviewReplies.clone()
 	if err := fn(&r); err != nil {
 		return Run{}, err
 	}
@@ -566,14 +603,14 @@ func updateRun(tx *writeTx, id string, fn func(*Run) error, tryNote *string) (Ru
 	}
 	now := time.Now().UnixMilli()
 	r.UpdatedAt = tm(now)
-	checks, src, pr, shape, queue, notes, draft, sent, review := encodeRun(r)
+	checks, src, pr, shape, queue, notes, draft, sent, review, replies := encodeRun(r)
 	if err := tx.exec(`UPDATE runs SET worktree_id = ?, folder = ?, title = ?, goal = ?, done_when = ?, state = ?, tries = ?,
   max_tries = ?, session_id = ?, note = ?, source_kind = ?, source_key = ?, source_url = ?, pr_number = ?, pr_url = ?,
   shape = ?, group_id = ?, turns = ?, turn_base = ?, queue = ?, notes = ?, pr_draft = ?, review_tries = ?, reviews_sent = ?,
-  code_review = ?, updated_at = ? WHERE id = ?`,
+  code_review = ?, review_replies = ?, updated_at = ? WHERE id = ?`,
 		r.WorktreeID, r.Folder, r.Title, r.Goal, checks, r.State, r.Tries, r.MaxTries, r.SessionID, r.Note,
 		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, r.GroupID, r.Turns, r.TurnBase, queue, notes, draft,
-		r.ReviewTries, sent, review, now, r.ID); err != nil {
+		r.ReviewTries, sent, review, replies, now, r.ID); err != nil {
 		return Run{}, err
 	}
 	if r.Tries != old.Tries {
@@ -668,12 +705,12 @@ func (s *Store) RunFeed(plotID string, since time.Time) ([]FeedEvent, error) {
 // runCols are the columns of a run record.
 const runCols = `id, plot_id, worktree_id, folder, title, goal, done_when, state, tries, max_tries, session_id, note,
   source_kind, source_key, source_url, pr_number, pr_url, shape, group_id, turns, turn_base, queue, notes, pr_draft,
-  review_tries, reviews_sent, code_review, created_at, updated_at`
+  review_tries, reviews_sent, code_review, review_replies, created_at, updated_at`
 
 // encodeRun returns the columns of a run that are not plain values. notes is
-// NULL when the run has none, and draft, sent, and review are "" when it has
-// none.
-func encodeRun(r Run) (checks string, src RunSource, pr RunPR, shape, queue string, notes sql.NullString, draft, sent, review string) {
+// NULL when the run has none, and draft, sent, review, and replies are ""
+// when it has none.
+func encodeRun(r Run) (checks string, src RunSource, pr RunPR, shape, queue string, notes sql.NullString, draft, sent, review, replies string) {
 	b, err := json.Marshal(append([]Check{}, r.DoneWhen...))
 	if err != nil { // a slice of string pairs always encodes
 		panic(err)
@@ -726,7 +763,14 @@ func encodeRun(r Run) (checks string, src RunSource, pr RunPR, shape, queue stri
 		}
 		review = string(cb)
 	}
-	return string(b), src, pr, shape, queue, notes, draft, sent, review
+	if rr := r.ReviewReplies.clone(); rr != nil {
+		rb, err := json.Marshal(rr)
+		if err != nil { // strings, an int, and a bool always encode
+			panic(err)
+		}
+		replies = string(rb)
+	}
+	return string(b), src, pr, shape, queue, notes, draft, sent, review, replies
 }
 
 // clone copies the shape, with empty lists where it has none, so the JSON
@@ -751,12 +795,12 @@ func scanRun(sc interface{ Scan(...any) error }) (Run, error) {
 	var checks string
 	var src RunSource
 	var pr RunPR
-	var shape, queue, draft, sent, review string
+	var shape, queue, draft, sent, review, replies string
 	var notes sql.NullString
 	var created, updated int64
 	err := sc.Scan(&r.ID, &r.PlotID, &r.WorktreeID, &r.Folder, &r.Title, &r.Goal, &checks, &r.State, &r.Tries,
 		&r.MaxTries, &r.SessionID, &r.Note, &src.Kind, &src.Key, &src.URL, &pr.Number, &pr.URL, &shape, &r.GroupID,
-		&r.Turns, &r.TurnBase, &queue, &notes, &draft, &r.ReviewTries, &sent, &review, &created, &updated)
+		&r.Turns, &r.TurnBase, &queue, &notes, &draft, &r.ReviewTries, &sent, &review, &replies, &created, &updated)
 	if err != nil {
 		return Run{}, err
 	}
@@ -808,6 +852,13 @@ func scanRun(sc interface{ Scan(...any) error }) (Run, error) {
 			return Run{}, fmt.Errorf("run %s: bad code review: %w", r.ID, err)
 		}
 		r.CodeReview = c.clone()
+	}
+	if replies != "" {
+		var rr RunReviewReplies
+		if err := json.Unmarshal([]byte(replies), &rr); err != nil {
+			return Run{}, fmt.Errorf("run %s: bad review replies: %w", r.ID, err)
+		}
+		r.ReviewReplies = rr.clone()
 	}
 	r.CreatedAt, r.UpdatedAt = tm(created), tm(updated)
 	return r, nil

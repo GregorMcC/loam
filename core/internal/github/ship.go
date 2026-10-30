@@ -3,8 +3,10 @@ package github
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -93,4 +95,61 @@ func PRRepo(prURL string) (Repo, bool) {
 		return Repo{}, false
 	}
 	return ParseRepo(prURL[:i])
+}
+
+// replyMutation adds a reply to a review thread.
+const replyMutation = `mutation($thread: ID!, $body: String!) {
+  addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: $thread, body: $body}) { comment { id } }
+}`
+
+// resolveMutation resolves a review thread.
+const resolveMutation = `mutation($thread: ID!) {
+  resolveReviewThread(input: {threadId: $thread}) { thread { isResolved } }
+}`
+
+// ReplyToThread adds a reply to the review thread with the node ID thread,
+// as the user of gh.
+func (c *Client) ReplyToThread(ctx context.Context, thread, body string) error {
+	return c.mutate(ctx, "reply on the review thread "+thread, replyMutation, map[string]any{"thread": thread, "body": body})
+}
+
+// ResolveThread resolves the review thread with the node ID thread.
+func (c *Client) ResolveThread(ctx context.Context, thread string) error {
+	return c.mutate(ctx, "resolve the review thread "+thread, resolveMutation, map[string]any{"thread": thread})
+}
+
+// CommentPR adds a comment to the PR (gh pr comment).
+func (c *Client) CommentPR(ctx context.Context, repo Repo, number int, body string) error {
+	n := strconv.Itoa(number)
+	_, err := c.run(ctx, ghActionTimeout, []byte(body), "pr", "comment", n, "--repo", repo.flag(), "--body-file", "-")
+	return postError(err, "comment on PR #"+n)
+}
+
+// mutate runs one GraphQL mutation. what says what it does, for the error.
+// gh fails on a GraphQL error, so the answer needs no read.
+func (c *Client) mutate(ctx context.Context, what, mutation string, vars map[string]any) error {
+	body, err := json.Marshal(map[string]any{"query": mutation, "variables": vars})
+	if err != nil {
+		return err
+	}
+	_, err = c.run(ctx, ghActionTimeout, body, "api", "graphql", "--hostname", host, "--input", "-")
+	return postError(err, what)
+}
+
+// offlineText is what gh prints when it cannot connect to GitHub.
+const offlineText = "error connecting to"
+
+// serverError matches the status that gh prints for an answer of GitHub
+// with HTTP 5xx.
+var serverError = regexp.MustCompile(`\(HTTP 5\d\d\)`)
+
+// postError is [actionError] for a post. A gh that could not connect, or an
+// HTTP 5xx of GitHub, gives [ErrOffline], so the caller can post again
+// later.
+func postError(err error, what string) error {
+	var f *ghFailure
+	if errors.As(err, &f) && (f.says(offlineText) || serverError.MatchString(f.message())) {
+		return fmt.Errorf("%w: %s", ErrOffline, f.message())
+	}
+	return actionError(err, what)
 }

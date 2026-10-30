@@ -298,6 +298,9 @@ ALTER TABLE run_defaults ADD COLUMN review INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE run_defaults ADD COLUMN review_effort TEXT NOT NULL DEFAULT '';
 ALTER TABLE runs ADD COLUMN code_review TEXT NOT NULL DEFAULT '';
 `,
+	// 23: what Loam sent back of the last review of a run, as JSON, or '',
+	// so it posts the replies of the session to those threads only.
+	`ALTER TABLE runs ADD COLUMN review_replies TEXT NOT NULL DEFAULT '';`,
 }
 
 // SchemaVersion is the schema version of this binary.
