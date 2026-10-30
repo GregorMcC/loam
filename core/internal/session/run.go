@@ -154,7 +154,7 @@ func runRules(s *store.Store, plot store.Plot, folder string) (sandbox.Rules, er
 		Folder:    folder,
 		GitDir:    git,
 		Repos:     repos,
-		GitConfig: gitConfigFiles(admin, git),
+		GitConfig: gitConfigFiles(home, folder, admin, git),
 		// The plot folder holds the seed, which only Loam writes.
 		NoWrite: []string{s.PlotDir(plot.ID)},
 		Getenv:  os.Getenv,
@@ -174,12 +174,22 @@ func runRules(s *store.Store, plot store.Plot, folder string) (sandbox.Rules, er
 // the environment.
 var gitConfigScopes = []string{"system", "global", "local"}
 
+// includeDepth is how deep git follows includes (MAX_INCLUDE_DEPTH).
+const includeDepth = 10
+
 // gitConfigFiles returns the config files that git reads in the worktree
-// with the git folder admin, with the files that they include, in the scopes
-// of gitConfigScopes. It names the common git folder, so that git does not
-// follow a commondir file that the run wrote. A file that git cannot name is
-// not read in the sandbox, so an error gives none.
-func gitConfigFiles(admin, common string) []string {
+// folder with the git folder admin, with the files that they include, in the
+// scopes of gitConfigScopes. It names the common git folder, so that git
+// does not follow a commondir file that the run wrote. A file that git
+// cannot name is not read in the sandbox, so an error gives none.
+//
+// git config --list names only the includes that git took. Git also opens
+// the file of an includeIf whose condition does not hold: for a hasconfig
+// condition it reads the file to find the remote URLs, and it stops when
+// the sandbox denies the file (TAS-194). So gitConfigFiles adds the file of
+// each include and includeIf, to the depth that git follows. It does not
+// follow the includes of a file that the run can write.
+func gitConfigFiles(home, folder, admin, common string) []string {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "config", "--list", "--show-scope", "--show-origin", "-z")
@@ -200,7 +210,68 @@ func gitConfigFiles(admin, common string) []string {
 			files = append(files, f)
 		}
 	}
+	// The run writes its folder and the git folders, except the config of
+	// the repo, which the rules deny.
+	writable := func(f string) bool {
+		f = sandbox.Real(f)
+		return inside(f, folder) || inside(f, admin) || inside(f, common) && f != sandbox.Real(filepath.Join(common, "config"))
+	}
+	next := files
+	for depth := 0; depth < includeDepth && len(next) > 0; depth++ {
+		var found []string
+		for _, f := range next {
+			if writable(f) {
+				continue
+			}
+			for _, inc := range gitIncludes(ctx, home, f) {
+				if !slices.Contains(files, inc) {
+					files = append(files, inc)
+					found = append(found, inc)
+				}
+			}
+		}
+		next = found
+	}
 	return files
+}
+
+// gitIncludes returns the files that the include.path and includeIf.*.path
+// entries of the config file f name, whatever their condition. Git reads a
+// relative path from the folder of f, and ~/ from home. It leaves out a path
+// that git would not expand, such as ~user/.
+func gitIncludes(ctx context.Context, home, f string) []string {
+	out, err := exec.CommandContext(ctx, "git", "config", "--file", f, "--no-includes", "-z", "--get-regexp", `^include(if\..*)?\.path$`).Output()
+	if err != nil {
+		return nil
+	}
+	// Each entry is a key and its value, with a newline between them, ended
+	// by NUL.
+	var files []string
+	for _, entry := range strings.Split(string(out), "\x00") {
+		_, p, ok := strings.Cut(entry, "\n")
+		switch {
+		case !ok || p == "":
+			continue
+		case strings.HasPrefix(p, "~/"):
+			p = filepath.Join(home, p[2:])
+		case strings.HasPrefix(p, "~"):
+			continue
+		case !filepath.IsAbs(p):
+			p = filepath.Join(filepath.Dir(f), p)
+		}
+		files = append(files, filepath.Clean(p))
+	}
+	return files
+}
+
+// inside reports whether path, with its symlinks resolved, is dir or a path
+// inside it. It resolves the symlinks of dir.
+func inside(path, dir string) bool {
+	if dir == "" {
+		return false
+	}
+	dir = sandbox.Real(dir)
+	return path == dir || strings.HasPrefix(path, dir+string(filepath.Separator))
 }
 
 // gitDirs returns the git folder of the worktree in folder (admin) and the

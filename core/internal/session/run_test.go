@@ -154,6 +154,71 @@ func TestPrepareRunAllowsTheGitConfigFilesThatGitReads(t *testing.T) {
 	}
 }
 
+// TAS-194: git opens the file of an includeIf whose condition does not hold
+// when the condition is hasconfig, and stops when the sandbox denies it. So
+// the sandbox allows the file of each include and includeIf, and the files
+// that it includes. It does not follow an include in a file that the run can
+// write, which would let the run name any file as a read path.
+func TestPrepareRunAllowsTheFilesOfEachIncludeIf(t *testing.T) {
+	e := setup(t)
+	testutil.GitEnv(t)
+	global := os.Getenv("GIT_CONFIG_GLOBAL")
+	dir := filepath.Dir(global)
+	repo, _ := testutil.GitRepo(t)
+	work := filepath.Join(dir, "work.gitconfig")
+	nested := filepath.Join(dir, "nested", "more.gitconfig")
+	local := filepath.Join(repo, "local.gitconfig")
+	secret := filepath.Join(dir, "secret")
+	for f, text := range map[string]string{
+		work:   "[include]\n\tpath = nested/more.gitconfig\n",
+		nested: "[core]\n\tautocrlf = false\n",
+		local:  "[include]\n\tpath = " + secret + "\n",
+		secret: "",
+	} {
+		if err := os.MkdirAll(filepath.Dir(f), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(f, []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f, err := os.OpenFile(global, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("[includeIf \"hasconfig:remote.*.url:git@example.com:org/**\"]\n\tpath = work.gitconfig\n" +
+		"[includeIf \"gitdir:/nowhere/\"]\n\tpath = " + local + "\n"); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	p := e.plot(t, store.PlotInput{Name: "Alpha", Repos: []store.RepoInput{{Path: repo}}})
+	plan, err := session.PrepareRun(e.store, store.Run{ID: "r1", PlotID: p.ID, Folder: repo}, "go", "loam", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(argValues(plan.Args, "--settings")[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Sandbox struct {
+			Filesystem struct{ AllowRead []string }
+		}
+	}
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	read := got.Sandbox.Filesystem.AllowRead
+	for _, want := range []string{realpath(t, work), realpath(t, nested), realpath(t, local)} {
+		if !slices.Contains(read, want) {
+			t.Errorf("allowRead = %q, want %s", read, want)
+		}
+	}
+	if slices.Contains(read, realpath(t, secret)) {
+		t.Errorf("allowRead = %q has %s, which an include in a file of the run names", read, secret)
+	}
+}
+
 // TAS-175: the machine settings and the plot settings of the sandbox reach
 // the settings file of a run. The settings of another plot do not.
 func TestPrepareRunAddsTheSandboxSettings(t *testing.T) {
