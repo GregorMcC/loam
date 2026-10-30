@@ -1,9 +1,18 @@
 package session
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"slices"
 	"strings"
+	"time"
 
+	"github.com/GregorMcC/loam/core/internal/linkkind"
+	"github.com/GregorMcC/loam/core/internal/sandbox"
 	"github.com/GregorMcC/loam/core/internal/store"
 )
 
@@ -44,20 +53,28 @@ func PrepareRun(s *store.Store, r store.Run, prompt, loam, model, effort string)
 	if effort != "" {
 		lead = append(lead, "--effort", effort)
 	}
-	plan, err := build(s, plot, r.Folder, claude, "run-"+r.ID, lead, loam, runSettings(r.ID))
+	// The sandbox lets Bash write each added folder, so a run adds only the
+	// plot folder, and its rules deny writes to it. Bash reads the repos and
+	// the links through the rules.
+	box, err := runRules(s, plot, r.Folder)
+	if err != nil {
+		return nil, err
+	}
+	plan, err := build(s, plot, r.Folder, claude, "run-"+r.ID, lead, loam, runSettings(r.ID, box), false)
 	if err != nil {
 		return nil, err
 	}
 	plan.SessionID = ""
-	plan.Args = append(plan.Args, prompt)
+	plan.Args = append(plan.Args, prompt+box.Prompt())
 	return plan, nil
 }
 
 // runSettings returns the settings of a run session: the allow rules of a
-// seeded session, the run hooks, and env. The background session may start
-// from the Claude Code supervisor, which does not pass the environment of
-// the loam process, so the settings carry it.
-func runSettings(runID string) settingsFunc {
+// seeded session, the deny rules of the credential paths, the run hooks, env,
+// and the sandbox of the rules. The background session may start from the
+// Claude Code supervisor, which does not pass the environment of the loam
+// process, so the settings carry it.
+func runSettings(runID string, box sandbox.Rules) settingsFunc {
 	return func(loam string, env []string) ([]byte, error) {
 		type hook struct {
 			Type    string `json:"type"`
@@ -77,10 +94,90 @@ func runSettings(runID string) settingsFunc {
 			vars[k] = v
 		}
 		s := map[string]any{
-			"permissions": map[string]any{"allow": rules(allowTools)},
+			"permissions": map[string]any{"allow": rules(allowTools), "deny": box.ToolDenies()},
 			"hooks":       hooks,
 			"env":         vars,
+			"sandbox":     box.Settings(),
 		}
 		return json.MarshalIndent(s, "", "  ")
 	}
+}
+
+// RunSandboxNote returns what the stacks of the run need in the sandbox, or ""
+// when they need nothing. The first prompt of the run says it, and the run
+// hook says it again after a compact, which can drop that prompt.
+func RunSandboxNote(s *store.Store, r store.Run) (string, error) {
+	plot, err := s.GetPlot(r.PlotID)
+	if err != nil {
+		return "", err
+	}
+	box, err := runRules(s, plot, r.Folder)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(box.Prompt()), nil
+}
+
+// runRules returns the sandbox rules of a run that works in folder.
+func runRules(s *store.Store, plot store.Plot, folder string) (sandbox.Rules, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return sandbox.Rules{}, fmt.Errorf("the sandbox needs the home folder: %w", err)
+	}
+	git, err := gitCommonDir(folder)
+	if err != nil {
+		return sandbox.Rules{}, err
+	}
+	in := sandbox.Input{
+		Home:      home,
+		Folder:    folder,
+		GitDir:    git,
+		GitConfig: gitConfigFiles(folder),
+		// The plot folder holds the seed, which only Loam writes.
+		NoWrite: []string{s.PlotDir(plot.ID)},
+		Getenv:  os.Getenv,
+	}
+	for _, r := range plot.Repos {
+		in.Repos = append(in.Repos, r.Path)
+	}
+	for _, l := range plot.Links {
+		if linkkind.IsLocal(l.Target) {
+			in.Links = append(in.Links, linkkind.Expand(l.Target))
+		}
+	}
+	return sandbox.For(in)
+}
+
+// gitConfigFiles returns the config files that git reads in dir, with the
+// files that they include. A file that git cannot name is not read in the
+// sandbox, so an error gives none.
+func gitConfigFiles(dir string) []string {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "git", "-C", dir, "config", "--list", "--show-origin", "-z").Output()
+	if err != nil {
+		return nil
+	}
+	// Each entry is an origin and a key with its value, each one ended by NUL.
+	var files []string
+	parts := strings.Split(string(out), "\x00")
+	for i := 0; i+1 < len(parts); i += 2 {
+		if f, ok := strings.CutPrefix(parts[i], "file:"); ok && filepath.IsAbs(f) && !slices.Contains(files, f) {
+			files = append(files, f)
+		}
+	}
+	return files
+}
+
+// gitCommonDir returns the git folder that the checkout in dir shares with its
+// worktrees. A commit in a worktree writes to it, so a run cannot commit
+// without it.
+func gitCommonDir(dir string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "--path-format=absolute", "--git-common-dir").Output()
+	if err != nil {
+		return "", fmt.Errorf("find the git folder of %s for the sandbox: %w", dir, err)
+	}
+	return strings.TrimSpace(string(out)), nil
 }

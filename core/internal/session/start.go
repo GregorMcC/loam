@@ -209,7 +209,7 @@ func Prepare(s *store.Store, o StartOptions) (*Plan, error) {
 		return nil, err
 	}
 
-	plan, err := build(s, plot, dir, claude, id, []string{"--session-id", id}, o.Loam, paneSettings)
+	plan, err := build(s, plot, dir, claude, id, []string{"--session-id", id}, o.Loam, paneSettings, true)
 	if err != nil {
 		return nil, err
 	}
@@ -259,7 +259,7 @@ func prepareResume(s *store.Store, rec store.SessionRecord, idArgs []string, loa
 	if err != nil {
 		return nil, err
 	}
-	plan, err := build(s, plot, rec.StartFolder, claude, rec.SessionID, idArgs, loam, paneSettings)
+	plan, err := build(s, plot, rec.StartFolder, claude, rec.SessionID, idArgs, loam, paneSettings, true)
 	if err != nil {
 		return nil, err
 	}
@@ -395,8 +395,9 @@ type settingsFunc func(loam string, env []string) ([]byte, error)
 
 // build writes the seed and the settings file and returns the launch plan.
 // idArgs are the first claude arguments: --session-id or --resume. id names
-// the settings file.
-func build(s *store.Store, plot store.Plot, dir, claude, id string, idArgs []string, loam string, settings settingsFunc) (*Plan, error) {
+// the settings file. others adds the other repos and the local links of the
+// plot as folders of the session.
+func build(s *store.Store, plot store.Plot, dir, claude, id string, idArgs []string, loam string, settings settingsFunc, others bool) (*Plan, error) {
 	extra, err := extraArgs()
 	if err != nil {
 		return nil, err
@@ -417,11 +418,13 @@ func build(s *store.Store, plot store.Plot, dir, claude, id string, idArgs []str
 	}
 	adds = append(adds, s.PlotDir(plot.ID))
 	seen[s.PlotDir(plot.ID)] = true
-	for _, r := range plot.Repos {
-		add(r.Path)
-	}
-	for _, l := range plot.Links {
-		add(localDir(l.Target))
+	if others {
+		for _, r := range plot.Repos {
+			add(r.Path)
+		}
+		for _, l := range plot.Links {
+			add(localDir(l.Target))
+		}
 	}
 
 	if err := seed.WritePlot(s, plot); err != nil {

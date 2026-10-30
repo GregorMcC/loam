@@ -168,7 +168,7 @@ func stopFailed(s *store.Store, runID string, h hookInput, logf func(string, ...
 
 // sessionStarted records the session of the run, and adds a session record
 // so that loam sessions and loam resume know it. After a compact it prints
-// the seed again, as for a seeded session.
+// the seed again, as for a seeded session, and the sandbox note of the run.
 func sessionStarted(s *store.Store, runID string, h hookInput, out io.Writer, logf func(string, ...any)) {
 	if h.SessionID == "" {
 		return
@@ -189,6 +189,12 @@ func sessionStarted(s *store.Store, runID string, h hookInput, out io.Writer, lo
 	}
 	if h.Source == "compact" {
 		session.PrintSeed(s.Home(), r.PlotID, out, logf)
+		switch note, err := session.RunSandboxNote(s, r); {
+		case err != nil:
+			logf("run %s: the sandbox note: %v", runID, err)
+		case note != "":
+			fmt.Fprintln(out, "\n"+note)
+		}
 	}
 }
 

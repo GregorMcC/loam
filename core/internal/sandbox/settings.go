@@ -1,0 +1,86 @@
+package sandbox
+
+import "strings"
+
+// Settings returns the sandbox block of the Claude Code settings of a run.
+// It covers Bash and the processes that Bash starts.
+func (r Rules) Settings() map[string]any {
+	return map[string]any{
+		"enabled": true,
+		// With no sandbox, the session does not start: Loam keeps the run
+		// Queued.
+		"failIfUnavailable": true,
+		// Claude Code ignores a command's request to run outside the sandbox.
+		"allowUnsandboxedCommands": false,
+		"network": map[string]any{
+			"allowedDomains": nonNil(r.Hosts),
+			// A host off the list is refused, not asked about: nobody answers
+			// the prompts of a background session.
+			"strictAllowlist": true,
+			// No allowLocalBinding: it lets Bash bind 0.0.0.0, and a server
+			// there reaches the network. The gate runs tests that start a
+			// server on localhost.
+		},
+		"filesystem": map[string]any{
+			"denyRead":   []string{r.Home},
+			"allowRead":  nonNil(r.Read),
+			"allowWrite": nonNil(r.Write),
+			"denyWrite":  nonNil(r.DenyWrite),
+		},
+	}
+}
+
+// credentials are the paths below home that hold credentials. The sandbox
+// denies them to Bash with the rest of home. The Read and Edit tools work
+// outside the sandbox, so [Rules.ToolDenies] denies these paths to them.
+var credentials = []string{
+	"~/.ssh/**",
+	"~/.gnupg/**",
+	"~/.config/gh/**",
+	"~/.config/gcloud/**",
+	"~/.config/op/**",
+	"~/.aws/**",
+	"~/.azure/**",
+	"~/.kube/**",
+	"~/.docker/**",
+	"~/Library/Keychains/**",
+	"~/.netrc",
+	"~/.git-credentials",
+	"~/.config/git/credentials",
+	"~/.claude.json",
+	"~/.cargo/credentials.toml",
+	"~/.npmrc",
+	"~/.pypirc",
+}
+
+// ToolDenies returns the permission rules that deny the Read and Edit tools
+// the credential paths, and the Edit tool each path of DenyWrite. Edit rules
+// cover the Write tool too. A rule path that starts with // is absolute.
+func (r Rules) ToolDenies() []string {
+	var out []string
+	for _, tool := range []string{"Read", "Edit"} {
+		for _, p := range credentials {
+			out = append(out, tool+"("+p+")")
+		}
+	}
+	for _, p := range r.DenyWrite {
+		out = append(out, "Edit(/"+p+")", "Edit(/"+p+"/**)")
+	}
+	return out
+}
+
+// localServer is the note of every run: Bash cannot bind a port.
+const localServer = "A test that starts a server, even on localhost, fails in Bash: the sandbox does not let Bash bind a port. Do not work around it. The Done when checks run those tests."
+
+// Prompt returns the text that the first prompt of a run adds about the
+// sandbox.
+func (r Rules) Prompt() string {
+	return "\n\nBash works in a sandbox. " + strings.Join(append([]string{localServer}, r.Notes...), " ")
+}
+
+func nonNil(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
+}

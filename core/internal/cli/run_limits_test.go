@@ -433,3 +433,55 @@ func TestRunShapeRecordsTheUsageAndApproveWaitsForASlot(t *testing.T) {
 		t.Fatalf("a queued run started a session: %q", starts)
 	}
 }
+
+// TAS-175: with no sandbox, a run does not start. It waits in Queued with a
+// note, and a tick starts it once the sandbox works.
+func TestRunStartWaitsForTheSandbox(t *testing.T) {
+	s, _ := runCLI(t)
+	t.Setenv("LOAM_SANDBOX_EXEC", "/no/sandbox-exec")
+	r := startRun(t, "Say hi", "--model", "opus", "--effort", "high")
+	if r.State != store.RunQueued || !strings.HasPrefix(r.Note, "Waits for the sandbox: ") {
+		t.Fatalf("run %+v", r)
+	}
+	if got := bgStarts(t); len(got) != 0 {
+		t.Fatalf("a run with no sandbox started a session: %q", got)
+	}
+	queued, _ := s.GetRun(r.ID)
+	// A tick with no sandbox changes nothing.
+	if got := tick(t); len(got.Runs) != 0 {
+		t.Fatalf("tick moved %+v", got.Runs)
+	}
+	if got, _ := s.GetRun(r.ID); !got.UpdatedAt.Equal(queued.UpdatedAt) {
+		t.Fatal("a tick with no sandbox wrote the run")
+	}
+	t.Setenv("LOAM_SANDBOX_EXEC", "")
+	got := tick(t)
+	if len(got.Runs) != 1 || got.Runs[0].State != store.RunRunning || got.Runs[0].Note != "" {
+		t.Fatalf("tick %+v", got)
+	}
+	inv := testutil.FakeClaudeInvocation(t)
+	if argAfter(inv.Args, "--model") != "opus" || argAfter(inv.Args, "--effort") != "high" {
+		t.Fatalf("args %q", inv.Args)
+	}
+}
+
+// A queued resume goes on with no sandbox: its session already has one.
+func TestRunTickResumesAQueuedRunWithNoSandbox(t *testing.T) {
+	s, r, _ := readyRun(t)
+	setLimits(t, "--at-a-time", "1")
+	other := startRun(t, "Say bye")
+	if got, code, out := sendBack(t, r.ID, "--note", "Add a test."); code != 0 || got.State != store.RunQueued {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+	if _, _, err := lrRun(t, "", "run", "stop", other.ID); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LOAM_SANDBOX_EXEC", "/no/sandbox-exec")
+	tick(t)
+	if got, _ := s.GetRun(r.ID); got.State != store.RunRunning {
+		t.Fatalf("after the tick: %+v", got)
+	}
+	if prompt := lastPrompt(t); !strings.Contains(prompt, "- Add a test.") {
+		t.Fatalf("prompt %s", prompt)
+	}
+}
