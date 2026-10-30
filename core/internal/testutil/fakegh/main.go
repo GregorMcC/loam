@@ -563,7 +563,8 @@ var failures = map[string]failure{
 		"Resource protected by organization SAML enforcement. You must grant your OAuth token access to this organization.")),
 	"sso": graphQLError("FORBIDDEN",
 		"The 'example' organization has enabled or enforced SAML SSO. To access this repository, you must re-authorize the OAuth Application 'GitHub CLI'."),
-	"offline": {1, "", "error connecting to api.github.com\ncheck your internet connection or https://githubstatus.com"},
+	"offline":      {1, "", "error connecting to api.github.com\ncheck your internet connection or https://githubstatus.com"},
+	"server_error": {1, "", "gh: Bad Gateway (HTTP 502)"},
 	"not_mergeable": {1, "", "X Pull request example/widgets#15 is not mergeable: the base branch policy prohibits the merge.\n" +
 		"To have the pull request merged after all the requirements have been met, add the `--auto` flag."},
 	"reference_missing": {1, "", "gh: Reference does not exist (HTTP 422)"},

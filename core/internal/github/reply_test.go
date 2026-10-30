@@ -67,8 +67,9 @@ func TestReplyToThreadKeepsTheMessageOfARefusal(t *testing.T) {
 	if err := client(t).ResolveThread(context.Background(), "PRRT_9"); err == nil || !strings.Contains(err.Error(), "could not resolve the review thread PRRT_9") {
 		t.Fatalf("err %v", err)
 	}
-	// Loam can post again later after a rate limit, or with no network.
-	for fail, want := range map[string]error{"rate_limited": github.ErrRateLimited, "offline": github.ErrOffline} {
+	// Loam can post again later after a rate limit, with no network, or after an HTTP 5xx.
+	for fail, want := range map[string]error{"rate_limited": github.ErrRateLimited, "offline": github.ErrOffline,
+		"server_error": github.ErrOffline} {
 		t.Setenv("LOAM_FAKE_GH_FAIL", fail)
 		if err := client(t).ReplyToThread(context.Background(), "PRRT_1", "Done."); !errors.Is(err, want) {
 			t.Errorf("%s: err %v", fail, err)
@@ -93,7 +94,9 @@ func TestCommentPRPostsTheBodyFromStdin(t *testing.T) {
 		t.Fatalf("%+v", p)
 	}
 	t.Setenv("LOAM_FAKE_GH_FAIL", "forbidden")
-	if err := client(t).CommentPR(context.Background(), widgets, 7, "x"); err == nil || !strings.Contains(err.Error(), "could not comment on PR #7") {
+	// A refusal is not a failure to reach GitHub, so Loam does not post again.
+	if err := client(t).CommentPR(context.Background(), widgets, 7, "x"); err == nil || errors.Is(err, github.ErrOffline) ||
+		!strings.Contains(err.Error(), "could not comment on PR #7") {
 		t.Fatalf("err %v", err)
 	}
 }

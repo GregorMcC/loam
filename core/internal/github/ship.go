@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -138,11 +139,16 @@ func (c *Client) mutate(ctx context.Context, what, mutation string, vars map[str
 // offlineText is what gh prints when it cannot connect to GitHub.
 const offlineText = "error connecting to"
 
-// postError is [actionError] for a post. A gh that could not connect gives
-// [ErrOffline], so the caller can post again later.
+// serverError matches the status that gh prints for an answer of GitHub
+// with HTTP 5xx.
+var serverError = regexp.MustCompile(`\(HTTP 5\d\d\)`)
+
+// postError is [actionError] for a post. A gh that could not connect, or an
+// HTTP 5xx of GitHub, gives [ErrOffline], so the caller can post again
+// later.
 func postError(err error, what string) error {
 	var f *ghFailure
-	if errors.As(err, &f) && f.says(offlineText) {
+	if errors.As(err, &f) && (f.says(offlineText) || serverError.MatchString(f.message())) {
 		return fmt.Errorf("%w: %s", ErrOffline, f.message())
 	}
 	return actionError(err, what)
