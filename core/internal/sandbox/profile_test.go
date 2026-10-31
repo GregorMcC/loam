@@ -303,13 +303,7 @@ except OSError as e:
 // a shim that cannot fill it prints an error.
 func network(t *testing.T, r Rules, temp, step, arg string) string {
 	t.Helper()
-	cache := filepath.Join(shortTemp(t, "/private/tmp"), "xcrun-cache")
-	if b, err := os.ReadFile(XcrunCache()); err == nil {
-		if err := os.WriteFile(cache, b, 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	t.Setenv("xcrun_db", cache)
+	t.Setenv("xcrun_db", SeedXcrunCache(shortTemp(t, "/private/tmp")))
 	// A TMPDIR that holds the fake home, such as /private/var/tmp, is not a
 	// temp folder of the profile. The temp folders of the user from getconf
 	// are enough for the python3 shim.

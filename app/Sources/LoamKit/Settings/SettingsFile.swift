@@ -121,12 +121,17 @@ public enum LoamBinary {
     /// A custom path wins, found or not. Automatic tries `installPaths`, then the CLI in the app
     /// bundle, then each PATH folder. When nothing is found, it gives the first install path, so
     /// the error names it.
+    ///
+    /// A PATH candidate counts only when `realName` gives exactly `loam`. A volume that ignores
+    /// case finds the app's GUI binary `Loam` for `loam`, and a pane's PATH can hold the app's
+    /// `Contents/MacOS` folder, so a match by case alone starts a second copy of the app (TAS-203).
     public static func resolve(
         setting: String?,
         home: String = FileManager.default.homeDirectoryForCurrentUser.path,
         pathVariable: String = ProcessInfo.processInfo.environment["PATH"] ?? "",
         bundled: String = bundledPath,
-        isExecutable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
+        isExecutable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) },
+        realName: (String) -> String? = realName(of:)
     ) -> Resolution {
         if let setting {
             let path = SettingsPath.expand(setting, home: home)
@@ -134,9 +139,18 @@ public enum LoamBinary {
         }
         let installs = installPaths.map { SettingsPath.expand($0, home: home) }
         let onPath = pathVariable.split(separator: ":").map { "\($0)/loam" }
-        if let found = (installs + [bundled] + onPath).first(where: isExecutable) {
+        if let found = (installs + [bundled]).first(where: isExecutable)
+            ?? onPath.first(where: { isExecutable($0) && realName($0) == "loam" }) {
             return Resolution(path: found, automatic: true, found: true)
         }
         return Resolution(path: installs[0], automatic: true, found: false)
+    }
+
+    /// The last path component of the real path of `path`: symlinks followed, and each name with
+    /// the case that the volume stores. Nil when the path does not resolve.
+    public static func realName(of path: String) -> String? {
+        guard let real = realpath(path, nil) else { return nil }
+        defer { free(real) }
+        return URL(fileURLWithPath: String(cString: real)).lastPathComponent
     }
 }

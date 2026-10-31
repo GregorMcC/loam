@@ -112,7 +112,7 @@ func (sh *shipper) codeReview(ctx context.Context, w store.Worktree, head string
 		return false, false, err
 	}
 	if !d.Review {
-		return sh.passCodeReview(head, nil, "The code review is off for the plot, so Loam pushes with no review")
+		return sh.passCodeReview(head, nil, "The code review is off for the plot, so Loam pushes with no review", nil)
 	}
 	findings, cutFact, why := askForCodeReview(ctx, sh.r, w, head, d)
 	if ctx.Err() != nil {
@@ -120,7 +120,7 @@ func (sh *shipper) codeReview(ctx context.Context, w store.Worktree, head string
 	}
 	if why != "" {
 		return sh.passCodeReview(head, []string{"The code review did not run: " + why},
-			"The code review did not run, so Loam pushes with no review: "+why)
+			"The code review did not run, so Loam pushes with no review: "+why, nil)
 	}
 	if !slices.ContainsFunc(findings, codeReviewFinding.blocks) {
 		facts, detail := codeReviewFacts(findings), "The code review found "+countFindings(findings)
@@ -128,18 +128,19 @@ func (sh *shipper) codeReview(ctx context.Context, w store.Worktree, head string
 			facts = append([]string{cutFact}, facts...)
 			detail += ". " + cutFact
 		}
-		return sh.passCodeReview(head, facts, detail)
+		return sh.passCodeReview(head, facts, detail, storedRound(findings))
 	}
 	moved, err = sh.failCodeReview(ctx, findings)
 	return false, moved, err
 }
 
 // passCodeReview records the review of head that lets Loam push it: the facts
-// that the review adds to the ship notes, and then the event with detail.
+// that the review adds to the ship notes, and then the event with detail and
+// the round of the review, or nil when it did not run.
 // The facts replace those of the review before, in notes that the run has.
 // It reports no push, and records no event, when the run left its state
 // during the review: you may have stopped it.
-func (sh *shipper) passCodeReview(head string, facts []string, detail string) (push, moved bool, err error) {
+func (sh *shipper) passCodeReview(head string, facts []string, detail string, round *store.RunCodeReviewRound) (push, moved bool, err error) {
 	updated, err := sh.update(func(r *store.Run) {
 		c := cmp.Or(r.CodeReview, &store.RunCodeReview{})
 		if r.Notes != nil {
@@ -152,7 +153,32 @@ func (sh *shipper) passCodeReview(head string, facts []string, detail string) (p
 	if !updated || err != nil {
 		return false, false, err
 	}
-	return true, false, sh.s.AddRunEvent(sh.r.ID, "code_review", detail)
+	return true, false, sh.s.AddRunEventData(sh.r.ID, "code_review", detail, store.RunEventData{CodeReview: round})
+}
+
+// storedRound is the round of a review that found findings, as a
+// "code_review" event keeps it: each finding, at most
+// [store.CodeReviewFindingsMax], and a count of the rest.
+func storedRound(findings []codeReviewFinding) *store.RunCodeReviewRound {
+	kept := findings[:min(len(findings), store.CodeReviewFindingsMax)]
+	round := &store.RunCodeReviewRound{Findings: make([]store.RunFinding, len(kept)), More: len(findings) - len(kept)}
+	for i, f := range kept {
+		round.Findings[i] = store.RunFinding(f)
+	}
+	return round
+}
+
+// LastCodeReview returns what the last code review of a run found: the
+// round of the last "code_review" event in events. It is nil when that
+// review did not run or was off, when the event is from before Loam stored
+// the findings, or when the run has no review.
+func LastCodeReview(events []store.RunEvent) *store.RunCodeReviewRound {
+	for _, e := range slices.Backward(events) {
+		if e.Kind == "code_review" {
+			return e.CodeReview
+		}
+	}
+	return nil
 }
 
 // failCodeReview counts a round of the code review, and sends the Critical and
@@ -171,7 +197,7 @@ func (sh *shipper) failCodeReview(ctx context.Context, findings []codeReviewFind
 		if !moved || err != nil {
 			return moved, err
 		}
-		return moved, sh.s.AddRunEvent(r.ID, "code_review", found)
+		return moved, sh.s.AddRunEventData(r.ID, "code_review", found, store.RunEventData{CodeReview: storedRound(findings)})
 	}
 	countRound := func(r *store.Run) {
 		r.CodeReview = cmp.Or(r.CodeReview, &store.RunCodeReview{})
@@ -188,23 +214,24 @@ func (sh *shipper) failCodeReview(ctx context.Context, findings []codeReviewFind
 			r.State, r.Note = store.RunStopped, note
 		}))
 	}
-	return event(sh.resume(ctx, codeReviewPrompt(blocking, more, round), found, "code review", countRound))
+	return event(sh.resume(ctx, codeReviewPrompt(blocking, more, round, hasChecks(sh.s, sh.r)), found, "code review", countRound))
 }
 
 // codeReviewPrompt is the prompt that sends the Critical and Major findings of
 // a review back to the session. more is how many findings the review found
-// after [codeReviewSendMax].
-func codeReviewPrompt(blocking []codeReviewFinding, more, round int) string {
+// after [codeReviewSendMax]. checks is whether the run has checks (see
+// [hasChecks]).
+func codeReviewPrompt(blocking []codeReviewFinding, more, round int, checks bool) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Loam's code review found these issues in the diff of the run (round %d of %d):\n", round, codeReviewRounds)
 	for _, f := range blocking {
-		fmt.Fprintf(&b, "\n## %s: %s\n", severityLabel(f.Severity), f)
+		fmt.Fprintf(&b, "\n## %s: %s\n", SeverityLabel(f.Severity), f)
 	}
 	if more > 0 {
 		fmt.Fprintf(&b, "\nThe review found %s. Look for them when you fix these.\n", count(more, "more Critical or Major issue"))
 	}
 	b.WriteString("\nFix each issue, commit the fix, and end your turn. " +
-		"Loam runs the Done when checks again, then reviews the new diff before it pushes.\n")
+		"Loam runs the Done when checks again, then reviews the new diff before it pushes.\n" + checksLine(checks, leaveChecks))
 	return b.String()
 }
 
@@ -228,7 +255,7 @@ func codeReviewFacts(findings []codeReviewFinding) []string {
 func findingLines(findings []codeReviewFinding, more int) string {
 	lines := make([]string, len(findings), len(findings)+1)
 	for i, f := range findings {
-		lines[i] = fmt.Sprintf("- %s: %s", severityLabel(f.Severity), f)
+		lines[i] = fmt.Sprintf("- %s: %s", SeverityLabel(f.Severity), f)
 	}
 	if more > 0 {
 		lines = append(lines, fmt.Sprintf("- and %s", count(more, "more Critical or Major issue")))
@@ -255,8 +282,8 @@ func countFindings(findings []codeReviewFinding) string {
 	return joinAnd(parts)
 }
 
-// severityLabel is the severity as a heading, such as "Major".
-func severityLabel(sev string) string {
+// SeverityLabel is the severity as a heading, such as "Major".
+func SeverityLabel(sev string) string {
 	if sev == "" {
 		return sev
 	}

@@ -39,6 +39,10 @@ type Input struct {
 	// Protected are folders that no setting may open, besides ~/.loam and
 	// ~/.claude: the Loam home when LOAM_HOME moves it.
 	Protected []string
+	// Private is the private folder of the run, which holds its xcrun cache
+	// (see [SeedXcrunCache]). The run can read and write it. No process
+	// outside the sandbox reads a file in it.
+	Private string
 	// Getenv reads the environment, for the cache paths that a user moved.
 	Getenv func(string) string
 }
@@ -94,6 +98,16 @@ var presets = []preset{
 		// SwiftPM runs the manifest in a sandbox of its own, and a sandbox
 		// cannot start inside another one.
 		note: "Pass --disable-sandbox to swift build, swift test, and swift package: SwiftPM's own sandbox cannot start inside this one.",
+	},
+	{
+		// Loam itself: scripts/build-ghosttykit.sh links app/vendor to this
+		// cache, and the gate builds the terminal and the driver from it. Read
+		// only, so a run cannot change the GhosttyKit that an install builds
+		// with. Not the rest of ~/Library/Caches/Loam, which holds Zig and the
+		// ghostty source.
+		files:     []string{"ghostty.pin"},
+		caches:    below(),
+		toolchain: []string{"Library/Caches/Loam/ghosttykit"},
 	},
 	{
 		files:  []string{"package.json"},
@@ -195,6 +209,10 @@ func For(in Input) (Rules, error) {
 	}
 	addExtra(in.Home, in.Protected, in.Machine, &read, &write, &hosts)
 	addExtra(in.Home, in.Protected, in.Plot, &read, &write, &hosts)
+	if p := private(home, in.Private); p != "" {
+		read.add(p)
+		write.add(p)
+	}
 	for _, p := range in.NoWrite {
 		deny.add(Real(p))
 	}
@@ -211,6 +229,24 @@ func For(in Input) (Rules, error) {
 	}
 	r.Read, r.Write, r.DenyWrite, r.Hosts, r.Notes = read.list, write.list, deny.list, hosts.list, notes.list
 	return r, nil
+}
+
+// private returns the private folder dir by the real path of its parent, or
+// "" when dir is not a folder. The run can write dir, so it can put a link in
+// its place. The rules then keep the name, which the link does not match, and
+// do not follow the link.
+func private(home, dir string) string {
+	if dir == "" {
+		return ""
+	}
+	if fi, err := os.Lstat(dir); err != nil || !fi.IsDir() {
+		return ""
+	}
+	p := filepath.Join(Real(filepath.Dir(dir)), filepath.Base(dir))
+	if opens(home, p) {
+		return ""
+	}
+	return p
 }
 
 // opens reports whether allowing path would open what the sandbox denies:

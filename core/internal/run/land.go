@@ -9,6 +9,7 @@ import (
 
 	"github.com/GregorMcC/loam/core/internal/github"
 	"github.com/GregorMcC/loam/core/internal/intake"
+	"github.com/GregorMcC/loam/core/internal/session"
 	"github.com/GregorMcC/loam/core/internal/store"
 	"github.com/GregorMcC/loam/core/internal/worktree"
 )
@@ -172,7 +173,8 @@ func LandWorktree(ctx context.Context, s *store.Store, plotID, worktreeID string
 }
 
 // landRun marks the run Landed with the note while it is still in the state
-// that r has, and records the note as a "land" event. With done, its Linear
+// that r has, records the note as a "land" event, and removes the private
+// folder of the run (see [session.RunTemp]). With done, its Linear
 // issue moves to Done, for a run of a group when no other run of the group is
 // left (see [finishLinearIssue]). The issue gets the walkthrough of the run
 // as a comment when that update is on (see [commentWalkthrough]). It returns
@@ -190,6 +192,9 @@ func landRun(ctx context.Context, s *store.Store, r store.Run, note string, done
 	}
 	var warnings []string
 	if err := s.AddRunEvent(r.ID, "land", note); err != nil {
+		warnings = append(warnings, err.Error())
+	}
+	if err := session.RemoveRunTemp(s, r.ID); err != nil {
 		warnings = append(warnings, err.Error())
 	}
 	switch {

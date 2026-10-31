@@ -124,8 +124,10 @@ func sendToSocket(_ path: String, _ text: String, close: Bool = true) throws -> 
         let box = EventBox()
         let accepts = AcceptCounter()
         let failing = AcceptFlag(true)
+        let pauses = PauseBox()
         var options = PaneSocketServer.Options()
-        options.acceptPause = .milliseconds(100)
+        // The test ends each pause itself, so no step depends on how fast the machine is.
+        options.acceptPause = { pauses.add($0) }
         options.accept = { listener in
             accepts.add()
             if failing.value { return (-1, EMFILE) }
@@ -136,13 +138,21 @@ func sendToSocket(_ path: String, _ text: String, close: Bool = true) throws -> 
         defer { server.close() }
         // The connection waits in the queue while every accept fails.
         _ = try sendToSocket(server.path, #"{"event":"Stop","session_id":"late","cwd":"/x","at":"t"}"# + "\n")
-        try await Task.sleep(for: .seconds(1))
-        // A spin calls accept millions of times in a second. A pause of 100 ms allows about 10.
-        #expect(accepts.value >= 1)
-        #expect(accepts.value < 50)
+        // Each failed accept starts a pause, and the server calls accept again only when that pause ends.
+        // A spin calls accept again at once, so the count of accepts gets ahead of the count of pauses.
+        for step in 1...5 {
+            await waitUntil("pause \(step)") { pauses.count == step }
+            // A spin has this time to show. On a slow machine the check is weaker, but it does not fail.
+            try await Task.sleep(for: .milliseconds(20))
+            #expect(accepts.value == step)
+            #expect(pauses.count == step)
+            pauses.endLast()
+        }
         #expect(box.all.isEmpty)
         // When accept works again, the waiting connection gets through.
+        await waitUntil("pause 6") { pauses.count == 6 }
         failing.value = false
+        pauses.endLast()
         #expect(await box.wait(for: 1).map(\.sessionID) == ["late"])
     }
 
@@ -215,4 +225,13 @@ final class AcceptFlag: @unchecked Sendable {
         get { lock.withLock { state } }
         set { lock.withLock { state = newValue } }
     }
+}
+
+/// The pauses that a server started, in order. The test ends each one.
+final class PauseBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var resumes: [@Sendable () -> Void] = []
+    func add(_ resume: @escaping @Sendable () -> Void) { lock.withLock { resumes.append(resume) } }
+    var count: Int { lock.withLock { resumes.count } }
+    func endLast() { lock.withLock { resumes.last }?() }
 }

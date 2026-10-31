@@ -36,7 +36,11 @@ On a PR, the `changes` job reads the changed files, and CI skips each job that t
 
 Run the same commands yourself before you push. CI does not replace them. `scripts/check.sh` runs them. With no arguments, it picks the `core` and `app` jobs from the files that your branch changes, with the rules of the `changes` job, and it always runs `lint`. `scripts/check.sh core app lint` names the jobs.
 
-The script also runs in a sandbox, such as the sandbox of a Loam run or of its checks. There, it passes `--disable-sandbox` to `swift test`, because the sandbox of SwiftPM cannot start inside another one. When the sandbox does not reach `vuln.go.dev`, it skips govulncheck and says so. CI runs govulncheck.
+The script also runs in a sandbox, such as the sandbox of a Loam run or of its checks. There, it passes `--disable-sandbox` to `swift`, because the sandbox of SwiftPM cannot start inside another one. When the sandbox does not reach `vuln.go.dev`, it skips govulncheck and says so. CI runs govulncheck.
+
+In a sandbox with GhosttyKit linked in `app/vendor`, the `app` job runs `swift build --build-tests`, so the terminal, the driver, and all tests compile. Then it runs `swift test --skip LoamDriverTests`, because the driver tests start the app and need focus, which a sandbox does not give. The run sandbox of a repo with `ghostty.pin` reads `~/Library/Caches/Loam/ghosttykit`, and it cannot write there. When the sandbox cannot read the GhosttyKit cache, for example because `LOAM_CACHE` moves it, the job fails and names the folder to add to the read paths of the run sandbox. With no link, the job builds and tests LoamKit only. The script says which path it takes.
+
+A new worktree has no `app/vendor`. `scripts/build-ghosttykit.sh --link-only` links it when the cache holds GhosttyKit for `ghostty.pin`, and it builds and downloads nothing. When GhosttyKit is not cached, it says so and exits 0, so it can be the setup command of a repo in Loam.
 
 The commands, in `core/`:
 
@@ -65,7 +69,7 @@ swift test
 
 For a change to the app, build GhosttyKit first. Run `scripts/build-ghosttykit.sh` before your first test run, and again when `ghostty.pin` changes. Then run `swift test --manifest-cache none` in `app/`. The option makes SwiftPM see the new GhosttyKit link. The [README](README.md#build-from-source) lists the tools that you need.
 
-Tests use a temporary `LOAM_HOME`, a fake `claude`, and a fake `gh`. Do not point a test at your real store, your real `claude`, or GitHub. The Go helpers are in `core/internal/testutil`.
+Tests use a temporary `LOAM_HOME`, a fake `claude`, and a fake `gh`. Do not point a test at your real store, your real `claude`, or GitHub. The Go helpers are in `core/internal/testutil`. A test process builds each helper binary once, so a package that uses `BuildLoam`, `FakeClaude`, or `FakeGH` calls `testutil.Main` from its `TestMain`.
 
 ## Docs
 

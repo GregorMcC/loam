@@ -5,10 +5,16 @@ import PackageDescription
 
 // GhosttyKit comes from scripts/build-ghosttykit.sh, which links app/vendor/ to a
 // per-commit cache. Without the link, the package still builds LoamKit and its
-// tests. scripts/install.sh always builds the link first.
+// tests. scripts/install.sh always builds the link first. A link that the build
+// cannot follow or read fails the build, so an app never builds without its
+// terminal.
 let ghosttyKitPath = "vendor/GhosttyKit.xcframework"
 let packageDir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().path
-let hasGhosttyKit = FileManager.default.fileExists(atPath: packageDir + "/" + ghosttyKitPath)
+let ghosttyKitLink = packageDir + "/" + ghosttyKitPath
+let hasGhosttyKit = FileManager.default.fileExists(atPath: ghosttyKitLink)
+if !hasGhosttyKit, (try? FileManager.default.destinationOfSymbolicLink(atPath: ghosttyKitLink)) != nil {
+    fatalError("\(ghosttyKitLink) links a folder that is gone or cannot be read. Run scripts/build-ghosttykit.sh.")
+}
 
 var targets: [Target] = [
     // Testable app code with no libghostty dependency: the core client,

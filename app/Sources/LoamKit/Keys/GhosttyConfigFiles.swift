@@ -118,6 +118,22 @@ public struct GhosttyConfigFiles: Equatable, Sendable {
     /// The `keybind` lines that bind a fixed Loam key (spec 8.3). A line that unbinds the key, or
     /// binds it to the Ghostty action that the Loam key stands for, is no clash.
     /// The first key of a sequence counts: Loam takes that key, so the sequence cannot start.
+    /// The PATH that the `env` lines set, as Ghostty reads them: `env = PATH=<value>` sets it,
+    /// `env = PATH=` removes it, and an empty `env =` removes every variable. The last line wins.
+    /// Nil when no line sets it. A pane's own PATH replaces this value in libghostty, so Loam
+    /// starts the pane PATH from it (TAS-203).
+    public static func environmentPath(in entries: [Entry]) -> String? {
+        var path: String?
+        for entry in entries where entry.key == "env" {
+            if entry.value.isEmpty { path = nil; continue }
+            guard let equals = entry.value.firstIndex(of: "="),
+                  entry.value[..<equals].trimmingCharacters(in: .whitespaces) == "PATH" else { continue }
+            let value = entry.value[entry.value.index(after: equals)...].trimmingCharacters(in: .whitespaces)
+            path = value.isEmpty ? nil : value
+        }
+        return path
+    }
+
     public static func clashes(in entries: [Entry]) -> [Clash] {
         entries.compactMap { entry in
             guard entry.key == "keybind", let binding = Keybind(entry.value) else { return nil }
