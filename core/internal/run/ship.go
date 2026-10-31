@@ -516,6 +516,7 @@ func (sh *shipper) resume(ctx context.Context, prompt, note, what string, addTry
 			r.State, r.Note, moved = store.RunRunning, note, true
 			r.TurnBase = r.Turns // the turn limit counts from the resume
 			r.GateTimeouts = 0   // and the gates that ran out of time
+			r.BlockedStops = 0   // and the stops that the gate blocked
 			addTry(r)
 		}
 		return nil

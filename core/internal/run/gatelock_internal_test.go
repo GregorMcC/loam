@@ -419,3 +419,49 @@ func TestWaitCausedTellsAWaitFromTheWork(t *testing.T) {
 		}
 	}
 }
+
+// TAS-213: Claude Code lets a session stop after 8 blocked stops in a row,
+// and the run would then wait in Running with no session at work. So the
+// gate blocks at most 7 stops in a row, and stops the run at the 8th. A stop
+// that the gate lets end starts the count again.
+func TestGateBlocksAtMostSevenStopsInARow(t *testing.T) {
+	gateTimes(t, 200*time.Millisecond, 300*time.Millisecond) // a wait of 50ms at most
+	s, r := lockedGateRun(t, store.Check{Name: "Hello", Command: "true"})
+	unlock := holdGateLock(t, s)
+	for i := 1; i <= 3; i++ {
+		if code, reason := stop(t, s, r); code != 2 {
+			t.Fatalf("wait-out %d: code %d, reason:\n%s", i, code, reason)
+		}
+	}
+	if got, _ := s.GetRun(r.ID); got.BlockedStops != 3 {
+		t.Fatalf("after 3 blocked stops: %+v", got)
+	}
+	// A gate that passes lets the session stop and starts the count again.
+	// The test then puts the run back in Running by hand.
+	unlock()
+	gateBudget = time.Minute
+	if code, reason := stop(t, s, r); code != 0 {
+		t.Fatalf("passing gate: code %d, reason:\n%s", code, reason)
+	}
+	got, err := s.UpdateRun(r.ID, func(r *store.Run) error { r.State = store.RunRunning; return nil })
+	if err != nil || got.BlockedStops != 0 {
+		t.Fatalf("after a passing gate: %+v, %v", got, err)
+	}
+
+	holdGateLock(t, s)
+	gateBudget = 300 * time.Millisecond
+	for i := 1; i <= maxBlockedStops; i++ {
+		if code, reason := stop(t, s, r); code != 2 {
+			t.Fatalf("wait-out %d: code %d, reason:\n%s", i, code, reason)
+		}
+	}
+	if code, reason := stop(t, s, r); code != 0 {
+		t.Fatalf("the 8th blocked stop: code %d, reason:\n%s", code, reason)
+	}
+	got, _ = s.GetRun(r.ID)
+	if got.State != store.RunStopped || got.Tries != 0 || got.BlockedStops != 0 ||
+		!strings.HasPrefix(got.Note, "Stopped after 7 blocked stops in a row, the most that Claude Code allows. The last gate: The gate waited ") ||
+		!strings.HasSuffix(got.Note, "which left no time for the checks. No try counted") {
+		t.Fatalf("after the 8th blocked stop: %+v", got)
+	}
+}
