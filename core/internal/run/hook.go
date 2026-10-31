@@ -48,6 +48,7 @@ func Hook(s *store.Store, runID string, in io.Reader, out, errOut io.Writer) int
 	}
 	switch h.Event {
 	case "SessionStart":
+		exportBashEnv(s, runID, logf)
 		sessionStarted(s, runID, h, out, logf)
 	case "Stop":
 		return stopped(s, runID, errOut, logf)
@@ -201,6 +202,32 @@ func sessionStarted(s *store.Store, runID string, h hookInput, out io.Writer, lo
 		case note != "":
 			fmt.Fprintln(out, "\n"+note)
 		}
+	}
+}
+
+// exportBashEnv appends the Bash env of the run (see [session.RunBashEnv]) to
+// CLAUDE_ENV_FILE, which Claude Code gives to SessionStart hooks only. Claude
+// Code applies the file to each later Bash command of the session, on each
+// source: a resume and a compact run the hook again. It writes nothing for
+// a run that Loam does not know.
+func exportBashEnv(s *store.Store, runID string, logf func(string, ...any)) {
+	file := os.Getenv("CLAUDE_ENV_FILE")
+	if file == "" {
+		return
+	}
+	r, err := s.GetRun(runID)
+	if err != nil {
+		logf("run %s: the Bash env: %v", runID, err)
+		return
+	}
+	f, err := os.OpenFile(file, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		logf("run %s: the Bash env: %v", runID, err)
+		return
+	}
+	_, werr := f.WriteString(session.RunBashEnv(s, r.ID))
+	if err := errors.Join(werr, f.Close()); err != nil {
+		logf("run %s: the Bash env: %v", runID, err)
 	}
 }
 
