@@ -81,13 +81,20 @@ func stopIdle(ctx context.Context, s *store.Store, runs []store.Run) ([]store.Ru
 // the gate lock of the run while it runs the gate (see [holdGate]), and a
 // check can take up to [checkTimeout] with no event. The tick holds the lock
 // while it stops the run, so a gate that starts then finds the run Stopped,
-// and does not run.
+// and does not run. With the lock, the run must still have had no change and
+// no event for [IdleWait].
 func stopIfNoGate(s *store.Store, found store.Run) (store.Run, bool, error) {
 	unlock, free, err := lockGate(s, found.ID, false)
 	if err != nil || !free {
 		return found, false, err
 	}
 	defer unlock()
+	// An event, such as one from a Linear update, does not change UpdatedAt,
+	// and one can come while Loam reads the sessions. So read the last change
+	// again with the lock.
+	if last, err := lastChange(s, found); err != nil || time.Since(last) < IdleWait {
+		return found, false, err
+	}
 	moved := false
 	r, err := s.UpdateRun(found.ID, func(r *store.Run) error {
 		// A Stop hook may have moved the run while Loam read the sessions.

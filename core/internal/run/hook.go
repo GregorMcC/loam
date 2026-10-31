@@ -208,6 +208,9 @@ var limitErrors = []string{"rate_limit", "billing_error"}
 // its state: you may have typed in it after it was Ready. A run that a tick
 // stopped as idle just now gets the note of the error.
 func stopFailed(s *store.Store, runID string, h hookInput, logf func(string, ...any)) {
+	// A tick stops a run as idle only while it holds the gate lock, so with
+	// the lock, recent and the update see the same run.
+	defer holdGate(s, runID, logf)()
 	note := strings.TrimSpace("Claude Code stopped: " + h.Error + " " + h.ErrorDetails)
 	recent := false
 	if r, err := s.GetRun(runID); err == nil {
