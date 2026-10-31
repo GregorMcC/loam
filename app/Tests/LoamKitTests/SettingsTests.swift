@@ -123,8 +123,10 @@ private func object(_ file: SettingsFile) throws -> [String: Any] {
 @Suite struct LoamBinaryTests {
     let home = "/Users/me"
 
+    /// The fake file system: each file in `executable` is a real file with the name in its path.
     func resolve(_ setting: String?, path: String = "", executable: Set<String>) -> LoamBinary.Resolution {
-        LoamBinary.resolve(setting: setting, home: home, pathVariable: path) { executable.contains($0) }
+        LoamBinary.resolve(setting: setting, home: home, pathVariable: path, isExecutable: { executable.contains($0) },
+                           realName: { URL(fileURLWithPath: $0).lastPathComponent })
     }
 
     @Test func automaticTriesTheInstallFoldersInOrder() {
@@ -142,12 +144,52 @@ private func object(_ file: SettingsFile) throws -> [String: Any] {
     @Test func automaticThenTriesTheCLIInTheAppBundle() {
         let bundled = "/Applications/Loam.app/Contents/Helpers/loam"
         func resolve(_ executable: Set<String>, path: String = "") -> LoamBinary.Resolution {
-            LoamBinary.resolve(setting: nil, home: home, pathVariable: path, bundled: bundled) { executable.contains($0) }
+            LoamBinary.resolve(setting: nil, home: home, pathVariable: path, bundled: bundled,
+                               isExecutable: { executable.contains($0) }, realName: { URL(fileURLWithPath: $0).lastPathComponent })
         }
         #expect(resolve([bundled, "/a/loam"], path: "/a") == .init(path: bundled, automatic: true, found: true))
         #expect(resolve([bundled, "/usr/local/bin/loam"]).path == "/usr/local/bin/loam")
         // A custom path wins over the bundled CLI.
         #expect(LoamBinary.resolve(setting: "/x/loam", home: home, pathVariable: "", bundled: bundled) { _ in true }.path == "/x/loam")
+    }
+
+    @Test func automaticSkipsAPathFileWhoseRealNameIsNotLoam() {
+        // The app's Contents/MacOS folder holds the GUI binary `Loam`, and the volume ignores case (TAS-203).
+        let gui = "/Applications/Loam.app/Contents/MacOS"
+        let names = ["\(gui)/loam": "Loam", "/a/loam": "loam", "/b/loam": "loam-dev", "/c/loam": "loam"]
+        func resolve(path: String, executable: Set<String>) -> LoamBinary.Resolution {
+            LoamBinary.resolve(setting: nil, home: home, pathVariable: path, isExecutable: { executable.contains($0) },
+                               realName: { names[$0] })
+        }
+        let all: Set = ["\(gui)/loam", "/a/loam", "/b/loam", "/c/loam", "/d/loam"]
+        #expect(resolve(path: "\(gui):/a", executable: all) == .init(path: "/a/loam", automatic: true, found: true))
+        // A symlink counts by the name of the file it points to. A path that does not resolve is skipped.
+        #expect(resolve(path: "/b:/d:/c", executable: all).path == "/c/loam")
+        #expect(resolve(path: gui, executable: all) == .init(path: "/Users/me/.local/bin/loam", automatic: true, found: false))
+    }
+
+    @Test func theInstallPathsAndTheBundledCLIDoNotNeedTheRealName() {
+        let bundled = "/Applications/Loam.app/Contents/Helpers/loam"
+        let found = LoamBinary.resolve(setting: nil, home: home, pathVariable: "", bundled: bundled,
+                                       isExecutable: { $0 == bundled }, realName: { _ in nil })
+        #expect(found == .init(path: bundled, automatic: true, found: true))
+    }
+
+    @Test func theRealNameKeepsTheCaseOnDiskAndFollowsSymlinks() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("loam-realname-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let gui = folder.appendingPathComponent("Loam").path
+        try Data().write(to: URL(fileURLWithPath: gui))
+        let link = folder.appendingPathComponent("link").path
+        try FileManager.default.createSymbolicLink(atPath: link, withDestinationPath: gui)
+
+        #expect(LoamBinary.realName(of: gui) == "Loam")
+        #expect(LoamBinary.realName(of: link) == "Loam")
+        #expect(LoamBinary.realName(of: folder.appendingPathComponent("missing").path) == nil)
+        if FileManager.default.fileExists(atPath: folder.appendingPathComponent("loam").path) {
+            #expect(LoamBinary.realName(of: folder.appendingPathComponent("loam").path) == "Loam")
+        }
     }
 
     @Test func automaticWithNothingFoundNamesTheDefaultInstall() {

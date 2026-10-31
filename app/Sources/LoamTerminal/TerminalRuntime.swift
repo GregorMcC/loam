@@ -121,6 +121,14 @@ public final class TerminalRuntime {
 
     public static let resourcesVariable = "GHOSTTY_RESOURCES_DIR"
 
+    /// The folder that libghostty appends to each pane's PATH: the folder of the app's binary,
+    /// with symlinks followed, the same as `std.process.executablePath`. Nil when it does not resolve.
+    public static let binFolder: String? = {
+        guard let executable = Bundle.main.executablePath, let real = realpath(executable, nil) else { return nil }
+        defer { free(real) }
+        return URL(fileURLWithPath: String(cString: real)).deletingLastPathComponent().path
+    }()
+
     /// The Ghostty resources folder: `Contents/Resources/ghostty` in the app bundle, else the
     /// `ghostty-share` link that `scripts/build-ghosttykit.sh` makes in `app/vendor`. Nil when
     /// neither exists.

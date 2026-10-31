@@ -344,6 +344,11 @@ enum Scenarios {
         try require(environment[TerminalRuntime.resourcesVariable] == resources, "the app has another resources folder")
         try require(text.contains("GHOSTTY_RESOURCES_DIR=\(resources!)\n"), "the pane has another resources folder")
         try require(text.contains("TERM=xterm-ghostty\n"), "the pane has no xterm-ghostty TERM")
+        // libghostty appends the folder of the app's binary to PATH. Loam replaces that PATH (TAS-203).
+        let path = text.split(separator: "\n").first { $0.hasPrefix("PATH=") }?.dropFirst(5) ?? ""
+        try require(TerminalRuntime.binFolder != nil, "the app binary has no real path")
+        let bin = TerminalRuntime.binFolder!
+        try require(!path.split(separator: ":").contains { $0 == bin }, "the pane PATH has \(bin): \(path)")
         let ownLeaks = PaneEnvironment.keysToRemove(from: environment).filter { $0 != TerminalRuntime.resourcesVariable }
         try require(ownLeaks.isEmpty, "the app process still has \(ownLeaks.sorted())")
         _ = await app.close(pane)

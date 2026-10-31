@@ -42,4 +42,23 @@ public enum PaneEnvironment {
     public static func keysToRemove(from inherited: [String: String]) -> [String] {
         inherited.keys.filter(isLeaked)
     }
+
+    /// The pane's own variables with a PATH that does not hold `binFolder` (TAS-203).
+    ///
+    /// libghostty appends the folder of the app's binary to each pane's PATH (`termio/Exec.zig`).
+    /// For Loam that folder holds the GUI binary `Loam`, and on a volume that ignores case a pane's
+    /// `loam` can start a second copy of the app. libghostty applies the surface variables after
+    /// it appends the folder, so a PATH here replaces its value. The PATH comes from `own`, else
+    /// from `inherited`. An empty PATH stays out, because libghostty ignores an empty value.
+    public static func paneVariables(
+        _ own: [String: String], inherited: [String: String], binFolder: String
+    ) -> [String: String] {
+        guard let path = own["PATH"] ?? inherited["PATH"] else { return own }
+        let kept = path.split(separator: ":", omittingEmptySubsequences: false)
+            .filter { $0 != binFolder && $0 != binFolder + "/" }
+            .joined(separator: ":")
+        var variables = own
+        variables["PATH"] = kept.isEmpty ? nil : kept
+        return variables
+    }
 }
