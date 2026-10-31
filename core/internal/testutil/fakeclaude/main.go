@@ -45,6 +45,10 @@
 // a file. A -p call whose --json-schema holds that text prints that file
 // instead, so a test can give each kind of call its own answer.
 //
+// A call of agents prints the text of the file in LOAM_FAKE_CLAUDE_AGENTS,
+// as claude agents --json --all prints the background sessions, or [] when
+// it is not set.
+//
 // With LOAM_FAKE_CLAUDE_HUP_WAIT set to a duration, a SIGHUP and the EOF of
 // stdin do not end the process at once. It waits that long, then exits 0, as
 // Claude Code takes time to end a session. A hang-up gives both: the pane's
@@ -124,6 +128,10 @@ func main() {
 		fmt.Fprintln(os.Stderr, "fakeclaude:", err)
 		os.Exit(2)
 	}
+	if len(os.Args) > 1 && os.Args[1] == "agents" {
+		agents()
+		return
+	}
 	if print := printFile(os.Args[1:]); print != "" && slices.Contains(os.Args[1:], "-p") {
 		b, err := os.ReadFile(print)
 		if err != nil {
@@ -158,6 +166,21 @@ func printFile(args []string) string {
 		}
 	}
 	return os.Getenv("LOAM_FAKE_CLAUDE_PRINT")
+}
+
+// agents prints the background sessions of LOAM_FAKE_CLAUDE_AGENTS.
+func agents() {
+	file := os.Getenv("LOAM_FAKE_CLAUDE_AGENTS")
+	if file == "" {
+		fmt.Println("[]")
+		return
+	}
+	b, err := os.ReadFile(file)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "fakeclaude: agents:", err)
+		os.Exit(2)
+	}
+	os.Stdout.Write(b)
 }
 
 // slowHangUp makes a SIGHUP end the process after the wait d.

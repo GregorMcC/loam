@@ -14,7 +14,7 @@ import (
 )
 
 // runSettingsFile is the part of the settings file of a run that names the
-// Loam home.
+// Loam home and the private folder of the run.
 type runSettingsFile struct {
 	Env   map[string]string `json:"env"`
 	Hooks map[string][]struct {
@@ -22,6 +22,13 @@ type runSettingsFile struct {
 			Command string `json:"command"`
 		} `json:"hooks"`
 	} `json:"hooks"`
+	Sandbox struct {
+		Filesystem struct {
+			AllowRead  []string `json:"allowRead"`
+			AllowWrite []string `json:"allowWrite"`
+			DenyWrite  []string `json:"denyWrite"`
+		} `json:"filesystem"`
+	} `json:"sandbox"`
 }
 
 func readRunSettings(t *testing.T, plan *session.Plan) runSettingsFile {

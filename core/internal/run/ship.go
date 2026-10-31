@@ -46,12 +46,13 @@ type TickResult struct {
 // back to its session first (see [shipper.passCI]). When CI fails, the run
 // goes back to its session with the failed logs, and the failure counts a
 // try. Tick also watches the PR of each run that is Ready: a merge on GitHub
-// lands the run, and a close stops it. Then it starts the Queued runs,
-// oldest first, while a slot is free and the week's usage is under the
-// hold. loam is the loam binary, for the hooks of a new session. A tick
-// that waits on GitHub or for a slot changes nothing, so the app and a timer
-// can run one as often as they like. Only one tick runs at a time: a second
-// one returns at once with nothing.
+// lands the run, and a close stops it. It stops a Running run whose session
+// ended a turn that Loam has no record of (see [stopIdle]). Then it starts
+// the Queued runs, oldest first, while a slot is free and the week's usage
+// is under the hold. loam is the loam binary, for the hooks of a new
+// session. A tick that waits on GitHub or for a slot changes nothing, so the
+// app and a timer can run one as often as they like. Only one tick runs at a
+// time: a second one returns at once with nothing.
 func Tick(ctx context.Context, s *store.Store, loam string) (TickResult, error) {
 	res := TickResult{Runs: []store.Run{}, Warnings: []string{}}
 	unlock, ok, err := lockTick(s.Home())
@@ -87,6 +88,9 @@ func Tick(ctx context.Context, s *store.Store, loam string) (TickResult, error) 
 			res.Runs = append(res.Runs, sh.r)
 		}
 	}
+	stopped, warnings := stopIdle(ctx, s, runs)
+	res.Runs = append(res.Runs, stopped...)
+	res.Warnings = append(res.Warnings, warnings...)
 	started, warnings := startQueued(ctx, s, loam)
 	res.Runs = append(res.Runs, started...)
 	res.Warnings = append(res.Warnings, warnings...)

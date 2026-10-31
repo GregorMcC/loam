@@ -101,30 +101,6 @@ func TestCommittedReadsOnlyTheStdoutOfGit(t *testing.T) {
 	}
 }
 
-// The xcrun cache of a gate starts as a copy of the cache of the user, so a
-// shim does not run xcodebuild to fill it.
-func TestSeedXcrunCacheCopiesTheCacheOfTheUser(t *testing.T) {
-	src := filepath.Join(t.TempDir(), "xcrun_db")
-	if err := os.WriteFile(src, []byte("XR1L"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	old := userXcrunCache
-	t.Cleanup(func() { userXcrunCache = old })
-	userXcrunCache = func() string { return src }
-	cache := filepath.Join(t.TempDir(), "xcrun_db")
-	seedXcrunCache(cache)
-	if b, err := os.ReadFile(cache); err != nil || string(b) != "XR1L" {
-		t.Errorf("cache = %q, %v, want a copy", b, err)
-	}
-	// With no cache of the user, the gate starts with none.
-	userXcrunCache = func() string { return filepath.Join(t.TempDir(), "none") }
-	cache = filepath.Join(t.TempDir(), "xcrun_db")
-	seedXcrunCache(cache)
-	if _, err := os.Stat(cache); !os.IsNotExist(err) {
-		t.Errorf("cache with no cache of the user: %v", err)
-	}
-}
-
 // GOPROXY of the checks names the module cache as a file URL. A cache path
 // that would split the list of GOPROXY gives no GOPROXY.
 func TestGoProxyNamesTheModuleCacheAsOneFileURL(t *testing.T) {

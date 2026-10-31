@@ -295,31 +295,16 @@ type checkBox struct {
 	// that can hold their unix sockets.
 	dir string
 	// env is the environment of each check: TMPDIR, GOPROXY (see goProxy),
-	// and an xcrun_db in dir. With that cache, the xcrun shims of a check,
-	// such as /usr/bin/git, do not need the cache of the user, which the
-	// profile denies. A shim that misses a cache that it cannot write prints
-	// an error, which would fail the committed check. Only the processes of
-	// the sandbox get this env.
+	// and an xcrun_db in dir (see [sandbox.SeedXcrunCache]). With that cache,
+	// the xcrun shims of a check, such as /usr/bin/git, do not need the cache
+	// of the user, which the profile denies. A shim that misses a cache that
+	// it cannot write prints an error, which would fail the committed check.
+	// Only the processes of the sandbox get this env.
 	env []string
 	// err is why Loam cannot sandbox the checks. Then each check fails and
 	// does not run: a check runs code that the session wrote, and the gate
 	// works outside the sandbox of the session.
 	err error
-}
-
-// userXcrunCache is the cache of the xcrun shims of the user, for tests.
-var userXcrunCache = sandbox.XcrunCache
-
-// seedXcrunCache copies the cache of the user to cache, so the shims of a
-// check find their tools as they do outside the sandbox. A shim that misses
-// the cache runs xcodebuild to fill it, which is slow and, in a sandbox,
-// prints errors.
-func seedXcrunCache(cache string) {
-	if src := userXcrunCache(); src != "" {
-		if b, err := os.ReadFile(src); err == nil {
-			_ = os.WriteFile(cache, b, 0o600)
-		}
-	}
 }
 
 // goProxy is the module cache of Go as a file proxy. The profile denies the
@@ -403,10 +388,7 @@ func newCheckBox(s *store.Store, r store.Run) checkBox {
 		box.close()
 		return checkBox{err: fmt.Errorf("sandbox-exec cannot start the sandbox: %v %s", err, strings.TrimSpace(string(out)))}
 	}
-	// Not xcrun_db: the profile denies that name in each temp folder.
-	cache := filepath.Join(dir, "xcrun-cache")
-	seedXcrunCache(cache)
-	box.env = append(os.Environ(), "TMPDIR="+dir, "xcrun_db="+cache)
+	box.env = append(os.Environ(), "TMPDIR="+dir, "xcrun_db="+sandbox.SeedXcrunCache(dir))
 	if p := goProxy(); p != "" {
 		box.env = append(box.env, "GOPROXY="+p)
 	}

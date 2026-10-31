@@ -97,8 +97,37 @@ func TestReviewPromptAsksForThreadRepliesOnlyForTheThreadsItHolds(t *testing.T) 
 			t.Errorf("the prompt has %q:\n%s", thread, prompt[len(prompt)-600:])
 		}
 	}
-	if !strings.Contains(prompt, "commit all the fixes in one commit") {
+	if !strings.Contains(prompt, "Commit all the fixes in one commit") {
 		t.Errorf("no fix line:\n%s", prompt[len(prompt)-600:])
+	}
+}
+
+// TAS-209: a session that fixed each Minor point gave the review bot new code on each push. The prompt has the
+// session fix each Critical or Major point that holds against the code, and a Minor point only when the fix is
+// small, with a reply for each point that it does not fix.
+// A point about the sandbox, a permission, or a path that the run can write is fixed at each severity.
+func TestReviewPromptFixesMajorPointsAndAnswersMinorOnes(t *testing.T) {
+	thread := github.ReviewThread{ID: "T1", Comments: []github.ReviewComment{{Author: "bot", Writer: true, Body: "Minor: check the error."}}}
+	request := github.Review{ID: "R1", Author: "alice", Body: "Two things."}
+	for name, pr := range map[string]*github.PR{
+		"threads": {Number: 7, ReviewDecision: changesRequested, ReviewThreads: []github.ReviewThread{thread}},
+		"reviews": {Number: 7, ReviewDecision: changesRequested, ChangeRequests: []github.Review{request}},
+	} {
+		prompt, _ := reviewPrompt(store.Run{}, pr, reviewOf(store.Run{}, pr), testReplies)
+		for _, want := range []string{
+			"Fix each Critical or Major point that holds against the code. A point with no severity counts as Major.",
+			"Fix a Minor point or a nitpick only when the fix is small and inside the change of the run.",
+			"For a point that you do not fix, do not change the code, and give the reason in the replies file.",
+			"Do not leave a point about a sandbox, a permission, or a path that the run can write because it is unlikely: fix it.",
+			"When no point needs a change, make no commit.",
+		} {
+			if !strings.Contains(prompt, want) {
+				t.Errorf("the prompt with %s misses %q:\n%s", name, want, prompt)
+			}
+		}
+		if strings.Contains(prompt, "not worth it") {
+			t.Errorf("the prompt with %s lets the session skip a point that it judges not worth it:\n%s", name, prompt)
+		}
 	}
 }
 

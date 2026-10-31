@@ -1,6 +1,7 @@
 // Package testutil holds the test harness: a temp LOAM_HOME, a built loam
 // binary, a fake claude that records how it was started, and a fake gh that
-// answers from a made-up GitHub state.
+// answers from a made-up GitHub state. A package that uses the binaries calls
+// [Main] from its TestMain.
 package testutil
 
 import (
@@ -41,22 +42,13 @@ var goCaches = func() []string {
 	return []string{"GOMODCACHE=" + lines[0], "GOCACHE=" + lines[1]}
 }()
 
-func build(t *testing.T, pkg, out string) {
-	t.Helper()
-	cmd := exec.Command("go", "build", "-o", out, pkg)
-	cmd.Env = append(os.Environ(), goCaches...)
-	if b, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("go build %s: %v\n%s", pkg, err, b)
-	}
-}
-
-// BuildLoam builds cmd/loam into a temp folder and returns the binary path.
-// Run it with LOAM_HOME set by [Home] to test against a temp store.
+// BuildLoam returns the path of a loam binary in a temp folder of the test.
+// The path is a symlink to the cmd/loam binary that this test process builds
+// once (see [Main]). Run it with LOAM_HOME set by [Home] to test against a
+// temp store.
 func BuildLoam(t *testing.T) string {
 	t.Helper()
-	out := filepath.Join(t.TempDir(), "loam")
-	build(t, "github.com/GregorMcC/loam/core/cmd/loam", out)
-	return out
+	return link(t, built(t, "github.com/GregorMcC/loam/core/cmd/loam"), t.TempDir(), "loam")
 }
 
 // Invocation is what the fake claude recorded about one run.
@@ -69,8 +61,10 @@ type Invocation struct {
 	MCPConfig string `json:"mcp_config"`
 }
 
-// FakeClaude builds a fake `claude`, puts its folder first on PATH for the
-// test, and returns the folder. The fake writes its argv, env, and working
+// FakeClaude puts a fake `claude` into a temp folder, puts that folder first
+// on PATH for the test, and returns the folder. The fake is a symlink to the
+// binary that this test process builds once (see [Main]), so it reads all of
+// its settings from env. The fake writes its argv, env, and working
 // folder as JSON to the file that [FakeClaudeInvocation] reads. It then exits 0.
 // It also points CLAUDE_CONFIG_DIR at a temp folder, so neither the fake, which
 // writes conversation files there, nor a loam resume, which reads them, reaches
@@ -79,7 +73,7 @@ type Invocation struct {
 func FakeClaude(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	build(t, "github.com/GregorMcC/loam/core/internal/testutil/fakeclaude", filepath.Join(dir, "claude"))
+	link(t, built(t, "github.com/GregorMcC/loam/core/internal/testutil/fakeclaude"), dir, "claude")
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("LOAM_FAKE_CLAUDE_OUT", filepath.Join(dir, "invocation.json"))
 	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
@@ -95,6 +89,17 @@ func FakeClaudePrint(t *testing.T, text string) {
 		t.Fatal(err)
 	}
 	t.Setenv("LOAM_FAKE_CLAUDE_PRINT", file)
+}
+
+// FakeClaudeAgents makes claude agents of the fake claude print text, as
+// claude agents --json --all prints the background sessions.
+func FakeClaudeAgents(t *testing.T, text string) {
+	t.Helper()
+	file := filepath.Join(t.TempDir(), "agents.json")
+	if err := os.WriteFile(file, []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LOAM_FAKE_CLAUDE_AGENTS", file)
 }
 
 // FakeClaudePrintFor makes a -p call of the fake claude whose --json-schema
@@ -158,7 +163,9 @@ func FakeClaudeCalls(t *testing.T) [][]string {
 	return calls
 }
 
-// FakeGH builds a fake `gh` and points LOAM_GH at it for the test. The fake
+// FakeGH puts a fake `gh` into a temp folder and points LOAM_GH at it for
+// the test. The fake is a symlink to the binary that this test process builds
+// once (see [Main]), so it reads all of its settings from env. The fake
 // answers each GraphQL query from the GitHub state in state (JSON, see
 // internal/testutil/fakegh) and logs each call for [FakeGHCalls]. A merge, an
 // update, or a branch delete changes the state. It returns the state file, so
@@ -167,8 +174,7 @@ func FakeClaudeCalls(t *testing.T) [][]string {
 func FakeGH(t *testing.T, state string) string {
 	t.Helper()
 	dir := t.TempDir()
-	gh := filepath.Join(dir, "gh")
-	build(t, "github.com/GregorMcC/loam/core/internal/testutil/fakegh", gh)
+	gh := link(t, built(t, "github.com/GregorMcC/loam/core/internal/testutil/fakegh"), dir, "gh")
 	file := filepath.Join(dir, "state.json")
 	if err := os.WriteFile(file, []byte(state), 0o644); err != nil {
 		t.Fatal(err)

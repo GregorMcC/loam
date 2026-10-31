@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/GregorMcC/loam/core/internal/store"
 	"github.com/GregorMcC/loam/core/internal/testutil"
 )
 
@@ -196,18 +197,21 @@ func (h *harness) harvest() {
 			h.token("repo", r.ID)
 		}
 	}
-	// A worktree ID gets a token of 10 characters too, so it matches the ID pattern.
-	out, _, _ = h.raw("worktree", "list", "--json")
-	var wts []struct {
-		Worktree struct {
-			ID string `json:"id"`
-		} `json:"worktree"`
+	// A worktree ID gets a token of 10 characters too, so it matches the ID
+	// pattern. The IDs come from the store, in the order of `loam worktree
+	// list`. The list runs git in each worktree, and harvest runs after each
+	// command, so the list took most of the test time (TAS-215).
+	s, err := store.Open(h.home)
+	if err != nil {
+		h.t.Fatal(err)
 	}
-	if err := json.Unmarshal([]byte(out), &wts); err != nil {
+	wts, err := s.ListWorktrees("")
+	s.Close()
+	if err != nil {
 		h.t.Fatal(err)
 	}
 	for _, w := range wts {
-		h.token("wtre", w.Worktree.ID)
+		h.token("wtre", w.ID)
 	}
 	out, _, _ = h.raw("run", "list", "--json")
 	var runs []struct {
