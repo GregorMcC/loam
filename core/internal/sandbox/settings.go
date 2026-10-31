@@ -90,7 +90,7 @@ func (r Rules) ToolDenies() []string {
 func (r Rules) sessionDenyWrite() []string {
 	out := slices.Clone(r.DenyWrite)
 	if c := XcrunCache(); c != "" {
-		out = append(out, Real(c))
+		out = append(out, c)
 	}
 	return out
 }

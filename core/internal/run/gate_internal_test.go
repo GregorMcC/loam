@@ -124,3 +124,19 @@ func TestSeedXcrunCacheCopiesTheCacheOfTheUser(t *testing.T) {
 		t.Errorf("cache with no cache of the user: %v", err)
 	}
 }
+
+// GOPROXY of the checks names the module cache as a file URL. A cache path
+// that would split the list of GOPROXY gives no GOPROXY.
+func TestGoProxyNamesTheModuleCacheAsOneFileURL(t *testing.T) {
+	for _, c := range []struct{ cache, want string }{
+		{"/c/mod", "file:///c/mod/cache/download"},
+		{"/c/my mod", "file:///c/my%20mod/cache/download"},
+		{"/c/a,b", ""},
+		{"/c/a|b", ""},
+	} {
+		t.Setenv("GOMODCACHE", c.cache)
+		if got := goProxy(); got != c.want {
+			t.Errorf("GOMODCACHE %q: GOPROXY %q, want %q", c.cache, got, c.want)
+		}
+	}
+}

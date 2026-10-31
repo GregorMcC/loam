@@ -26,7 +26,7 @@ func TestSettingsBlock(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := `{"allowUnsandboxedCommands":false,"enabled":true,"failIfUnavailable":true,` +
-		`"filesystem":{"allowRead":["/w","/h/.gitconfig"],"allowWrite":["/w","/T"],"denyRead":["/h"],"denyWrite":["` + Real(XcrunCache()) + `"]},` +
+		`"filesystem":{"allowRead":["/w","/h/.gitconfig"],"allowWrite":["/w","/T"],"denyRead":["/h"],"denyWrite":["` + XcrunCache() + `"]},` +
 		`"network":{"allowLocalBinding":true,"allowMachLookup":["com.apple.trustd.agent"],"allowUnixSockets":["` + ClaudeTemp() + `"],"allowedDomains":[],"strictAllowlist":true}}`
 	if string(got) != want {
 		t.Errorf("Settings =\n  %s\nwant\n  %s", got, want)
@@ -67,11 +67,11 @@ func TestClaudeTemp(t *testing.T) {
 // the xcrun cache in it.
 func TestUserTemp(t *testing.T) {
 	got := UserTemp()
-	want := filepath.Dir(Real(XcrunCache()))
+	want := filepath.Dir(XcrunCache())
 	if len(got) != 1 || got[0] != want {
 		t.Errorf("UserTemp = %q, want %s", got, want)
 	}
-	if denies := (Rules{}).ToolDenies(); !slices.Contains(denies, "Edit(/"+Real(XcrunCache())+")") {
+	if denies := (Rules{}).ToolDenies(); !slices.Contains(denies, "Edit(/"+XcrunCache()+")") {
 		t.Errorf("ToolDenies = %q, want the xcrun cache", denies)
 	}
 }

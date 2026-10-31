@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -135,10 +136,19 @@ func seedXcrunCache(cache string) {
 // goProxy is the module cache of Go as a file proxy. The profile denies the
 // network, and go run of a module at a version asks the proxy if the module
 // is deprecated, also when the module is in the cache. With this proxy, Go
-// takes each module that the session fetched from the cache.
+// takes each module that the session fetched from the cache. goProxy returns
+// "" when it cannot name the cache as one entry of GOPROXY.
 func goProxy() string {
-	home, _ := os.UserHomeDir()
-	return "file://" + filepath.Join(sandbox.GoModCache(home, os.Getenv), "cache", "download")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	dir := filepath.Join(sandbox.GoModCache(home, os.Getenv), "cache", "download")
+	// A comma or a pipe splits the list of GOPROXY.
+	if !filepath.IsAbs(dir) || strings.ContainsAny(dir, ",|") {
+		return ""
+	}
+	return (&url.URL{Scheme: "file", Path: dir}).String()
 }
 
 // close removes the folder of the gate.
@@ -184,7 +194,10 @@ func newCheckBox(s *store.Store, r store.Run) checkBox {
 	// Not xcrun_db: the profile denies that name in each temp folder.
 	cache := filepath.Join(dir, "xcrun-cache")
 	seedXcrunCache(cache)
-	box.env = append(os.Environ(), "TMPDIR="+dir, "xcrun_db="+cache, "GOPROXY="+goProxy())
+	box.env = append(os.Environ(), "TMPDIR="+dir, "xcrun_db="+cache)
+	if p := goProxy(); p != "" {
+		box.env = append(box.env, "GOPROXY="+p)
+	}
 	return box
 }
 

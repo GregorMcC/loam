@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -176,22 +177,31 @@ func Temps() []string {
 }
 
 // XcrunCache returns the cache of the xcrun shims of this user: xcrunCache in
-// the temp folder of the user. It returns "" when getconf cannot name the
-// folder.
+// the real path of the temp folder of the user. It does not follow a link at
+// xcrunCache: a deny of the target would leave the link free to change. It
+// returns "" when getconf cannot name the folder.
 func XcrunCache() string {
 	if d := getconf("DARWIN_USER_TEMP_DIR"); d != "" {
-		return filepath.Join(d, xcrunCache)
+		return filepath.Join(Real(d), xcrunCache)
 	}
 	return ""
 }
 
+// getconfs keeps each folder that getconf named. The folders do not change
+// while Loam runs.
+var getconfs sync.Map
+
 // getconf returns the folder that getconf names, or "" when it names no
 // absolute path.
 func getconf(name string) string {
+	if p, ok := getconfs.Load(name); ok {
+		return p.(string)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	b, err := exec.CommandContext(ctx, "/usr/bin/getconf", name).Output()
 	if p := strings.TrimSpace(string(b)); err == nil && filepath.IsAbs(p) {
+		getconfs.Store(name, p)
 		return p
 	}
 	return ""
