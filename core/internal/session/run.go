@@ -48,16 +48,17 @@ func PrepareRun(s *store.Store, r store.Run, prompt, loam, model, effort string)
 // new prompt: claude --bg --resume, with the options of [PrepareRun].
 // claude --resume does not keep the options of the session: with no flags,
 // the session has no sandbox, no run hooks, and no deny rules. The settings
-// file is written again, with the rules of the run as they are now.
+// file is written again, with the rules of the run as they are now, and the
+// prompt ends with their sandbox note, as the first prompt does.
 func PrepareRunResume(s *store.Store, r store.Run, prompt, loam, model, effort string) (*Plan, error) {
 	if r.SessionID == "" {
 		return nil, errors.New("the run has no session")
 	}
-	plan, _, err := prepareRun(s, r, []string{"--resume", r.SessionID}, loam, model, effort)
+	plan, box, err := prepareRun(s, r, []string{"--resume", r.SessionID}, loam, model, effort)
 	if err != nil {
 		return nil, err
 	}
-	plan.Args = append(plan.Args, prompt)
+	plan.Args = append(plan.Args, prompt+box.Prompt())
 	return plan, nil
 }
 
