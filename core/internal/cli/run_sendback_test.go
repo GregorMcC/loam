@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -32,11 +33,52 @@ func lastPrompt(t *testing.T) string {
 	t.Helper()
 	calls := testutil.FakeClaudeCalls(t)
 	n := len(calls)
-	if n < 2 || !slices.Equal(calls[n-2], []string{"stop", shipSession[:8]}) || len(calls[n-1]) != 4 ||
+	if n < 2 || !slices.Equal(calls[n-2], []string{"stop", shipSession[:8]}) || len(calls[n-1]) < 4 ||
 		!slices.Equal(calls[n-1][:3], []string{"--bg", "--resume", shipSession}) {
 		t.Fatalf("claude calls %q", calls)
 	}
-	return calls[n-1][3]
+	return calls[n-1][len(calls[n-1])-1]
+}
+
+// TAS-201: claude --resume keeps no options of the session. So the resume
+// passes the settings of the run again: the sandbox, and the hooks that run
+// the gate. With no settings, the session would work as you, with no gate.
+func TestRunSendBackResumesWithTheSandboxAndTheHooksOfTheRun(t *testing.T) {
+	_, r, _ := readyRun(t)
+	if _, code, out := sendBack(t, r.ID, "--note", "Add a test."); code != 0 {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+	calls := testutil.FakeClaudeCalls(t)
+	c := calls[len(calls)-1]
+	i := slices.Index(c, "--settings")
+	if i < 0 || !slices.Contains(c, "auto") || !slices.Contains(c, "--add-dir") {
+		t.Fatalf("resume %q, want the options of the run", c)
+	}
+	b, err := os.ReadFile(c[i+1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var settings struct {
+		Sandbox struct {
+			Enabled bool `json:"enabled"`
+		} `json:"sandbox"`
+		Hooks map[string][]struct {
+			Hooks []struct {
+				Command string `json:"command"`
+			} `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(b, &settings); err != nil {
+		t.Fatal(err)
+	}
+	if !settings.Sandbox.Enabled {
+		t.Errorf("the resume has no sandbox: %s", b)
+	}
+	for _, e := range []string{"SessionStart", "Stop"} {
+		if g := settings.Hooks[e]; len(g) == 0 || len(g[0].Hooks) == 0 || !strings.HasSuffix(g[0].Hooks[0].Command, " run hook "+r.ID) {
+			t.Errorf("the resume has no %s hook of the run: %s", e, b)
+		}
+	}
 }
 
 func TestRunSendBackResumesTheSessionWithYourNotes(t *testing.T) {

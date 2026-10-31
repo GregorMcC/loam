@@ -68,8 +68,8 @@ func resumePrompt(t *testing.T) string {
 	t.Helper()
 	calls := testutil.FakeClaudeCalls(t)
 	for _, c := range slices.Backward(calls) {
-		if len(c) == 4 && slices.Equal(c[:3], []string{"--bg", "--resume", shipSession}) {
-			return c[3]
+		if len(c) > 3 && slices.Equal(c[:3], []string{"--bg", "--resume", shipSession}) {
+			return c[len(c)-1]
 		}
 	}
 	return ""

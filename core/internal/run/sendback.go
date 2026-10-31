@@ -120,7 +120,7 @@ func sendBack(ctx context.Context, s *store.Store, id string, notes []Note) (sto
 	if r.State == store.RunQueued {
 		return r, nil
 	}
-	if err := send(ctx, r, prompt); err != nil {
+	if err := send(ctx, s, r, prompt); err != nil {
 		return r, stopAfter(s, id, fmt.Errorf("could not send the notes to the session: %w", err))
 	}
 	return r, nil
