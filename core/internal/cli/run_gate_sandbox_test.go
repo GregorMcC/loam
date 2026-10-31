@@ -68,7 +68,10 @@ func TestRunGateGivesTheChecksAFolderOfTheGate(t *testing.T) {
 		t.Fatalf("env = %q", env)
 	}
 	tmp, cache, proxy := env[0], env[1], env[2]
-	if !strings.HasPrefix(tmp, "/tmp/loam-gate-") || cache != filepath.Join(tmp, "xcrun-cache") {
+	// The gate uses /tmp, or the temp folder when a sandbox denies /tmp.
+	if base := filepath.Base(tmp); !strings.HasPrefix(base, "loam-gate-") ||
+		(filepath.Dir(tmp) != "/tmp" && filepath.Dir(tmp) != filepath.Clean(os.TempDir())) ||
+		cache != filepath.Join(tmp, "xcrun-cache") {
 		t.Fatalf("TMPDIR = %q, xcrun_db = %q, want the folder of the gate and a file in it", tmp, cache)
 	}
 	// The gate has no network, so Go takes the modules from its cache.

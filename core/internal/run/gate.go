@@ -161,6 +161,22 @@ func (b checkBox) close() {
 // sandboxProbeTimeout limits the start of the sandbox with no check.
 const sandboxProbeTimeout = 10 * time.Second
 
+// makeGateDir makes the folder of the gate, with mode 0700, in the first of
+// roots that lets it. /tmp comes first: it keeps the path of a socket in the
+// folder short. A process in a sandbox, such as a check of another gate, can
+// have no write access to /tmp, so the temp folder of the process comes next.
+func makeGateDir(roots ...string) (string, error) {
+	var errs []error
+	for _, root := range roots {
+		dir, err := os.MkdirTemp(root, "loam-gate-")
+		if err == nil {
+			return dir, nil
+		}
+		errs = append(errs, err)
+	}
+	return "", errors.Join(errs...)
+}
+
 // newCheckBox builds the rules of the run as a Seatbelt profile. Loam passes
 // the profile to sandbox-exec with -p, not in a file, so no check can change
 // the profile of the next one. It then starts the sandbox once with no
@@ -174,9 +190,7 @@ func newCheckBox(s *store.Store, r store.Run) checkBox {
 	if err != nil {
 		return checkBox{err: err}
 	}
-	// /tmp keeps the path of a socket in the folder short. The folder is the
-	// gate's own, with mode 0700.
-	dir, err := os.MkdirTemp("/tmp", "loam-gate-")
+	dir, err := makeGateDir("/tmp", os.TempDir())
 	if err != nil {
 		return checkBox{err: fmt.Errorf("make the folder of the checks: %w", err)}
 	}

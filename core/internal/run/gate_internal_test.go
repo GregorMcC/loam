@@ -140,3 +140,26 @@ func TestGoProxyNamesTheModuleCacheAsOneFileURL(t *testing.T) {
 		}
 	}
 }
+
+// A root that the gate cannot write gives way to the next one, and the gate
+// says why when no root works.
+func TestMakeGateDirTriesTheNextRoot(t *testing.T) {
+	blocked := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(blocked, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	next := t.TempDir()
+	dir, err := makeGateDir(blocked, next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Dir(dir) != next || !strings.HasPrefix(filepath.Base(dir), "loam-gate-") {
+		t.Errorf("dir = %q, want a loam-gate- folder in %q", dir, next)
+	}
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() || fi.Mode().Perm() != 0o700 {
+		t.Errorf("stat %s: %v, %v", dir, fi, err)
+	}
+	if _, err := makeGateDir(blocked); err == nil || !strings.Contains(err.Error(), blocked) {
+		t.Errorf("err = %v, want one that names %s", err, blocked)
+	}
+}
