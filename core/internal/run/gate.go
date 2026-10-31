@@ -204,16 +204,18 @@ func (g gateResult) outOfTime() (string, bool) {
 }
 
 // waitCaused reports whether the gate ran out of time because of the gates
-// of other runs: the wait left no time for the checks, or the gate waited
-// and then a check ran out of the gate budget. Such a gate never stops the
-// run. A check that ran out of [checkTimeout] did not run out of time
-// because of the wait.
+// of other runs: the wait left no time for the checks, or the gate waited at
+// least [checkTimeout] and then a check ran out of the gate budget. Such a
+// gate never stops the run. A shorter wait took less than one check can
+// take, so checks that run out of the budget after it would run out without
+// it too, and that counts as a check timeout. A check that ran out of
+// checkTimeout did not run out of time because of the wait.
 func (g gateResult) waitCaused() bool {
 	if g.waitedOut {
 		return true
 	}
 	_, ok := g.outOfTime()
-	return ok && g.waited > 0 && g.failed[0].budget
+	return ok && g.waited >= checkTimeout && g.failed[0].budget
 }
 
 // takeGateLock takes the gate lock of the Loam home, so that one gate at a
