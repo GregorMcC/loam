@@ -129,7 +129,7 @@ gofmt_clean() {
 }
 
 govulncheck_run() {
-  if [ "$sandboxed" = 1 ] && ! curl -fsS --max-time 10 -o /dev/null https://vuln.go.dev/index/db.json; then
+  if [ "$sandboxed" = 1 ] && ! /usr/bin/curl -fsS --max-time 10 -o /dev/null https://vuln.go.dev/index/db.json; then
     echo "The sandbox does not reach vuln.go.dev, so govulncheck does not run here. CI runs it."
     return
   fi
