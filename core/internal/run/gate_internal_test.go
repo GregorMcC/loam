@@ -163,3 +163,53 @@ func TestMakeGateDirTriesTheNextRoot(t *testing.T) {
 		t.Errorf("err = %v, want one that names %s", err, blocked)
 	}
 }
+
+// A relative root, such as a relative TMPDIR, still gives an absolute folder.
+func TestMakeGateDirIsAbsolute(t *testing.T) {
+	t.Chdir(t.TempDir())
+	dir, err := makeGateDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !filepath.IsAbs(dir) {
+		t.Errorf("dir = %q, want an absolute path", dir)
+	}
+}
+
+// When the gate cannot write /tmp, as in a sandbox, newCheckBox makes its
+// folder in the next root, and a check gets that folder as TMPDIR.
+func TestNewCheckBoxFallsBackWhenTmpIsDenied(t *testing.T) {
+	testutil.GitEnv(t)
+	testutil.FakeSandbox(t)
+	repo, _ := testutil.GitRepo(t)
+	s, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	res, err := s.CreatePlot(store.PlotInput{Name: "Gate", Repos: []store.RepoInput{{Path: repo}}}, store.Actor{Kind: store.ActorCLI})
+	if err != nil {
+		t.Fatal(err)
+	}
+	denied := filepath.Join(t.TempDir(), "tmp")
+	if err := os.WriteFile(denied, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fallback := t.TempDir()
+	old := gateRoots
+	gateRoots = func() []string { return []string{denied, fallback} }
+	t.Cleanup(func() { gateRoots = old })
+
+	box := newCheckBox(s, store.Run{PlotID: res.Plot.ID, Folder: repo})
+	defer box.close()
+	if box.err != nil {
+		t.Fatal(box.err)
+	}
+	if filepath.Dir(box.dir) != fallback {
+		t.Fatalf("dir = %q, want a folder in %q", box.dir, fallback)
+	}
+	got := runCheck(context.Background(), repo, box, store.Check{Name: "Tmp", Command: `printf %s "$TMPDIR"`})
+	if !got.passed || got.output != box.dir {
+		t.Fatalf("TMPDIR of the check = %q (%+v), want %q", got.output, got, box.dir)
+	}
+}

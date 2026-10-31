@@ -161,16 +161,25 @@ func (b checkBox) close() {
 // sandboxProbeTimeout limits the start of the sandbox with no check.
 const sandboxProbeTimeout = 10 * time.Second
 
+// gateRoots are the folders that can hold the folder of the gate, in order.
+// /tmp comes first: it keeps the path of a socket in the folder short. A
+// process in a sandbox, such as a check of another gate, can have no write
+// access to /tmp, so the temp folder of the process comes next. A var, for
+// tests.
+var gateRoots = func() []string { return []string{"/tmp", os.TempDir()} }
+
 // makeGateDir makes the folder of the gate, with mode 0700, in the first of
-// roots that lets it. /tmp comes first: it keeps the path of a socket in the
-// folder short. A process in a sandbox, such as a check of another gate, can
-// have no write access to /tmp, so the temp folder of the process comes next.
+// roots that lets it. The folder is absolute, also when a root, such as a
+// TMPDIR, is relative: each check runs in the run folder, not here.
 func makeGateDir(roots ...string) (string, error) {
 	var errs []error
 	for _, root := range roots {
-		dir, err := os.MkdirTemp(root, "loam-gate-")
+		abs, err := filepath.Abs(root)
 		if err == nil {
-			return dir, nil
+			var dir string
+			if dir, err = os.MkdirTemp(abs, "loam-gate-"); err == nil {
+				return dir, nil
+			}
 		}
 		errs = append(errs, err)
 	}
@@ -190,7 +199,7 @@ func newCheckBox(s *store.Store, r store.Run) checkBox {
 	if err != nil {
 		return checkBox{err: err}
 	}
-	dir, err := makeGateDir("/tmp", os.TempDir())
+	dir, err := makeGateDir(gateRoots()...)
 	if err != nil {
 		return checkBox{err: fmt.Errorf("make the folder of the checks: %w", err)}
 	}
