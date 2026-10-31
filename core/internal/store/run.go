@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // RunState is where a run is. A run moves from Starting to Running, then to
@@ -411,6 +412,88 @@ type RunEvent struct {
 	// Stage is where a try failed: [TryGate] or [TryCI]. It is empty for
 	// the other kinds. It is not in the JSON.
 	Stage string `json:"-"`
+	RunEventData
+}
+
+// RunEventData is what a run event holds beside its detail. Each field is
+// nil for an event of another kind, and for an event from before Loam
+// stored it.
+type RunEventData struct {
+	// Check is the result of the check of a "check" event.
+	Check *RunCheckResult `json:"check,omitempty"`
+	// CodeReview is what the code review of a "code_review" event found. It
+	// is nil when the review did not run or was off.
+	CodeReview *RunCodeReviewRound `json:"code_review,omitempty"`
+}
+
+// CheckOutputMax is how many bytes of the output of a failed check a "check"
+// event keeps: the end of the output, where the failure usually is.
+const CheckOutputMax = 32 << 10
+
+// RunCheckResult is the result of one check of a gate.
+type RunCheckResult struct {
+	Name    string `json:"name"`
+	Command string `json:"command"`
+	Passed  bool   `json:"passed"`
+	// Exit is the exit code of the check, or -1 when it did not run or did
+	// not end.
+	Exit int `json:"exit"`
+	// Output is the output of a failed check, stdout and stderr together, at
+	// most [CheckOutputMax] bytes from its end. A check that passed keeps no
+	// output.
+	Output string `json:"output"`
+	// OutputCut is true when the output was longer, so Output is its end.
+	OutputCut bool `json:"output_cut"`
+}
+
+// CutOutput keeps the end of output, at most [CheckOutputMax] bytes, from the
+// start of a line when it can. It reports whether it cut.
+func CutOutput(output string) (string, bool) {
+	if len(output) <= CheckOutputMax {
+		return output, false
+	}
+	end := output[len(output)-CheckOutputMax:]
+	if i := strings.IndexByte(end, '\n'); i >= 0 && i < len(end)-1 {
+		end = end[i+1:]
+	}
+	for len(end) > 0 && !utf8.RuneStart(end[0]) {
+		end = end[1:]
+	}
+	return end, true
+}
+
+// RunCodeReviewRound is what one code review of a run found.
+type RunCodeReviewRound struct {
+	// Findings are the findings of the review, most severe first, each of
+	// them, also the Minor ones that do not go to the session. At most
+	// [CodeReviewFindingsMax].
+	Findings []RunFinding `json:"findings"`
+	// More is how many findings the review found after the list.
+	More int `json:"more"`
+}
+
+// CodeReviewFindingsMax is how many findings of one code review a
+// "code_review" event keeps.
+const CodeReviewFindingsMax = 100
+
+// RunFinding is one issue that a code review found.
+type RunFinding struct {
+	// Severity is critical, major, or minor.
+	Severity string `json:"severity"`
+	// File is the path from the root of the repo, or empty.
+	File string `json:"file"`
+	// Line is the line in the new file, or 0.
+	Line int    `json:"line"`
+	Text string `json:"text"`
+}
+
+// encode is the data as the JSON of the data column, or "" when it has none.
+func (d RunEventData) encode() (string, error) {
+	if d.Check == nil && d.CodeReview == nil {
+		return "", nil
+	}
+	b, err := json.Marshal(d)
+	return string(b), err
 }
 
 // The stages of a try.
@@ -657,6 +740,16 @@ func updateRun(tx *writeTx, id string, fn func(*Run) error, tryNote *string) (Ru
 // AddRunEvent adds a line to the history of a run, such as the result of
 // one check.
 func (s *Store) AddRunEvent(runID, kind, detail string) error {
+	return s.AddRunEventData(runID, kind, detail, RunEventData{})
+}
+
+// AddRunEventData adds a line to the history of a run with its data, such as
+// the output of a check that failed.
+func (s *Store) AddRunEventData(runID, kind, detail string, data RunEventData) error {
+	raw, err := data.encode()
+	if err != nil {
+		return err
+	}
 	tx, err := s.beginWrite()
 	if err != nil {
 		return err
@@ -669,7 +762,8 @@ func (s *Store) AddRunEvent(runID, kind, detail string) error {
 	if !ok {
 		return fmt.Errorf("run %q: %w", runID, ErrNotFound)
 	}
-	if err := addRunEvent(tx, runID, time.Now().UnixMilli(), kind, detail); err != nil {
+	if err := tx.exec(`INSERT INTO run_events(run_id, at, kind, detail, data) VALUES (?, ?, ?, ?, ?)`,
+		runID, time.Now().UnixMilli(), kind, detail, raw); err != nil {
 		return err
 	}
 	return tx.commit()
@@ -692,13 +786,19 @@ func (s *Store) RunEvents(runID string) ([]RunEvent, error) {
 }
 
 // eventCols are the columns of a run event, for [scanRunEvent].
-const eventCols = `id, run_id, at, kind, detail, stage`
+const eventCols = `id, run_id, at, kind, detail, stage, data`
 
 func scanRunEvent(rows *sql.Rows) (RunEvent, error) {
 	var e RunEvent
 	var at int64
-	if err := rows.Scan(&e.ID, &e.RunID, &at, &e.Kind, &e.Detail, &e.Stage); err != nil {
+	var data string
+	if err := rows.Scan(&e.ID, &e.RunID, &at, &e.Kind, &e.Detail, &e.Stage, &data); err != nil {
 		return RunEvent{}, err
+	}
+	if data != "" {
+		if err := json.Unmarshal([]byte(data), &e.RunEventData); err != nil {
+			return RunEvent{}, fmt.Errorf("run event %d: bad data: %w", e.ID, err)
+		}
 	}
 	e.At = tm(at)
 	return e, nil

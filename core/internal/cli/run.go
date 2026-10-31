@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -348,19 +349,74 @@ func newRunStatusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			failed := slices.DeleteFunc(run.LastGate(events), func(c store.RunCheckResult) bool { return c.Passed })
+			if failed == nil {
+				failed = []store.RunCheckResult{}
+			}
+			review := run.LastCodeReview(events)
 			if JSON(cmd) {
 				return printJSON(cmd, struct {
-					Run    store.Run        `json:"run"`
-					Events []store.RunEvent `json:"events"`
-				}{r, events})
+					Run          store.Run                 `json:"run"`
+					Events       []store.RunEvent          `json:"events"`
+					FailedChecks []store.RunCheckResult    `json:"failed_checks"`
+					CodeReview   *store.RunCodeReviewRound `json:"code_review"`
+				}{r, events, failed, review})
 			}
 			out := cmd.OutOrStdout()
 			printRun(out, r)
 			for _, e := range events {
 				fmt.Fprintf(out, "  %s  %-5s %s\n", e.At.Format("15:04:05"), e.Kind, oneLine(e.Detail))
 			}
+			printFailedChecks(out, failed)
+			printFindings(out, review)
 			return nil
 		},
+	}
+}
+
+// statusTail is how many lines of the output of a failed check run status
+// shows. The JSON has all that Loam stored.
+const statusTail = 20
+
+// printFailedChecks prints each check that failed in the last gate: its name,
+// its exit code, and the end of its output.
+func printFailedChecks(out io.Writer, failed []store.RunCheckResult) {
+	if len(failed) == 0 {
+		return
+	}
+	fmt.Fprintln(out, "Failed checks of the last gate:")
+	for _, c := range failed {
+		fmt.Fprintf(out, "  %s (exit %d)\n", oneLine(c.Name), c.Exit)
+		text := strings.TrimSpace(c.Output)
+		if text == "" {
+			fmt.Fprintln(out, "    The check gave no output.")
+			continue
+		}
+		for _, line := range strings.Split(run.Tail(text, statusTail), "\n") {
+			fmt.Fprintln(out, strings.TrimRight("    "+noControl(line), " "))
+		}
+	}
+}
+
+// printFindings prints the findings of the last code review, most severe
+// first.
+func printFindings(out io.Writer, review *store.RunCodeReviewRound) {
+	if review == nil || len(review.Findings) == 0 {
+		return
+	}
+	fmt.Fprintln(out, "Findings of the last code review:")
+	for _, f := range review.Findings {
+		place := oneLine(f.File)
+		if place != "" && f.Line > 0 {
+			place += fmt.Sprintf(":%d", f.Line)
+		}
+		if place != "" {
+			place += ": "
+		}
+		fmt.Fprintf(out, "  %s: %s%s\n", run.SeverityLabel(f.Severity), place, oneLine(f.Text))
+	}
+	if review.More > 0 {
+		fmt.Fprintf(out, "  and %d more\n", review.More)
 	}
 }
 

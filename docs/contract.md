@@ -582,9 +582,18 @@ A full check can take minutes, and the gate runs it anyway. So the first prompt 
 | `loam run start <plot> --title <text> [--goal <text>] [--check <name>=<command>]... [--worktree <name>] [--repo <repo>] [--base <branch>] [--link <link-id or URL> \| --ticket <file>] [--max-tries <n>] [--model <model>] [--effort <level>] [--approve-setup] [--fixes <run>]` | `{ "run": {...}, "worktree": {...} }` |
 | `loam run list [<plot>]` | An array of runs, newest first. It is `[]` when none exists. |
 | `loam run events [--since <time>] [--plot <plot>]` | `{ "events": [{ "run_id": "...", "plot_id": "...", "run_title": "...", "at": "...", "kind": "state", "detail": "running" }] }` |
-| `loam run status <run>` | `{ "run": {...}, "events": [{ "id": 1, "run_id": "...", "at": "...", "kind": "state", "detail": "running" }] }`. `kind` is `state`, `try`, `check`, `linear`, `ship`, `ci`, `code_review`, `review`, `note`, `land`, `shape`, `draft`, or `followup`. |
+| `loam run status <run>` | `{ "run": {...}, "events": [{ "id": 1, "run_id": "...", "at": "...", "kind": "state", "detail": "running" }], "failed_checks": [{ "name": "Go tests", "command": "go test ./...", "passed": false, "exit": 1, "output": "...", "output_cut": false }], "code_review": { "findings": [{ "severity": "major", "file": "core/app.go", "line": 42, "text": "..." }], "more": 0 } }`. `kind` is `state`, `try`, `check`, `linear`, `ship`, `ci`, `code_review`, `review`, `note`, `land`, `shape`, `draft`, or `followup`. See "Run status" below. |
 | `loam run stop <run>` | `{ "run": {...} }`. The run is `cancelled`. A run that has ended stays as it is. A `queued` run is cancelled too. |
 | `loam run tick` | `{ "runs": [...], "warnings": ["..."] }`. `runs` are the runs that the tick moved or started. Both are `[]` when none. |
+
+**Run status.** An event can hold data beside its `detail`. Each field is left out for an event of another kind, and for an event from before Loam stored it:
+
+- `check`: the result of the check of a `check` event: `{ "name", "command", "passed", "exit", "output", "output_cut" }`. `exit` is -1 when the check did not run or did not end. `output` is the output of a failed check, stdout and stderr together, at most 32768 bytes from its end, from the start of a line when it can. `output_cut` is `true` when the output was longer. A check that passed keeps no output.
+- `code_review`: what the review of a `code_review` event found: `{ "findings", "more" }`. `findings` holds each finding of the review, most severe first, also the Minor ones that do not go to the session, each `{ "severity", "file", "line", "text" }` as Loam cleaned it (see Ship). It keeps at most 100 findings, and `more` counts the rest. A review that found no issues has an empty list. A review that did not run or was off has no `code_review`.
+
+`failed_checks` are the `check` results that failed in the last gate of the run, in the order that they ran. The last gate is the last block of `check` events. The list is empty when that gate passed, when the run has no gate, or when its events are from before Loam stored the results. `code_review` is the `code_review` of the last `code_review` event of the run, or `null`.
+
+The text of `run status` shows the run and its history. Under the history, it shows each failed check of the last gate with its name, its exit code, and the last 20 lines of its output, and then each finding of the last code review with its severity, its file and line, and its text. The JSON has the whole stored output.
 
 `run events` lists the events of every run of every plot, or of the runs of one plot with `--plot`, newest first, at most 200. `--since` takes an RFC 3339 time and lists only the events after it. A time that does not parse gives exit code 2. `run_title` and `plot_id` are those of the run. `kind` is as in `run status`. The Today screen shows the list as "While you were away".
 

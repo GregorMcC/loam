@@ -560,7 +560,7 @@ func askClaude(ctx context.Context, r store.Run, dirs, mcp []string, prompt func
 	case res == nil:
 		return nil, "claude -p ended with no result"
 	case res.IsError || len(res.StructuredOutput) == 0 || string(res.StructuredOutput) == "null":
-		return nil, strings.TrimSpace(fmt.Sprintf("%s %s", res.Subtype, tail(res.Result, noteTail)))
+		return nil, strings.TrimSpace(fmt.Sprintf("%s %s", res.Subtype, Tail(res.Result, noteTail)))
 	}
 	return res.StructuredOutput, ""
 }

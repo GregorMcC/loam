@@ -250,7 +250,7 @@ func runPrint(ctx context.Context, claude, dir string, args []string, what strin
 		return nil, "claude -p gave an answer that Loam cannot read: " + err.Error()
 	}
 	if res.IsError || len(res.StructuredOutput) == 0 || string(res.StructuredOutput) == "null" {
-		return nil, strings.TrimSpace(fmt.Sprintf("claude -p gave no %s. %s %s", what, res.Subtype, tail(res.Result, noteTail)))
+		return nil, strings.TrimSpace(fmt.Sprintf("claude -p gave no %s. %s %s", what, res.Subtype, Tail(res.Result, noteTail)))
 	}
 	return res.StructuredOutput, ""
 }

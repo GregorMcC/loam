@@ -154,7 +154,7 @@ func precheck(ctx context.Context, command, dir string) (output, skip string) {
 	case errors.As(err, &exit) && (exit.ExitCode() == 126 || exit.ExitCode() == 127):
 		// The shell could not find or run the command, so the precheck is broken.
 		return "", fmt.Sprintf("Skipped, because the precheck could not run its command (exit %d): %s",
-			exit.ExitCode(), tail(strings.TrimSpace(stderr.String()), 3))
+			exit.ExitCode(), Tail(strings.TrimSpace(stderr.String()), 3))
 	case errors.As(err, &exit):
 		return "", fmt.Sprintf("Skipped, because the precheck found no work (exit %d)", exit.ExitCode())
 	case err != nil:
