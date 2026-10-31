@@ -94,7 +94,8 @@ extension AppModel {
         try? await client.linearUpdates().inProgress
     }
 
-    /// Reads the model, the effort, and the MCP servers that a run of the plot gets when it names none. A failed read leaves none.
+    /// Reads the model, the effort, the MCP servers, and the code review that a run of the plot gets when it names
+    /// none. A failed read leaves none.
     public func readRunDefaults(plot: String) async {
         runDefaults = try? await client.runDefaults(plot: plot)
     }
@@ -108,29 +109,44 @@ extension AppModel {
     /// The run defaults of a plot to save.
     struct RunDefaultsRequest {
         var plot: String
-        var model: String
-        var effort: String
-        var mcpServers: [String]
+        var change: RunDefaultsChange
     }
 
-    /// Sets the model, the effort, and the MCP servers that a run of the plot gets when it names none. "" clears the
-    /// model or the effort, and no name clears the servers.
-    /// The saves of a plot go one after the other, and its last request is the last one written: while a save of the
-    /// plot runs, a new request waits and replaces an older one that waits. Saves of other plots do not wait for it.
-    public func setRunDefaults(plot: String, model: String, effort: String, mcpServers: [String]) async {
-        pendingRunDefaults[plot] = RunDefaultsRequest(plot: plot, model: model, effort: effort, mcpServers: mcpServers)
+    /// Sets the run defaults of a plot: the model, the effort, the MCP servers, the code review, and its effort. A
+    /// field that is nil stays as the core has it. "" clears the model, the effort, or the review effort, and no
+    /// name clears the servers.
+    /// The saves of a plot go one after the other. While a save of the plot runs, a new request waits. It merges
+    /// with a request that waits already: the fields of the new one replace those of the old one, so no change is
+    /// lost. Saves of other plots do not wait for it.
+    /// When a save fails, the core keeps what it had, and the model reads it again. When the saves of the plot end,
+    /// `runDefaultsSaves` goes up, so the page sets its pickers from `runDefaults`: they show what the core has, also
+    /// after a save that failed.
+    public func setRunDefaults(plot: String, model: String? = nil, effort: String? = nil, mcpServers: [String]? = nil,
+                               review: Bool? = nil, reviewEffort: String? = nil) async {
+        let change = RunDefaultsChange(
+            model: model, effort: effort, servers: mcpServers, review: review, reviewEffort: reviewEffort)
+        let waiting = pendingRunDefaults[plot]?.change
+        pendingRunDefaults[plot] = RunDefaultsRequest(plot: plot, change: waiting?.overlaid(by: change) ?? change)
         guard savingRunDefaults.insert(plot).inserted else { return }
         defer { savingRunDefaults.remove(plot) }
+        // The error of a save stays until the loop ends, also when a later save of the loop works.
+        var failed = false
         while let request = pendingRunDefaults[plot] {
             pendingRunDefaults[plot] = nil
             do {
-                runDefaults = try await client.setRunDefaults(
-                    plot: request.plot, model: request.model, effort: request.effort, mcpServers: request.mcpServers)
-                runDefaultsError = nil
+                runDefaults = try await client.setRunDefaults(plot: request.plot, request.change)
+                if !failed { runDefaultsError = nil }
             } catch {
+                failed = true
                 runDefaultsError = Self.message(for: error)
+                // A request that waits saves next. Else read what the core kept. A request that comes while the
+                // read runs is still in the queue when the loop checks it again.
+                if pendingRunDefaults[plot] == nil, let read = try? await client.runDefaults(plot: plot) {
+                    runDefaults = read
+                }
             }
         }
+        runDefaultsSaves += 1
     }
 
     /// A shape in progress: its plot, and the runs that were there before it.

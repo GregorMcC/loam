@@ -145,9 +145,9 @@ import Testing
     @Test func thePlotDefaultsAreReadAndSet() async throws {
         let (model, fake) = try model([("run_defaults_get", 0), ("run_defaults_set", 0)])
         await model.readRunDefaults(plot: "plotaaaaae")
-        #expect(model.runDefaults == RunDefaults(plotID: "plotaaaaae", model: "", effort: "", mcpServers: []))
-        await model.setRunDefaults(plot: "plotaaaaae", model: "opus", effort: "high", mcpServers: ["loam", "linear-server"])
-        #expect(fake.args().last == "run defaults --model opus --effort high --mcp loam,linear-server --json -- plotaaaaae")
+        #expect(model.runDefaults == RunDefaults(plotID: "plotaaaaae", model: "", effort: "", mcpServers: [], review: true, reviewEffort: ""))
+        await model.setRunDefaults(plot: "plotaaaaae", model: "opus", effort: "high", mcpServers: ["loam", "linear-server"], review: true, reviewEffort: "")
+        #expect(fake.args().last == "run defaults --model opus --effort high --mcp loam,linear-server --review on --review-effort  --json -- plotaaaaae")
         #expect(model.runDefaults?.model == "opus" && model.runDefaults?.effort == "high" && model.runDefaultsError == nil)
     }
 
@@ -157,16 +157,105 @@ import Testing
         await model.readMCPServers()
         #expect(fake.args().last == "run mcp-servers --json")
         #expect(model.mcpServers == [MCPServer(name: "linear-server", scope: "user"), MCPServer(name: "loam", scope: "user")])
-        await model.setRunDefaults(plot: "plotaaaaae", model: "", effort: "", mcpServers: [])
-        #expect(fake.args().last == "run defaults --model  --effort  --mcp  --json -- plotaaaaae")
+        await model.setRunDefaults(plot: "plotaaaaae", model: "", effort: "", mcpServers: [], review: true, reviewEffort: "")
+        #expect(fake.args().last == "run defaults --model  --effort  --mcp  --review on --review-effort  --json -- plotaaaaae")
         #expect(model.runDefaults?.mcpServers == [])
+    }
+
+    /// The code review: read from the fixture, then set off with an effort, and set on with the effort cleared.
+    @Test func theCodeReviewIsReadAndSet() async throws {
+        let (model, fake) = try model([("run_defaults_get", 0), ("run_defaults_review", 0), ("run_defaults_get", 0)])
+        await model.readRunDefaults(plot: "plotaaaaae")
+        #expect(model.runDefaults?.review == true && model.runDefaults?.reviewEffort == "")
+        await model.setRunDefaults(plot: "plotaaaaae", model: "opus", effort: "high", mcpServers: ["loam", "linear-server"],
+                                   review: false, reviewEffort: "low")
+        #expect(fake.args().last == "run defaults --model opus --effort high --mcp loam,linear-server --review off --review-effort low --json -- plotaaaaae")
+        #expect(model.runDefaults?.review == false && model.runDefaults?.reviewEffort == "low")
+        await model.setRunDefaults(plot: "plotaaaaae", model: "", effort: "", mcpServers: [], review: true, reviewEffort: "")
+        #expect(fake.args().last == "run defaults --model  --effort  --mcp  --review on --review-effort  --json -- plotaaaaae")
+        #expect(model.runDefaults?.review == true)
+    }
+
+    /// A save of one field passes only its flag, so the other defaults stay as the core has them.
+    @Test func aChangeOfOneFieldPassesOnlyItsFlag() async throws {
+        let (model, fake) = try model([("run_defaults_set", 0), ("run_defaults_review", 0), ("run_defaults_set", 0)])
+        await model.setRunDefaults(plot: "plotaaaaae", model: "opus")
+        #expect(fake.args().last == "run defaults --model opus --json -- plotaaaaae")
+        await model.setRunDefaults(plot: "plotaaaaae", review: false)
+        #expect(fake.args().last == "run defaults --review off --json -- plotaaaaae")
+        await model.setRunDefaults(plot: "plotaaaaae", reviewEffort: "")
+        #expect(fake.args().last == "run defaults --review-effort  --json -- plotaaaaae")
+    }
+
+    /// A request that waits merges with a new one: a review change and a model change both reach the core.
+    @Test func twoWaitingRequestsMergeAndLoseNoChange() async throws {
+        let (model, fake) = try model([("run_defaults_set_mcp", 0), ("run_defaults_review", 0)])
+        let running = Task { await model.setRunDefaults(plot: "plotaaaaae", mcpServers: ["a"]) }
+        let review = Task { await model.setRunDefaults(plot: "plotaaaaae", review: false) }
+        let picked = Task { await model.setRunDefaults(plot: "plotaaaaae", model: "opus") }
+        await running.value
+        await review.value
+        await picked.value
+        let saves = fake.args().filter { $0.hasPrefix("run defaults") }
+        #expect(saves == ["run defaults --mcp a --json -- plotaaaaae", "run defaults --model opus --review off --json -- plotaaaaae"])
+    }
+
+    /// The change of a pick is the fields that differ from the saved pick.
+    @Test func theChangeOfAPickHoldsOnlyTheFieldsThatDiffer() {
+        let saved = RunDefaultsChoice(model: "opus", effort: "", servers: ["a"], review: true, reviewEffort: "low")
+        #expect(saved.change(from: saved) == RunDefaultsChange())
+        var pick = saved
+        pick.review = false
+        #expect(pick.change(from: saved) == RunDefaultsChange(review: false))
+        pick.model = ""
+        pick.reviewEffort = ""
+        #expect(pick.change(from: saved) == RunDefaultsChange(model: "", review: false, reviewEffort: ""))
+        pick.servers = []
+        #expect(pick.change(from: saved).servers == [])
+    }
+
+    /// A core that is older than the code review prints neither field: the review is on, with the default effort.
+    @Test func anOlderCoreMeansReviewOnWithTheDefaultEffort() throws {
+        let json = #"{"plot_id":"plotaaaaae","model":"","effort":"","mcp_servers":[]}"#
+        let decoded = try JSONDecoder().decode(RunDefaults.self, from: Data(json.utf8))
+        #expect(decoded.review == true && decoded.reviewEffort == "")
+    }
+
+    /// A save that fails reads what the core kept, so the page shows it, and the end of the saves is counted. The next
+    /// save sends only its own fields, so a change that the core refuses does not fail each later save.
+    @Test func aFailedSaveReadsWhatTheCoreKept() async throws {
+        let (model, fake) = try model([("error_generic", 1), ("run_defaults_clear", 0), ("run_defaults_set_mcp", 0)])
+        await model.setRunDefaults(plot: "plotaaaaae", review: false)
+        #expect(model.runDefaultsError != nil)
+        #expect(model.runDefaults?.review == true)
+        #expect(model.runDefaultsSaves == 1)
+        await model.setRunDefaults(plot: "plotaaaaae", mcpServers: ["a"])
+        #expect(fake.args().filter { $0.hasPrefix("run defaults") } == [
+            "run defaults --review off --json -- plotaaaaae", "run defaults --json -- plotaaaaae",
+            "run defaults --mcp a --json -- plotaaaaae",
+        ])
+        #expect(model.runDefaultsError == nil && model.runDefaultsSaves == 2)
+    }
+
+    /// A save fails while another waits: the waiting one saves next, with its own fields, and no read runs between.
+    /// The error of the failed save stays, though the waiting save works.
+    @Test func aWaitingSaveGoesNextWhenASaveFails() async throws {
+        let (model, fake) = try model([("error_generic", 1), ("run_defaults_set_mcp", 0)])
+        let failing = Task { await model.setRunDefaults(plot: "plotaaaaae", review: false) }
+        let waiting = Task { await model.setRunDefaults(plot: "plotaaaaae", mcpServers: ["a"]) }
+        await failing.value
+        await waiting.value
+        #expect(fake.args().filter { $0.hasPrefix("run defaults") } == [
+            "run defaults --review off --json -- plotaaaaae", "run defaults --mcp a --json -- plotaaaaae",
+        ])
+        #expect(model.runDefaultsSaves == 1 && model.runDefaultsError != nil)
     }
 
     /// A pick that comes while a save runs waits, and the last pick is the last one saved.
     @Test func savesOfTheRunDefaultsGoOneAfterTheOtherAndTheLastPickWins() async throws {
         let (model, fake) = try model([("run_defaults_set_mcp", 0), ("run_defaults_set_mcp", 0)])
-        let first = Task { await model.setRunDefaults(plot: "plotaaaaae", model: "", effort: "", mcpServers: ["a"]) }
-        let second = Task { await model.setRunDefaults(plot: "plotaaaaae", model: "", effort: "", mcpServers: ["a", "b"]) }
+        let first = Task { await model.setRunDefaults(plot: "plotaaaaae", model: "", effort: "", mcpServers: ["a"], review: true, reviewEffort: "") }
+        let second = Task { await model.setRunDefaults(plot: "plotaaaaae", model: "", effort: "", mcpServers: ["a", "b"], review: true, reviewEffort: "") }
         await first.value
         await second.value
         let saves = fake.args().filter { $0.hasPrefix("run defaults") }
@@ -176,9 +265,9 @@ import Testing
     /// Plot A has a save that runs and a save that waits, and plot B changes. Each plot ends with its last pick.
     @Test func aWaitingSaveOfOnePlotSurvivesASaveOfAnother() async throws {
         let (model, fake) = try model([("run_defaults_set_mcp", 0), ("run_defaults_set_mcp", 0), ("run_defaults_set_mcp", 0)])
-        let running = Task { await model.setRunDefaults(plot: "plotaaaaae", model: "", effort: "", mcpServers: ["a"]) }
-        let waiting = Task { await model.setRunDefaults(plot: "plotaaaaae", model: "", effort: "", mcpServers: ["a", "b"]) }
-        let other = Task { await model.setRunDefaults(plot: "plotaaaaaf", model: "", effort: "", mcpServers: ["c"]) }
+        let running = Task { await model.setRunDefaults(plot: "plotaaaaae", model: "", effort: "", mcpServers: ["a"], review: true, reviewEffort: "") }
+        let waiting = Task { await model.setRunDefaults(plot: "plotaaaaae", model: "", effort: "", mcpServers: ["a", "b"], review: true, reviewEffort: "") }
+        let other = Task { await model.setRunDefaults(plot: "plotaaaaaf", model: "", effort: "", mcpServers: ["c"], review: true, reviewEffort: "") }
         await running.value
         await waiting.value
         await other.value
@@ -192,11 +281,15 @@ import Testing
     @Test func aPickBeforeTheReadEndsSavesNothing() {
         let pick = RunDefaultsChoice(model: "opus", effort: "", servers: [])
         let empty = RunDefaultsChoice(model: "", effort: "", servers: [])
-        let read = RunDefaults(plotID: "plotaaaaae", model: "", effort: "", mcpServers: [])
-        #expect(!RunDefaultsChoice.needsSave(pick, requested: empty, loaded: nil, plot: "plotaaaaae"))
-        #expect(!RunDefaultsChoice.needsSave(pick, requested: empty, loaded: read, plot: "plotaaaaaf"))
-        #expect(RunDefaultsChoice.needsSave(pick, requested: empty, loaded: read, plot: "plotaaaaae"))
-        #expect(!RunDefaultsChoice.needsSave(empty, requested: empty, loaded: read, plot: "plotaaaaae"))
+        #expect(!RunDefaultsChoice.needsSave(pick, requested: empty, isLoaded: false))
+        #expect(RunDefaultsChoice.needsSave(pick, requested: empty, isLoaded: true))
+        #expect(!RunDefaultsChoice.needsSave(empty, requested: empty, isLoaded: true))
+        var off = empty
+        off.review = false
+        #expect(RunDefaultsChoice.needsSave(off, requested: empty, isLoaded: true))
+        var effort = empty
+        effort.reviewEffort = "high"
+        #expect(RunDefaultsChoice.needsSave(effort, requested: empty, isLoaded: true))
     }
 
     /// A failed read leaves no list, not the last one.

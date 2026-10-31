@@ -272,9 +272,11 @@ private struct RunDefaultsSection: View {
     @State private var chosenModel = ""
     @State private var chosenEffort = ""
     @State private var chosenServers: [String] = []
+    @State private var chosenReview = true
+    @State private var chosenReviewEffort = ""
     /// What the pickers held when the page last asked the core to save, or when it loaded them. A save of the same
     /// pick is not needed, and the core may not have answered the last save yet.
-    @State private var requested = RunDefaultsChoice(model: "", effort: "", servers: [])
+    @State private var requested = RunDefaultsChoice(model: "", effort: "", servers: [], review: true, reviewEffort: "")
     /// True once the pickers hold the defaults that the core read for this plot.
     @State private var isLoaded = false
     /// True when the read of the defaults of this plot failed. The pickers stay off, so no save writes empty values.
@@ -286,9 +288,50 @@ private struct RunDefaultsSection: View {
         _sandbox = State(initialValue: SandboxSettingsModel(client: model.client, plot: plotID))
     }
 
+    /// Sets the pickers to `choice`, as the core has it. `requested` takes it too, so the pickers do not save it back.
+    private func show(_ choice: RunDefaultsChoice) {
+        requested = choice
+        chosenModel = choice.model
+        chosenEffort = choice.effort
+        chosenServers = choice.servers
+        chosenReview = choice.review
+        chosenReviewEffort = choice.reviewEffort
+    }
+
+    /// The switch for the code review before a push, and the effort of that review. The effort is off while the
+    /// review is off.
+    private var reviewControls: some View {
+        HStack(alignment: .top, spacing: LoamTheme.space3) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Review").loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+                Toggle("Code review before push", isOn: $chosenReview)
+                    .toggleStyle(.switch)
+                    .help("Claude reviews the diff of a run before Loam pushes it. A Critical or Major finding goes back to the session.")
+                    .accessibilityIdentifier("run-defaults-review")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Review effort").loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+                Picker("Review effort", selection: $chosenReviewEffort) {
+                    ForEach(RunChoices.efforts) { choice in
+                        Text(choice.value.isEmpty ? "Default" : choice.title).tag(choice.value)
+                    }
+                }
+                .labelsHidden()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .disabled(!chosenReview)
+                .help("The effort of the code review. Default is the default of Claude Code.")
+                .accessibilityIdentifier("run-defaults-review-effort")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .disabled(!isLoaded)
+        .frame(maxWidth: 560, alignment: .leading)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: LoamTheme.space3) {
-            Text("Model, effort, and MCP servers").loamText(LoamTheme.rowStyle)
+            Text("Model, effort, MCP servers, and code review").loamText(LoamTheme.rowStyle)
             Text("Each run of this plot uses these, unless its form picks others. Default is the default of Claude Code.")
                 .loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
             ModelEffortPickers(model: $chosenModel, effort: $chosenEffort, defaults: nil, id: "run-defaults",
@@ -297,7 +340,8 @@ private struct RunDefaultsSection: View {
             }
             .disabled(!isLoaded)
             .frame(maxWidth: 560, alignment: .leading)
-            Text("The MCP servers load when Claude drafts a run and writes its PR text. Only servers added with "
+            reviewControls
+            Text("The MCP servers load when Claude drafts a run, writes its PR text, and reviews the code. Only servers added with "
                  + "claude mcp add --scope user show up. Claude.ai connectors cannot be selected. The tools of a selected "
                  + "server run as your Claude Code permissions allow.")
                 .loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
@@ -327,18 +371,26 @@ private struct RunDefaultsSection: View {
                 readFailed = true
                 return await servers
             }
-            requested = RunDefaultsChoice(model.runDefaults)
-            chosenModel = requested.model
-            chosenEffort = requested.effort
-            chosenServers = requested.servers
+            show(RunDefaultsChoice(model.runDefaults))
             isLoaded = true
             await servers
         }
-        .onChange(of: RunDefaultsChoice(model: chosenModel, effort: chosenEffort, servers: chosenServers)) { _, now in
-            guard RunDefaultsChoice.needsSave(now, requested: requested, loaded: isLoaded ? model.runDefaults : nil, plot: plotID)
-            else { return }
+        .onChange(of: model.runDefaultsSaves) {
+            // The saves ended: show what the core has, also when a save failed.
+            guard isLoaded, let saved = model.runDefaults, saved.plotID == plotID else { return }
+            show(RunDefaultsChoice(saved))
+        }
+        .onChange(of: RunDefaultsChoice(
+            model: chosenModel, effort: chosenEffort, servers: chosenServers, review: chosenReview,
+            reviewEffort: chosenReviewEffort)) { _, now in
+            guard RunDefaultsChoice.needsSave(now, requested: requested, isLoaded: isLoaded) else { return }
+            let change = now.change(from: requested)
             requested = now
-            Task { await model.setRunDefaults(plot: plotID, model: now.model, effort: now.effort, mcpServers: now.servers) }
+            Task {
+                await model.setRunDefaults(
+                    plot: plotID, model: change.model, effort: change.effort, mcpServers: change.servers,
+                    review: change.review, reviewEffort: change.reviewEffort)
+            }
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("run-defaults")

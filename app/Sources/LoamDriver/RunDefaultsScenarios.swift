@@ -46,19 +46,7 @@ extension Scenarios {
             try await app.waitUntil("the picker lists the servers") {
                 model.page == .recurring(plot) && app.exists("run-defaults-mcp") && model.mcpServers?.count == 3
             }
-            // The picker is above the sandbox section, so the page scrolls to its end
-            // and then back up until the picker is on screen.
-            let scroll = try unwrap(scrollView(in: app.window.contentView), "scroll view of the page")
-            let end = max(0, (scroll.documentView?.frame.height ?? 0) - scroll.contentView.bounds.height)
-            var y = end
-            while true {
-                scroll.contentView.scroll(to: NSPoint(x: 0, y: y))
-                scroll.reflectScrolledClipView(scroll.contentView)
-                await app.sleep(0.4)
-                AccessibilityProbe.shared.rescan()
-                if app.windowPoint(of: "run-defaults-mcp") != nil || y <= 0 { break }
-                y = max(0, y - 120)
-            }
+            try await scrollIntoView(app, "run-defaults-mcp")
         }
         try await showPicker()
         try confirm(model.mcpServers?.map(\.name) == ["docs-search", "notes-server", "ticket-tracker"],
@@ -96,6 +84,80 @@ extension Scenarios {
         try await app.pickMenuItem("retired-server \u{00B7} not found")
         try await app.waitUntil("the core drops the server") { (try? saved()) == ["notes-server"] }
         NSApp.appearance = nil
+    }
+
+    /// TAS-64: the code review of the run defaults. The default is on. You turn it off, the effort picker goes off and
+    /// `loam run defaults` shows it. You turn it on and pick an effort, and the core saves it. An empty effort is
+    /// the default of Claude Code.
+    static func runDefaultsReviewShot(_ app: DriverApp) async throws {
+        do { try await runDefaultsReviewSteps(app) } catch { app.dumpAccessibility(); throw error }
+    }
+
+    private static func runDefaultsReviewSteps(_ app: DriverApp) async throws {
+        let (rig, environment, _) = try shotRig(app)
+        let plot = try rig.newPlot("Loam v1 build")
+
+        /// The `review` and the `review_effort` of the run defaults, as the core prints them, such as "review true, effort low".
+        func saved() throws -> String {
+            let defaults = try rig.json(["run", "defaults", plot])["defaults"] as? [String: Any]
+            return "review \(defaults?["review"] as? Bool ?? false), effort \(defaults?["review_effort"] as? String ?? "?")"
+        }
+
+        let host = try await app.launchApp(
+            client: LoamClient(binary: rig.binary, environment: environment), state: rig.stateFile, terminals: true)
+        app.runtime.applyWindowAppearance(to: host.window)
+        let model = host.model
+        NSApp.appearance = NSAppearance(named: .darkAqua)
+        await app.sleep(1)
+        try confirm(try saved() == "review true, effort ", "the default is not a review with the default effort")
+
+        await model.showRecurring(plot: plot)
+        try await app.waitUntil("the review controls show") {
+            model.page == .recurring(plot) && app.exists("run-defaults-review") && model.runDefaults?.plotID == plot
+        }
+        try await scrollIntoView(app, "run-defaults-review")
+        try await app.waitUntil("the effort picker is on") { AccessibilityProbe.shared.isEnabled("run-defaults-review-effort") }
+        app.screenshot("run-defaults-review-on")
+
+        // Pick an effort: the core saves it.
+        try await app.openMenu(of: "run-defaults-review-effort")
+        try await app.pickMenuItem("Extra high")
+        try await app.waitUntil("the core saves the effort") { (try? saved()) == "review true, effort xhigh" }
+
+        // Turn the review off: the core saves it, and the effort picker goes off but keeps its pick.
+        try app.click("run-defaults-review")
+        try await app.waitUntil("the core saves the switch") { (try? saved()) == "review false, effort xhigh" }
+        try await app.waitUntil("the effort picker is off") { !AccessibilityProbe.shared.isEnabled("run-defaults-review-effort") }
+        await app.sleep(0.5)
+        app.screenshot("run-defaults-review-off")
+
+        // Turn it on again: the picker is on, and the pick is still there.
+        try app.click("run-defaults-review")
+        try await app.waitUntil("the core saves the switch") { (try? saved()) == "review true, effort xhigh" }
+        try await app.waitUntil("the effort picker is on again") { AccessibilityProbe.shared.isEnabled("run-defaults-review-effort") }
+        NSApp.appearance = nil
+    }
+
+    /// Scrolls the page to its end and then up, until the element `id` is on screen. Then it scrolls `above` points
+    /// further up, so the element is clear of the toolbar. It throws when the element never shows.
+    private static func scrollIntoView(_ app: DriverApp, _ id: String, above: CGFloat = 160) async throws {
+        let scroll = try unwrap(scrollView(in: app.window.contentView), "scroll view of the page")
+        let end = max(0, (scroll.documentView?.frame.height ?? 0) - scroll.contentView.bounds.height)
+        var y = end
+        while true {
+            scroll.contentView.scroll(to: NSPoint(x: 0, y: y))
+            scroll.reflectScrolledClipView(scroll.contentView)
+            await app.sleep(0.4)
+            AccessibilityProbe.shared.rescan()
+            if app.windowPoint(of: id) != nil || y <= 0 { break }
+            y = max(0, y - 120)
+        }
+        guard app.windowPoint(of: id) != nil else { throw DriverFailure("\(id) never came on screen") }
+        guard above > 0 else { return }
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: max(0, y - above)))
+        scroll.reflectScrolledClipView(scroll.contentView)
+        await app.sleep(0.4)
+        AccessibilityProbe.shared.rescan()
     }
 
     /// The menu window that shows over the driver window while a menu tracks the mouse, or nil.

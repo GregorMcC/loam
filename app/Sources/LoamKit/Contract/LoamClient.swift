@@ -370,10 +370,16 @@ public struct LoamClient: Sendable {
         return one.defaults
     }
 
-    /// `loam run defaults <plot> --model <model> --effort <level> --mcp <names>`. An empty value clears it.
-    public func setRunDefaults(plot: String, model: String, effort: String, mcpServers: [String]) async throws -> RunDefaults {
-        let one: RunDefaultsOne = try await read(
-            ["run", "defaults", "--model", model, "--effort", effort, "--mcp", mcpServers.joined(separator: ",")], positionals: [plot])
+    /// `loam run defaults <plot>` with a flag for each field that is not nil: `--model`, `--effort`, `--mcp`,
+    /// `--review on|off`, and `--review-effort`. The core sets only the flags that it gets. An empty value clears one.
+    public func setRunDefaults(plot: String, _ change: RunDefaultsChange) async throws -> RunDefaults {
+        var flags = ["run", "defaults"]
+        if let model = change.model { flags += ["--model", model] }
+        if let effort = change.effort { flags += ["--effort", effort] }
+        if let servers = change.servers { flags += ["--mcp", servers.joined(separator: ",")] }
+        if let review = change.review { flags += ["--review", review ? "on" : "off"] }
+        if let reviewEffort = change.reviewEffort { flags += ["--review-effort", reviewEffort] }
+        let one: RunDefaultsOne = try await read(flags, positionals: [plot])
         return one.defaults
     }
 

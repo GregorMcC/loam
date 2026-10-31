@@ -393,6 +393,12 @@ struct DriverTests {
         try await expectPass("run-defaults-mcp-shot", environment: ["LOAM_DRIVER_LOAM": Self.loamBinary])
     }
 
+    /// TAS-64: the code review of the run defaults. It is on by default. You pick an effort, turn it off, and turn
+    /// it on again, and `loam run defaults` shows each change. The effort picker is off while the review is off.
+    @Test func setsTheCodeReviewOfTheRunDefaults() async throws {
+        try await expectPass("run-defaults-review-shot", environment: ["LOAM_DRIVER_LOAM": Self.loamBinary])
+    }
+
     /// TAS-175: the sandbox settings. You add a host and a path in the run defaults of a plot, a path that opens home
     /// is refused with its reason, and Settings > Runs holds the machine scope apart from the plot scope.
     @Test func addsPathsAndHostsToTheSandbox() async throws {

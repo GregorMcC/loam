@@ -188,6 +188,9 @@ public final class AppModel {
     var pendingRunDefaults: [String: RunDefaultsRequest] = [:]
     /// The plots that have a save of run defaults running, so the saves of one plot go one after the other.
     var savingRunDefaults: Set<String> = []
+    /// How many times the saves of run defaults of a plot ended. The Recurring page sets its pickers from
+    /// `runDefaults` when it goes up.
+    public internal(set) var runDefaultsSaves = 0
     /// Why the run defaults could not be saved, for the Recurring page.
     public internal(set) var runDefaultsError: String?
     /// The intake that the Intake page shows, as the core last read it (ticket 204).
