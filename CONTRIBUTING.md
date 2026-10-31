@@ -65,7 +65,7 @@ swift test
 
 For a change to the app, build GhosttyKit first. Run `scripts/build-ghosttykit.sh` before your first test run, and again when `ghostty.pin` changes. Then run `swift test --manifest-cache none` in `app/`. The option makes SwiftPM see the new GhosttyKit link. The [README](README.md#build-from-source) lists the tools that you need.
 
-Tests use a temporary `LOAM_HOME`, a fake `claude`, and a fake `gh`. Do not point a test at your real store, your real `claude`, or GitHub. The Go helpers are in `core/internal/testutil`.
+Tests use a temporary `LOAM_HOME`, a fake `claude`, and a fake `gh`. Do not point a test at your real store, your real `claude`, or GitHub. The Go helpers are in `core/internal/testutil`. A test process builds each helper binary once, so a package that uses `BuildLoam`, `FakeClaude`, or `FakeGH` calls `testutil.Main` from its `TestMain`.
 
 ## Docs
 
