@@ -22,8 +22,12 @@ func TestIncludeEntries(t *testing.T) {
 	if err := os.WriteFile(f, []byte(text), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got, unread, err := includeEntries(context.Background(), "/home", f)
-	want := []string{"/home/a.gitconfig", filepath.Join(dir, "rel", "b.gitconfig"), "/abs/e.gitconfig"}
+	home := filepath.Join(dir, "home")
+	if err := os.Mkdir(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got, unread, err := includeEntries(context.Background(), home, f)
+	want := []string{filepath.Join(home, "a.gitconfig"), filepath.Join(dir, "rel", "b.gitconfig"), "/abs/e.gitconfig"}
 	if err != nil || !slices.Equal(got, want) || !slices.Equal(unread, []string{"~user/c", "%(prefix)/d"}) {
 		t.Errorf("includeEntries = %q, %q, %v, want %q and the two paths that Loam does not expand", got, unread, err, want)
 	}
@@ -141,23 +145,44 @@ func TestGitIncludesSkipsAFileThatItDoesNotFollow(t *testing.T) {
 	}
 }
 
-// A link before a ".." of a relative include: git opens the path that the
-// system resolves, so the file is in the folder of the link target.
+// Git does not clean an include path, so the system follows each link before
+// a "..": in the folder of the config file, in a relative value, in a ~/
+// value, and in an absolute value. A path whose folder does not exist is
+// cleaned by the text.
 func TestIncludeEntriesFollowsALinkBeforeDotDot(t *testing.T) {
 	dir := realTempDir(t)
 	target := filepath.Join(dir, "elsewhere", "d")
 	if err := os.MkdirAll(target, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(target, filepath.Join(dir, "link")); err != nil {
+	link := filepath.Join(dir, "home", "link")
+	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(dir, "other", "q")
+	if err := os.MkdirAll(other, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(other, filepath.Join(target, "sub")); err != nil {
 		t.Fatal(err)
 	}
 	f := filepath.Join(target, "x.gitconfig")
-	if err := os.WriteFile(f, []byte("[include]\n\tpath = ../y.gitconfig\n"), 0o644); err != nil {
+	text := "[include]\n\tpath = ../a.gitconfig\n\tpath = sub/../b.gitconfig\n" +
+		"\tpath = ~/link/../c.gitconfig\n\tpath = " + link + "/../d.gitconfig\n\tpath = /nowhere/x/../e.gitconfig\n"
+	if err := os.WriteFile(f, []byte(text), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got, _, err := includeEntries(context.Background(), "/home", filepath.Join(dir, "link", "x.gitconfig"))
-	if want := []string{filepath.Join(dir, "elsewhere", "y.gitconfig")}; err != nil || !slices.Equal(got, want) {
+	// f is read through the link, so its folder is the link.
+	got, _, err := includeEntries(context.Background(), filepath.Join(dir, "home"), filepath.Join(link, "x.gitconfig"))
+	elsewhere := filepath.Join(dir, "elsewhere")
+	want := []string{
+		filepath.Join(elsewhere, "a.gitconfig"), filepath.Join(dir, "other", "b.gitconfig"),
+		filepath.Join(elsewhere, "c.gitconfig"), filepath.Join(elsewhere, "d.gitconfig"), "/nowhere/e.gitconfig",
+	}
+	if err != nil || !slices.Equal(got, want) {
 		t.Errorf("includeEntries = %q, %v, want %q", got, err, want)
 	}
 }
@@ -165,6 +190,7 @@ func TestIncludeEntriesFollowsALinkBeforeDotDot(t *testing.T) {
 // realTempDir is a temporary folder with its links resolved: on macOS, the
 // temporary folder is behind the link /var.
 func realTempDir(t *testing.T) string {
+	t.Helper()
 	dir, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
