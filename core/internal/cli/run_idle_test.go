@@ -165,9 +165,8 @@ func TestRunTickKeepsARunWhoseStopHookRunsTheGate(t *testing.T) {
 // not have counts as idle.
 func TestRunTickWarnsWhenClaudeAgentsGivesNoList(t *testing.T) {
 	cases := map[string]string{
-		"not json":     "not json",
-		"null":         "null",
-		"no sessionId": `[{"id": "c57ef956-3136-4e86-bfde-da8facfe0523", "state": "working"}]`,
+		"not json": "not json",
+		"null":     "null",
 	}
 	for name, text := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -179,6 +178,33 @@ func TestRunTickWarnsWhenClaudeAgentsGivesNoList(t *testing.T) {
 			}
 			if r, _ = s.GetRun(r.ID); r.State != store.RunRunning {
 				t.Fatalf("%+v", r)
+			}
+		})
+	}
+}
+
+// claude agents gives a sessionId only when the session has one. A session
+// with none can be the session of the run, so a run that the list does not
+// name waits. A run that the list names as done still stops.
+func TestRunTickReadsASessionWithNoSessionIdAsAnySession(t *testing.T) {
+	unnamed := `{"state": "working"}`
+	cases := map[string]struct {
+		agents string
+		want   store.RunState
+	}{
+		"not named":   {`[` + unnamed + `]`, store.RunRunning},
+		"named, done": {fmt.Sprintf(`[%s, {"sessionId": %q, "state": "done"}]`, unnamed, shipSession), store.RunStopped},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			idleWait(t, 0)
+			s, r := idleRun(t, "done")
+			testutil.FakeClaudeAgents(t, c.agents)
+			if got := tick(t); len(got.Warnings) != 0 {
+				t.Fatalf("%+v", got)
+			}
+			if r, _ = s.GetRun(r.ID); r.State != c.want {
+				t.Fatalf("state %s, want %s: %+v", r.State, c.want, r)
 			}
 		})
 	}

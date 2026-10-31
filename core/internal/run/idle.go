@@ -56,13 +56,13 @@ func stopIdle(ctx context.Context, s *store.Store, runs []store.Run) ([]store.Ru
 	if len(quiet) == 0 {
 		return nil, warnings
 	}
-	states, err := sessionStates(ctx)
+	states, unnamed, err := sessionStates(ctx)
 	if err != nil {
 		return nil, append(warnings, "Loam could not read the state of the run sessions: "+err.Error())
 	}
 	var stopped []store.Run
 	for _, found := range quiet {
-		if !sessionIdle(states, found.SessionID) {
+		if !sessionIdle(states, unnamed, found.SessionID) {
 			continue
 		}
 		r, moved, err := stopIfNoGate(s, found)
@@ -152,18 +152,24 @@ func lastChange(s *store.Store, r store.Run) (time.Time, error) {
 
 // sessionIdle reports whether the session is not in a turn: its state is
 // "done" or "stopped", or claude agents does not list it. "working",
-// "blocked", and a state that Loam does not know are not idle.
-func sessionIdle(states map[string]string, sessionID string) bool {
+// "blocked", and a state that Loam does not know are not idle. With unnamed,
+// the list has a session with no sessionId, which can be this one, so a
+// session that the list does not name is not idle.
+func sessionIdle(states map[string]string, unnamed bool, sessionID string) bool {
 	state, listed := states[sessionID]
-	return !listed || state == "done" || state == "stopped"
+	if !listed {
+		return !unnamed
+	}
+	return state == "done" || state == "stopped"
 }
 
 // sessionStates returns the state of each background session by session
-// ID, from claude agents --json --all.
-func sessionStates(ctx context.Context) (map[string]string, error) {
+// ID, from claude agents --json --all. claude gives a sessionId only when
+// the session has one, so unnamed reports a session with none.
+func sessionStates(ctx context.Context) (states map[string]string, unnamed bool, err error) {
 	claude, err := claudebin.Find()
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, agentsTimeout)
 	defer cancel()
@@ -172,26 +178,27 @@ func sessionStates(ctx context.Context) (map[string]string, error) {
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
 	if err := cmd.Run(); err != nil && !errors.Is(err, exec.ErrWaitDelay) {
-		return nil, errors.New(failureNote("claude agents failed", err, errOut.String()))
+		return nil, false, errors.New(failureNote("claude agents failed", err, errOut.String()))
 	}
 	var sessions []struct {
 		SessionID string `json:"sessionId"`
 		State     string `json:"state"`
 	}
 	if err := json.Unmarshal(out.Bytes(), &sessions); err != nil {
-		return nil, fmt.Errorf("claude agents gave a list that Loam cannot read: %w", err)
+		return nil, false, fmt.Errorf("claude agents gave a list that Loam cannot read: %w", err)
 	}
 	// A session that the list does not have is idle, so a list that Loam
 	// misreads must not look like a list with no sessions.
 	if sessions == nil {
-		return nil, errors.New("claude agents gave no list")
+		return nil, false, errors.New("claude agents gave no list")
 	}
-	states := make(map[string]string, len(sessions))
+	states = make(map[string]string, len(sessions))
 	for _, a := range sessions {
 		if a.SessionID == "" {
-			return nil, errors.New("claude agents gave a session with no sessionId")
+			unnamed = true
+			continue
 		}
 		states[a.SessionID] = a.State
 	}
-	return states, nil
+	return states, unnamed, nil
 }
