@@ -43,21 +43,33 @@ public enum PaneEnvironment {
         inherited.keys.filter(isLeaked)
     }
 
-    /// The pane's own variables with a PATH that does not hold `binFolder` (TAS-203).
+    /// The variable that libghostty sets to the folder of the app's binary. The shell integration
+    /// appends it to PATH when the `path` shell feature is on.
+    public static let binFolderVariable = "GHOSTTY_BIN_DIR"
+
+    /// The pane's own variables with a PATH that does not hold `binFolder`, and with
+    /// `GHOSTTY_BIN_DIR` set to `helpersFolder` (TAS-203).
     ///
-    /// libghostty appends the folder of the app's binary to each pane's PATH (`termio/Exec.zig`).
-    /// For Loam that folder holds the GUI binary `Loam`, and on a volume that ignores case a pane's
-    /// `loam` can start a second copy of the app. libghostty applies the surface variables after
-    /// it appends the folder, so a PATH here replaces its value. The PATH comes from `own`, else
-    /// from `inherited`. An empty PATH stays out, because libghostty ignores an empty value.
+    /// libghostty appends the folder of the app's binary to each pane's PATH (`termio/Exec.zig`),
+    /// and sets `GHOSTTY_BIN_DIR` to it. For Loam that folder holds the GUI binary `Loam`, and on a
+    /// volume that ignores case a pane's `loam` can start a second copy of the app. libghostty
+    /// applies the surface variables last, so the values here replace its values:
+    ///
+    /// - PATH comes from `own`, else from `inherited`, without `binFolder`. An empty PATH stays
+    ///   out, because libghostty ignores an empty value.
+    /// - `GHOSTTY_BIN_DIR` is the folder of the bundled `loam` CLI, so the shell integration appends
+    ///   that folder. An empty value is not safe: the elvish integration checks only that the
+    ///   variable exists. Your Ghostty config loads after Loam's, so Loam cannot turn the `path`
+    ///   feature off.
     public static func paneVariables(
-        _ own: [String: String], inherited: [String: String], binFolder: String
+        _ own: [String: String], inherited: [String: String], binFolder: String, helpersFolder: String
     ) -> [String: String] {
-        guard let path = own["PATH"] ?? inherited["PATH"] else { return own }
+        var variables = own
+        variables[binFolderVariable] = helpersFolder
+        guard let path = own["PATH"] ?? inherited["PATH"] else { return variables }
         let kept = path.split(separator: ":", omittingEmptySubsequences: false)
             .filter { $0 != binFolder && $0 != binFolder + "/" }
             .joined(separator: ":")
-        var variables = own
         variables["PATH"] = kept.isEmpty ? nil : kept
         return variables
     }

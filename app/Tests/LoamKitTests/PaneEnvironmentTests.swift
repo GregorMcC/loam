@@ -2,6 +2,13 @@ import Testing
 @testable import LoamKit
 
 @Suite struct PaneEnvironmentTests {
+    let bin = "/Applications/Loam.app/Contents/MacOS"
+    let helpers = "/Applications/Loam.app/Contents/Helpers"
+
+    func paneVariables(_ own: [String: String], inherited: [String: String]) -> [String: String] {
+        PaneEnvironment.paneVariables(own, inherited: inherited, binFolder: bin, helpersFolder: helpers)
+    }
+
     @Test func removesVariablesThatLeakFromTheHostTerminal() {
         let inherited = [
             "HOME": "/Users/me",
@@ -40,25 +47,27 @@ import Testing
     }
 
     @Test func thePanePathDropsTheFolderOfTheAppBinary() {
-        let bin = "/Applications/Loam.app/Contents/MacOS"
         let inherited = ["PATH": "/usr/bin:\(bin):/bin:\(bin)/", "HOME": "/Users/me"]
 
         // A PATH from the inherited environment, so it replaces the one libghostty extends (TAS-203).
-        #expect(PaneEnvironment.paneVariables(["LOAM_HOME": "/tmp/l"], inherited: inherited, binFolder: bin)
-            == ["LOAM_HOME": "/tmp/l", "PATH": "/usr/bin:/bin"])
+        #expect(paneVariables(["LOAM_HOME": "/tmp/l"], inherited: inherited)
+            == ["LOAM_HOME": "/tmp/l", "PATH": "/usr/bin:/bin", "GHOSTTY_BIN_DIR": helpers])
         // The pane's own PATH wins over the inherited one.
-        #expect(PaneEnvironment.paneVariables(["PATH": "\(bin):/opt/x"], inherited: inherited, binFolder: bin)
-            == ["PATH": "/opt/x"])
+        #expect(paneVariables(["PATH": "\(bin):/opt/x"], inherited: inherited)["PATH"] == "/opt/x")
         // Another app's folder stays, and a PATH without the folder is kept as it is.
-        #expect(PaneEnvironment.paneVariables([:], inherited: ["PATH": "/Applications/Ghostty.app/Contents/MacOS:/bin"],
-                                              binFolder: bin) == ["PATH": "/Applications/Ghostty.app/Contents/MacOS:/bin"])
+        #expect(paneVariables([:], inherited: ["PATH": "/Applications/Ghostty.app/Contents/MacOS:/bin"])["PATH"]
+            == "/Applications/Ghostty.app/Contents/MacOS:/bin")
+    }
+
+    @Test func theShellIntegrationGetsTheFolderOfTheBundledCLI() {
+        // The `path` shell feature appends GHOSTTY_BIN_DIR to PATH, so it must not be the app binary folder.
+        #expect(paneVariables([:], inherited: ["PATH": "/bin"])["GHOSTTY_BIN_DIR"] == helpers)
+        #expect(paneVariables(["GHOSTTY_BIN_DIR": bin], inherited: [:])["GHOSTTY_BIN_DIR"] == helpers)
     }
 
     @Test func thePanePathStaysOutWhenNothingIsLeft() {
-        let bin = "/Applications/Loam.app/Contents/MacOS"
-
-        #expect(PaneEnvironment.paneVariables(["A": "1"], inherited: ["PATH": bin], binFolder: bin) == ["A": "1"])
-        #expect(PaneEnvironment.paneVariables(["A": "1"], inherited: [:], binFolder: bin) == ["A": "1"])
+        #expect(paneVariables(["A": "1"], inherited: ["PATH": bin]) == ["A": "1", "GHOSTTY_BIN_DIR": helpers])
+        #expect(paneVariables(["A": "1"], inherited: [:]) == ["A": "1", "GHOSTTY_BIN_DIR": helpers])
     }
 
     @Test func listsTheKeysToUnsetFromTheProcess() {

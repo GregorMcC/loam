@@ -123,9 +123,12 @@ public final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClien
         config.scale_factor = Double(NSScreen.main?.backingScaleFactor ?? 2)
         config.context = GHOSTTY_SURFACE_CONTEXT_WINDOW
 
-        // A PATH without the folder of the app's binary, so a pane's `loam` is never the GUI (TAS-203).
+        // A PATH and a GHOSTTY_BIN_DIR without the folder of the app's binary, so a pane's `loam`
+        // is never the GUI (TAS-203).
+        let helpers = URL(fileURLWithPath: LoamBinary.bundledPath).deletingLastPathComponent().path
         let env = TerminalRuntime.binFolder.map {
-            PaneEnvironment.paneVariables(spec.env, inherited: ProcessInfo.processInfo.environment, binFolder: $0)
+            PaneEnvironment.paneVariables(spec.env, inherited: ProcessInfo.processInfo.environment,
+                                          binFolder: $0, helpersFolder: helpers)
         } ?? spec.env
         // Keep every C string alive until ghostty_surface_new returns.
         let keys = env.keys.sorted()
