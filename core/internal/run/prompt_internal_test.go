@@ -53,7 +53,7 @@ func TestThePromptsLeaveTheChecksToTheGate(t *testing.T) {
 		for name, p := range sendBacks {
 			want := leaveChecks
 			if name == "CI" {
-				want = ciChecks
+				want = leaveToGate
 			}
 			switch {
 			case checks && !strings.Contains(p, want):
@@ -62,7 +62,7 @@ func TestThePromptsLeaveTheChecksToTheGate(t *testing.T) {
 				t.Errorf("the %s prompt of a run with no checks leaves the checks to Loam:\n%s", name, p)
 			}
 		}
-		if strings.Contains(ci, "fast tests") {
+		if !strings.Contains(ci, ciTests) || strings.Contains(ci, "fast tests") {
 			t.Errorf("the CI prompt does not let the session run the failed tests:\n%s", ci)
 		}
 	}
