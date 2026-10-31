@@ -35,9 +35,18 @@ type bin struct {
 //	func TestMain(m *testing.M) { testutil.Main(m) }
 //
 // Main makes the shared folder before any test runs, so a test that moves
-// TMPDIR does not move it.
+// TMPDIR does not move it. The folder goes where t.TempDir puts its folders:
+// in GOTMPDIR when it is set. Its path is absolute, so the symlinks of
+// [link] work from any folder.
 func Main(m *testing.M) {
-	dir, err := os.MkdirTemp("", "loam-testbin-")
+	dir, err := os.MkdirTemp(os.Getenv("GOTMPDIR"), "loam-testbin-")
+	if err == nil {
+		var abs string
+		if abs, err = filepath.Abs(dir); err != nil {
+			_ = os.RemoveAll(dir)
+		}
+		dir = abs
+	}
 	bins.mu.Lock()
 	bins.dir, bins.err, bins.main = dir, err, true
 	bins.mu.Unlock()
