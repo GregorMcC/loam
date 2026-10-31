@@ -140,3 +140,119 @@ func TestGoProxyNamesTheModuleCacheAsOneFileURL(t *testing.T) {
 		}
 	}
 }
+
+// A root that the gate cannot write gives way to the next one, and the gate
+// says why when no root works.
+func TestMakeGateDirTriesTheNextRoot(t *testing.T) {
+	blocked := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(blocked, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	next := t.TempDir()
+	dir, err := makeGateDir(blocked, next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Dir(dir) != next || !strings.HasPrefix(filepath.Base(dir), "loam-gate-") {
+		t.Errorf("dir = %q, want a loam-gate- folder in %q", dir, next)
+	}
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() || fi.Mode().Perm() != 0o700 {
+		t.Errorf("stat %s: %v, %v", dir, fi, err)
+	}
+	if _, err := makeGateDir(blocked); err == nil || !strings.Contains(err.Error(), blocked) {
+		t.Errorf("err = %v, want one that names %s", err, blocked)
+	}
+}
+
+// A relative root, such as a relative TMPDIR, still gives an absolute folder.
+func TestMakeGateDirIsAbsolute(t *testing.T) {
+	t.Chdir(t.TempDir())
+	dir, err := makeGateDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !filepath.IsAbs(dir) {
+		t.Errorf("dir = %q, want an absolute path", dir)
+	}
+}
+
+// When the gate cannot write /tmp, as in a sandbox, newCheckBox makes its
+// folder in the next root, and a check gets that folder as TMPDIR.
+func TestNewCheckBoxFallsBackWhenTmpIsDenied(t *testing.T) {
+	testutil.GitEnv(t)
+	testutil.FakeSandbox(t)
+	repo, _ := testutil.GitRepo(t)
+	s, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	res, err := s.CreatePlot(store.PlotInput{Name: "Gate", Repos: []store.RepoInput{{Path: repo}}}, store.Actor{Kind: store.ActorCLI})
+	if err != nil {
+		t.Fatal(err)
+	}
+	denied := filepath.Join(t.TempDir(), "tmp")
+	if err := os.WriteFile(denied, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fallback := t.TempDir()
+	old := gateRoots
+	gateRoots = func() []string { return []string{denied, fallback} }
+	t.Cleanup(func() { gateRoots = old })
+
+	box := newCheckBox(s, store.Run{PlotID: res.Plot.ID, Folder: repo})
+	defer box.close()
+	if box.err != nil {
+		t.Fatal(box.err)
+	}
+	if filepath.Dir(box.dir) != fallback {
+		t.Fatalf("dir = %q, want a folder in %q", box.dir, fallback)
+	}
+	got := runCheck(context.Background(), repo, box, store.Check{Name: "Tmp", Command: `printf %s "$TMPDIR"`})
+	if !got.passed || got.output != box.dir {
+		t.Fatalf("TMPDIR of the check = %q (%+v), want %q", got.output, got, box.dir)
+	}
+}
+
+// The gate folder inside the run folder, as when TMPDIR is in the worktree,
+// is not uncommitted work. The committed check leaves that folder out and
+// still fails on any other untracked file.
+func TestCommittedLeavesOutTheGateFolderOnly(t *testing.T) {
+	testutil.GitEnv(t)
+	testutil.FakeSandbox(t)
+	repo, _ := testutil.GitRepo(t)
+	s, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	res, err := s.CreatePlot(store.PlotInput{Name: "Gate", Repos: []store.RepoInput{{Path: repo}}}, store.Actor{Kind: store.ActorCLI})
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := gateRoots
+	gateRoots = func() []string { return []string{repo} }
+	t.Cleanup(func() { gateRoots = old })
+
+	box := newCheckBox(s, store.Run{PlotID: res.Plot.ID, Folder: repo})
+	defer box.close()
+	if box.err != nil {
+		t.Fatal(box.err)
+	}
+	if filepath.Dir(box.dir) != repo {
+		t.Fatalf("dir = %q, want a folder in %q", box.dir, repo)
+	}
+	if got := runCheck(context.Background(), repo, box, store.Check{Name: "Cache", Command: `touch "$TMPDIR/cache"`}); !got.passed {
+		t.Fatalf("%+v", got)
+	}
+	if got := committed(context.Background(), repo, box); !got.passed {
+		t.Fatalf("the gate folder counts as uncommitted work: %+v", got)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "loose.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := committed(context.Background(), repo, box)
+	if got.passed || !strings.Contains(got.output, "loose.txt") || strings.Contains(got.output, "loam-gate-") {
+		t.Fatalf("want loose.txt alone to fail the check: %+v", got)
+	}
+}

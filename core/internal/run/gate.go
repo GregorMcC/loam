@@ -161,6 +161,31 @@ func (b checkBox) close() {
 // sandboxProbeTimeout limits the start of the sandbox with no check.
 const sandboxProbeTimeout = 10 * time.Second
 
+// gateRoots are the folders that can hold the folder of the gate, in order.
+// /tmp comes first: it keeps the path of a socket in the folder short. A
+// process in a sandbox, such as a check of another gate, can have no write
+// access to /tmp, so the temp folder of the process comes next. A var, for
+// tests.
+var gateRoots = func() []string { return []string{"/tmp", os.TempDir()} }
+
+// makeGateDir makes the folder of the gate, with mode 0700, in the first of
+// roots that lets it. The folder is absolute, also when a root, such as a
+// TMPDIR, is relative: each check runs in the run folder, not here.
+func makeGateDir(roots ...string) (string, error) {
+	var errs []error
+	for _, root := range roots {
+		abs, err := filepath.Abs(root)
+		if err == nil {
+			var dir string
+			if dir, err = os.MkdirTemp(abs, "loam-gate-"); err == nil {
+				return dir, nil
+			}
+		}
+		errs = append(errs, err)
+	}
+	return "", errors.Join(errs...)
+}
+
 // newCheckBox builds the rules of the run as a Seatbelt profile. Loam passes
 // the profile to sandbox-exec with -p, not in a file, so no check can change
 // the profile of the next one. It then starts the sandbox once with no
@@ -174,9 +199,7 @@ func newCheckBox(s *store.Store, r store.Run) checkBox {
 	if err != nil {
 		return checkBox{err: err}
 	}
-	// /tmp keeps the path of a socket in the folder short. The folder is the
-	// gate's own, with mode 0700.
-	dir, err := os.MkdirTemp("/tmp", "loam-gate-")
+	dir, err := makeGateDir(gateRoots()...)
 	if err != nil {
 		return checkBox{err: fmt.Errorf("make the folder of the checks: %w", err)}
 	}
@@ -242,17 +265,44 @@ func runCheck(ctx context.Context, dir string, box checkBox, c store.Check) chec
 	return res
 }
 
-// committedScript fails when git status --porcelain prints a line. It reads
-// stdout only, because a tool that git starts, such as an xcrun shim, can
-// print a warning on stderr. The output still has that warning, and the error
-// of a git that fails.
-const committedScript = `s=$(git status --porcelain) || exit; [ -z "$s" ] && exit; ` +
-	`printf 'These files are not committed. Commit them, or add them to .gitignore:\n%s\n' "$s"; exit 1`
+// committedScript returns the script of the committed check. It fails when
+// git status --porcelain prints a line. It reads stdout only, because a tool
+// that git starts, such as an xcrun shim, can print a warning on stderr. The
+// output still has that warning, and the error of a git that fails. When
+// gateDir is inside dir, the script leaves that folder out: the checks keep
+// their cache there, and Loam removes it after the gate.
+func committedScript(dir, gateDir string) string {
+	status := "git status --porcelain"
+	if rel, ok := insideDir(dir, gateDir); ok {
+		status += " -- . " + shellQuote(":(exclude,literal)"+rel)
+	}
+	return `s=$(` + status + `) || exit; [ -z "$s" ] && exit; ` +
+		`printf 'These files are not committed. Commit them, or add them to .gitignore:\n%s\n' "$s"; exit 1`
+}
+
+// insideDir returns the path of sub relative to dir, when sub is a folder
+// below dir. Both paths are resolved, so a link does not hide the match.
+func insideDir(dir, sub string) (string, bool) {
+	if sub == "" {
+		return "", false
+	}
+	rel, err := filepath.Rel(sandbox.Real(dir), sandbox.Real(sub))
+	if err != nil || rel == "." || rel == ".." || filepath.IsAbs(rel) ||
+		strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	return filepath.ToSlash(rel), true
+}
+
+// shellQuote quotes s for sh.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
 
 // committed checks that git status in dir shows no work.
 func committed(ctx context.Context, dir string, box checkBox) checkResult {
 	c := store.Check{Name: CommittedCheck, Command: "git status --porcelain"}
-	res := runCheck(ctx, dir, box, store.Check{Name: c.Name, Command: committedScript})
+	res := runCheck(ctx, dir, box, store.Check{Name: c.Name, Command: committedScript(dir, box.dir)})
 	res.check = c
 	return res
 }
