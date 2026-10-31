@@ -22,7 +22,7 @@ import (
 const RunHookTimeout = 1800
 
 // runEvents are the hook events of a run session. Each one calls
-// `loam run hook <run-id>`.
+// `LOAM_HOME=<home> loam run hook <run-id>`.
 var runEvents = []string{"SessionStart", "Stop", "StopFailure"}
 
 // RunSessionName is the name of the background session of a run. claude
@@ -90,7 +90,7 @@ func prepareRun(s *store.Store, r store.Run, idArgs []string, loam, model, effor
 	if err != nil {
 		return nil, sandbox.Rules{}, err
 	}
-	plan, err := build(s, plot, r.Folder, claude, "run-"+r.ID, lead, loam, runSettings(r.ID, box), false)
+	plan, err := build(s, plot, r.Folder, claude, "run-"+r.ID, lead, loam, runSettings(s.Home(), r.ID, box), false)
 	if err != nil {
 		return nil, sandbox.Rules{}, err
 	}
@@ -102,8 +102,12 @@ func prepareRun(s *store.Store, r store.Run, idArgs []string, loam, model, effor
 // seeded session, the deny rules of the credential paths, the run hooks, env,
 // and the sandbox of the rules. The background session may start from the
 // Claude Code supervisor, which does not pass the environment of the loam
-// process, so the settings carry it.
-func runSettings(runID string, box sandbox.Rules) settingsFunc {
+// process, so the settings carry it. The supervisor keeps the environment of
+// the first claude --bg call, which can name another LOAM_HOME and the socket
+// of a pane. So each hook command names home, the home of the store that holds
+// the run, and env sets LOAM_HOME to it and LOAM_PANE_SOCKET to empty, which
+// means no pane.
+func runSettings(home, runID string, box sandbox.Rules) settingsFunc {
 	return func(loam string, env []string) ([]byte, error) {
 		type hook struct {
 			Type    string `json:"type"`
@@ -115,13 +119,15 @@ func runSettings(runID string, box sandbox.Rules) settingsFunc {
 		}
 		hooks := map[string]any{}
 		for _, e := range runEvents {
-			hooks[e] = []group{{Hooks: []hook{{Type: "command", Command: shellQuote(loam) + " run hook " + runID, Timeout: RunHookTimeout}}}}
+			hooks[e] = []group{{Hooks: []hook{{Type: "command", Command: "LOAM_HOME=" + shellQuote(home) + " " + shellQuote(loam) + " run hook " + runID, Timeout: RunHookTimeout}}}}
 		}
 		vars := map[string]string{}
 		for _, kv := range env {
 			k, v, _ := strings.Cut(kv, "=")
 			vars[k] = v
 		}
+		vars["LOAM_HOME"] = home
+		vars["LOAM_PANE_SOCKET"] = ""
 		s := map[string]any{
 			"permissions": map[string]any{"allow": rules(allowTools), "deny": box.ToolDenies()},
 			"hooks":       hooks,

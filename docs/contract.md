@@ -590,6 +590,8 @@ The gate is the Stop hook of the session. Each time the session ends a turn, Loa
 
 `--fixes` takes the ID of a run of the same plot that is `landed`. Another run gives exit code 2 (`invalid`), and a run that does not exist gives exit code 1. Nothing is made. With no `--repo`, a new worktree goes in the repo of the run that it fixes: the repo of its draft, else of its worktree, else its folder. When that repo is no longer in the plot, the run takes the usual repo. `run shape` takes `--fixes` too, and each run of a split fixes the same run.
 
+The settings file of a run names the Loam home of the store that holds the run. Claude Code runs each background session under one supervisor, which keeps the environment of the first `claude --bg` call. Each session and each hook gets that environment. So the command of each run hook is `LOAM_HOME=<home> <loam> run hook <run>`, with the home and the loam path in shell quotes. The `env` of the settings sets `LOAM_HOME` to the home, so the `loam` calls of the session use the same store. It also sets `LOAM_PANE_SOCKET` to an empty value, so that no run session gets the socket of the pane that started the supervisor. An empty `LOAM_PANE_SOCKET` means no pane.
+
 #### Sandbox
 
 The session of a run works in the Bash sandbox of Claude Code (Seatbelt on macOS). The settings file of the run holds the `sandbox` block. The sandbox covers Bash and the processes that Bash starts. The Read and Edit tools, the hooks, and the MCP servers work outside it.
@@ -1118,7 +1120,7 @@ Writes the old values back as a new change by the actor (`--actor app` for the a
 
 ## Pane socket
 
-The app runs each pane. It sets `LOAM_PANE_SOCKET` in the pane environment to the path of a Unix socket that it listens on. A session that `loam start` or `loam resume` runs in the pane registers `loam hook` for the hook events below. A session outside the app has no `LOAM_PANE_SOCKET`, and `loam hook` sends nothing.
+The app runs each pane. It sets `LOAM_PANE_SOCKET` in the pane environment to the path of a Unix socket that it listens on. A session that `loam start` or `loam resume` runs in the pane registers `loam hook` for the hook events below. A session outside the app has no `LOAM_PANE_SOCKET`, and `loam hook` sends nothing. An empty value, as the settings of a run set it, is the same as no value.
 
 For each hook event in the table, `loam hook` connects to the socket and writes one line. The line is one JSON object and a newline. Then it closes the connection. The app reads lines until the connection closes. It may get lines from many sessions.
 
