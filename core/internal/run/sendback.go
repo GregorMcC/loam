@@ -100,6 +100,7 @@ func sendBack(ctx context.Context, s *store.Store, id string, notes []Note) (sto
 		}
 		r.State, r.Note, sent = store.RunRunning, note, true
 		r.TurnBase = r.Turns // the turn limit counts from the resume
+		r.GateTimeouts = 0   // and the gates that ran out of time
 		r.MaxTries = min(max(r.MaxTries, r.Tries+1), store.MaxTriesLimit)
 		if r.CodeReview != nil {
 			r.CodeReview.Rounds = min(r.CodeReview.Rounds, codeReviewRounds-2)

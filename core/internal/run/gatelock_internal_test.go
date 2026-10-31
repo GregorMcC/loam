@@ -2,6 +2,7 @@ package run
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -267,5 +268,45 @@ func TestShortDuration(t *testing.T) {
 		if got := shortDuration(d); got != want {
 			t.Errorf("%s: %q, want %q", d, got, want)
 		}
+	}
+}
+
+// TAS-213: a send back starts the count of the gates that ran out of time
+// again. After two timeouts stopped the run, its first timeout after the
+// send back blocks the stop with the first note again, and does not stop it.
+func TestSendBackStartsTheTimeoutsAgain(t *testing.T) {
+	testutil.Home(t)
+	testutil.FakeClaude(t)
+	gateTimes(t, 200*time.Millisecond, time.Minute)
+	s, r := lockedGateRun(t, store.Check{Name: "Slow", Command: "exec sleep 5"})
+	if _, err := s.UpdateRun(r.ID, func(r *store.Run) error {
+		r.SessionID = "c57ef956-3136-4e86-bfde-da8facfe0523"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := stop(t, s, r); code != 2 {
+		t.Fatalf("first timeout: code %d", code)
+	}
+	if code, _ := stop(t, s, r); code != 0 {
+		t.Fatalf("second timeout: code %d", code)
+	}
+	if got, _ := s.GetRun(r.ID); got.State != store.RunStopped || got.GateTimeouts != 2 {
+		t.Fatalf("after two timeouts: %+v", got)
+	}
+
+	got, _, err := SendBack(context.Background(), s, r.ID, []Note{{Text: "Try again."}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State != store.RunRunning || got.GateTimeouts != 0 {
+		t.Fatalf("after the send back: %+v", got)
+	}
+	code, reason := stop(t, s, r)
+	if code != 2 || !strings.HasPrefix(reason, "Loam gate: Slow did not end in 200ms. ") {
+		t.Fatalf("timeout after the send back: code %d, reason:\n%s", code, reason)
+	}
+	if got, _ = s.GetRun(r.ID); got.State != store.RunRunning || got.Tries != 0 || got.GateTimeouts != 1 {
+		t.Fatalf("after the timeout after the send back: %+v", got)
 	}
 }
