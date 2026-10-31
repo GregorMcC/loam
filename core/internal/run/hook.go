@@ -67,7 +67,7 @@ func Hook(s *store.Store, runID string, in io.Reader, out, errOut io.Writer) int
 // Else the try counts: the stop is blocked with the failures as the reason,
 // or the run is Stopped when it has no tries left. A run that is not running
 // lets the session stop: you may have typed in it after it was Ready. A run
-// that a tick stopped as idle gets the gate too (see [endsATurn]). The
+// that a tick stopped as idle just now gets the gate too (see [endsATurn]). The
 // hook holds the gate lock of the run (see [holdGate]) from the first read of
 // the run to the record of the gate.
 func stopped(s *store.Store, runID string, errOut io.Writer, logf func(string, ...any)) int {
@@ -78,7 +78,10 @@ func stopped(s *store.Store, runID string, errOut io.Writer, logf func(string, .
 		logf("run %s: %v", runID, err)
 		return 0
 	}
-	if !endsATurn(r) {
+	// The hook holds the gate lock, so no tick stops the run again before the
+	// record of the gate, and recent holds until then.
+	recent := idleStopRecent(s, r)
+	if !endsATurn(r, recent) {
 		if _, err := s.UpdateRun(runID, func(r *store.Run) error { r.Turns++; return nil }); err != nil {
 			logf("run %s: count the turn: %v", runID, err)
 		}
@@ -96,7 +99,7 @@ func stopped(s *store.Store, runID string, errOut io.Writer, logf func(string, .
 	block := false
 	r, err = s.UpdateRun(runID, func(r *store.Run) error {
 		r.Turns++
-		if !endsATurn(*r) {
+		if !endsATurn(*r, recent) {
 			return nil // stopped while the checks ran
 		}
 		if len(g.failed) == 0 {
@@ -154,16 +157,44 @@ func onGitHub(s *store.Store, r store.Run) bool {
 	return ok
 }
 
+// IdleGrace is how long after a tick stopped a run as idle a hook still
+// takes the run as running (see [endsATurn]).
+var IdleGrace = 2 * time.Minute
+
 // endsATurn reports whether the end of a turn moves the run: it is running,
-// or a tick stopped it as idle (see [IdleNote]). claude agents can show the
-// session as done before the Stop hook takes the gate lock, so a tick can
-// stop the run in that window. The hook then records the turn as usual.
-func endsATurn(r store.Run) bool {
+// or a tick stopped it as idle in the last [IdleGrace] (recent, see
+// [idleStopRecent]). claude agents can show the session as done before the
+// Stop hook starts and takes the gate lock, so a tick can stop the run in
+// that window. The hook then records the turn as usual. Later, the run is
+// not running: you may type in its session, and the session stops with no
+// gate.
+func endsATurn(r store.Run, recent bool) bool {
 	switch r.State {
 	case store.RunRunning, store.RunStarting, store.RunStartUnknown:
 		return true
 	case store.RunStopped:
-		return r.Note == IdleNote
+		return recent && r.Note == IdleNote
+	}
+	return false
+}
+
+// idleStopRecent reports whether a tick stopped the run as idle less than
+// [IdleGrace] ago: the run is Stopped with [IdleNote], and its last state
+// event, the stop, is that recent. It reads the event, not UpdatedAt,
+// because each turn of a stopped run changes UpdatedAt. A store that cannot
+// read the events gives false, so the session stops with no gate.
+func idleStopRecent(s *store.Store, r store.Run) bool {
+	if r.State != store.RunStopped || r.Note != IdleNote {
+		return false
+	}
+	events, err := s.RunEvents(r.ID)
+	if err != nil {
+		return false
+	}
+	for i := len(events) - 1; i >= 0; i-- {
+		if e := events[i]; e.Kind == "state" {
+			return e.Detail == string(store.RunStopped) && time.Since(e.At) < IdleGrace
+		}
 	}
 	return false
 }
@@ -175,11 +206,15 @@ var limitErrors = []string{"rate_limit", "billing_error"}
 // usage limit makes the run Stopped by a limit. Any other error stops it.
 // Neither counts a try. As at the Stop gate, a run that is not running keeps
 // its state: you may have typed in it after it was Ready. A run that a tick
-// stopped as idle gets the note of the error.
+// stopped as idle just now gets the note of the error.
 func stopFailed(s *store.Store, runID string, h hookInput, logf func(string, ...any)) {
 	note := strings.TrimSpace("Claude Code stopped: " + h.Error + " " + h.ErrorDetails)
+	recent := false
+	if r, err := s.GetRun(runID); err == nil {
+		recent = idleStopRecent(s, r)
+	}
 	_, err := s.UpdateRun(runID, func(r *store.Run) error {
-		if !endsATurn(*r) {
+		if !endsATurn(*r, recent) {
 			return nil
 		}
 		r.State, r.Note = store.RunStopped, note

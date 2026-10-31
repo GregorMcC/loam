@@ -194,6 +194,31 @@ func TestRunStopHookRunsTheGateOfARunThatTheTickStoppedAsIdle(t *testing.T) {
 	})
 }
 
+// After the grace, a run that the tick stopped as idle is not running: you
+// may type in its session, and each turn ends with no gate, as for any
+// Stopped run. A pass does not ship it, and a failure does not block.
+func TestRunStopHookLetsAnIdleRunStopAfterTheGrace(t *testing.T) {
+	for name, passes := range map[string]bool{"pass": true, "fail": false} {
+		t.Run(name, func(t *testing.T) {
+			idleWait(t, 0)
+			old := run.IdleGrace
+			run.IdleGrace = 0
+			t.Cleanup(func() { run.IdleGrace = old })
+			s, r := idleRun(t, "done")
+			tick(t)
+			if passes {
+				writeAndCommit(t, r.Folder, "hello.txt", "hi there\n")
+			}
+			if code, reason := stopHook(t, r, "Stop"); code != 0 {
+				t.Fatalf("exit %d %s, want the session to stop", code, reason)
+			}
+			if r, _ = s.GetRun(r.ID); r.State != store.RunStopped || r.Note != run.IdleNote || r.Tries != 0 || r.Turns != 1 {
+				t.Fatalf("%+v", r)
+			}
+		})
+	}
+}
+
 func TestRunTickWarnsWhenClaudeAgentsGivesNoList(t *testing.T) {
 	cases := map[string]string{
 		"not json": "not json",
