@@ -27,6 +27,7 @@ import (
 	"github.com/GregorMcC/loam/core/internal/claudebin"
 	"github.com/GregorMcC/loam/core/internal/intake"
 	"github.com/GregorMcC/loam/core/internal/linear"
+	"github.com/GregorMcC/loam/core/internal/linkkind"
 	"github.com/GregorMcC/loam/core/internal/sandbox"
 	"github.com/GregorMcC/loam/core/internal/session"
 	"github.com/GregorMcC/loam/core/internal/store"
@@ -498,14 +499,16 @@ func setUp(s *store.Store, w store.Worktree, approve bool) error {
 	return s.MarkWorktreeSetup(w.ID)
 }
 
-// sourceOf returns the source of a run from the link of its worktree.
+// sourceOf returns the source of a run from the link of its worktree. The
+// host of the link says the kind: an issue on linear.app is Linear, and any
+// other issue is GitHub.
 func sourceOf(l *store.WorktreeLink) *store.RunSource {
 	if l == nil || l.Key == "" {
 		return nil
 	}
-	kind := "github"
-	if strings.Contains(l.Target, "linear.app/") {
-		kind = "linear"
+	kind := linkkind.GitHub
+	if linkkind.Classify(l.Target, nil).Kind == linkkind.Linear {
+		kind = linkkind.Linear
 	}
 	return &store.RunSource{Kind: kind, Key: l.Key, URL: l.Target}
 }
