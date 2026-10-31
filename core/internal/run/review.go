@@ -295,17 +295,24 @@ func reviewPromptFor(opening string, pr *github.PR, rv review, replies string, c
 		b.WriteString("\nThe prompt has no room for the rest of the review. Loam sends the rest on a later review try. " +
 			"Work only on the reviews and threads above.\n")
 	}
-	// skip says which points need no change, and that no change needs no commit.
-	const skip = "A nitpick or a Minor point whose fix is not worth it needs no change. When no point needs a change, make no commit."
-	if len(held.threads) == 0 {
-		b.WriteString("\nFix each point that needs a change, and commit all the fixes in one commit. " + skip + "\n\n")
-	} else {
-		b.WriteString("\nFor each point, fix the code or decide that it needs no change. Commit all the fixes in one commit. " + skip + "\n\n")
-	}
+	b.WriteString("\n" + severityRule + " Commit all the fixes in one commit. When no point needs a change, make no commit.\n\n")
 	b.WriteString(repliesText(replies, held))
 	fmt.Fprintf(&b, "Then end your turn. Loam runs the Done when checks again, then pushes the fix to #%d.\n%s", pr.Number, checksLine(checks, leaveChecks))
 	return b.String(), held
 }
+
+// severityRule says which points of a review the session fixes. A review bot
+// marks each point with a severity. A session that fixed each Minor point gave
+// the bot new code to review on each push, so a small change took 3 rounds
+// (TAS-209). A point about the sandbox, a permission, or a path that the run
+// can write is a fault of a trust boundary, so the session fixes it at each
+// severity. A point can be wrong, so the session fixes only the points that
+// hold against the code, and gives the reason for each point that it does
+// not fix.
+const severityRule = "Fix each Critical or Major point that holds against the code. A point with no severity counts as Major. " +
+	"Fix a Minor point or a nitpick only when the fix is small and inside the change of the run. " +
+	"For a point that you do not fix, do not change the code, and give the reason in the replies file. " +
+	"Do not leave a point about a sandbox, a permission, or a path that the run can write because it is unlikely: fix it."
 
 // cutMark follows a quote that Loam cut. It is outside the quote, so the
 // text of a reviewer cannot end in it.
