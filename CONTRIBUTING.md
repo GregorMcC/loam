@@ -36,6 +36,8 @@ On a PR, the `changes` job reads the changed files, and CI skips each job that t
 
 Run the same commands yourself before you push. CI does not replace them. `scripts/check.sh` runs them. With no arguments, it picks the `core` and `app` jobs from the files that your branch changes, with the rules of the `changes` job, and it always runs `lint`. `scripts/check.sh core app lint` names the jobs.
 
+The script also runs in a sandbox, such as the sandbox of a Loam run or of its checks. There, it passes `--disable-sandbox` to `swift test`, because the sandbox of SwiftPM cannot start inside another one. When the sandbox does not reach `vuln.go.dev`, it skips govulncheck and says so. CI runs govulncheck.
+
 The commands, in `core/`:
 
 ```sh

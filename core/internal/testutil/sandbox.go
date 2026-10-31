@@ -1,6 +1,7 @@
 package testutil
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,8 +42,27 @@ func FakeSandbox(t *testing.T) string {
 // because a sandbox cannot start inside another one.
 func NeedSandbox(t *testing.T) {
 	t.Helper()
+	if err := applyProfile(); err != nil {
+		t.Skipf("sandbox-exec cannot apply a profile here, for example because the test runs in a sandbox: %v", err)
+	}
+}
+
+// SkipInSandbox skips the test when it runs in a sandbox, as in the Bash of
+// a Loam run or in its gate, for a tool that needs services that the sandbox
+// denies. CI and the checks outside a sandbox still run it.
+func SkipInSandbox(t *testing.T, why string) {
+	t.Helper()
+	if _, err := os.Stat("/usr/bin/sandbox-exec"); err == nil && applyProfile() != nil {
+		t.Skip("the test runs in a sandbox, and " + why)
+	}
+}
+
+// applyProfile starts sandbox-exec with a profile that allows everything. It
+// fails in a sandbox, which cannot start another one.
+func applyProfile() error {
 	out, err := exec.Command("/usr/bin/sandbox-exec", "-p", "(version 1)(allow default)", "/usr/bin/true").CombinedOutput()
 	if err != nil {
-		t.Skipf("sandbox-exec cannot apply a profile here, for example because the test runs in a sandbox: %v %s", err, out)
+		return fmt.Errorf("%w %s", err, out)
 	}
+	return nil
 }

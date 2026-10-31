@@ -13,6 +13,9 @@
 # app: swift test in app/. With GhosttyKit built, it also builds the app with
 # GhosttyKit and runs the driver tests, which CI does not run (TAS-57).
 # lint: shellcheck on scripts/ and actionlint on the workflows.
+#
+# In a sandbox, such as the sandbox of a Loam run, it passes --disable-sandbox
+# to swift test, and it skips govulncheck when vuln.go.dev is out of reach.
 set -eu
 
 usage() {
@@ -99,6 +102,14 @@ if [ "$lint" = 1 ]; then
   command -v shellcheck >/dev/null || fail "shellcheck is not installed." "brew install shellcheck"
 fi
 
+# A sandbox cannot start inside another one, such as the sandbox of a Loam
+# run or of its gate. SwiftPM sandboxes its manifest, and govulncheck reads
+# vuln.go.dev, which the gate cannot reach.
+sandboxed=0
+if [ -x /usr/bin/sandbox-exec ] && ! /usr/bin/sandbox-exec -p '(version 1)(allow default)' /usr/bin/true 2>/dev/null; then
+  sandboxed=1
+fi
+
 failed=""
 
 # check NAME COMMAND...: run a check, and note its name when it fails.
@@ -115,6 +126,14 @@ gofmt_clean() {
   echo "gofmt changes these files. Run gofmt -w on them:"
   echo "$unformatted"
   return 1
+}
+
+govulncheck_run() {
+  if [ "$sandboxed" = 1 ] && ! /usr/bin/curl -fsS --max-time 10 -o /dev/null https://vuln.go.dev/index/db.json; then
+    echo "The sandbox does not reach vuln.go.dev, so govulncheck does not run here. CI runs it."
+    return
+  fi
+  go run "golang.org/x/vuln/cmd/govulncheck@$govulncheck" ./...
 }
 
 # CI runs the release binary of golangci-lint. A source build can lint
@@ -137,7 +156,7 @@ if [ "$core" = 1 ]; then
   check "go vet" go vet ./...
   check golangci-lint golangci_lint
   check "go test" go test ./...
-  check govulncheck go run "golang.org/x/vuln/cmd/govulncheck@$govulncheck" ./...
+  check govulncheck govulncheck_run
 fi
 
 if [ "$app" = 1 ]; then
@@ -156,7 +175,11 @@ if [ "$app" = 1 ]; then
       *) fail "GhosttyKit is not built for the commit in ghostty.pin." "scripts/build-ghosttykit.sh" ;;
     esac
   fi
-  check "swift test" swift test --manifest-cache none
+  if [ "$sandboxed" = 1 ]; then
+    check "swift test" swift test --manifest-cache none --disable-sandbox
+  else
+    check "swift test" swift test --manifest-cache none
+  fi
 fi
 
 if [ "$lint" = 1 ]; then

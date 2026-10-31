@@ -68,15 +68,15 @@ func TestForAGoRepoASwiftRepoAndALink(t *testing.T) {
 		{"Read", got.Read, []string{
 			work, git, api, app, spec,
 			"/h/.gitconfig", "/h/.config/git/config", "/h/.config/git/ignore", "/h/.config/git/attributes",
-			"/h/go/pkg/mod", "/h/Library/Caches/go-build", "/h/Library/Application Support/go/telemetry",
+			"/h/go/pkg/mod", "/h/go/pkg/sumdb", "/h/Library/Caches/go-build", "/h/Library/Application Support/go/telemetry", "/h/Library/Caches/golangci-lint",
 			"/h/Library/Caches/org.swift.swiftpm", "/h/Library/org.swift.swiftpm",
 		}},
 		{"Write", got.Write, []string{
 			work, git,
-			"/h/go/pkg/mod", "/h/Library/Caches/go-build", "/h/Library/Application Support/go/telemetry",
+			"/h/go/pkg/mod", "/h/go/pkg/sumdb", "/h/Library/Caches/go-build", "/h/Library/Application Support/go/telemetry", "/h/Library/Caches/golangci-lint",
 			"/h/Library/Caches/org.swift.swiftpm", "/h/Library/org.swift.swiftpm",
 		}},
-		{"Hosts", got.Hosts, []string{"proxy.golang.org", "sum.golang.org"}},
+		{"Hosts", got.Hosts, []string{"proxy.golang.org", "sum.golang.org", "vuln.go.dev"}},
 		{"DenyWrite", got.DenyWrite, []string{filepath.Join(git, "hooks"), filepath.Join(git, "config")}},
 	}
 	for _, c := range cases {
@@ -154,13 +154,14 @@ func TestForGoHonoursTheCacheEnv(t *testing.T) {
 	mkfile(t, filepath.Join(repo, "go.mod"))
 	env := map[string]string{"GOPATH": "/gp:/other", "GOCACHE": "/cache/go"}
 	got := mustFor(t, Input{Home: "/h", Folder: repo, Repos: []string{repo}, Getenv: func(k string) string { return env[k] }})
-	if !slices.Contains(got.Write, "/gp/pkg/mod") || !slices.Contains(got.Write, "/cache/go") {
-		t.Errorf("Write = %q, want /gp/pkg/mod and /cache/go", got.Write)
+	if !slices.Contains(got.Write, "/gp/pkg/mod") || !slices.Contains(got.Write, "/gp/pkg/sumdb") || !slices.Contains(got.Write, "/cache/go") {
+		t.Errorf("Write = %q, want /gp/pkg/mod, /gp/pkg/sumdb, and /cache/go", got.Write)
 	}
+	// GOMODCACHE moves the module cache, and not the checksum database cache.
 	env["GOMODCACHE"] = "/mods"
 	got = mustFor(t, Input{Home: "/h", Folder: repo, Repos: []string{repo}, Getenv: func(k string) string { return env[k] }})
-	if !slices.Contains(got.Write, "/mods") || slices.Contains(got.Write, "/gp/pkg/mod") {
-		t.Errorf("Write = %q, want /mods in place of /gp/pkg/mod", got.Write)
+	if !slices.Contains(got.Write, "/mods") || slices.Contains(got.Write, "/gp/pkg/mod") || !slices.Contains(got.Write, "/gp/pkg/sumdb") {
+		t.Errorf("Write = %q, want /mods in place of /gp/pkg/mod, and /gp/pkg/sumdb", got.Write)
 	}
 }
 
@@ -238,15 +239,14 @@ func TestPromptNamesWhatTheSandboxNeeds(t *testing.T) {
 	if !strings.Contains(got, "--disable-sandbox") {
 		t.Errorf("Prompt = %q, want --disable-sandbox", got)
 	}
-	// Every run hears that a local server fails in Bash: the sandbox does
-	// not let Bash bind a port, because a port on 0.0.0.0 reaches the network.
-	if !strings.Contains(got, "starts a server") {
-		t.Errorf("Prompt = %q, want the local server note", got)
+	// Every run hears not to work around a denial.
+	if !strings.Contains(got, "Do not work around it") {
+		t.Errorf("Prompt = %q, want the note of every run", got)
 	}
 	plain := realTemp(t)
 	got = mustFor(t, Input{Home: "/h", Folder: plain, Repos: []string{plain}, Getenv: noEnv}).Prompt()
-	if strings.Contains(got, "--disable-sandbox") || !strings.Contains(got, "starts a server") {
-		t.Errorf("Prompt = %q, want the local server note only", got)
+	if strings.Contains(got, "--disable-sandbox") || !strings.Contains(got, "Do not work around it") {
+		t.Errorf("Prompt = %q, want the note of every run only", got)
 	}
 }
 

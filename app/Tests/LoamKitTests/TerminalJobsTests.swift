@@ -141,7 +141,7 @@ import Testing
         }
     }
 
-    @Test func aRealShellAtItsPromptIsIdle() async throws {
+    @Test(.outsideASandbox) func aRealShellAtItsPromptIsIdle() async throws {
         let terminal = try Terminal()
         var shell: Process?
         defer { terminal.end(shell) }
@@ -151,7 +151,7 @@ import Testing
         #expect(!terminal.busy(found))
     }
 
-    @Test func aRealBackgroundJobIsBusy() async throws {
+    @Test(.outsideASandbox) func aRealBackgroundJobIsBusy() async throws {
         let terminal = try Terminal()
         var shell: Process?
         defer { terminal.end(shell) }
@@ -163,7 +163,7 @@ import Testing
         #expect(terminal.busy(found))
     }
 
-    @Test func aRealSuspendedJobIsBusy() async throws {
+    @Test(.outsideASandbox) func aRealSuspendedJobIsBusy() async throws {
         let terminal = try Terminal()
         var shell: Process?
         defer { terminal.end(shell) }
@@ -183,7 +183,7 @@ import Testing
         #expect(terminal.busy(found))
     }
 
-    @Test func aRealExecInPlaceOfTheShellIsBusy() async throws {
+    @Test(.outsideASandbox) func aRealExecInPlaceOfTheShellIsBusy() async throws {
         let terminal = try Terminal()
         var shell: Process?
         defer { terminal.end(shell) }

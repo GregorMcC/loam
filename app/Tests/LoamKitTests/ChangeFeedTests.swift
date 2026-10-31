@@ -121,7 +121,7 @@ private func nextChanges(_ it: inout AsyncStream<FeedUpdate>.Iterator) async -> 
         triggers.finish()
     }
 
-    @Test func realFileEventsDriveTheFeed() async throws {
+    @Test(.outsideASandbox) func realFileEventsDriveTheFeed() async throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("loam-watch-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -187,7 +187,7 @@ private func nextChanges(_ it: inout AsyncStream<FeedUpdate>.Iterator) async -> 
 
     /// SQLite makes and deletes `loam.db-wal` each time a CLI read opens and closes the store, so
     /// only the marker counts. Without that, each poll starts the next one.
-    @Test func feedFollowsLoamHomeAndIgnoresEverythingButTheMarker() async throws {
+    @Test(.outsideASandbox) func feedFollowsLoamHomeAndIgnoresEverythingButTheMarker() async throws {
         let fm = FileManager.default
         let home = fm.temporaryDirectory.appendingPathComponent("loam-home-\(UUID().uuidString)")
         try fm.createDirectory(at: home.appendingPathComponent("plots"), withIntermediateDirectories: true)
@@ -218,7 +218,7 @@ private func nextChanges(_ it: inout AsyncStream<FeedUpdate>.Iterator) async -> 
 
     /// `loam mcp` keeps the database open, so its writes reach the feed through the marker that
     /// each commit rewrites (ticket 67).
-    @Test func theChangedMarkerDrivesTheFeed() async throws {
+    @Test(.outsideASandbox) func theChangedMarkerDrivesTheFeed() async throws {
         let fm = FileManager.default
         let home = fm.temporaryDirectory.appendingPathComponent("loam-home-\(UUID().uuidString)")
         try fm.createDirectory(at: home, withIntermediateDirectories: true)
