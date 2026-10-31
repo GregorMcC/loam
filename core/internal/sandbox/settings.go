@@ -86,11 +86,15 @@ func (r Rules) ToolDenies() []string {
 }
 
 // sessionDenyWrite returns DenyWrite and the xcrun cache of the user, which
-// is in a folder that the session can write (see [UserTemp]).
+// is in a folder that the session can write (see [UserTemp]). The pattern
+// also covers the copies of the cache: a shim that misses the cache writes a
+// copy beside it, xcrun_db-<random>, and renames it onto the cache. With the
+// cache alone denied, the rename fails and each run of a shim leaves a copy
+// of some MB. The pattern stops the copy, and the shim runs the tool.
 func (r Rules) sessionDenyWrite() []string {
 	out := slices.Clone(r.DenyWrite)
 	if c := XcrunCache(); c != "" {
-		out = append(out, c)
+		out = append(out, c+"*")
 	}
 	return out
 }
