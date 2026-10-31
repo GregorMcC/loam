@@ -634,9 +634,12 @@ A stack preset applies when a repo of the plot has its file at the root or one f
 | --- | --- | --- | --- |
 | `go.mod` | the module cache (`GOMODCACHE`, else the first `GOPATH` entry, else `~/go`, then `pkg/mod`), the build cache (`GOCACHE`, else `~/Library/Caches/go-build`), the checksum database cache (the first `GOPATH` entry, else `~/go`, then `pkg/sumdb`), `~/Library/Application Support/go/telemetry`, and `~/Library/Caches/golangci-lint` | | `proxy.golang.org`, `sum.golang.org`, `vuln.go.dev` |
 | `Package.swift` | `~/Library/Caches/org.swift.swiftpm`, `~/Library/org.swift.swiftpm` | | |
+| `ghostty.pin` | | `~/Library/Caches/Loam/ghosttykit` | |
 | `package.json` | `~/.npm` | | `registry.npmjs.org` |
 | `Cargo.toml` | `~/.cargo/registry`, `~/.cargo/git` | `~/.cargo/bin`, `~/.rustup` | `crates.io`, `index.crates.io`, `static.crates.io` |
 | `pyproject.toml`, `requirements.txt` | `~/Library/Caches/pip` | | `pypi.org`, `files.pythonhosted.org` |
+
+The `ghostty.pin` preset is for the Loam repo. `scripts/build-ghosttykit.sh --link-only` links `app/vendor` to the GhosttyKit cache, and the gate builds the terminal and the driver from it. The run only reads the cache, so it cannot change the GhosttyKit that an install builds with. The preset leaves out the rest of `~/Library/Caches/Loam`, which holds Zig and the ghostty source, and it does not follow `LOAM_CACHE`.
 
 SwiftPM runs a manifest in a sandbox of its own, and a sandbox cannot start inside another one. So the first prompt of a run with a `Package.swift` repo tells the session to pass `--disable-sandbox` to `swift build`, `swift test`, and `swift package`. A compact can drop the first prompt, so the SessionStart hook prints the note again after a compact, with the seed. SwiftPM reads no environment variable for this.
 
