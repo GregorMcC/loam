@@ -65,8 +65,9 @@ func Hook(s *store.Store, runID string, in io.Reader, out, errOut io.Writer) int
 // last resumed its session, the run is Stopped, and no try counts. When the
 // gate ran out of time (see [gateResult.outOfTime]), no try counts: the stop
 // is blocked with a short note that tells the session to end its turn with
-// no change. The second check timeout in a row stops the run, but a wait for
-// the gate lock never does. Else the try
+// no change. The second check timeout in a row stops the run, but a gate
+// that ran out of time because it waited for the gate lock never does. Else
+// the try
 // counts: the stop is blocked with the failures as the reason, or the run is
 // Stopped when it has no tries left. A run that is not running lets the
 // session stop: you may have typed in it after it was Ready.
@@ -120,12 +121,14 @@ func stopped(s *store.Store, runID string, errOut io.Writer, logf func(string, .
 		}
 		if outOfTime {
 			// A wait for the lock comes from the gates of other runs, and the
-			// lock gives no turn order, so it never stops the run. It leaves
-			// the count of check timeouts as it is.
-			if !g.waitedOut {
+			// lock gives no turn order, so it never stops the run (see
+			// [gateResult.waitCaused]). It leaves the count of check timeouts
+			// as it is.
+			waited := g.waitCaused()
+			if !waited {
 				r.GateTimeouts++
 			}
-			if !g.waitedOut && r.GateTimeouts >= 2 {
+			if !waited && r.GateTimeouts >= 2 {
 				r.State, r.Note = store.RunStopped, why+", 2 gates in a row. No try counted"
 				return nil
 			}

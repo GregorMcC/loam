@@ -17,9 +17,11 @@ import (
 // gate lock for one test.
 func gateTimes(t *testing.T, check, budget time.Duration) {
 	t.Helper()
-	oldCheck, oldBudget, oldPoll := checkTimeout, gateBudget, gateLockPoll
-	checkTimeout, gateBudget, gateLockPoll = check, budget, 10*time.Millisecond
-	t.Cleanup(func() { checkTimeout, gateBudget, gateLockPoll = oldCheck, oldBudget, oldPoll })
+	oldCheck, oldBudget, oldPoll, oldReserve := checkTimeout, gateBudget, gateLockPoll, committedReserve
+	checkTimeout, gateBudget, gateLockPoll, committedReserve = check, budget, 10*time.Millisecond, 50*time.Millisecond
+	t.Cleanup(func() {
+		checkTimeout, gateBudget, gateLockPoll, committedReserve = oldCheck, oldBudget, oldPoll, oldReserve
+	})
 }
 
 // lockedGateRun returns a store and a running run in a clean repo, with one
@@ -181,7 +183,7 @@ func TestWaitOutLeavesTheTimeoutCount(t *testing.T) {
 		t.Fatalf("first timeout: code %d", code)
 	}
 	unlock := holdGateLock(t, s)
-	gateBudget = 300 * time.Millisecond // less than checkTimeout: no wait at all
+	gateBudget = 300 * time.Millisecond // a wait of 50ms at most
 	if code, reason := stop(t, s, r); code != 2 || !strings.Contains(reason, "left no time for the checks") {
 		t.Fatalf("wait-out: code %d, reason:\n%s", code, reason)
 	}
@@ -337,5 +339,67 @@ func TestSendBackStartsTheTimeoutsAgain(t *testing.T) {
 	}
 	if got, _ = s.GetRun(r.ID); got.State != store.RunRunning || got.Tries != 0 || got.GateTimeouts != 1 {
 		t.Fatalf("after the timeout after the send back: %+v", got)
+	}
+}
+
+// TAS-213: the gate keeps the time that every check can take, so a run with
+// two checks waits less than a run with one. A run whose checks can take more
+// than the whole budget does not wait: with the lock taken, it runs no check,
+// and with the lock free, it runs them.
+func TestGateKeepsTimeForEachCheck(t *testing.T) {
+	// 2 checks of 2s and the 50ms of Work committed need 4.05s.
+	gateTimes(t, 2*time.Second, 3*time.Second)
+	marker := filepath.Join(t.TempDir(), "ran")
+	s, r := lockedGateRun(t, store.Check{Name: "Hello", Command: "touch " + shellQuote(marker)})
+	if _, err := s.UpdateRun(r.ID, func(r *store.Run) error {
+		r.DoneWhen = append(r.DoneWhen, store.Check{Name: "Also", Command: "true"})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	unlock := holdGateLock(t, s)
+	start := time.Now()
+	code, reason := stop(t, s, r)
+	if code != 2 || !strings.Contains(reason, "can take more than the whole gate budget, so the gate did not wait") {
+		t.Fatalf("code %d, reason:\n%s", code, reason)
+	}
+	if waited := time.Since(start); waited > time.Second {
+		t.Fatalf("the gate waited %s for checks that cannot fit", waited)
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("the check ran without the gate lock")
+	}
+	if got, _ := s.GetRun(r.ID); got.State != store.RunRunning || got.Tries != 0 || got.GateTimeouts != 0 {
+		t.Fatalf("after the gate: %+v", got)
+	}
+	unlock()
+	if code, reason = stop(t, s, r); code != 0 {
+		t.Fatalf("with the lock free: code %d, reason:\n%s", code, reason)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatal("the check did not run with the lock free")
+	}
+}
+
+// TAS-213: a gate that waited and then ran out of the gate budget ran out of
+// time because of the wait, so it does not count toward the stop. A gate that
+// did not wait, or whose check ran out of its own timeout, does.
+func TestWaitCausedTellsAWaitFromTheWork(t *testing.T) {
+	budget := checkResult{check: store.Check{Name: "Slow"}, exit: -1, timeout: "did not end before the gate ran out of time", budget: true}
+	own := checkResult{check: store.Check{Name: "Slow"}, exit: -1, timeout: "did not end in 10m"}
+	for _, c := range []struct {
+		name string
+		g    gateResult
+		want bool
+	}{
+		{"wait-out", gateResult{waitedOut: true, waited: time.Minute}, true},
+		{"budget after a wait", gateResult{waited: time.Minute, failed: []checkResult{budget}}, true},
+		{"budget with no wait", gateResult{failed: []checkResult{budget}}, false},
+		{"own timeout after a wait", gateResult{waited: time.Minute, failed: []checkResult{own, budget}}, false},
+		{"no timeout", gateResult{waited: time.Minute}, false},
+	} {
+		if got := c.g.waitCaused(); got != c.want {
+			t.Errorf("%s: %v, want %v", c.name, got, c.want)
+		}
 	}
 }
