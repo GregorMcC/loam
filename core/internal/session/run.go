@@ -36,18 +36,47 @@ func RunSessionName(runID string) string { return "loam-run-" + runID }
 // session: the SessionStart hook of the run records it, because claude --bg
 // picks its own session ID.
 func PrepareRun(s *store.Store, r store.Run, prompt, loam, model, effort string) (*Plan, error) {
-	plot, err := s.GetPlot(r.PlotID)
+	plan, box, err := prepareRun(s, r, nil, loam, model, effort)
 	if err != nil {
 		return nil, err
 	}
-	if err := refuseArchived(plot); err != nil {
+	plan.Args = append(plan.Args, prompt+box.Prompt())
+	return plan, nil
+}
+
+// PrepareRunResume returns the launch plan that gives the session of a run a
+// new prompt: claude --bg --resume, with the options of [PrepareRun].
+// claude --resume does not keep the options of the session: with no flags,
+// the session has no sandbox, no run hooks, and no deny rules. The settings
+// file is written again, with the rules of the run as they are now, and the
+// prompt ends with their sandbox note, as the first prompt does.
+func PrepareRunResume(s *store.Store, r store.Run, prompt, loam, model, effort string) (*Plan, error) {
+	if r.SessionID == "" {
+		return nil, errors.New("the run has no session")
+	}
+	plan, box, err := prepareRun(s, r, []string{"--resume", r.SessionID}, loam, model, effort)
+	if err != nil {
 		return nil, err
+	}
+	plan.Args = append(plan.Args, prompt+box.Prompt())
+	return plan, nil
+}
+
+// prepareRun returns the launch plan of a run session with no prompt, and the
+// sandbox rules of the run. idArgs come after --bg.
+func prepareRun(s *store.Store, r store.Run, idArgs []string, loam, model, effort string) (*Plan, sandbox.Rules, error) {
+	plot, err := s.GetPlot(r.PlotID)
+	if err != nil {
+		return nil, sandbox.Rules{}, err
+	}
+	if err := refuseArchived(plot); err != nil {
+		return nil, sandbox.Rules{}, err
 	}
 	claude, err := findClaude()
 	if err != nil {
-		return nil, err
+		return nil, sandbox.Rules{}, err
 	}
-	lead := []string{"--bg", "--name", RunSessionName(r.ID), "--permission-mode", "auto"}
+	lead := append(append([]string{"--bg"}, idArgs...), "--name", RunSessionName(r.ID), "--permission-mode", "auto")
 	if model != "" {
 		lead = append(lead, "--model", model)
 	}
@@ -59,15 +88,14 @@ func PrepareRun(s *store.Store, r store.Run, prompt, loam, model, effort string)
 	// the links through the rules.
 	box, err := runRules(s, plot, r.Folder)
 	if err != nil {
-		return nil, err
+		return nil, sandbox.Rules{}, err
 	}
 	plan, err := build(s, plot, r.Folder, claude, "run-"+r.ID, lead, loam, runSettings(r.ID, box), false)
 	if err != nil {
-		return nil, err
+		return nil, sandbox.Rules{}, err
 	}
 	plan.SessionID = ""
-	plan.Args = append(plan.Args, prompt+box.Prompt())
-	return plan, nil
+	return plan, box, nil
 }
 
 // runSettings returns the settings of a run session: the allow rules of a

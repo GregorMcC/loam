@@ -40,14 +40,15 @@ func startQueued(ctx context.Context, s *store.Store, loam string) ([]store.Run,
 	slices.Reverse(queued) // the list is newest first
 	var moved []store.Run
 	var warnings []string
-	// With no sandbox, no new session starts. A resume goes on: its session
-	// already has its sandbox.
+	// With no sandbox, no session starts, and none resumes: a resume passes
+	// the sandbox of the run again (see [send]), and claude does not start
+	// with no sandbox.
 	missing := sandbox.Available()
 	if warning := freshUsage(ctx, s, holding); warning != "" {
 		warnings = append(warnings, warning)
 	}
 	for _, r := range queued {
-		if missing != nil && (r.Queue == nil || r.Queue.Resume == "") {
+		if missing != nil {
 			if note := sandboxNote(missing); r.Note != note {
 				if err := renote(s, r.ID, note); err != nil {
 					warnings = append(warnings, fmt.Sprintf("%s: %v", r.Title, err))
@@ -136,7 +137,7 @@ func startOne(ctx context.Context, s *store.Store, id, loam string) (*store.Run,
 	case r.State == store.RunQueued:
 		return nil, nil // another start took the slot first
 	case q.Resume != "":
-		if err := send(ctx, r, q.Resume); err != nil {
+		if err := send(ctx, s, r, q.Resume); err != nil {
 			_ = stopAfter(s, r.ID, fmt.Errorf("could not resume the session: %w", err))
 			if got, err := s.GetRun(r.ID); err == nil {
 				r = got

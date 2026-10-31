@@ -47,8 +47,8 @@ func resumes(t *testing.T) []string {
 	t.Helper()
 	var out []string
 	for _, c := range testutil.FakeClaudeCalls(t) {
-		if len(c) == 4 && c[0] == "--bg" && c[1] == "--resume" {
-			out = append(out, c[3])
+		if len(c) > 3 && c[0] == "--bg" && c[1] == "--resume" {
+			out = append(out, c[len(c)-1])
 		}
 	}
 	return out

@@ -13,10 +13,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/GregorMcC/loam/core/internal/claudebin"
 	"github.com/GregorMcC/loam/core/internal/github"
 	"github.com/GregorMcC/loam/core/internal/intake"
 	"github.com/GregorMcC/loam/core/internal/linear"
+	"github.com/GregorMcC/loam/core/internal/sandbox"
+	"github.com/GregorMcC/loam/core/internal/session"
 	"github.com/GregorMcC/loam/core/internal/store"
 	"github.com/GregorMcC/loam/core/internal/worktree"
 )
@@ -525,7 +526,7 @@ func (sh *shipper) resume(ctx context.Context, prompt, note, what string, addTry
 	if !moved || r.State == store.RunQueued {
 		return moved, nil // a run that you changed gets no prompt, and a Queued run gets it from a later tick
 	}
-	if err := send(ctx, sh.r, prompt); err != nil {
+	if err := send(ctx, sh.s, sh.r, prompt); err != nil {
 		note := "Could not send the " + what + " to the session: " + err.Error()
 		r, uerr := sh.s.UpdateRun(r.ID, func(r *store.Run) error {
 			if r.State == store.RunRunning {
@@ -571,28 +572,52 @@ func ciPrompt(ctx context.Context, gh *github.Client, repo github.Repo, r store.
 
 // send gives the session of the run a new prompt. The session waits after its
 // turn, so Loam stops it first: a resume of a waiting session starts a copy
-// of it. With no flags, the resume keeps the options of the session, its
-// hooks too.
-func send(ctx context.Context, r store.Run, prompt string) error {
-	if r.SessionID == "" {
-		return errors.New("the run has no session")
+// of it. The resume passes the settings of the run again (see
+// [session.PrepareRunResume]): with no flags, the session would have no
+// sandbox and no run hooks. When Loam cannot build them, the session gets no
+// prompt.
+func send(ctx context.Context, s *store.Store, r store.Run, prompt string) error {
+	if missing := sandbox.Available(); missing != nil {
+		return fmt.Errorf("the sandbox of the run cannot start: %w", missing)
 	}
-	claude, err := claudebin.Find()
+	loam, err := loamBinary()
+	if err != nil {
+		return fmt.Errorf("find the loam binary for the run hooks: %w", err)
+	}
+	model, effort, err := withDefaults(s, r.PlotID, "", "")
+	if err != nil {
+		return err
+	}
+	plan, err := session.PrepareRunResume(s, r, prompt, loam, model, effort)
 	if err != nil {
 		return err
 	}
 	ctx, cancel := context.WithTimeout(ctx, startTimeout)
 	defer cancel()
 	// A session that has already stopped makes this fail, which is fine.
-	_ = exec.CommandContext(ctx, claude, "stop", sessionRef(r)).Run()
-	cmd := exec.CommandContext(ctx, claude, "--bg", "--resume", r.SessionID, prompt)
-	cmd.Dir = r.Folder
+	_ = exec.CommandContext(ctx, plan.Claude, "stop", sessionRef(r)).Run()
+	cmd := exec.CommandContext(ctx, plan.Claude, plan.Args...)
+	cmd.Dir, cmd.Env = plan.Dir, plan.Env
 	cmd.WaitDelay = time.Second
 	// With ErrWaitDelay, claude exited well, and a child of it kept the output open.
 	if out, err := cmd.CombinedOutput(); err != nil && !errors.Is(err, exec.ErrWaitDelay) {
 		return errors.New(failureNote("claude --bg --resume failed", err, string(out)))
 	}
 	return nil
+}
+
+// loamBinary returns the path of the running loam binary with links
+// resolved, for the hooks of a run session. send runs in loam: in a tick, a
+// command, or the MCP server.
+func loamBinary() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	if r, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = r
+	}
+	return exe, nil
 }
 
 // attachToLinear attaches the new PR to the Linear issue of the run, when
