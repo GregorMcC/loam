@@ -16,6 +16,7 @@ import (
 	"github.com/GregorMcC/loam/core/internal/github"
 	"github.com/GregorMcC/loam/core/internal/intake"
 	"github.com/GregorMcC/loam/core/internal/linear"
+	"github.com/GregorMcC/loam/core/internal/sandbox"
 	"github.com/GregorMcC/loam/core/internal/session"
 	"github.com/GregorMcC/loam/core/internal/store"
 	"github.com/GregorMcC/loam/core/internal/worktree"
@@ -576,6 +577,9 @@ func ciPrompt(ctx context.Context, gh *github.Client, repo github.Repo, r store.
 // sandbox and no run hooks. When Loam cannot build them, the session gets no
 // prompt.
 func send(ctx context.Context, s *store.Store, r store.Run, prompt string) error {
+	if missing := sandbox.Available(); missing != nil {
+		return fmt.Errorf("the sandbox of the run cannot start: %w", missing)
+	}
 	loam, err := loamBinary()
 	if err != nil {
 		return fmt.Errorf("find the loam binary for the run hooks: %w", err)

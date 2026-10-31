@@ -174,7 +174,7 @@ func TestRunTickSendsACIFailureBackToTheSessionAsATry(t *testing.T) {
 	calls := testutil.FakeClaudeCalls(t)
 	n := len(calls)
 	if n < 2 || !slices.Equal(calls[n-2], []string{"stop", shipSession[:8]}) || len(calls[n-1]) < 4 ||
-		!slices.Equal(calls[n-1][:3], []string{"--bg", "--resume", shipSession}) {
+		!slices.Equal(calls[n-1][:3], []string{"--bg", "--resume", shipSession}) || !slices.Contains(calls[n-1], "--settings") {
 		t.Fatalf("claude calls %q", calls)
 	}
 	prompt := calls[n-1][len(calls[n-1])-1]

@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"errors"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -465,8 +466,9 @@ func TestRunStartWaitsForTheSandbox(t *testing.T) {
 	}
 }
 
-// A queued resume goes on with no sandbox: its session already has one.
-func TestRunTickResumesAQueuedRunWithNoSandbox(t *testing.T) {
+// TAS-201: a queued resume waits for the sandbox, as a new session does. A
+// resume passes the sandbox of the run again, so it cannot go on with none.
+func TestRunTickKeepsAQueuedResumeUntilTheSandboxIsBack(t *testing.T) {
 	s, r, _ := readyRun(t)
 	setLimits(t, "--at-a-time", "1")
 	other := startRun(t, "Say bye")
@@ -476,7 +478,13 @@ func TestRunTickResumesAQueuedRunWithNoSandbox(t *testing.T) {
 	if _, _, err := lrRun(t, "", "run", "stop", other.ID); err != nil {
 		t.Fatal(err)
 	}
+	exec := os.Getenv("LOAM_SANDBOX_EXEC")
 	t.Setenv("LOAM_SANDBOX_EXEC", "/no/sandbox-exec")
+	tick(t)
+	if got, _ := s.GetRun(r.ID); got.State != store.RunQueued || !strings.HasPrefix(got.Note, "Waits for the sandbox") {
+		t.Fatalf("after the tick with no sandbox: %+v", got)
+	}
+	t.Setenv("LOAM_SANDBOX_EXEC", exec)
 	tick(t)
 	if got, _ := s.GetRun(r.ID); got.State != store.RunRunning {
 		t.Fatalf("after the tick: %+v", got)
