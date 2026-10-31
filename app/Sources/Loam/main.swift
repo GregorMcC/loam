@@ -178,6 +178,13 @@ func followTerminal(_ runtime: TerminalRuntime, controller: MainWindowController
 }
 #endif
 
+// A `loam` CLI command that found the GUI binary by case alone exits here, before any window or
+// service starts, so it does not leave a second copy of the app running (TAS-211).
+if let refusal = CLIArguments.refusal(arguments: CommandLine.arguments, bundledCLI: LoamBinary.bundledPath) {
+    FileHandle.standardError.write(Data(refusal.utf8))
+    exit(CLIArguments.exitStatus)
+}
+
 // Finder and the Dock give the app the launchd PATH. Take the PATH of your login shell, so panes and
 // `loam` calls find what `.zshrc` adds (ticket 66). This is before libghostty starts, because libghostty
 // keeps the environment. It waits 5 s at most. The driver skips it, so a scenario does not depend on
