@@ -397,10 +397,10 @@ func TestGateKeepsTimeForEachCheck(t *testing.T) {
 	}
 }
 
-// TAS-213: a gate that waited at least the time of one check and then ran
-// out of the gate budget ran out of time because of the wait, so it does not
-// count toward the stop. A gate that waited less, did not wait, or whose
-// check ran out of its own timeout, does.
+// TAS-213: a gate that waited and then ran out of the gate budget may have
+// run out of time because of the wait, so it does not count toward the stop,
+// however short the wait. A gate that did not wait, or whose check ran out of
+// its own timeout, does.
 func TestWaitCausedTellsAWaitFromTheWork(t *testing.T) {
 	budget := checkResult{check: store.Check{Name: "Slow"}, exit: -1, timeout: "did not end before the gate ran out of time", budget: true}
 	own := checkResult{check: store.Check{Name: "Slow"}, exit: -1, timeout: "did not end in 10m"}
@@ -410,8 +410,8 @@ func TestWaitCausedTellsAWaitFromTheWork(t *testing.T) {
 		want bool
 	}{
 		{"wait-out", gateResult{waitedOut: true, waited: time.Minute}, true},
-		{"budget after a wait of one check", gateResult{waited: checkTimeout, failed: []checkResult{budget}}, true},
-		{"budget after a short wait", gateResult{waited: checkTimeout - time.Second, failed: []checkResult{budget}}, false},
+		{"budget after a long wait", gateResult{waited: 17 * time.Minute, failed: []checkResult{budget}}, true},
+		{"budget after a short wait", gateResult{waited: 5 * time.Second, failed: []checkResult{budget}}, true},
 		{"budget with no wait", gateResult{failed: []checkResult{budget}}, false},
 		{"own timeout after a wait", gateResult{waited: time.Minute, failed: []checkResult{own, budget}}, false},
 		{"no timeout", gateResult{waited: time.Minute}, false},
