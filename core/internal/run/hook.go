@@ -65,7 +65,8 @@ func Hook(s *store.Store, runID string, in io.Reader, out, errOut io.Writer) int
 // last resumed its session, the run is Stopped, and no try counts.
 // Else the try counts: the stop is blocked with the failures as the reason,
 // or the run is Stopped when it has no tries left. A run that is not running
-// lets the session stop: you may have typed in it after it was Ready. The
+// lets the session stop: you may have typed in it after it was Ready. A run
+// that a tick stopped as idle gets the gate too (see [endsATurn]). The
 // hook holds the gate lock of the run (see [holdGate]) from the first read of
 // the run to the record of the gate.
 func stopped(s *store.Store, runID string, errOut io.Writer, logf func(string, ...any)) int {
@@ -76,7 +77,7 @@ func stopped(s *store.Store, runID string, errOut io.Writer, logf func(string, .
 		logf("run %s: %v", runID, err)
 		return 0
 	}
-	if r.State != store.RunRunning && r.State != store.RunStarting && r.State != store.RunStartUnknown {
+	if !endsATurn(r) {
 		if _, err := s.UpdateRun(runID, func(r *store.Run) error { r.Turns++; return nil }); err != nil {
 			logf("run %s: count the turn: %v", runID, err)
 		}
@@ -94,7 +95,7 @@ func stopped(s *store.Store, runID string, errOut io.Writer, logf func(string, .
 	block := false
 	r, err = s.UpdateRun(runID, func(r *store.Run) error {
 		r.Turns++
-		if r.State != store.RunRunning && r.State != store.RunStarting && r.State != store.RunStartUnknown {
+		if !endsATurn(*r) {
 			return nil // stopped while the checks ran
 		}
 		if len(g.failed) == 0 {
@@ -152,17 +153,32 @@ func onGitHub(s *store.Store, r store.Run) bool {
 	return ok
 }
 
+// endsATurn reports whether the end of a turn moves the run: it is running,
+// or a tick stopped it as idle (see [IdleNote]). claude agents can show the
+// session as done before the Stop hook takes the gate lock, so a tick can
+// stop the run in that window. The hook then records the turn as usual.
+func endsATurn(r store.Run) bool {
+	switch r.State {
+	case store.RunRunning, store.RunStarting, store.RunStartUnknown:
+		return true
+	case store.RunStopped:
+		return r.Note == IdleNote
+	}
+	return false
+}
+
 // limitErrors are the StopFailure errors of a usage limit.
 var limitErrors = []string{"rate_limit", "billing_error"}
 
 // stopFailed records a turn of a running run that ended on an API error. A
 // usage limit makes the run Stopped by a limit. Any other error stops it.
 // Neither counts a try. As at the Stop gate, a run that is not running keeps
-// its state: you may have typed in it after it was Ready.
+// its state: you may have typed in it after it was Ready. A run that a tick
+// stopped as idle gets the note of the error.
 func stopFailed(s *store.Store, runID string, h hookInput, logf func(string, ...any)) {
 	note := strings.TrimSpace("Claude Code stopped: " + h.Error + " " + h.ErrorDetails)
 	_, err := s.UpdateRun(runID, func(r *store.Run) error {
-		if r.State != store.RunRunning && r.State != store.RunStarting && r.State != store.RunStartUnknown {
+		if !endsATurn(*r) {
 			return nil
 		}
 		r.State, r.Note = store.RunStopped, note

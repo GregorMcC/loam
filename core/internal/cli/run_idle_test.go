@@ -163,6 +163,37 @@ func TestRunTickKeepsARunWhoseStopHookRunsTheGate(t *testing.T) {
 
 // A list that Loam cannot read stops no run: a session that the list does
 // not have counts as idle.
+// claude agents can show the session as done before the Stop hook takes the
+// gate lock, so a tick can stop the run first. The hook then runs the gate
+// as for a running run.
+func TestRunStopHookRunsTheGateOfARunThatTheTickStoppedAsIdle(t *testing.T) {
+	t.Run("pass", func(t *testing.T) {
+		idleWait(t, 0)
+		s, r := idleRun(t, "done")
+		if got := tick(t); len(got.Runs) != 1 || got.Runs[0].State != store.RunStopped {
+			t.Fatalf("%+v", got)
+		}
+		writeAndCommit(t, r.Folder, "hello.txt", "hi there\n")
+		if code, reason := stopHook(t, r, "Stop"); code != 0 {
+			t.Fatalf("gate: %d %s", code, reason)
+		}
+		if r, _ = s.GetRun(r.ID); r.State != store.RunReady || r.Turns != 1 {
+			t.Fatalf("%+v", r)
+		}
+	})
+	t.Run("fail", func(t *testing.T) {
+		idleWait(t, 0)
+		s, r := idleRun(t, "done")
+		tick(t)
+		if code, _ := stopHook(t, r, "Stop"); code != 2 {
+			t.Fatalf("exit %d, want the stop blocked with the failures", code)
+		}
+		if r, _ = s.GetRun(r.ID); r.State != store.RunRunning || r.Tries != 1 {
+			t.Fatalf("%+v", r)
+		}
+	})
+}
+
 func TestRunTickWarnsWhenClaudeAgentsGivesNoList(t *testing.T) {
 	cases := map[string]string{
 		"not json": "not json",
