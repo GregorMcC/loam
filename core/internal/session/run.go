@@ -268,10 +268,17 @@ func gitIncludes(home string, base []string, follow func(string) bool) includes 
 	// link to its own folder does not give a new key on each pass. On a volume
 	// that does not ignore case, two names that differ in case are two files,
 	// so the key keeps the case. A file with two names is then read twice, and
-	// the depth ends a cycle through such names.
-	type fileKey struct{ real, dir string }
+	// the depth ends a cycle through such names. The key also holds whether
+	// Loam follows the name: a name that the run can write must not stop the
+	// walk of another name of the same file that Loam follows.
+	type fileKey struct {
+		real, dir string
+		follows   bool
+	}
 	seen := map[fileKey]bool{}
-	key := func(f string) fileKey { return fileKey{sandbox.Real(f), sandbox.Real(filepath.Dir(f))} }
+	key := func(f string) fileKey {
+		return fileKey{sandbox.Real(f), sandbox.Real(filepath.Dir(f)), follow(f)}
+	}
 	for _, f := range base {
 		seen[key(f)] = true
 	}

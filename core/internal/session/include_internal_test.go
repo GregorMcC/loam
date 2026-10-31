@@ -124,6 +124,27 @@ func TestGitIncludesEndsOnACycleThroughALinkToItsFolder(t *testing.T) {
 	}
 }
 
+// Two names of one file in one folder: Loam does not follow the first, a
+// link that the run can write, so the second name still gets its walk.
+func TestGitIncludesFollowsANameAfterANameThatItDoesNotFollow(t *testing.T) {
+	dir := realTempDir(t)
+	file, alias, child := filepath.Join(dir, "real.gitconfig"), filepath.Join(dir, "alias.gitconfig"), filepath.Join(dir, "child.gitconfig")
+	if err := os.WriteFile(file, []byte("[include]\n\tpath = child.gitconfig\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(file, alias); err != nil {
+		t.Fatal(err)
+	}
+	a := filepath.Join(dir, "a.gitconfig")
+	if err := os.WriteFile(a, []byte("[include]\n\tpath = alias.gitconfig\n\tpath = real.gitconfig\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := gitIncludes("/home", []string{a}, func(f string) bool { return f != alias })
+	if !slices.Contains(got.files, child) || !slices.Equal(got.skipped, []string{alias}) {
+		t.Errorf("gitIncludes = %+v, want %s, and %s skipped", got, child, alias)
+	}
+}
+
 // gitIncludes takes the file of an entry in a file that it does not follow,
 // such as one that the run can write, but not the files that that file
 // includes. It names such a file in skipped.
