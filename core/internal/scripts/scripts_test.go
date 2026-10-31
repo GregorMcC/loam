@@ -1,6 +1,7 @@
 package scripts_test
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -350,31 +351,86 @@ func pinValue(t *testing.T, key string) string {
 	return ""
 }
 
-func TestBuildGhosttyKitUsesCacheAndLinksVendor(t *testing.T) {
-	cache, vendor := t.TempDir(), filepath.Join(t.TempDir(), "vendor")
+// fakeGhosttyKitCache makes the cache folders of the pinned commit, and
+// returns the xcframework and share folders.
+func fakeGhosttyKitCache(t *testing.T, cache string) (cached, share string) {
+	t.Helper()
 	commit := pinValue(t, "GHOSTTY_COMMIT")
-	if len(commit) != 40 || pinValue(t, "ZIG_VERSION") == "" || len(pinValue(t, "ZIG_SHA256")) != 64 {
-		t.Fatal("ghostty.pin values look wrong")
-	}
-	cached := filepath.Join(cache, "ghosttykit", commit, "GhosttyKit.xcframework")
-	share := filepath.Join(cache, "ghosttykit", commit, "share")
+	cached = filepath.Join(cache, "ghosttykit", commit, "GhosttyKit.xcframework")
+	share = filepath.Join(cache, "ghosttykit", commit, "share")
 	for _, dir := range []string{cached, filepath.Join(share, "ghostty"), filepath.Join(share, "terminfo")} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
-	cmd := exec.Command(script("build-ghosttykit.sh"))
+	return cached, share
+}
+
+func buildGhosttyKit(t *testing.T, cache, vendor string, args ...string) (string, error) {
+	t.Helper()
+	cmd := exec.Command(script("build-ghosttykit.sh"), args...)
 	cmd.Env = append(os.Environ(), "LOAM_CACHE="+cache, "LOAM_VENDOR="+vendor)
 	out, err := cmd.CombinedOutput()
-	if err != nil || !strings.Contains(string(out), "cached") {
-		t.Fatalf("%v: %s", err, out)
-	}
+	return string(out), err
+}
+
+func checkVendorLinks(t *testing.T, vendor, cached, share string) {
+	t.Helper()
 	for link, target := range map[string]string{"GhosttyKit.xcframework": cached, "ghostty-share": share} {
 		got, err := filepath.EvalSymlinks(filepath.Join(vendor, link))
 		want, _ := filepath.EvalSymlinks(target)
 		if err != nil || got != want {
 			t.Errorf("vendor link %s: got %q want %q (%v)", link, got, want, err)
 		}
+	}
+}
+
+func TestBuildGhosttyKitUsesCacheAndLinksVendor(t *testing.T) {
+	cache, vendor := t.TempDir(), filepath.Join(t.TempDir(), "vendor")
+	if len(pinValue(t, "GHOSTTY_COMMIT")) != 40 || pinValue(t, "ZIG_VERSION") == "" || len(pinValue(t, "ZIG_SHA256")) != 64 {
+		t.Fatal("ghostty.pin values look wrong")
+	}
+	cached, share := fakeGhosttyKitCache(t, cache)
+	out, err := buildGhosttyKit(t, cache, vendor)
+	if err != nil || !strings.Contains(out, "cached") {
+		t.Fatalf("%v: %s", err, out)
+	}
+	checkVendorLinks(t, vendor, cached, share)
+}
+
+func TestBuildGhosttyKitLinkOnlyLinksTheCache(t *testing.T) {
+	cache, vendor := t.TempDir(), filepath.Join(t.TempDir(), "vendor")
+	cached, share := fakeGhosttyKitCache(t, cache)
+	out, err := buildGhosttyKit(t, cache, vendor, "--link-only")
+	if err != nil || !strings.Contains(out, "is cached.") {
+		t.Fatalf("%v: %s", err, out)
+	}
+	checkVendorLinks(t, vendor, cached, share)
+}
+
+func TestBuildGhosttyKitLinkOnlyBuildsNothingWithNoCache(t *testing.T) {
+	cache, vendor := t.TempDir(), filepath.Join(t.TempDir(), "vendor")
+	// A curl or git on the PATH that fails proves no download starts.
+	path := fakeTools(t, map[string]string{"curl": "exit 9", "git": "exit 9"})
+	cmd := exec.Command(script("build-ghosttykit.sh"), "--link-only")
+	cmd.Env = append(os.Environ(), "PATH="+path, "LOAM_CACHE="+cache, "LOAM_VENDOR="+vendor)
+	out, err := cmd.CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "not cached, so the terminal and the driver are not built") {
+		t.Fatalf("%v: %s", err, out)
+	}
+	if _, err := os.Lstat(vendor); !os.IsNotExist(err) {
+		t.Errorf("vendor exists: %v", err)
+	}
+	if entries, _ := os.ReadDir(cache); len(entries) != 0 {
+		t.Errorf("the cache is not empty: %v", entries)
+	}
+}
+
+func TestBuildGhosttyKitRejectsAnUnknownOption(t *testing.T) {
+	out, err := buildGhosttyKit(t, t.TempDir(), filepath.Join(t.TempDir(), "vendor"), "--link")
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != 2 || !strings.Contains(out, "usage:") {
+		t.Fatalf("want exit 2 with usage, got %v: %s", err, out)
 	}
 }
 

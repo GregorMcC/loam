@@ -2,7 +2,7 @@
 # Build GhosttyKit.xcframework and the Ghostty resources for the commit in
 # ghostty.pin, once per commit.
 #
-#   scripts/build-ghosttykit.sh
+#   scripts/build-ghosttykit.sh [--link-only]
 #
 # The cache is $LOAM_CACHE (default ~/Library/Caches/Loam). It holds Zig, the
 # ghostty source, and per commit one xcframework and one share folder (the
@@ -10,7 +10,25 @@
 # share/terminfo). Zig never goes on PATH. The script links
 # app/vendor/GhosttyKit.xcframework and app/vendor/ghostty-share (or the same
 # names in $LOAM_VENDOR) to the cache.
+#
+# --link-only builds and downloads nothing. When the cache holds GhosttyKit for
+# the pin, and this process can read it, the script links app/vendor. Else it
+# says that the terminal and the driver are not built. It exits 0 in both
+# cases, so Loam can run it as the setup command of each new worktree. A
+# sandbox can show the cache folders and deny their content, and a link to a
+# cache that it cannot read breaks the build of the package, so the script
+# makes no link then.
 set -euo pipefail
+
+link_only=0
+case "${1:-}" in
+  "") ;;
+  --link-only) link_only=1 ;;
+  *)
+    echo "usage: scripts/build-ghosttykit.sh [--link-only]" >&2
+    exit 2
+    ;;
+esac
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 # shellcheck source=/dev/null
@@ -30,8 +48,17 @@ link_vendor() {
 }
 
 if [ -d "$final" ] && [ -d "$share/ghostty" ] && [ -d "$share/terminfo" ]; then
+  if [ "$link_only" = 1 ] && ! ls "$final" "$share" >/dev/null 2>&1; then
+    echo "GhosttyKit for ${GHOSTTY_COMMIT:0:8} is cached in $cache, but this process cannot read it, so $vendor is not linked and the terminal and the driver are not built."
+    exit 0
+  fi
   echo "GhosttyKit for ${GHOSTTY_COMMIT:0:8} is cached."
   link_vendor
+  exit 0
+fi
+
+if [ "$link_only" = 1 ]; then
+  echo "GhosttyKit for ${GHOSTTY_COMMIT:0:8} is not cached, so the terminal and the driver are not built. Run scripts/build-ghosttykit.sh to build it."
   exit 0
 fi
 
