@@ -298,10 +298,18 @@ except OSError as e:
 `
 
 // network runs one step of netScript under the profile of r, with the temp
-// folders of [Temps] too: the python3 shim of the Xcode tools writes a cache
-// in the temp folder of the user.
+// folders of [Temps] too. The python3 shim of the Xcode tools gets its own
+// xcrun cache, as in the gate: the profile denies the cache of the user, and
+// a shim that cannot fill it prints an error.
 func network(t *testing.T, r Rules, temp, step, arg string) string {
 	t.Helper()
+	cache := filepath.Join(shortTemp(t, "/private/tmp"), "xcrun-cache")
+	if b, err := os.ReadFile(XcrunCache()); err == nil {
+		if err := os.WriteFile(cache, b, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("xcrun_db", cache)
 	// A TMPDIR that holds the fake home, such as /private/var/tmp, is not a
 	// temp folder of the profile. The temp folders of the user from getconf
 	// are enough for the python3 shim.

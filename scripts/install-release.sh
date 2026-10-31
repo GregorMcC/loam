@@ -43,9 +43,16 @@ fail() {
 }
 
 [ "$(uname -s)" = Darwin ] || fail "Loam runs on macOS only."
-# sysctl sees Apple silicon also from a shell that runs in Rosetta. A sandbox,
-# such as the sandbox of a Loam run, can deny sysctl, and then uname answers.
-arm64=$(sysctl -n hw.optional.arm64 2>/dev/null) || arm64=$(uname -m)
+# sysctl and arch see Apple silicon also from a shell that runs in Rosetta. A
+# sandbox, such as the sandbox of a Loam run, can deny sysctl, and then arch
+# answers. uname answers last, and names x86_64 in Rosetta.
+if arm64=$(sysctl -n hw.optional.arm64 2>/dev/null); then
+  :
+elif arch -arm64 /usr/bin/true 2>/dev/null; then
+  arm64=1
+else
+  arm64=$(uname -m)
+fi
 [ "$arm64" = 1 ] || [ "$arm64" = arm64 ] ||
   fail "Loam releases run on Apple silicon only." "build Loam from source: https://github.com/GregorMcC/loam#build-from-source"
 macos=$(sw_vers -productVersion)
