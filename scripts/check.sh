@@ -182,25 +182,36 @@ if [ "$app" = 1 ]; then
   # build-ghosttykit.sh links app/vendor to a cache folder named for the
   # pinned commit.
   pin=$(sed -n 's/^GHOSTTY_COMMIT=//p' "$root/ghostty.pin")
-  ghosttykit=0
-  if ! built=$(cd vendor/GhosttyKit.xcframework 2>/dev/null && pwd -P); then
-    echo "GhosttyKit is not linked, so swift test builds and tests LoamKit only, with no terminal and no driver."
-  else
+  link=vendor/GhosttyKit.xcframework
+  ghosttykit=0 readable=1
+  if built=$(cd "$link" 2>/dev/null && pwd -P); then
     case "$built" in
       */"$pin"/*) ghosttykit=1 ;;
       *) fail "GhosttyKit is not built for the commit in ghostty.pin." "scripts/build-ghosttykit.sh" ;;
     esac
+    ls "$link/" >/dev/null 2>&1 || readable=0
+  elif [ -L "$link" ] || [ -e "$link" ]; then
+    # A link that cd cannot follow: its cache is gone, or the sandbox denies it.
+    built=$(readlink "$link" || echo "$link")
+    ghosttykit=1 readable=0
+  else
+    echo "GhosttyKit is not linked, so swift test builds and tests LoamKit only, with no terminal and no driver."
   fi
   if [ "$sandboxed" = 0 ]; then
-    [ "$ghosttykit" = 0 ] || echo "GhosttyKit is linked, so swift test builds the app and runs all tests, with the driver tests."
+    if [ "$readable" = 0 ]; then
+      echo "app/vendor links GhosttyKit in $built, and that folder cannot be read. Run scripts/build-ghosttykit.sh to link it again."
+    elif [ "$ghosttykit" = 1 ]; then
+      echo "GhosttyKit is linked, so swift test builds the app and runs all tests, with the driver tests."
+    fi
     check "swift test" swift test --manifest-cache none
   elif [ "$ghosttykit" = 0 ]; then
     check "swift test" swift test --manifest-cache none --disable-sandbox
-  elif ! ls vendor/GhosttyKit.xcframework/ >/dev/null 2>&1; then
+  elif [ "$readable" = 0 ]; then
     # The setup command links app/vendor outside the sandbox. The ghostty.pin
     # preset of the run sandbox reads ~/Library/Caches/Loam/ghosttykit, so
-    # this happens when LOAM_CACHE moves the cache or an older Loam made the
-    # sandbox. A pass here would not compile the terminal and the driver.
+    # this happens when LOAM_CACHE moves the cache, the cache is gone, or an
+    # older Loam made the sandbox. A pass here would not compile the terminal
+    # and the driver.
     check GhosttyKit ghosttykit_unreadable "${built%/"$pin"/*}"
   else
     echo "The check runs in a sandbox and GhosttyKit is linked, so swift build builds the app and all tests, and swift test skips LoamDriverTests: the driver tests start the app and need focus, which a sandbox does not give."

@@ -426,6 +426,35 @@ func TestBuildGhosttyKitLinkOnlyBuildsNothingWithNoCache(t *testing.T) {
 	}
 }
 
+// A link to the cache of another pin goes, so no build uses an older
+// GhosttyKit. A second run finds nothing to remove and still exits 0.
+func TestBuildGhosttyKitLinkOnlyRemovesTheLinksOfAnotherPin(t *testing.T) {
+	cache, vendor := t.TempDir(), filepath.Join(t.TempDir(), "vendor")
+	old := filepath.Join(t.TempDir(), "ghosttykit", "0000000000000000000000000000000000000000")
+	if err := os.MkdirAll(vendor, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"GhosttyKit.xcframework", "ghostty-share"} {
+		if err := os.MkdirAll(filepath.Join(old, name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(filepath.Join(old, name), filepath.Join(vendor, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for run, want := range []string{"Removed", "not cached"} {
+		out, err := buildGhosttyKit(t, cache, vendor, "--link-only")
+		if err != nil || !strings.Contains(out, want) || (run == 1 && strings.Contains(out, "Removed")) {
+			t.Fatalf("run %d: want %q: %v: %s", run+1, want, err, out)
+		}
+		for _, name := range []string{"GhosttyKit.xcframework", "ghostty-share"} {
+			if _, err := os.Lstat(filepath.Join(vendor, name)); !os.IsNotExist(err) {
+				t.Errorf("run %d: vendor/%s is still there: %v", run+1, name, err)
+			}
+		}
+	}
+}
+
 func TestBuildGhosttyKitRejectsAnUnknownOption(t *testing.T) {
 	out, err := buildGhosttyKit(t, t.TempDir(), filepath.Join(t.TempDir(), "vendor"), "--link")
 	var exit *exec.ExitError

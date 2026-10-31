@@ -16,7 +16,8 @@
 # says that the terminal and the driver are not built. It exits 0 in both
 # cases, so Loam can run it as the setup command of each new worktree. A
 # sandbox can show the cache folders and deny their content. The script makes
-# no link then, because the package cannot use that cache.
+# no link then, because the package cannot use that cache. With no link to
+# make, it removes a link to the cache of another pin.
 set -euo pipefail
 
 link_only=0
@@ -46,8 +47,25 @@ link_vendor() {
   echo "Linked $vendor/GhosttyKit.xcframework and $vendor/ghostty-share"
 }
 
+# unlink_other_pins removes each vendor link that does not name the cache of
+# the pin, so no build uses the GhosttyKit of an older pin.
+unlink_other_pins() {
+  local name want target
+  for name in GhosttyKit.xcframework ghostty-share; do
+    [ -L "$vendor/$name" ] || continue
+    want=$final
+    [ "$name" = ghostty-share ] && want=$share
+    target=$(readlink "$vendor/$name")
+    if [ "$target" != "$want" ]; then
+      rm -f "$vendor/$name"
+      echo "Removed $vendor/$name, which linked $target."
+    fi
+  done
+}
+
 if [ -d "$final" ] && [ -d "$share/ghostty" ] && [ -d "$share/terminfo" ]; then
   if [ "$link_only" = 1 ] && ! ls "$final" "$share" >/dev/null 2>&1; then
+    unlink_other_pins
     echo "GhosttyKit for ${GHOSTTY_COMMIT:0:8} is cached in $cache, but this process cannot read it, so $vendor is not linked and the terminal and the driver are not built."
     exit 0
   fi
@@ -57,6 +75,7 @@ if [ -d "$final" ] && [ -d "$share/ghostty" ] && [ -d "$share/terminfo" ]; then
 fi
 
 if [ "$link_only" = 1 ]; then
+  unlink_other_pins
   echo "GhosttyKit for ${GHOSTTY_COMMIT:0:8} is not cached, so the terminal and the driver are not built. Run scripts/build-ghosttykit.sh to build it."
   exit 0
 fi
