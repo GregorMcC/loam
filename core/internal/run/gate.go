@@ -310,8 +310,8 @@ func committed(ctx context.Context, dir string, box checkBox) checkResult {
 // reason is the text that a blocked stop sends to the session.
 func reason(r store.Run, g gateResult) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Loam gate: %d of %d checks failed (try %d of %d). Fix the failures, then end your turn. Loam runs the checks again.\n",
-		len(g.failed), len(g.results), r.Tries, r.MaxTries)
+	fmt.Fprintf(&b, "Loam gate: %d of %d checks failed (try %d of %d). Fix the failures, then end your turn. Loam runs the checks again.\n%s\n",
+		len(g.failed), len(g.results), r.Tries, r.MaxTries, leaveChecks)
 	for _, f := range g.failed {
 		fmt.Fprintf(&b, "\n## %s: `%s` (exit %d)\n%s\n", f.check.Name, f.check.Command, f.exit, tail(f.output, reasonTail))
 	}

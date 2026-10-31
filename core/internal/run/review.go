@@ -301,7 +301,7 @@ func reviewPromptFor(opening string, pr *github.PR, rv review, replies string) (
 		b.WriteString("\nFor each point, fix the code or decide that it needs no change. Commit all the fixes in one commit. " + skip + "\n\n")
 	}
 	b.WriteString(repliesText(replies, held))
-	fmt.Fprintf(&b, "Then end your turn. Loam runs the Done when checks again, then pushes the fix to #%d.\n", pr.Number)
+	fmt.Fprintf(&b, "Then end your turn. Loam runs the Done when checks again, then pushes the fix to #%d.\n%s\n", pr.Number, leaveChecks)
 	return b.String(), held
 }
 

@@ -204,7 +204,7 @@ func codeReviewPrompt(blocking []codeReviewFinding, more, round int) string {
 		fmt.Fprintf(&b, "\nThe review found %s. Look for them when you fix these.\n", count(more, "more Critical or Major issue"))
 	}
 	b.WriteString("\nFix each issue, commit the fix, and end your turn. " +
-		"Loam runs the Done when checks again, then reviews the new diff before it pushes.\n")
+		"Loam runs the Done when checks again, then reviews the new diff before it pushes.\n" + leaveChecks + "\n")
 	return b.String()
 }
 

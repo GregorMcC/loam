@@ -139,7 +139,7 @@ func notesPrompt(r store.Run, notes []Note) string {
 	for _, n := range notes {
 		fmt.Fprintf(&b, "- %s\n", n)
 	}
-	fmt.Fprintf(&b, "\nMake the changes, commit them, and end your turn. %s\n", then)
+	fmt.Fprintf(&b, "\nMake the changes, commit them, and end your turn. %s\n%s\n", then, leaveChecks)
 	return b.String()
 }
 

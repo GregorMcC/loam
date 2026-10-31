@@ -566,7 +566,7 @@ func ciPrompt(ctx context.Context, gh *github.Client, repo github.Repo, r store.
 		}
 		fmt.Fprintf(&b, "\n```\n%s```\n", log)
 	}
-	fmt.Fprintf(&b, "\nFix the cause, commit the fix, and end your turn. Loam runs the Done when checks again, then pushes the fix to #%d.\n", pr.Number)
+	fmt.Fprintf(&b, "\nFix the cause, commit the fix, and end your turn. Loam runs the Done when checks again, then pushes the fix to #%d.\n%s\n", pr.Number, leaveChecks)
 	return b.String()
 }
 
