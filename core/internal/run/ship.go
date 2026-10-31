@@ -542,6 +542,12 @@ func (sh *shipper) resume(ctx context.Context, prompt, note, what string, addTry
 	return moved, nil
 }
 
+// ciChecks is [leaveChecks] for a CI failure. The gate does not run the
+// checks of CI, so the session can run the tests that failed there to find
+// the cause. It still leaves the Done when checks to the gate.
+const ciChecks = "To find the cause, run the tests that failed in CI. " +
+	"Do not run the Done when checks yourself: Loam runs them when you end your turn."
+
 // ciPrompt is the prompt that sends a CI failure back: each failed check,
 // with the end of its log.
 func ciPrompt(ctx context.Context, gh *github.Client, repo github.Repo, r store.Run, pr *github.PR) string {
@@ -566,7 +572,7 @@ func ciPrompt(ctx context.Context, gh *github.Client, repo github.Repo, r store.
 		}
 		fmt.Fprintf(&b, "\n```\n%s```\n", log)
 	}
-	fmt.Fprintf(&b, "\nFix the cause, commit the fix, and end your turn. Loam runs the Done when checks again, then pushes the fix to #%d.\n%s\n", pr.Number, leaveChecks)
+	fmt.Fprintf(&b, "\nFix the cause, commit the fix, and end your turn. Loam runs the Done when checks again, then pushes the fix to #%d.\n%s\n", pr.Number, ciChecks)
 	return b.String()
 }
 

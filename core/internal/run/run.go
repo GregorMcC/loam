@@ -526,7 +526,8 @@ func failureNote(what string, err error, out string) string {
 }
 
 // leaveChecks is in each prompt that sends work back to the session: a
-// failed gate, a code review, a PR review, notes, and a CI failure. A full
+// failed gate, a code review, a PR review, and notes (a CI failure has
+// [ciChecks]). A full
 // check can take minutes, and the gate runs it anyway when the session ends
 // its turn, so the session must not run it first (TAS-205).
 const leaveChecks = "While you work, run only the fast tests of the code that you change. " +

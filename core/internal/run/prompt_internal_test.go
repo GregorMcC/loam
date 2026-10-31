@@ -1,6 +1,7 @@
 package run
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -40,5 +41,13 @@ func TestThePromptsLeaveTheChecksToTheGate(t *testing.T) {
 		if !strings.Contains(p, leaveChecks) {
 			t.Errorf("the %s prompt does not leave the checks to Loam:\n%s", name, p)
 		}
+	}
+
+	// The gate does not run the checks of CI, so the session can run the
+	// tests that failed there.
+	ci := ciPrompt(context.Background(), nil, github.Repo{}, store.Run{MaxTries: 3},
+		&github.PR{Number: 7, FailedChecks: []github.Check{{Name: "core"}}})
+	if !strings.Contains(ci, ciChecks) || strings.Contains(ci, "fast tests") {
+		t.Errorf("the CI prompt does not let the session run the failed tests:\n%s", ci)
 	}
 }
