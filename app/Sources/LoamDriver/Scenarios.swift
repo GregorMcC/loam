@@ -349,8 +349,10 @@ enum Scenarios {
         try require(TerminalRuntime.binFolder != nil, "the app binary has no real path")
         let bin = TerminalRuntime.binFolder!
         try require(!path.split(separator: ":").contains { $0 == bin }, "the pane PATH has \(bin): \(path)")
-        // The shell integration appends GHOSTTY_BIN_DIR to PATH, so it must not be that folder either.
-        try require(!text.contains("\(PaneEnvironment.binFolderVariable)=\(bin)\n"), "the pane GHOSTTY_BIN_DIR is \(bin)")
+        // The shell integration appends GHOSTTY_BIN_DIR to PATH, so it is the folder of the bundled CLI.
+        let helpers = URL(fileURLWithPath: LoamBinary.bundledPath).deletingLastPathComponent().path
+        try require(text.contains("\(PaneEnvironment.binFolderVariable)=\(helpers)\n"),
+                    "the pane GHOSTTY_BIN_DIR is not \(helpers)")
         let ownLeaks = PaneEnvironment.keysToRemove(from: environment).filter { $0 != TerminalRuntime.resourcesVariable }
         try require(ownLeaks.isEmpty, "the app process still has \(ownLeaks.sorted())")
         _ = await app.close(pane)

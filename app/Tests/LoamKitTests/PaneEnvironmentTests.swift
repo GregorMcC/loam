@@ -65,9 +65,12 @@ import Testing
         #expect(paneVariables(["GHOSTTY_BIN_DIR": bin], inherited: [:])["GHOSTTY_BIN_DIR"] == helpers)
     }
 
-    @Test func thePanePathStaysOutWhenNothingIsLeft() {
-        #expect(paneVariables(["A": "1"], inherited: ["PATH": bin]) == ["A": "1", "GHOSTTY_BIN_DIR": helpers])
-        #expect(paneVariables(["A": "1"], inherited: [:]) == ["A": "1", "GHOSTTY_BIN_DIR": helpers])
+    @Test func thePanePathIsTheDefaultWhenNothingIsLeft() {
+        // Without a PATH from Loam, libghostty keeps a PATH that is only the app binary folder.
+        let fallback = ["A": "1", "GHOSTTY_BIN_DIR": helpers, "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"]
+        #expect(paneVariables(["A": "1"], inherited: ["PATH": bin]) == fallback)
+        #expect(paneVariables(["A": "1"], inherited: [:]) == fallback)
+        #expect(paneVariables(["A": "1", "PATH": ""], inherited: ["PATH": "/bin"]) == fallback)
     }
 
     @Test func listsTheKeysToUnsetFromTheProcess() {

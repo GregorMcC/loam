@@ -55,8 +55,8 @@ public enum PaneEnvironment {
     /// volume that ignores case a pane's `loam` can start a second copy of the app. libghostty
     /// applies the surface variables last, so the values here replace its values:
     ///
-    /// - PATH comes from `own`, else from `inherited`, without `binFolder`. An empty PATH stays
-    ///   out, because libghostty ignores an empty value.
+    /// - PATH comes from `own`, else from `inherited`, without `binFolder`. When nothing is left,
+    ///   PATH is `defaultPath`. libghostty ignores an empty value, and then its PATH holds `binFolder`.
     /// - `GHOSTTY_BIN_DIR` is the folder of the bundled `loam` CLI, so the shell integration appends
     ///   that folder. An empty value is not safe: the elvish integration checks only that the
     ///   variable exists. Your Ghostty config loads after Loam's, so Loam cannot turn the `path`
@@ -66,11 +66,13 @@ public enum PaneEnvironment {
     ) -> [String: String] {
         var variables = own
         variables[binFolderVariable] = helpersFolder
-        guard let path = own["PATH"] ?? inherited["PATH"] else { return variables }
-        let kept = path.split(separator: ":", omittingEmptySubsequences: false)
+        let kept = (own["PATH"] ?? inherited["PATH"] ?? "").split(separator: ":", omittingEmptySubsequences: false)
             .filter { $0 != binFolder && $0 != binFolder + "/" }
             .joined(separator: ":")
-        variables["PATH"] = kept.isEmpty ? nil : kept
+        variables["PATH"] = kept.isEmpty ? defaultPath : kept
         return variables
     }
+
+    /// The PATH that launchd gives an app, for a pane whose PATH has nothing else.
+    public static let defaultPath = "/usr/bin:/bin:/usr/sbin:/sbin"
 }
