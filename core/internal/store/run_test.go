@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/GregorMcC/loam/core/internal/store"
 )
@@ -430,5 +431,63 @@ func TestRunHistoryHoldsTheRunsAndEventsOfAPlot(t *testing.T) {
 	}
 	if runs, events, err := s.RunHistory(""); err != nil || len(runs) != 3 || len(events) != 4 || runs[2].ID != other.ID {
 		t.Fatalf("all: %d runs, %d events, %v", len(runs), len(events), err)
+	}
+}
+
+// TAS-204: a run event keeps the result of a check and the findings of a
+// code review beside its detail.
+func TestRunEventsKeepTheirData(t *testing.T) {
+	s := openStore(t)
+	r := addTestRun(t, s, newPlot(t, s, "A").ID)
+	check := &store.RunCheckResult{Name: "Tests", Command: "go test ./...", Exit: 1, Output: "FAIL x\n"}
+	review := &store.RunCodeReviewRound{Findings: []store.RunFinding{{Severity: "major", File: "a.go", Line: 3, Text: "It leaks."}}, More: 2}
+	for _, add := range []func() error{
+		func() error {
+			return s.AddRunEventData(r.ID, "check", "Tests failed (exit 1, 1s)", store.RunEventData{Check: check})
+		},
+		func() error {
+			return s.AddRunEventData(r.ID, "code_review", "The code review found 1 major issue", store.RunEventData{CodeReview: review})
+		},
+		func() error { return s.AddRunEvent(r.ID, "note", "plain") },
+	} {
+		if err := add(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	events, err := s.RunEvents(r.ID)
+	if err != nil || len(events) != 4 {
+		t.Fatalf("%+v %v", events, err)
+	}
+	if got := events[1].Check; got == nil || *got != *check || events[1].CodeReview != nil {
+		t.Fatalf("check event %+v", events[1])
+	}
+	if got := events[2].CodeReview; got == nil || got.More != 2 || !slices.Equal(got.Findings, review.Findings) {
+		t.Fatalf("code_review event %+v", events[2])
+	}
+	if events[0].Check != nil || events[3].Check != nil || events[3].CodeReview != nil {
+		t.Fatalf("events with no data %+v", events)
+	}
+	b, err := json.Marshal(events[3])
+	if err != nil || strings.Contains(string(b), "check") || strings.Contains(string(b), "code_review") {
+		t.Fatalf("an event with no data has the fields: %s %v", b, err)
+	}
+	if b, _ = json.Marshal(events[1]); !strings.Contains(string(b), `"check":{"name":"Tests","command":"go test ./...","passed":false,"exit":1,"output":"FAIL x\n","output_cut":false}`) {
+		t.Fatalf("check JSON %s", b)
+	}
+}
+
+func TestCutOutputKeepsTheEndFromTheStartOfALine(t *testing.T) {
+	if got, cut := store.CutOutput("short\n"); got != "short\n" || cut {
+		t.Fatalf("%q %v", got, cut)
+	}
+	long := strings.Repeat("early line\n", store.CheckOutputMax/len("early line\n")) + "the failure\n"
+	got, cut := store.CutOutput(long)
+	if !cut || len(got) > store.CheckOutputMax || !strings.HasPrefix(got, "early line\n") || !strings.HasSuffix(got, "the failure\n") {
+		t.Fatalf("cut %v, %d bytes, starts %q", cut, len(got), got[:20])
+	}
+	// One long line with no newline keeps whole runes.
+	got, cut = store.CutOutput(strings.Repeat("é", store.CheckOutputMax))
+	if !cut || len(got) > store.CheckOutputMax || !utf8.ValidString(got) {
+		t.Fatalf("cut %v, %d bytes, valid %v", cut, len(got), utf8.ValidString(got))
 	}
 }

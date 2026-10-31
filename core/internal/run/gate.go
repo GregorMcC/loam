@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -83,11 +84,43 @@ func gate(ctx context.Context, s *store.Store, r store.Run, logf func(string, ..
 		if !res.passed {
 			detail = fmt.Sprintf("%s failed (exit %d, %s)", res.check.Name, res.exit, res.duration.Round(time.Second))
 		}
-		if err := s.AddRunEvent(r.ID, "check", detail); err != nil {
+		if err := s.AddRunEventData(r.ID, "check", detail, store.RunEventData{Check: res.stored()}); err != nil {
 			logf("run %s: record check: %v", r.ID, err)
 		}
 	}
 	return g
+}
+
+// stored is the result as a "check" event keeps it: the output of a failed
+// check, cut to [store.CheckOutputMax], and no output of a check that passed.
+func (res checkResult) stored() *store.RunCheckResult {
+	c := &store.RunCheckResult{Name: res.check.Name, Command: res.check.Command, Passed: res.passed, Exit: res.exit}
+	if !res.passed {
+		c.Output, c.OutputCut = store.CutOutput(res.output)
+	}
+	return c
+}
+
+// LastGate returns the results of the checks of the last gate of a run, in
+// the order that they ran: the last block of "check" events in events. A
+// check event from before Loam stored its result is left out.
+func LastGate(events []store.RunEvent) []store.RunCheckResult {
+	var out []store.RunCheckResult
+	seen := false
+	for _, e := range slices.Backward(events) {
+		if e.Kind != "check" {
+			if seen {
+				break
+			}
+			continue
+		}
+		seen = true
+		if e.Check != nil {
+			out = append(out, *e.Check)
+		}
+	}
+	slices.Reverse(out)
+	return out
 }
 
 func (g *gateResult) add(res checkResult) {
@@ -313,7 +346,7 @@ func reason(r store.Run, g gateResult) string {
 	fmt.Fprintf(&b, "Loam gate: %d of %d checks failed (try %d of %d). Fix the failures, then end your turn. Loam runs the checks again.\n",
 		len(g.failed), len(g.results), r.Tries, r.MaxTries)
 	for _, f := range g.failed {
-		fmt.Fprintf(&b, "\n## %s: `%s` (exit %d)\n%s\n", f.check.Name, f.check.Command, f.exit, tail(f.output, reasonTail))
+		fmt.Fprintf(&b, "\n## %s: `%s` (exit %d)\n%s\n", f.check.Name, f.check.Command, f.exit, Tail(f.output, reasonTail))
 	}
 	return b.String()
 }
@@ -327,8 +360,9 @@ func failedNames(g gateResult) string {
 	return strings.Join(names, ", ")
 }
 
-// tail returns the last n lines of text.
-func tail(text string, n int) string {
+// Tail returns the last n lines of text, after a line that counts the lines
+// that it cuts.
+func Tail(text string, n int) string {
 	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
 	if len(lines) > n {
 		lines = append([]string{fmt.Sprintf("(%d earlier lines cut)", len(lines)-n)}, lines[len(lines)-n:]...)
