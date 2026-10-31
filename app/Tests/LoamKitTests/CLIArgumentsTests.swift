@@ -17,8 +17,9 @@ import Testing
         #expect(CLIArguments.exitStatus == 2)
     }
 
-    @Test(arguments: [["list"], ["run", "start"], ["version", "--json"], ["anything"], [""]])
-    func anyFirstWordIsRefused(_ arguments: [String]) {
+    @Test(arguments: [["list"], ["run", "start"], ["version", "--json"], ["anything"], [""],
+                     ["--json", "export", "--changes"], ["--actor", "app", "list"], ["--help"], ["-h"], ["--"]])
+    func aFirstWordOrACLIFlagIsRefused(_ arguments: [String]) {
         #expect(refusal(arguments) != nil)
     }
 
