@@ -525,6 +525,37 @@ func failureNote(what string, err error, out string) string {
 	return note
 }
 
+// leaveChecks is in each prompt that sends work back to the session of a
+// run with checks: a failed gate, a code review, a PR review, and notes (a
+// CI failure has [ciTests] and [leaveToGate]). A full check can take
+// minutes, and the gate runs it anyway when the session ends its turn, so
+// the session must not run it first (TAS-205).
+const leaveChecks = "While you work, run only the fast tests of the code that you change. " + leaveToGate
+
+// leaveToGate tells the session that the gate runs the checks.
+const leaveToGate = "Do not run the Done when checks yourself: Loam runs them when you end your turn."
+
+// hasChecks reports whether the gate of the run runs a check other than
+// [CommittedCheck]: a Done when check, or a rule of its plot. A rule that
+// Loam cannot read counts as none, as in the gate.
+func hasChecks(s *store.Store, r store.Run) bool {
+	if len(r.DoneWhen) > 0 {
+		return true
+	}
+	rules, err := s.ListRules(r.PlotID)
+	return err == nil && len(rules) > 0
+}
+
+// checksLine is the line of a send-back prompt about the checks: line when
+// the run has checks, else nothing. With no checks, no check tests the work,
+// so the session tests it as it needs.
+func checksLine(checks bool, line string) string {
+	if !checks {
+		return ""
+	}
+	return line + "\n"
+}
+
 // Prompt is the first prompt of a run's session: the title, the goal, the
 // Done when checks, the rules of the plot, and how the gate works.
 func Prompt(r store.Run, rules []store.Rule) string {
@@ -563,6 +594,8 @@ func Prompt(r store.Run, rules []store.Rule) string {
 			b.WriteString("The checks named Rule are rules of the plot: every run must pass them.\n")
 		}
 		fmt.Fprintf(&b, "\nEach time you end a turn, Loam runs the checks. When a check fails, Loam sends you its output, and you continue. You have %d tries.\n", r.MaxTries)
+		b.WriteString("While you work, run only the fast tests of the code that you change, such as the tests of one package. " +
+			"Do not run the checks above yourself: Loam runs them when you end a turn.\n")
 	} else {
 		b.WriteString("\nThe run has no checks. It is done when you end a turn.\n")
 	}
