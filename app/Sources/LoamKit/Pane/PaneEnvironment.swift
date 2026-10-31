@@ -55,21 +55,25 @@ public enum PaneEnvironment {
     /// volume that ignores case a pane's `loam` can start a second copy of the app. libghostty
     /// applies the surface variables last, so the values here replace its values:
     ///
-    /// - PATH comes from `own`, else from `inherited`, without `binFolder`. When nothing is left,
-    ///   PATH is `defaultPath`. libghostty ignores an empty value, and then its PATH holds `binFolder`.
+    /// - PATH comes from `own`, else from `configured` (the PATH of your Ghostty `env` lines, which
+    ///   a surface PATH replaces), else from `inherited`, without `binFolder`. When no folder is
+    ///   left, PATH is `defaultPath`. libghostty ignores an empty value, and then its PATH holds
+    ///   `binFolder`.
     /// - `GHOSTTY_BIN_DIR` is the folder of the bundled `loam` CLI, so the shell integration appends
     ///   that folder. An empty value is not safe: the elvish integration checks only that the
     ///   variable exists. Your Ghostty config loads after Loam's, so Loam cannot turn the `path`
     ///   feature off.
     public static func paneVariables(
-        _ own: [String: String], inherited: [String: String], binFolder: String, helpersFolder: String
+        _ own: [String: String], configured: String? = nil, inherited: [String: String],
+        binFolder: String, helpersFolder: String
     ) -> [String: String] {
         var variables = own
         variables[binFolderVariable] = helpersFolder
-        let kept = (own["PATH"] ?? inherited["PATH"] ?? "").split(separator: ":", omittingEmptySubsequences: false)
+        let entries = (own["PATH"] ?? configured ?? inherited["PATH"] ?? "")
+            .split(separator: ":", omittingEmptySubsequences: false)
             .filter { $0 != binFolder && $0 != binFolder + "/" }
-            .joined(separator: ":")
-        variables["PATH"] = kept.isEmpty ? defaultPath : kept
+        // An empty entry is the current folder, so a PATH of only empty entries finds no commands.
+        variables["PATH"] = entries.allSatisfy(\.isEmpty) ? defaultPath : entries.joined(separator: ":")
         return variables
     }
 

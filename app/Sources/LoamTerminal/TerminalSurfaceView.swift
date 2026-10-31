@@ -127,7 +127,8 @@ public final class TerminalSurfaceView: NSView, @preconcurrency NSTextInputClien
         // is never the GUI (TAS-203).
         let helpers = URL(fileURLWithPath: LoamBinary.bundledPath).deletingLastPathComponent().path
         let env = TerminalRuntime.binFolder.map {
-            PaneEnvironment.paneVariables(spec.env, inherited: ProcessInfo.processInfo.environment,
+            PaneEnvironment.paneVariables(spec.env, configured: runtime.lastConfigLoad?.environmentPath,
+                                          inherited: ProcessInfo.processInfo.environment,
                                           binFolder: $0, helpersFolder: helpers)
         } ?? spec.env
         // Keep every C string alive until ghostty_surface_new returns.
