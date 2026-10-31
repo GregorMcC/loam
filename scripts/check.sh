@@ -20,9 +20,11 @@
 # of reach. With GhosttyKit linked there, the app job runs swift build
 # --build-tests, so the terminal, the driver, and all tests compile, and then
 # swift test without LoamDriverTests: the driver tests start the app and need
-# focus, which a sandbox does not give. A link to a cache that the sandbox
-# cannot read fails the job. scripts/build-ghosttykit.sh --link-only makes the
-# link in a new worktree. The script says which path the app job takes.
+# focus, which a sandbox does not give. When the sandbox cannot read the cache
+# that app/vendor links, Package.swift leaves GhosttyKit out, and the job tests
+# LoamKit only with a warning that names the folder to add to the read paths
+# of the run sandbox. scripts/build-ghosttykit.sh --link-only makes the link in
+# a new worktree. The script says which path the app job takes.
 set -eu
 
 usage() {
@@ -135,12 +137,6 @@ gofmt_clean() {
   return 1
 }
 
-ghosttykit_unreadable() {
-  echo "app/vendor links GhosttyKit in $1, and the sandbox cannot read that folder."
-  echo "Fix: add $1 to the read paths of the run sandbox (loam run sandbox), or remove app/vendor."
-  return 1
-}
-
 govulncheck_run() {
   if [ "$sandboxed" = 1 ] && ! /usr/bin/curl -fsS --max-time 10 -o /dev/null https://vuln.go.dev/index/db.json; then
     echo "The sandbox does not reach vuln.go.dev, so govulncheck does not run here. CI runs it."
@@ -195,9 +191,13 @@ if [ "$app" = 1 ]; then
   elif [ "$ghosttykit" = 0 ]; then
     check "swift test" swift test --manifest-cache none --disable-sandbox
   elif ! ls vendor/GhosttyKit.xcframework/ >/dev/null 2>&1; then
-    # The sandbox shows the folders of the cache and denies their content, so
-    # the package sees GhosttyKit and cannot build it.
-    check GhosttyKit ghosttykit_unreadable "${built%/ghosttykit/*}"
+    # The setup command links app/vendor outside the sandbox, and the sandbox
+    # can deny the content of the cache. Package.swift then leaves GhosttyKit
+    # out, so the job tests LoamKit only and says so.
+    cache_dir=${built%/ghosttykit/*}
+    echo "WARNING: GhosttyKit is linked, but the sandbox cannot read $cache_dir. So swift test builds and tests LoamKit only, and the terminal and the driver do not compile here."
+    echo "To build them in the gate, add $cache_dir to the read paths of the run sandbox (loam run sandbox)."
+    check "swift test" swift test --manifest-cache none --disable-sandbox
   else
     echo "The check runs in a sandbox and GhosttyKit is linked, so swift build builds the app and all tests, and swift test skips LoamDriverTests: the driver tests start the app and need focus, which a sandbox does not give."
     check "swift build" swift build --build-tests --manifest-cache none --disable-sandbox

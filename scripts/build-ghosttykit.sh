@@ -15,9 +15,8 @@
 # the pin, and this process can read it, the script links app/vendor. Else it
 # says that the terminal and the driver are not built. It exits 0 in both
 # cases, so Loam can run it as the setup command of each new worktree. A
-# sandbox can show the cache folders and deny their content, and a link to a
-# cache that it cannot read breaks the build of the package, so the script
-# makes no link then.
+# sandbox can show the cache folders and deny their content. The script makes
+# no link then, because the package cannot use that cache.
 set -euo pipefail
 
 link_only=0

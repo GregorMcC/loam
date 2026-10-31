@@ -38,7 +38,7 @@ Run the same commands yourself before you push. CI does not replace them. `scrip
 
 The script also runs in a sandbox, such as the sandbox of a Loam run or of its checks. There, it passes `--disable-sandbox` to `swift`, because the sandbox of SwiftPM cannot start inside another one. When the sandbox does not reach `vuln.go.dev`, it skips govulncheck and says so. CI runs govulncheck.
 
-In a sandbox with GhosttyKit linked in `app/vendor`, the `app` job runs `swift build --build-tests`, so the terminal, the driver, and all tests compile. Then it runs `swift test --skip LoamDriverTests`, because the driver tests start the app and need focus, which a sandbox does not give. When the sandbox cannot read the GhosttyKit cache, the job fails and names the folder to add to the read paths of the run sandbox. With no link, the job builds and tests LoamKit only. The script says which path it takes.
+In a sandbox with GhosttyKit linked in `app/vendor`, the `app` job runs `swift build --build-tests`, so the terminal, the driver, and all tests compile. Then it runs `swift test --skip LoamDriverTests`, because the driver tests start the app and need focus, which a sandbox does not give. When the sandbox cannot read the GhosttyKit cache, `Package.swift` leaves GhosttyKit out. The job then tests LoamKit only, with a warning that names the folder to add to the read paths of the run sandbox. With no link, the job builds and tests LoamKit only. The script says which path it takes.
 
 A new worktree has no `app/vendor`. `scripts/build-ghosttykit.sh --link-only` links it when the cache holds GhosttyKit for `ghostty.pin`, and it builds and downloads nothing. When GhosttyKit is not cached, it says so and exits 0, so it can be the setup command of a repo in Loam.
 
