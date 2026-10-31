@@ -63,13 +63,18 @@ func Hook(s *store.Store, runID string, in io.Reader, out, errOut io.Writer) int
 // is on GitHub, else to Ready. When Loam cannot sandbox them, they do not
 // run: the run is Stopped with the reason, and no try counts. When they
 // fail, and the run has used the turns that the run limits allow since Loam
-// last resumed its session, the run is Stopped, and no try counts.
-// Else the try counts: the stop is blocked with the failures as the reason,
-// or the run is Stopped when it has no tries left. A run that is not running
-// lets the session stop: you may have typed in it after it was Ready. A run
-// that a tick stopped as idle just now gets the gate too (see [endsATurn]). The
-// hook holds the gate lock of the run (see [holdGate]) from the first read of
-// the run to the record of the gate.
+// last resumed its session, the run is Stopped, and no try counts. When the
+// gate ran out of time (see [gateResult.outOfTime]), no try counts: the stop
+// is blocked with a short note that tells the session to end its turn with
+// no change. The second check timeout in a row stops the run, but a gate
+// that ran out of time because it waited for the gate lock never does. Else
+// the try counts: the stop is blocked with the failures as the reason, or the
+// run is Stopped when it has no tries left. The gate blocks at most
+// [maxBlockedStops] stops in a row, and stops the run at the next one. A run
+// that is not running lets the session stop: you may have typed in it after
+// it was Ready. A run that a tick stopped as idle just now gets the gate too
+// (see [endsATurn]). The hook holds the gate lock of the run (see
+// [holdGate]) from the first read of the run to the record of the gate.
 func stopped(s *store.Store, runID string, errOut io.Writer, logf func(string, ...any)) int {
 	// While the gate runs, a tick does not take the run as idle.
 	defer holdGate(s, runID, logf)()
@@ -95,47 +100,93 @@ func stopped(s *store.Store, runID string, errOut io.Writer, logf func(string, .
 	ctx, cancel := context.WithTimeout(context.Background(), gateBudget)
 	g := gate(ctx, s, r, logf)
 	cancel()
-	ships := len(g.failed) == 0 && onGitHub(s, r)
-	block := false
-	r, err = s.UpdateRun(runID, func(r *store.Run) error {
-		r.Turns++
-		if !endsATurn(*r, recent) {
-			return nil // stopped while the checks ran
-		}
-		if len(g.failed) == 0 {
-			r.State, r.Note = store.RunShipping, "All "+count(len(g.results), "check")+" passed"
-			if !ships {
-				r.State, r.Note = store.RunReady, r.Note+". The repo has no GitHub origin, so Loam opens no PR"
-			}
+	_, outOfTime := g.outOfTime()
+	ships := !outOfTime && len(g.failed) == 0 && onGitHub(s, r)
+	block := ""
+	_, err = s.UpdateRun(runID, func(r *store.Run) error {
+		block = gateOutcome(r, g, limits, ships, recent)
+		if block == "" {
+			r.BlockedStops = 0
 			return nil
 		}
-		if g.unsandboxed != nil {
-			// The session cannot fix the sandbox, so no try counts.
-			r.State, r.Note = store.RunStopped, "Loam did not run the checks, because it could not sandbox them: "+g.unsandboxed.Error()
-			return nil
+		r.BlockedStops++
+		if r.BlockedStops > maxBlockedStops {
+			last := strings.TrimSuffix(r.Note, ", and Loam runs the checks again")
+			block, r.BlockedStops = "", 0
+			r.State, r.Note = store.RunStopped, fmt.Sprintf("Stopped after %d blocked stops in a row, the most that Claude Code allows. The last gate: %s", maxBlockedStops, last)
 		}
-		if turns := r.Turns - r.TurnBase; limits.MaxTurns > 0 && turns >= limits.MaxTurns {
-			r.State, r.Note = store.RunStopped, "Stopped after "+count(turns, "turn")+", the limit for each run"
-			return nil
-		}
-		r.Tries++
-		if r.Tries >= r.MaxTries {
-			r.State, r.Note = store.RunStopped, "Checks failed after "+count(r.Tries, "try")+": "+failedNames(g)
-			return nil
-		}
-		r.State, r.Note = store.RunRunning, fmt.Sprintf("Try %d failed: %s", r.Tries, failedNames(g))
-		block = true
 		return nil
 	})
 	if err != nil {
 		logf("run %s: record the gate: %v", runID, err)
 		return 0
 	}
-	if !block {
+	if block == "" {
 		return 0
 	}
-	fmt.Fprint(errOut, reason(r, g))
+	fmt.Fprint(errOut, block)
 	return 2
+}
+
+// maxBlockedStops is the most stops in a row that the gate blocks. Claude
+// Code lets a session stop after 8 blocked stops in a row (see
+// [store.MaxTriesLimit]), and the run then waits in Running with no session
+// at work. So the gate blocks at most 7 in a row, as for a run with 8 tries,
+// and stops the run at the next one that it would block.
+const maxBlockedStops = store.MaxTriesLimit - 1
+
+// gateOutcome moves the run r on from the gate g, and returns the reason
+// that blocks the stop, or "" when the session can stop. See [stopped].
+// recent is whether a tick stopped the run as idle just now (see
+// [endsATurn]).
+func gateOutcome(r *store.Run, g gateResult, limits store.RunLimits, ships, recent bool) string {
+	why, outOfTime := g.outOfTime()
+	r.Turns++
+	if !endsATurn(*r, recent) {
+		return "" // stopped while the checks ran
+	}
+	if !outOfTime {
+		r.GateTimeouts = 0
+	}
+	if !outOfTime && len(g.failed) == 0 {
+		r.State, r.Note = store.RunShipping, "All "+count(len(g.results), "check")+" passed"
+		if !ships {
+			r.State, r.Note = store.RunReady, r.Note+". The repo has no GitHub origin, so Loam opens no PR"
+		}
+		return ""
+	}
+	if g.unsandboxed != nil {
+		// The session cannot fix the sandbox, so no try counts.
+		r.State, r.Note = store.RunStopped, "Loam did not run the checks, because it could not sandbox them: "+g.unsandboxed.Error()
+		return ""
+	}
+	if turns := r.Turns - r.TurnBase; limits.MaxTurns > 0 && turns >= limits.MaxTurns {
+		r.State, r.Note = store.RunStopped, "Stopped after "+count(turns, "turn")+", the limit for each run"
+		return ""
+	}
+	if outOfTime {
+		// A wait for the lock comes from the gates of other runs, and the
+		// lock gives no turn order, so it never stops the run (see
+		// [gateResult.waitCaused]). It leaves the count of check timeouts
+		// as it is.
+		waited := g.waitCaused()
+		if !waited {
+			r.GateTimeouts++
+		}
+		if !waited && r.GateTimeouts >= 2 {
+			r.State, r.Note = store.RunStopped, why+", 2 gates in a row. No try counted"
+			return ""
+		}
+		r.State, r.Note = store.RunRunning, why+". No try counted, and Loam runs the checks again"
+		return timeoutReason(why)
+	}
+	r.Tries++
+	if r.Tries >= r.MaxTries {
+		r.State, r.Note = store.RunStopped, "Checks failed after "+count(r.Tries, "try")+": "+failedNames(g)
+		return ""
+	}
+	r.State, r.Note = store.RunRunning, fmt.Sprintf("Try %d failed: %s", r.Tries, failedNames(g))
+	return reason(*r, g)
 }
 
 // onGitHub reports whether Loam can ship the run: it works in a worktree of

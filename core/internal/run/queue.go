@@ -126,6 +126,8 @@ func startOne(ctx context.Context, s *store.Store, id, loam string) (*store.Run,
 		r.State, r.Note = store.RunStarting, ""
 		if q.Resume != "" {
 			r.State, r.TurnBase = store.RunRunning, r.Turns // the turn limit counts from the resume
+			r.GateTimeouts = 0                              // and the gates that ran out of time
+			r.BlockedStops = 0                              // and the stops that the gate blocked
 		}
 		return nil
 	})

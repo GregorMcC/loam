@@ -375,6 +375,17 @@ type Run struct {
 	// your notes or a CI failure. The turn limit counts the turns after it.
 	// It is not in the JSON.
 	TurnBase int `json:"-"`
+	// GateTimeouts counts the gates in a row whose checks ran out of time.
+	// Such a gate counts no try, and the second one stops the run. A gate that
+	// waited for the gate of another run until no time was left for its
+	// checks leaves it as it is. Any other gate, and each resume of the
+	// session, sets it to 0. It is not in the JSON.
+	GateTimeouts int `json:"-"`
+	// BlockedStops counts the stops in a row that the gate blocked. Claude
+	// Code lets a session stop after 8 blocked stops in a row, so the gate
+	// stops the run before that. A stop that the gate lets end, and each
+	// resume of the session, sets it to 0. It is not in the JSON.
+	BlockedStops int `json:"-"`
 	// Queue says how a Queued run starts its session, or nil. It is not in
 	// the JSON.
 	Queue *RunQueue `json:"-"`
@@ -588,12 +599,12 @@ func (s *Store) AddRun(r Run) (Run, error) {
 		return Run{}, err
 	}
 	now := time.Now().UnixMilli()
-	r.Tries, r.Turns, r.TurnBase, r.ReviewTries, r.ReviewsSent = 0, 0, 0, 0, nil
+	r.Tries, r.Turns, r.TurnBase, r.GateTimeouts, r.BlockedStops, r.ReviewTries, r.ReviewsSent = 0, 0, 0, 0, 0, 0, nil
 	r.CodeReview = nil    // a new run has no review of its head
 	r.ReviewReplies = nil // nor a review that waits for replies
 	r.CreatedAt, r.UpdatedAt = tm(now), tm(now)
 	checks, src, pr, shape, queue, notes, draft, sent, review, replies := encodeRun(r)
-	if err := tx.exec(`INSERT INTO runs(`+runCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`,
+	if err := tx.exec(`INSERT INTO runs(`+runCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`,
 		r.ID, r.PlotID, r.WorktreeID, r.Folder, r.Title, r.Goal, checks, r.State, r.MaxTries, r.SessionID, r.Note,
 		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, r.GroupID, queue, notes, draft, sent, review, replies, r.Fixes, now, now); err != nil {
 		return Run{}, err
@@ -713,10 +724,10 @@ func updateRun(tx *writeTx, id string, fn func(*Run) error, tryNote *string) (Ru
 	checks, src, pr, shape, queue, notes, draft, sent, review, replies := encodeRun(r)
 	if err := tx.exec(`UPDATE runs SET worktree_id = ?, folder = ?, title = ?, goal = ?, done_when = ?, state = ?, tries = ?,
   max_tries = ?, session_id = ?, note = ?, source_kind = ?, source_key = ?, source_url = ?, pr_number = ?, pr_url = ?,
-  shape = ?, group_id = ?, turns = ?, turn_base = ?, queue = ?, notes = ?, pr_draft = ?, review_tries = ?, reviews_sent = ?,
+  shape = ?, group_id = ?, turns = ?, turn_base = ?, gate_timeouts = ?, blocked_stops = ?, queue = ?, notes = ?, pr_draft = ?, review_tries = ?, reviews_sent = ?,
   code_review = ?, review_replies = ?, fixes = ?, updated_at = ? WHERE id = ?`,
 		r.WorktreeID, r.Folder, r.Title, r.Goal, checks, r.State, r.Tries, r.MaxTries, r.SessionID, r.Note,
-		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, r.GroupID, r.Turns, r.TurnBase, queue, notes, draft,
+		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, r.GroupID, r.Turns, r.TurnBase, r.GateTimeouts, r.BlockedStops, queue, notes, draft,
 		r.ReviewTries, sent, review, replies, r.Fixes, now, r.ID); err != nil {
 		return Run{}, err
 	}
@@ -877,7 +888,7 @@ func (s *Store) RunFeed(plotID string, since time.Time) ([]FeedEvent, error) {
 
 // runCols are the columns of a run record.
 const runCols = `id, plot_id, worktree_id, folder, title, goal, done_when, state, tries, max_tries, session_id, note,
-  source_kind, source_key, source_url, pr_number, pr_url, shape, group_id, turns, turn_base, queue, notes, pr_draft,
+  source_kind, source_key, source_url, pr_number, pr_url, shape, group_id, turns, turn_base, gate_timeouts, blocked_stops, queue, notes, pr_draft,
   review_tries, reviews_sent, code_review, review_replies, fixes, created_at, updated_at`
 
 // encodeRun returns the columns of a run that are not plain values. notes is
@@ -973,7 +984,7 @@ func scanRun(sc interface{ Scan(...any) error }) (Run, error) {
 	var created, updated int64
 	err := sc.Scan(&r.ID, &r.PlotID, &r.WorktreeID, &r.Folder, &r.Title, &r.Goal, &checks, &r.State, &r.Tries,
 		&r.MaxTries, &r.SessionID, &r.Note, &src.Kind, &src.Key, &src.URL, &pr.Number, &pr.URL, &shape, &r.GroupID,
-		&r.Turns, &r.TurnBase, &queue, &notes, &draft, &r.ReviewTries, &sent, &review, &replies, &r.Fixes, &created, &updated)
+		&r.Turns, &r.TurnBase, &r.GateTimeouts, &r.BlockedStops, &queue, &notes, &draft, &r.ReviewTries, &sent, &review, &replies, &r.Fixes, &created, &updated)
 	if err != nil {
 		return Run{}, err
 	}
