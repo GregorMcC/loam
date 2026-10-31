@@ -161,15 +161,26 @@ func TestRunTickKeepsARunWhoseStopHookRunsTheGate(t *testing.T) {
 	}
 }
 
+// A list that Loam cannot read stops no run: a session that the list does
+// not have counts as idle.
 func TestRunTickWarnsWhenClaudeAgentsGivesNoList(t *testing.T) {
-	idleWait(t, 0)
-	s, r := idleRun(t, "done")
-	testutil.FakeClaudeAgents(t, "not json")
-	if got := tick(t); len(got.Runs) != 0 || len(got.Warnings) != 1 {
-		t.Fatalf("%+v", got)
+	cases := map[string]string{
+		"not json":     "not json",
+		"null":         "null",
+		"no sessionId": `[{"id": "c57ef956-3136-4e86-bfde-da8facfe0523", "state": "working"}]`,
 	}
-	if r, _ = s.GetRun(r.ID); r.State != store.RunRunning {
-		t.Fatalf("%+v", r)
+	for name, text := range cases {
+		t.Run(name, func(t *testing.T) {
+			idleWait(t, 0)
+			s, r := idleRun(t, "done")
+			testutil.FakeClaudeAgents(t, text)
+			if got := tick(t); len(got.Runs) != 0 || len(got.Warnings) != 1 {
+				t.Fatalf("%+v", got)
+			}
+			if r, _ = s.GetRun(r.ID); r.State != store.RunRunning {
+				t.Fatalf("%+v", r)
+			}
+		})
 	}
 }
 

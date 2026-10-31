@@ -181,8 +181,16 @@ func sessionStates(ctx context.Context) (map[string]string, error) {
 	if err := json.Unmarshal(out.Bytes(), &sessions); err != nil {
 		return nil, fmt.Errorf("claude agents gave a list that Loam cannot read: %w", err)
 	}
+	// A session that the list does not have is idle, so a list that Loam
+	// misreads must not look like a list with no sessions.
+	if sessions == nil {
+		return nil, errors.New("claude agents gave no list")
+	}
 	states := make(map[string]string, len(sessions))
 	for _, a := range sessions {
+		if a.SessionID == "" {
+			return nil, errors.New("claude agents gave a session with no sessionId")
+		}
 		states[a.SessionID] = a.State
 	}
 	return states, nil
