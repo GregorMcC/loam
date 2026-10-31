@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -146,6 +147,7 @@ func runRules(s *store.Store, plot store.Plot, folder string) (sandbox.Rules, er
 	if err != nil {
 		return sandbox.Rules{}, err
 	}
+	base := gitConfigFiles(admin, git)
 	in := sandbox.Input{
 		Home:      home,
 		Machine:   sandbox.Extra{Read: machine.Read, Write: machine.Write, Hosts: machine.Hosts},
@@ -154,7 +156,7 @@ func runRules(s *store.Store, plot store.Plot, folder string) (sandbox.Rules, er
 		Folder:    folder,
 		GitDir:    git,
 		Repos:     repos,
-		GitConfig: gitConfigFiles(admin, git),
+		GitConfig: base,
 		// The plot folder holds the seed, which only Loam writes.
 		NoWrite: []string{s.PlotDir(plot.ID)},
 		Getenv:  os.Getenv,
@@ -164,7 +166,34 @@ func runRules(s *store.Store, plot store.Plot, folder string) (sandbox.Rules, er
 			in.Links = append(in.Links, linkkind.Expand(l.Target))
 		}
 	}
-	return sandbox.For(in)
+	r, err := sandbox.For(in)
+	if err != nil {
+		return sandbox.Rules{}, err
+	}
+	// The includes come after the rules, so that Loam knows which files the
+	// run can write.
+	temps := runTemps()
+	inc := gitIncludes(home, base, func(f string) bool { return !r.Writable(f, temps...) && !r.Refuses(f) })
+	for _, p := range r.AllowRead(inc.files...) {
+		if _, err := os.Stat(p); err == nil {
+			r.Notes = append(r.Notes, gitStops("A git config includes "+p+", and Bash cannot read it."))
+		}
+	}
+	for _, f := range inc.skipped {
+		r.Notes = append(r.Notes, gitStops("Loam did not follow the includes of the git config "+f+", because the run can write it or the sandbox refuses it. So Bash cannot read the files that it includes."))
+	}
+	for _, what := range inc.unread {
+		r.Notes = append(r.Notes, gitStops("Loam could not follow the git config include "+what+"."))
+	}
+	if inc.late {
+		r.Notes = append(r.Notes, gitStops("Loam did not read every git config include in time."))
+	}
+	return r, nil
+}
+
+// gitStops ends a note about git config that the sandbox does not allow.
+func gitStops(what string) string {
+	return what + " So git can stop in the sandbox. Do not work around it. Say so in your last message."
 }
 
 // gitConfigScopes are the config scopes whose files the sandbox reads. The
@@ -174,15 +203,19 @@ func runRules(s *store.Store, plot store.Plot, folder string) (sandbox.Rules, er
 // the environment.
 var gitConfigScopes = []string{"system", "global", "local"}
 
+// runTemps returns the folders that the sandbox of Claude Code lets the run
+// write besides the rules: the temporary folders.
+var runTemps = func() []string { return append(sandbox.Temps(), "/tmp") }
+
 // gitConfigFiles returns the config files that git reads in the worktree
-// with the git folder admin, with the files that they include, in the scopes
-// of gitConfigScopes. It names the common git folder, so that git does not
-// follow a commondir file that the run wrote. A file that git cannot name is
-// not read in the sandbox, so an error gives none.
+// with the git folder admin, in the scopes of gitConfigScopes, without the
+// files that they include (see gitIncludes). It names the common git folder,
+// so that git does not follow a commondir file that the run wrote. A file
+// that git cannot name is not read in the sandbox, so an error gives none.
 func gitConfigFiles(admin, common string) []string {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "config", "--list", "--show-scope", "--show-origin", "-z")
+	cmd := exec.CommandContext(ctx, "git", "config", "--list", "--no-includes", "--show-scope", "--show-origin", "-z")
 	cmd.Env = append(os.Environ(), "GIT_DIR="+admin, "GIT_COMMON_DIR="+common)
 	out, err := cmd.Output()
 	if err != nil {
@@ -201,6 +234,143 @@ func gitConfigFiles(admin, common string) []string {
 		}
 	}
 	return files
+}
+
+// includeDepth is how many levels of includes git follows below the config
+// file that it starts from (MAX_INCLUDE_DEPTH).
+const includeDepth = 10
+
+// includes are the files that the sandbox reads for the git config includes.
+// skipped are files with includes that Loam did not follow, because the run
+// can write them or the sandbox refuses them. unread are config files that
+// git could not read and include paths that Loam does not expand. late is
+// true when git did not answer in time.
+type includes struct {
+	files, skipped, unread []string
+	late                   bool
+}
+
+// gitIncludes follows the include.path and includeIf.*.path entries of the
+// base config files, to the depth that git follows, and takes the file of
+// each entry whatever its condition. Git opens the file of a hasconfig
+// condition also when the condition does not hold (TAS-194). The run can
+// change its branch, so an onbranch condition can hold later in the run.
+//
+// It follows the includes of a file only when follow is true for it. The
+// caller gives false for a file that the run can write, because the run
+// could name any file there, and for a file that the sandbox refuses.
+func gitIncludes(home string, base []string, follow func(string) bool) includes {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	// Git resolves a relative include from the folder of the name that it
+	// opened, so a file that two links in two folders name can include two
+	// files. The key holds the real path of the file and of that folder, so a
+	// link to its own folder does not give a new key on each pass. On a volume
+	// that does not ignore case, two names that differ in case are two files,
+	// so the key keeps the case. A file with two names is then read twice, and
+	// the depth ends a cycle through such names. The key also holds whether
+	// Loam follows the name: a name that the run can write must not stop the
+	// walk of another name of the same file that Loam follows.
+	type fileKey struct {
+		real, dir string
+		follows   bool
+	}
+	seen := map[fileKey]bool{}
+	key := func(f string) fileKey {
+		return fileKey{sandbox.Real(f), sandbox.Real(filepath.Dir(f)), follow(f)}
+	}
+	for _, f := range base {
+		seen[key(f)] = true
+	}
+	var inc includes
+	next := base
+	for depth := 0; depth < includeDepth && len(next) > 0; depth++ {
+		var found []string
+		for _, f := range next {
+			entries, unread, err := includeEntries(ctx, home, f)
+			if ctx.Err() != nil {
+				inc.late = true
+				return inc
+			}
+			inc.unread = append(inc.unread, unread...)
+			if err != nil {
+				inc.unread = append(inc.unread, f)
+				continue
+			}
+			if len(entries) > 0 && !follow(f) {
+				inc.skipped = append(inc.skipped, f)
+				continue
+			}
+			for _, p := range entries {
+				if k := key(p); !seen[k] {
+					seen[k] = true
+					inc.files = append(inc.files, p)
+					// Git skips a missing file, so it has no includes to follow.
+					if _, err := os.Stat(p); err == nil {
+						found = append(found, p)
+					}
+				}
+			}
+		}
+		next = found
+	}
+	return inc
+}
+
+// includeEntries returns the files that the include entries of the config
+// file f name. Git reads a relative path from the folder of f, and ~/ from
+// home. includeEntries leaves out a path that git would not expand in the
+// same way, such as ~user/ or %(prefix)/, and returns it in unread. It also
+// leaves out a folder, which git cannot read as a config file. A file with
+// no include gives none. err is not nil when git cannot read f.
+func includeEntries(ctx context.Context, home, f string) (paths, unread []string, err error) {
+	out, err := exec.CommandContext(ctx, "git", "config", "--file", f, "--no-includes", "-z", "--get-regexp", `^include(if\..*)?\.path$`).Output()
+	// git config exits 1 when it finds no entry.
+	if exit := (*exec.ExitError)(nil); errors.As(err, &exit) && exit.ExitCode() == 1 {
+		return nil, nil, nil
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	// Each entry is a key and its value, with a newline between them, ended
+	// by NUL.
+	for _, entry := range strings.Split(string(out), "\x00") {
+		_, p, found := strings.Cut(entry, "\n")
+		switch {
+		case !found || p == "":
+			continue
+		case strings.HasPrefix(p, "~/"):
+			p = gitPath(home + p[1:])
+		case strings.HasPrefix(p, "~"), strings.HasPrefix(p, "%("):
+			unread = append(unread, p)
+			continue
+		case filepath.IsAbs(p):
+			p = gitPath(p)
+		default:
+			p = gitPath(filepath.Dir(f) + string(filepath.Separator) + p)
+		}
+		if fi, err := os.Stat(p); err == nil && fi.IsDir() {
+			continue
+		}
+		paths = append(paths, p)
+	}
+	return paths, unread, nil
+}
+
+// gitPath returns the file that the system opens for the path raw, as git
+// builds it. Git does not clean the path, so the system follows each link
+// before a "..". filepath.Clean removes "link/.." by the text, so gitPath
+// resolves the folder of raw on disk instead. The last element keeps its
+// name: git resolves the includes of a file from the folder of the name that
+// it opened, so a link to a config file stays a name in its folder. When the
+// folder does not exist, the system opens nothing, and gitPath cleans raw by
+// the text.
+func gitPath(raw string) string {
+	i := strings.LastIndexByte(raw, filepath.Separator)
+	if dir, err := filepath.EvalSymlinks(raw[:i+1]); err == nil {
+		return filepath.Join(dir, raw[i+1:])
+	}
+	return filepath.Clean(raw)
 }
 
 // gitDirs returns the git folder of the worktree in folder (admin) and the

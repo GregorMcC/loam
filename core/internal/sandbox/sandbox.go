@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -23,8 +24,9 @@ type Input struct {
 	Folder, GitDir string
 	// Repos are the repo paths of the plot. Links are its local links.
 	Repos, Links []string
-	// GitConfig are the config files that git reads in Folder, with the
-	// files that they include.
+	// GitConfig are the config files that git reads in Folder. The caller
+	// adds the files that they include with AllowRead, after For, because it
+	// must know which files the run can write.
 	GitConfig []string
 	// NoWrite are folders that the run must not write, even when Claude Code
 	// allows them, as it allows each --add-dir folder. A denied folder wins
@@ -217,6 +219,59 @@ func opens(home, path string) bool {
 		}
 	}
 	return false
+}
+
+// Writable reports whether the run can write path: it is in a write path of
+// the rules, or in one of also, and in no path that the rules deny. also are
+// folders that the sandbox lets the run write besides the rules, such as the
+// temporary folders. It checks the path as given and with its symlinks
+// resolved, because the run can point a link in a write path at another file.
+// The compare ignores case, as macOS folders do by default. On a volume that
+// does not, the check can take a file for writable when it is not, which is
+// the safe side.
+func (r Rules) Writable(path string, also ...string) bool {
+	in := func(p string, dirs []string) bool {
+		for _, d := range dirs {
+			if within(p, strings.ToLower(d)) {
+				return true
+			}
+		}
+		return false
+	}
+	write := slices.Clone(r.Write)
+	for _, d := range also {
+		write = append(write, filepath.Clean(d), Real(d))
+	}
+	for _, p := range []string{filepath.Clean(path), Real(path)} {
+		if p = strings.ToLower(p); in(p, write) && !in(p, r.DenyWrite) {
+			return true
+		}
+	}
+	return false
+}
+
+// Refuses reports whether the rules never let the run read path, because it
+// would open home, as For checks for each path that it allows.
+func (r Rules) Refuses(path string) bool {
+	return opens(r.Home, Real(path))
+}
+
+// AllowRead adds read paths to the rules with the check of For: it leaves
+// out a path that the rules refuse. It returns the paths that it left out. It
+// adds a path once. Two names of a path that differ in case stay two paths:
+// on a volume that does not ignore case, they are two files.
+func (r *Rules) AllowRead(paths ...string) (left []string) {
+	for _, p := range paths {
+		p = Real(p)
+		switch {
+		case p == "":
+		case r.Refuses(p):
+			left = append(left, p)
+		case !slices.Contains(r.Read, p):
+			r.Read = append(r.Read, p)
+		}
+	}
+	return left
 }
 
 // within reports whether path is dir or a path inside it.
