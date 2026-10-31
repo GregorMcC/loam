@@ -1,7 +1,10 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -108,6 +111,53 @@ func TestRunTickKeepsARunThatChangedInTheLastTenMinutes(t *testing.T) {
 	}
 	if n := agentsCalls(t); n != 0 {
 		t.Fatalf("%d claude agents calls, want 0", n)
+	}
+}
+
+// A check can run for up to 10 minutes with no event, while claude agents
+// shows the session as done. A tick during the gate leaves the run to the
+// Stop hook, which then records the gate.
+func TestRunTickKeepsARunWhoseStopHookRunsTheGate(t *testing.T) {
+	idleWait(t, 0)
+	s, _ := runCLI(t)
+	signals := t.TempDir()
+	started, release := filepath.Join(signals, "started"), filepath.Join(signals, "go")
+	out, _, err := lrRun(t, "", "run", "start", "alpha", "--title", "Say hi", "--json",
+		"--check", fmt.Sprintf("Slow=touch %q && while [ ! -f %q ]; do sleep 0.05; done", started, release))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var start runStartOut
+	if err := json.Unmarshal([]byte(out), &start); err != nil {
+		t.Fatal(err)
+	}
+	r := start.Run
+	stopHook(t, r, "SessionStart")
+	testutil.FakeClaudeAgents(t, fmt.Sprintf(`[{"sessionId": %q, "state": "done"}]`, shipSession))
+	hook := make(chan error, 1)
+	go func() {
+		_, _, err := lrRun(t, `{"hook_event_name":"Stop","session_id":"`+shipSession+`","cwd":"`+r.Folder+`"}`, "run", "hook", r.ID)
+		hook <- err
+	}()
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		if _, err := os.Stat(started); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the check did not start")
+		}
+	}
+	if got := tick(t); len(got.Runs) != 0 || len(got.Warnings) != 0 {
+		t.Fatalf("the tick moved a run during its gate: %+v", got)
+	}
+	if err := os.WriteFile(release, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-hook; err != nil {
+		t.Fatal(err)
+	}
+	if r, _ = s.GetRun(r.ID); r.Note == run.IdleNote || r.Turns != 1 {
+		t.Fatalf("the hook did not record the gate: %+v", r)
 	}
 }
 

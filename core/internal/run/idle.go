@@ -6,7 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/GregorMcC/loam/core/internal/claudebin"
@@ -30,9 +33,10 @@ const IdleNote = "The session ended a turn, but Loam has no record of its checks
 // Stop hook cannot record the end of the turn: the store fails, or the hook
 // crashes or times out. Then nothing else moves the run. A run is idle when
 // it has had no change and no event for [IdleWait], and claude agents does
-// not show its session in a turn (see [sessionIdle]). stopIdle does not run
-// the gate, because the Stop hook may still run it. One claude agents call
-// reads all the sessions, and only when a run has been quiet for that long.
+// not show its session in a turn (see [sessionIdle]). A run whose Stop hook
+// runs the gate is not idle (see [stopIfNoGate]). stopIdle does not run the
+// gate itself. One claude agents call reads all the sessions, and only when
+// a run has been quiet for that long.
 func stopIdle(ctx context.Context, s *store.Store, runs []store.Run) ([]store.Run, []string) {
 	var quiet []store.Run
 	var warnings []string
@@ -61,15 +65,7 @@ func stopIdle(ctx context.Context, s *store.Store, runs []store.Run) ([]store.Ru
 		if !sessionIdle(states, found.SessionID) {
 			continue
 		}
-		moved := false
-		r, err := s.UpdateRun(found.ID, func(r *store.Run) error {
-			// The Stop hook may have moved the run while Loam read the sessions.
-			if r.State != store.RunRunning || !r.UpdatedAt.Equal(found.UpdatedAt) {
-				return nil
-			}
-			r.State, r.Note, moved = store.RunStopped, IdleNote, true
-			return nil
-		})
+		r, moved, err := stopIfNoGate(s, found)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("%s: %v", found.Title, err))
 			continue
@@ -79,6 +75,65 @@ func stopIdle(ctx context.Context, s *store.Store, runs []store.Run) ([]store.Ru
 		}
 	}
 	return stopped, warnings
+}
+
+// stopIfNoGate stops the run when no Stop hook runs its gate. The hook holds
+// the gate lock of the run while it runs the gate (see [holdGate]), and a
+// check can take up to [checkTimeout] with no event. The tick holds the lock
+// while it stops the run, so a gate that starts then finds the run Stopped,
+// and does not run.
+func stopIfNoGate(s *store.Store, found store.Run) (store.Run, bool, error) {
+	unlock, free, err := lockGate(s, found.ID, false)
+	if err != nil || !free {
+		return found, false, err
+	}
+	defer unlock()
+	moved := false
+	r, err := s.UpdateRun(found.ID, func(r *store.Run) error {
+		// A Stop hook may have moved the run while Loam read the sessions.
+		if r.State != store.RunRunning || !r.UpdatedAt.Equal(found.UpdatedAt) {
+			return nil
+		}
+		r.State, r.Note, moved = store.RunStopped, IdleNote, true
+		return nil
+	})
+	return r, moved, err
+}
+
+// holdGate takes the gate lock of the run for the Stop hook, and waits while
+// a tick holds it. A lock that Loam cannot take, such as on a full disk, does
+// not stop the gate: the hook then logs it and runs the gate with no lock.
+func holdGate(s *store.Store, runID string, logf func(string, ...any)) (unlock func()) {
+	unlock, _, err := lockGate(s, runID, true)
+	if err != nil {
+		logf("run %s: take the gate lock: %v", runID, err)
+		return func() {}
+	}
+	return unlock
+}
+
+// lockGate takes the gate lock of the run, <home>/gates/<run-id>.lock. With
+// wait, it waits for the lock. Else it returns false when another process
+// holds it. The lock ends with the process, so a hook that crashes or that
+// Claude Code kills does not keep it.
+func lockGate(s *store.Store, runID string, wait bool) (unlock func(), ok bool, err error) {
+	dir := filepath.Join(s.Home(), "gates")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, false, err
+	}
+	path := filepath.Join(dir, runID+".lock")
+	if !wait {
+		return lockFile(path)
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, false, err
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		f.Close()
+		return nil, false, err
+	}
+	return func() { f.Close() }, true, nil
 }
 
 // lastChange is the time of the last change of the run, or of its last

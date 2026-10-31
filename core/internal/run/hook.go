@@ -65,8 +65,12 @@ func Hook(s *store.Store, runID string, in io.Reader, out, errOut io.Writer) int
 // last resumed its session, the run is Stopped, and no try counts.
 // Else the try counts: the stop is blocked with the failures as the reason,
 // or the run is Stopped when it has no tries left. A run that is not running
-// lets the session stop: you may have typed in it after it was Ready.
+// lets the session stop: you may have typed in it after it was Ready. The
+// hook holds the gate lock of the run (see [holdGate]) from the first read of
+// the run to the record of the gate.
 func stopped(s *store.Store, runID string, errOut io.Writer, logf func(string, ...any)) int {
+	// While the gate runs, a tick does not take the run as idle.
+	defer holdGate(s, runID, logf)()
 	r, err := s.GetRun(runID)
 	if err != nil {
 		logf("run %s: %v", runID, err)
