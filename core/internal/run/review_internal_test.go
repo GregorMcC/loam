@@ -103,7 +103,8 @@ func TestReviewPromptAsksForThreadRepliesOnlyForTheThreadsItHolds(t *testing.T) 
 }
 
 // TAS-209: a session that fixed each Minor point gave the review bot new code on each push. The prompt has the
-// session fix each Critical or Major point, and a Minor point only when the fix is small, with a reply for the rest.
+// session fix each Critical or Major point that holds against the code, and a Minor point only when the fix is
+// small, with a reply for each point that it does not fix.
 // A point about the sandbox, a permission, or a path that the run can write is fixed at each severity.
 func TestReviewPromptFixesMajorPointsAndAnswersMinorOnes(t *testing.T) {
 	thread := github.ReviewThread{ID: "T1", Comments: []github.ReviewComment{{Author: "bot", Writer: true, Body: "Minor: check the error."}}}
@@ -114,9 +115,9 @@ func TestReviewPromptFixesMajorPointsAndAnswersMinorOnes(t *testing.T) {
 	} {
 		prompt, _ := reviewPrompt(store.Run{}, pr, reviewOf(store.Run{}, pr), testReplies)
 		for _, want := range []string{
-			"Fix each Critical or Major point. A point with no severity counts as Major.",
+			"Fix each Critical or Major point that holds against the code. A point with no severity counts as Major.",
 			"Fix a Minor point or a nitpick only when the fix is small and inside the change of the run.",
-			"Else do not change the code for it, and give the reason in the replies file.",
+			"For a point that you do not fix, do not change the code, and give the reason in the replies file.",
 			"Do not leave a point about a sandbox, a permission, or a path that the run can write because it is unlikely: fix it.",
 			"When no point needs a change, make no commit.",
 		} {

@@ -306,10 +306,12 @@ func reviewPromptFor(opening string, pr *github.PR, rv review, replies string, c
 // the bot new code to review on each push, so a small change took 3 rounds
 // (TAS-209). A point about the sandbox, a permission, or a path that the run
 // can write is a fault of a trust boundary, so the session fixes it at each
-// severity.
-const severityRule = "Fix each Critical or Major point. A point with no severity counts as Major. " +
+// severity. A point can be wrong, so the session fixes only the points that
+// hold against the code, and gives the reason for each point that it does
+// not fix.
+const severityRule = "Fix each Critical or Major point that holds against the code. A point with no severity counts as Major. " +
 	"Fix a Minor point or a nitpick only when the fix is small and inside the change of the run. " +
-	"Else do not change the code for it, and give the reason in the replies file. " +
+	"For a point that you do not fix, do not change the code, and give the reason in the replies file. " +
 	"Do not leave a point about a sandbox, a permission, or a path that the run can write because it is unlikely: fix it."
 
 // cutMark follows a quote that Loam cut. It is outside the quote, so the
