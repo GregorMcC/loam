@@ -66,8 +66,9 @@ func paneLine(h hookInput, now time.Time) (PaneLine, bool) {
 }
 
 // sendPane sends the line for a hook call to the Unix socket in
-// LOAM_PANE_SOCKET. No variable means no send. It waits at most paneTimeout
-// to connect and paneTimeout to write, and logs each error.
+// LOAM_PANE_SOCKET. No variable, or an empty one, means no send: a run session
+// sets it empty. It waits at most paneTimeout to connect and paneTimeout to
+// write, and logs each error.
 func sendPane(h hookInput, getenv func(string) string, logf func(string, ...any)) {
 	path := getenv("LOAM_PANE_SOCKET")
 	if path == "" {
