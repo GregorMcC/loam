@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -62,6 +64,7 @@ type gateResult struct {
 // read is left out, with a log line.
 func gate(ctx context.Context, s *store.Store, r store.Run, logf func(string, ...any)) gateResult {
 	box := newCheckBox(s, r)
+	defer box.close()
 	g := gateResult{unsandboxed: box.err}
 	for _, c := range r.DoneWhen {
 		g.add(runCheck(ctx, r.Folder, box, c))
@@ -97,10 +100,52 @@ func (g *gateResult) add(res checkResult) {
 // profile.
 type checkBox struct {
 	exec, profile string
+	// dir is the folder of the gate, which Loam removes after the gate. The
+	// checks get it as TMPDIR, and it is the only temp folder of the profile
+	// that can hold their unix sockets.
+	dir string
+	// env is the environment of each check: TMPDIR, GOPROXY (see goProxy),
+	// and an xcrun_db in dir. With that cache, the xcrun shims of a check,
+	// such as /usr/bin/git, do not need the cache of the user, which the
+	// profile denies. A shim that misses a cache that it cannot write prints
+	// an error, which would fail the committed check. Only the processes of
+	// the sandbox get this env.
+	env []string
 	// err is why Loam cannot sandbox the checks. Then each check fails and
 	// does not run: a check runs code that the session wrote, and the gate
 	// works outside the sandbox of the session.
 	err error
+}
+
+// userXcrunCache is the cache of the xcrun shims of the user, for tests.
+var userXcrunCache = sandbox.XcrunCache
+
+// seedXcrunCache copies the cache of the user to cache, so the shims of a
+// check find their tools as they do outside the sandbox. A shim that misses
+// the cache runs xcodebuild to fill it, which is slow and, in a sandbox,
+// prints errors.
+func seedXcrunCache(cache string) {
+	if src := userXcrunCache(); src != "" {
+		if b, err := os.ReadFile(src); err == nil {
+			_ = os.WriteFile(cache, b, 0o600)
+		}
+	}
+}
+
+// goProxy is the module cache of Go as a file proxy. The profile denies the
+// network, and go run of a module at a version asks the proxy if the module
+// is deprecated, also when the module is in the cache. With this proxy, Go
+// takes each module that the session fetched from the cache.
+func goProxy() string {
+	home, _ := os.UserHomeDir()
+	return "file://" + filepath.Join(sandbox.GoModCache(home, os.Getenv), "cache", "download")
+}
+
+// close removes the folder of the gate.
+func (b checkBox) close() {
+	if b.dir != "" {
+		_ = os.RemoveAll(b.dir)
+	}
 }
 
 // sandboxProbeTimeout limits the start of the sandbox with no check.
@@ -119,16 +164,27 @@ func newCheckBox(s *store.Store, r store.Run) checkBox {
 	if err != nil {
 		return checkBox{err: err}
 	}
-	profile, err := rules.Profile(sandbox.Temps()...)
+	// /tmp keeps the path of a socket in the folder short. The folder is the
+	// gate's own, with mode 0700.
+	dir, err := os.MkdirTemp("/tmp", "loam-gate-")
 	if err != nil {
+		return checkBox{err: fmt.Errorf("make the folder of the checks: %w", err)}
+	}
+	box := checkBox{exec: sandbox.Exec(), dir: dir}
+	if box.profile, err = rules.Profile(append([]string{dir}, sandbox.Temps()...)...); err != nil {
+		box.close()
 		return checkBox{err: err}
 	}
-	box := checkBox{exec: sandbox.Exec(), profile: profile}
 	ctx, cancel := context.WithTimeout(context.Background(), sandboxProbeTimeout)
 	defer cancel()
 	if out, err := exec.CommandContext(ctx, box.exec, "-p", box.profile, "/usr/bin/true").CombinedOutput(); err != nil {
+		box.close()
 		return checkBox{err: fmt.Errorf("sandbox-exec cannot start the sandbox: %v %s", err, strings.TrimSpace(string(out)))}
 	}
+	// Not xcrun_db: the profile denies that name in each temp folder.
+	cache := filepath.Join(dir, "xcrun-cache")
+	seedXcrunCache(cache)
+	box.env = append(os.Environ(), "TMPDIR="+dir, "xcrun_db="+cache, "GOPROXY="+goProxy())
 	return box
 }
 
@@ -146,7 +202,7 @@ func runCheck(ctx context.Context, dir string, box checkBox, c store.Check) chec
 	ctx, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, box.exec, "-p", box.profile, "sh", "-c", c.Command)
-	cmd.Dir = dir
+	cmd.Dir, cmd.Env = dir, box.env
 	cmd.WaitDelay = time.Second
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
@@ -173,14 +229,18 @@ func runCheck(ctx context.Context, dir string, box checkBox, c store.Check) chec
 	return res
 }
 
+// committedScript fails when git status --porcelain prints a line. It reads
+// stdout only, because a tool that git starts, such as an xcrun shim, can
+// print a warning on stderr. The output still has that warning, and the error
+// of a git that fails.
+const committedScript = `s=$(git status --porcelain) || exit; [ -z "$s" ] && exit; ` +
+	`printf 'These files are not committed. Commit them, or add them to .gitignore:\n%s\n' "$s"; exit 1`
+
 // committed checks that git status in dir shows no work.
 func committed(ctx context.Context, dir string, box checkBox) checkResult {
 	c := store.Check{Name: CommittedCheck, Command: "git status --porcelain"}
-	res := runCheck(ctx, dir, box, c)
-	if res.passed && strings.TrimSpace(res.output) != "" {
-		res.passed, res.exit = false, 1
-		res.output = "These files are not committed. Commit them, or add them to .gitignore:\n" + res.output
-	}
+	res := runCheck(ctx, dir, box, store.Check{Name: c.Name, Command: committedScript})
+	res.check = c
 	return res
 }
 

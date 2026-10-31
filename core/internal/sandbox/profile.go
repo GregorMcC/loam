@@ -48,7 +48,7 @@ const others = `(deny lsopen)
 // that matches an operation wins. So the profile denies home and then allows
 // the Read paths and the temp folders, denies every write and then allows
 // the Write paths, the temp folders, and alwaysWrite, and denies each
-// DenyWrite path last.
+// DenyWrite path and the xcrun cache of each temp folder last.
 //
 // The profile denies the ways out through other processes (see others). It
 // denies the network, so a check uses the caches that the session filled,
@@ -78,10 +78,27 @@ func (r Rules) Profile(temps ...string) (string, error) {
 	b.WriteString("(deny file-write*)\n")
 	rule(&b, "allow", "file-write*", r.writes(temps), subpath)
 	rule(&b, "deny", "file-write*", r.DenyWrite, subpath)
+	rule(&b, "deny", "file-write*", r.xcrunCaches(temps), "(literal %s)")
 	if b.Len() > MaxProfile {
 		return "", fmt.Errorf("the sandbox profile is %d bytes, more than the %d bytes that Loam passes to sandbox-exec: the rules name too many paths", b.Len(), MaxProfile)
 	}
 	return b.String(), nil
+}
+
+// xcrunCache is the file in the temp folder of the user where the xcrun
+// shims, such as /usr/bin/git, keep the path of each tool. They run that path
+// with no check. A check that wrote the file would make the next git outside
+// the sandbox, of Loam or of the user, run a file of the check.
+const xcrunCache = "xcrun_db"
+
+// xcrunCaches returns xcrunCache in each temp folder. The deny also stops a
+// hard link to the file, and a rename of a file onto it or of it away.
+func (r Rules) xcrunCaches(temps []string) []string {
+	var out []string
+	for _, t := range r.temps(temps) {
+		out = append(out, filepath.Join(t, xcrunCache))
+	}
+	return out
 }
 
 // writes returns the Write paths, the temp folders, and alwaysWrite.
@@ -112,12 +129,28 @@ const MaxProfile = 256 << 10
 const sharedTemp = "/private/tmp"
 
 // socketTemps returns the temp folders that can hold the unix sockets of a
-// check: each one but a folder that holds sharedTemp, as a TMPDIR of /tmp.
+// check: each one but a folder that holds sharedTemp, as a TMPDIR of /tmp, or
+// that holds the temp or the cache folder of the user. Other processes of the
+// user keep their sockets there, such as the pane sockets of Loam, and the
+// diagnostics socket of a .NET process, which can load code into it.
 func (r Rules) socketTemps(temps []string) []string {
+	shared := append([]string{sharedTemp}, userFolders()...)
 	var out []string
 	for _, t := range r.temps(temps) {
-		if !within(sharedTemp, t) {
+		if !slices.ContainsFunc(shared, func(s string) bool { return within(s, t) }) {
 			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// userFolders returns the temp and the cache folder of the user by their
+// real paths.
+var userFolders = func() []string {
+	var out []string
+	for _, name := range []string{"DARWIN_USER_TEMP_DIR", "DARWIN_USER_CACHE_DIR"} {
+		if d := getconf(name); d != "" {
+			out = append(out, Real(d))
 		}
 	}
 	return out
@@ -135,15 +168,33 @@ func Temps() []string {
 		out = append(out, t)
 	}
 	for _, name := range []string{"DARWIN_USER_TEMP_DIR", "DARWIN_USER_CACHE_DIR"} {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		b, err := exec.CommandContext(ctx, "/usr/bin/getconf", name).Output()
-		cancel()
-		p := strings.TrimSpace(string(b))
-		if err == nil && filepath.IsAbs(p) && !slices.ContainsFunc(out, func(o string) bool { return Real(o) == Real(p) }) {
+		if p := getconf(name); p != "" && !slices.ContainsFunc(out, func(o string) bool { return Real(o) == Real(p) }) {
 			out = append(out, p)
 		}
 	}
 	return out
+}
+
+// XcrunCache returns the cache of the xcrun shims of this user: xcrunCache in
+// the temp folder of the user. It returns "" when getconf cannot name the
+// folder.
+func XcrunCache() string {
+	if d := getconf("DARWIN_USER_TEMP_DIR"); d != "" {
+		return filepath.Join(d, xcrunCache)
+	}
+	return ""
+}
+
+// getconf returns the folder that getconf names, or "" when it names no
+// absolute path.
+func getconf(name string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	b, err := exec.CommandContext(ctx, "/usr/bin/getconf", name).Output()
+	if p := strings.TrimSpace(string(b)); err == nil && filepath.IsAbs(p) {
+		return p
+	}
+	return ""
 }
 
 // subpath is the filter of a path and the paths inside it.

@@ -13,6 +13,24 @@ extension Trait where Self == TimeLimitTrait {
     static var waitLimit: Self { .timeLimit(.minutes(5)) }
 }
 
+/// Whether the tests run in a sandbox, as in the Bash of a Loam run or in its gate. A sandbox cannot start another
+/// one, so `sandbox-exec` fails there.
+let inSandbox: Bool = {
+    let probe = Process()
+    probe.executableURL = URL(fileURLWithPath: "/usr/bin/sandbox-exec")
+    probe.arguments = ["-p", "(version 1)(allow default)", "/usr/bin/true"]
+    probe.standardError = FileHandle.nullDevice
+    guard (try? probe.run()) != nil else { return false }
+    probe.waitUntilExit()
+    return probe.terminationStatus != 0
+}()
+
+extension Trait where Self == ConditionTrait {
+    /// A test that needs a service that the sandbox of a Loam run denies, such as FSEvents or the process list, skips
+    /// in a sandbox. CI and a test run outside a sandbox still run it.
+    static var outsideASandbox: Self { .disabled(if: inSandbox, "the sandbox denies the services that this test needs") }
+}
+
 /// Returns when `condition` holds, or when the test is cancelled at its time limit. It looks again every `interval`,
 /// so it suits a condition that another process changes, such as a fake `loam` that logs its calls. It runs on the
 /// actor of its caller, so `condition` can read the state of that actor. It records nothing: the caller checks after it.

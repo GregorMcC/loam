@@ -74,3 +74,53 @@ func TestRunCheckNamesTheFlagForANestedSandbox(t *testing.T) {
 		}
 	}
 }
+
+// Work committed reads the stdout of git status only: a warning on stderr,
+// as from an xcrun shim, does not fail it. A line on stdout does, and a git
+// that fails does, with its error.
+func TestCommittedReadsOnlyTheStdoutOfGit(t *testing.T) {
+	box := fakeBox(t)
+	bin := t.TempDir()
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	cases := []struct {
+		git, want string
+		passed    bool
+	}{
+		{"echo 'xcodebuild: Failed to start fs event stream.' >&2", "fs event stream", true},
+		{"echo ' M main.go'", "These files are not committed. Commit them, or add them to .gitignore:\n M main.go", false},
+		{"echo 'fatal: not a git repository' >&2; exit 128", "fatal: not a git repository", false},
+	}
+	for _, c := range cases {
+		if err := os.WriteFile(filepath.Join(bin, "git"), []byte("#!/bin/sh\n"+c.git+"\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		res := committed(context.Background(), t.TempDir(), box)
+		if res.passed != c.passed || !strings.Contains(res.output, c.want) || res.check.Command != "git status --porcelain" {
+			t.Errorf("git %q: %+v, want passed %v and %q", c.git, res, c.passed, c.want)
+		}
+	}
+}
+
+// The xcrun cache of a gate starts as a copy of the cache of the user, so a
+// shim does not run xcodebuild to fill it.
+func TestSeedXcrunCacheCopiesTheCacheOfTheUser(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "xcrun_db")
+	if err := os.WriteFile(src, []byte("XR1L"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := userXcrunCache
+	t.Cleanup(func() { userXcrunCache = old })
+	userXcrunCache = func() string { return src }
+	cache := filepath.Join(t.TempDir(), "xcrun_db")
+	seedXcrunCache(cache)
+	if b, err := os.ReadFile(cache); err != nil || string(b) != "XR1L" {
+		t.Errorf("cache = %q, %v, want a copy", b, err)
+	}
+	// With no cache of the user, the gate starts with none.
+	userXcrunCache = func() string { return filepath.Join(t.TempDir(), "none") }
+	cache = filepath.Join(t.TempDir(), "xcrun_db")
+	seedXcrunCache(cache)
+	if _, err := os.Stat(cache); !os.IsNotExist(err) {
+		t.Errorf("cache with no cache of the user: %v", err)
+	}
+}

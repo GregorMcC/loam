@@ -367,7 +367,7 @@ import Testing
         func add(_ files: [String]) { lock.withLock { value.append(files) } }
     }
 
-    @Test func reloadsWhenTheFileChangesOnDisk() async throws {
+    @Test(.outsideASandbox) func reloadsWhenTheFileChangesOnDisk() async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("loam-config-watch-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -383,7 +383,7 @@ import Testing
         watch.stop()
     }
 
-    @Test func followsAConfigFileThatBecomesALink() async throws {
+    @Test(.outsideASandbox) func followsAConfigFileThatBecomesALink() async throws {
         let fm = FileManager.default
         let root = fm.temporaryDirectory.appendingPathComponent("loam-config-link-\(UUID().uuidString)")
         try fm.createDirectory(at: root.appendingPathComponent("ghostty"), withIntermediateDirectories: true)
@@ -412,7 +412,7 @@ import Testing
         watch.stop()
     }
 
-    @Test func seesAConfigMadeInAFolderThatDidNotExist() async throws {
+    @Test(.outsideASandbox) func seesAConfigMadeInAFolderThatDidNotExist() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("loam-config-new-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }

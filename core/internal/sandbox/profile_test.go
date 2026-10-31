@@ -27,7 +27,7 @@ func mustProfile(t *testing.T, r Rules, temp string) string {
 // the ways out through other processes, denies the network before it allows
 // loopback and the unix sockets below the write paths, denies home before it
 // allows the Read paths, denies every write before it allows the write
-// paths, and denies the DenyWrite paths last.
+// paths, and denies the DenyWrite paths and the xcrun cache last.
 func TestProfileOrder(t *testing.T) {
 	r := Rules{
 		Home:      "/h",
@@ -71,6 +71,8 @@ func TestProfileOrder(t *testing.T) {
   (subpath "/dev"))
 (deny file-write*
   (subpath "/h/w/.git/hooks"))
+(deny file-write*
+  (literal "/t/xcrun_db"))
 `
 	if got := mustProfile(t, r, "/t"); got != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
@@ -229,6 +231,33 @@ func TestProfileAllowsOnlyTheWritePaths(t *testing.T) {
 		if out, ok := sandboxed(t, r, temp, "echo hi > "+shellQuote(path)); ok {
 			t.Errorf("write of %s passed: %s", path, out)
 		}
+	}
+}
+
+// The xcrun shims run the path that their cache in the temp folder names,
+// outside the sandbox too. So a check cannot write the cache, link it, or
+// move a file onto it or it away, and it can still write the temp folder.
+func TestProfileDeniesTheXcrunCache(t *testing.T) {
+	r, _, _, outside := boxedHome(t)
+	temp := filepath.Join(filepath.Dir(outside), "tmp")
+	cache := filepath.Join(temp, "xcrun_db")
+	mkfile(t, cache)
+	q := shellQuote
+	for _, command := range []string{
+		"echo x >> " + q(cache),
+		"ln " + q(cache) + " " + q(filepath.Join(temp, "alias")),
+		"mv " + q(cache) + " " + q(filepath.Join(temp, "moved")),
+		"echo x > " + q(filepath.Join(temp, "new")) + " && mv -f " + q(filepath.Join(temp, "new")) + " " + q(cache),
+	} {
+		if out, ok := sandboxed(t, r, temp, command); ok {
+			t.Errorf("%s passed: %s", command, out)
+		}
+	}
+	if b, err := os.ReadFile(cache); err != nil || len(b) != 0 {
+		t.Errorf("the cache = %q, %v, want it empty", b, err)
+	}
+	if out, ok := sandboxed(t, r, temp, "echo x > "+q(filepath.Join(temp, "other"))); !ok {
+		t.Errorf("write of the temp folder: %s", out)
 	}
 }
 
@@ -416,5 +445,22 @@ func TestProfileOpensNoSocketInTheSharedTemp(t *testing.T) {
 	}
 	if got := mustProfile(t, Rules{Home: "/h"}, "/private/tmp/run"); !strings.Contains(got, `(remote unix-socket (subpath "/private/tmp/run"))`) {
 		t.Errorf("a folder in /private/tmp holds no sockets:\n%s", got)
+	}
+}
+
+// The temp and the cache folders of the user open no unix socket: other
+// processes of the user keep sockets there, such as the pane sockets of Loam
+// and the diagnostics socket of a .NET process.
+func TestProfileOpensNoSocketInTheFoldersOfTheUser(t *testing.T) {
+	old := userFolders
+	t.Cleanup(func() { userFolders = old })
+	userFolders = func() []string { return []string{"/u/T", "/u/C"} }
+	for _, temp := range []string{"/u/T", "/u/C", "/u"} {
+		if got := mustProfile(t, Rules{Home: "/h"}, temp); strings.Contains(got, "unix-socket") {
+			t.Errorf("a temp folder %s opens sockets:\n%s", temp, got)
+		}
+	}
+	if got := mustProfile(t, Rules{Home: "/h"}, "/private/tmp/loam-gate-1"); !strings.Contains(got, `(local unix-socket (subpath "/private/tmp/loam-gate-1"))`) {
+		t.Errorf("the folder of the gate holds no sockets:\n%s", got)
 	}
 }

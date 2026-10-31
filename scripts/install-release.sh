@@ -43,7 +43,10 @@ fail() {
 }
 
 [ "$(uname -s)" = Darwin ] || fail "Loam runs on macOS only."
-[ "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" = 1 ] ||
+# sysctl sees Apple silicon also from a shell that runs in Rosetta. A sandbox,
+# such as the sandbox of a Loam run, can deny sysctl, and then uname answers.
+arm64=$(sysctl -n hw.optional.arm64 2>/dev/null) || arm64=$(uname -m)
+[ "$arm64" = 1 ] || [ "$arm64" = arm64 ] ||
   fail "Loam releases run on Apple silicon only." "build Loam from source: https://github.com/GregorMcC/loam#build-from-source"
 macos=$(sw_vers -productVersion)
 [ "${macos%%.*}" -ge 26 ] 2>/dev/null || fail "macOS $macos is too old. Loam needs macOS 26 or later." "update macOS in System Settings > General > Software Update"

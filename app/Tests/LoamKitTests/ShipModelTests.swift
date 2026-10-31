@@ -689,7 +689,7 @@ private func settle() async { try? await Task.sleep(for: .milliseconds(200)) }
 
     // MARK: Sign in
 
-    @Test func signInOpensAShellInThePlotWithTheCommandTypedAndNotSent() async {
+    @Test(.outsideASandbox) func signInOpensAShellInThePlotWithTheCommandTypedAndNotSent() async {
         let model = AppModel(client: LoamClient())
         model.apply([plot(plotB)])
         model.activate(plot: plotB)

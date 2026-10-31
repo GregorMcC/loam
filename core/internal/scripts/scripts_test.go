@@ -69,6 +69,7 @@ func TestBuildIconMakesTheAppIcon(t *testing.T) {
 	if err := exec.Command("xcrun", "--find", "actool").Run(); err != nil {
 		t.Skip("actool is not installed")
 	}
+	testutil.SkipInSandbox(t, "actool needs the CoreSimulator services")
 	out := t.TempDir()
 	if b, err := exec.Command(script("build-icon.sh"), out).CombinedOutput(); err != nil {
 		t.Fatalf("build-icon.sh: %v\n%s", err, b)

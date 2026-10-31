@@ -271,6 +271,19 @@ func TestInstallReleaseRejectsIntel(t *testing.T) {
 	}
 }
 
+// A sandbox can deny sysctl. Then uname tells Apple silicon from Intel.
+func TestInstallReleaseAsksUnameWhenSysctlFails(t *testing.T) {
+	for machine, ok := range map[string]bool{"arm64": true, "x86_64": false} {
+		r := newReleaseRig(t)
+		fakeRelease(t, r.releases, "v0.1.0")
+		uname := `case "$1" in -m) echo ` + machine + ` ;; *) exec /usr/bin/uname "$@" ;; esac`
+		out, err := r.run(t, fakeTools(t, map[string]string{"sysctl": "exit 1", "uname": uname}))
+		if failed := strings.Contains(out, "Apple silicon"); failed == ok {
+			t.Errorf("uname -m %s: got %v: %s", machine, err, out)
+		}
+	}
+}
+
 // With Loam running, the install quits Loam, installs, and opens Loam again,
 // from a process that outlives the terminal.
 func TestInstallReleaseReplacesRunningLoam(t *testing.T) {

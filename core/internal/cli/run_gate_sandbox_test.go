@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/GregorMcC/loam/core/internal/sandbox"
 	"github.com/GregorMcC/loam/core/internal/store"
 	"github.com/GregorMcC/loam/core/internal/testutil"
 )
@@ -37,6 +38,49 @@ func TestRunGateRunsTheChecksInTheSandbox(t *testing.T) {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("the profile has no %q:\n%s", want, b)
 		}
+	}
+}
+
+// The checks get the folder of the gate as TMPDIR, and the xcrun shims keep
+// their cache there, not in the cache of the user, which the profile denies.
+// Go takes its modules from the module cache. The gate removes the folder.
+func TestRunGateGivesTheChecksAFolderOfTheGate(t *testing.T) {
+	s, _ := runCLI(t)
+	record := filepath.Join(t.TempDir(), "xcrun_db")
+	out, _, err := lrRun(t, "", "run", "start", "alpha", "--title", "Say hi", "--max-tries", "3",
+		"--check", `Cache=printf '%s\n%s\n%s' "$TMPDIR" "$xcrun_db" "$GOPROXY" > `+record, "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var started runStartOut
+	if err := json.Unmarshal([]byte(out), &started); err != nil {
+		t.Fatal(err)
+	}
+	if code, reason := stopHook(t, started.Run, "Stop"); code != 0 {
+		t.Fatalf("code %d, reason:\n%s", code, reason)
+	}
+	b, err := os.ReadFile(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := strings.Split(string(b), "\n")
+	if len(env) != 3 {
+		t.Fatalf("env = %q", env)
+	}
+	tmp, cache, proxy := env[0], env[1], env[2]
+	if !strings.HasPrefix(tmp, "/tmp/loam-gate-") || cache != filepath.Join(tmp, "xcrun-cache") {
+		t.Fatalf("TMPDIR = %q, xcrun_db = %q, want the folder of the gate and a file in it", tmp, cache)
+	}
+	// The gate has no network, so Go takes the modules from its cache.
+	home, _ := os.UserHomeDir()
+	if want := "file://" + filepath.Join(sandbox.GoModCache(home, os.Getenv), "cache", "download"); proxy != want {
+		t.Errorf("GOPROXY = %q, want %q", proxy, want)
+	}
+	if _, err := os.Stat(tmp); !os.IsNotExist(err) {
+		t.Errorf("the folder %s is still there: %v", tmp, err)
+	}
+	if got, _ := s.GetRun(started.Run.ID); got.State != store.RunReady {
+		t.Fatalf("after the gate: %+v", got)
 	}
 }
 

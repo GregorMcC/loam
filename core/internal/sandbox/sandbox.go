@@ -85,7 +85,8 @@ var presets = []preset{
 	{
 		files:  []string{"go.mod"},
 		caches: goCaches,
-		hosts:  []string{"proxy.golang.org", "sum.golang.org"},
+		// govulncheck reads vuln.go.dev.
+		hosts: []string{"proxy.golang.org", "sum.golang.org", "vuln.go.dev"},
 	},
 	{
 		files:  []string{"Package.swift"},
@@ -113,22 +114,34 @@ var presets = []preset{
 	},
 }
 
-// goCaches are the module cache, the build cache, and the telemetry folder of
-// Go. GOMODCACHE, GOPATH, and GOCACHE move the first two.
+// goCaches are the module cache, the checksum database cache, the build
+// cache, and the telemetry folder of Go, and the cache of golangci-lint.
+// GOMODCACHE, GOPATH, and GOCACHE move the first three. Go keeps the checksum
+// database cache below the first GOPATH entry, also when GOMODCACHE moves the
+// module cache.
 func goCaches(home string, getenv func(string) string) []string {
+	gopath, _, _ := strings.Cut(getenv("GOPATH"), string(os.PathListSeparator))
+	if gopath == "" {
+		gopath = filepath.Join(home, "go")
+	}
 	mod := getenv("GOMODCACHE")
 	if mod == "" {
-		gopath, _, _ := strings.Cut(getenv("GOPATH"), string(os.PathListSeparator))
-		if gopath == "" {
-			gopath = filepath.Join(home, "go")
-		}
 		mod = filepath.Join(gopath, "pkg", "mod")
 	}
 	build := getenv("GOCACHE")
 	if build == "" || build == "off" {
 		build = filepath.Join(home, "Library", "Caches", "go-build")
 	}
-	return []string{mod, build, filepath.Join(home, "Library", "Application Support", "go", "telemetry")}
+	return []string{
+		mod, filepath.Join(gopath, "pkg", "sumdb"), build,
+		filepath.Join(home, "Library", "Application Support", "go", "telemetry"),
+		filepath.Join(home, "Library", "Caches", "golangci-lint"),
+	}
+}
+
+// GoModCache returns the module cache of Go, as [goCaches] names it.
+func GoModCache(home string, getenv func(string) string) string {
+	return goCaches(home, getenv)[0]
 }
 
 // gitConfig are the git config files that git reads in each command. They

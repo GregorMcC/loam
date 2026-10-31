@@ -42,8 +42,10 @@ func sendToSocket(_ path: String, _ text: String, close: Bool = true) throws -> 
 
 @Suite(.waitLimit) struct PaneSocketTests {
     func folder() -> PaneSocketFolder {
-        // The temp folder of a test run can be long. /tmp keeps the path under 104 bytes.
-        PaneSocketFolder(base: URL(fileURLWithPath: "/tmp/loam-test-\(UUID().uuidString.prefix(8))"))
+        // The temp folder of a test run can be long, and a socket path must stay under 104 bytes. So the folder is in
+        // TMPDIR when it is short, as in the sandbox of a Loam run, which allows sockets only there, else in /tmp.
+        let tmp = ProcessInfo.processInfo.environment["TMPDIR"].flatMap { $0.count <= 32 ? $0 : nil } ?? "/tmp"
+        return PaneSocketFolder(base: URL(fileURLWithPath: tmp).appendingPathComponent("loam-test-\(UUID().uuidString.prefix(8))"))
     }
 
     @Test func linesSkipWhatIsNotAPaneEvent() {
