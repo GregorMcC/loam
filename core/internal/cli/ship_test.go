@@ -44,6 +44,10 @@ func shipRun(t *testing.T, maxTries string) (*store.Store, store.Run, store.Work
 	}
 	testutil.FakeGH(t, `{}`)
 	testutil.FakeClaudePrintFor(t, codeReviewSchemaText, codeReviewAnswer(`[]`))
+	// The tick after a rerun reads CI at once.
+	wait := run.CIRerunWait
+	run.CIRerunWait = 0
+	t.Cleanup(func() { run.CIRerunWait = wait })
 	r, _ = s.GetRun(r.ID)
 	if r.State != store.RunShipping {
 		t.Fatalf("not shipping: %+v", r)
@@ -87,6 +91,33 @@ func ciState(branch, head, conclusion string) string {
     "viewerDefaultMergeMethod": "SQUASH"},
   "logs": {"9001": "test\tgo test\t--- FAIL: TestDrag (0.00s)\ntest\tgo test\tFAIL\n"}
 }`, branch, head, rollup, status, conclusion)
+}
+
+// failCI fails the check of PR #1 on the head of the run, and ticks until
+// the failure goes back to the session: the first tick runs the failed jobs
+// again and counts no try (TAS-210), and the jobs fail again. It returns the
+// second tick.
+func failCI(t *testing.T, r store.Run, w store.Worktree) tickOut {
+	t.Helper()
+	setGitHub(t, ciState(w.Branch, testutil.Git(t, r.Folder, "rev-parse", "HEAD"), "FAILURE"))
+	reruns := len(ghReruns(t))
+	got := tick(t)
+	if len(got.Runs) != 1 || got.Runs[0].State != store.RunShipping || got.Runs[0].Tries != r.Tries ||
+		len(ghReruns(t)) != reruns+1 {
+		t.Fatalf("the first failure did not run the failed jobs again: %+v, %q", got, ghReruns(t))
+	}
+	return tick(t)
+}
+
+// ghReruns are the gh run rerun calls.
+func ghReruns(t *testing.T) [][]string {
+	var out [][]string
+	for _, c := range testutil.FakeGHCalls(t) {
+		if len(c.Args) > 1 && c.Args[0] == "run" && c.Args[1] == "rerun" {
+			out = append(out, c.Args)
+		}
+	}
+	return out
 }
 
 func events(t *testing.T, s *store.Store, id, kind string) []string {
@@ -165,10 +196,9 @@ func TestRunTickMakesARunReadyWhenCIPasses(t *testing.T) {
 func TestRunTickSendsACIFailureBackToTheSessionAsATry(t *testing.T) {
 	s, r, w := shipRun(t, "3")
 	tick(t)
-	setGitHub(t, ciState(w.Branch, testutil.Git(t, r.Folder, "rev-parse", "HEAD"), "FAILURE"))
-	got := tick(t)
+	got := failCI(t, r, w)
 	if len(got.Runs) != 1 || got.Runs[0].State != store.RunRunning || got.Runs[0].Tries != 1 ||
-		got.Runs[0].Note != "CI failed on #1: ci / test" {
+		got.Runs[0].Note != "CI failed twice on #1: ci / test" {
 		t.Fatalf("%+v", got)
 	}
 	calls := testutil.FakeClaudeCalls(t)
@@ -178,7 +208,8 @@ func TestRunTickSendsACIFailureBackToTheSessionAsATry(t *testing.T) {
 		t.Fatalf("claude calls %q", calls)
 	}
 	prompt := calls[n-1][len(calls[n-1])-1]
-	for _, want := range []string{"CI failed on #1", "try 1 of 3", "## ci / test", "--- FAIL: TestDrag", "commit"} {
+	for _, want := range []string{"CI failed twice on #1", "try 1 of 3", "## ci / test", "--- FAIL: TestDrag", "commit",
+		"Do not change a test outside the goal of the run"} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("the prompt misses %q:\n%s", want, prompt)
 		}
@@ -205,15 +236,107 @@ func TestRunTickSendsACIFailureBackToTheSessionAsATry(t *testing.T) {
 func TestRunTickStopsARunWhenCIUsesTheLastTry(t *testing.T) {
 	_, r, w := shipRun(t, "1")
 	tick(t)
-	setGitHub(t, ciState(w.Branch, testutil.Git(t, r.Folder, "rev-parse", "HEAD"), "FAILURE"))
-	got := tick(t)
-	if len(got.Runs) != 1 || got.Runs[0].State != store.RunStopped || got.Runs[0].Note != "CI failed on #1 after 1 try: ci / test" {
+	got := failCI(t, r, w)
+	if len(got.Runs) != 1 || got.Runs[0].State != store.RunStopped || got.Runs[0].Note != "CI failed twice on #1 after 1 try: ci / test" {
 		t.Fatalf("%+v", got)
 	}
 	for _, c := range testutil.FakeClaudeCalls(t) {
 		if slices.Contains(c, "--resume") {
 			t.Fatalf("a stopped run got a prompt: %q", c)
 		}
+	}
+}
+
+// TAS-210: a flaky job that the run did not touch costs no try. Loam runs
+// the failed jobs of a head again once, and a second failure on that head
+// goes back to the session. A new head gets its own rerun.
+func TestRunTickRerunsTheFailedJobsOnceForEachHead(t *testing.T) {
+	s, r, w := shipRun(t, "3")
+	tick(t)
+	head := testutil.Git(t, r.Folder, "rev-parse", "HEAD")
+	setGitHub(t, ciState(w.Branch, head, "FAILURE"))
+	rerunNote := "CI failed on #1: ci / test. Loam runs the failed jobs again (run 9001)"
+	got := tick(t)
+	if len(got.Runs) != 1 || got.Runs[0].State != store.RunShipping || got.Runs[0].Tries != 0 || got.Runs[0].Note != rerunNote {
+		t.Fatalf("first failure %+v", got)
+	}
+	if reruns := ghReruns(t); len(reruns) != 1 ||
+		!slices.Equal(reruns[0], []string{"run", "rerun", "9001", "--failed", "--repo", "github.com/example/widgets"}) {
+		t.Fatalf("reruns %q", reruns)
+	}
+	if e := events(t, s, r.ID, "ci"); !slices.Equal(e, []string{rerunNote}) {
+		t.Fatalf("ci events %q", e)
+	}
+	if e := events(t, s, r.ID, "try"); len(e) != 0 {
+		t.Fatalf("try events %q", e)
+	}
+	for _, c := range testutil.FakeClaudeCalls(t) {
+		if slices.Contains(c, "--resume") {
+			t.Fatalf("a rerun sent the failure to the session: %q", c)
+		}
+	}
+
+	// The jobs fail again on the same head: the failure goes back as a try,
+	// and Loam does not run them a second time.
+	setGitHub(t, ciState(w.Branch, head, "FAILURE"))
+	got = tick(t)
+	if len(got.Runs) != 1 || got.Runs[0].State != store.RunRunning || got.Runs[0].Tries != 1 ||
+		got.Runs[0].Note != "CI failed twice on #1: ci / test" || len(ghReruns(t)) != 1 {
+		t.Fatalf("second failure %+v, reruns %q", got, ghReruns(t))
+	}
+	if prompt := lastPrompt(t); !strings.HasPrefix(prompt, "CI failed twice on #1 (try 1 of 3): Loam ran the failed jobs again") {
+		t.Fatalf("prompt %s", prompt)
+	}
+	if e := events(t, s, r.ID, "try"); !slices.Equal(e, []string{"CI failed twice on #1: ci / test"}) {
+		t.Fatalf("try events %q", e)
+	}
+
+	// The fix is a new head, and its first failure runs the jobs again.
+	writeAndCommit(t, r.Folder, "fix.txt", "fixed\n")
+	if code, _ := stopHook(t, r, "Stop"); code != 0 {
+		t.Fatal("the gate did not pass the fix")
+	}
+	tick(t)
+	fix := testutil.Git(t, r.Folder, "rev-parse", "HEAD")
+	setGitHub(t, ciState(w.Branch, fix, "FAILURE"))
+	got = tick(t)
+	if len(got.Runs) != 1 || got.Runs[0].State != store.RunShipping || got.Runs[0].Tries != 1 || len(ghReruns(t)) != 2 {
+		t.Fatalf("failure of the fix %+v, reruns %q", got, ghReruns(t))
+	}
+}
+
+// GitHub can show the failed jobs of the first attempt for a moment after
+// the rerun, so a failure soon after it waits.
+func TestRunTickWaitsForTheRerunBeforeTheSecondFailure(t *testing.T) {
+	_, r, w := shipRun(t, "3")
+	run.CIRerunWait = time.Hour
+	tick(t)
+	setGitHub(t, ciState(w.Branch, testutil.Git(t, r.Folder, "rev-parse", "HEAD"), "FAILURE"))
+	tick(t)
+	if got := tick(t); len(got.Runs) != 0 || len(ghReruns(t)) != 1 {
+		t.Fatalf("the tick after the rerun %+v, reruns %q", got, ghReruns(t))
+	}
+}
+
+// A rerun that GitHub refuses, such as of a run that is gone, sends the
+// failure back to the session as before, and it counts a try.
+func TestRunTickSendsACIFailureBackWhenTheRerunFails(t *testing.T) {
+	s, r, w := shipRun(t, "3")
+	tick(t)
+	state := ciState(w.Branch, testutil.Git(t, r.Folder, "rev-parse", "HEAD"), "FAILURE")
+	setGitHub(t, strings.Replace(state, `"logs":`, `"rerun_refusals": {"9001": "Not Found"}, "logs":`, 1))
+	got := tick(t)
+	if len(got.Runs) != 1 || got.Runs[0].State != store.RunRunning || got.Runs[0].Tries != 1 ||
+		got.Runs[0].Note != "CI failed on #1: ci / test" {
+		t.Fatalf("%+v", got)
+	}
+	e := events(t, s, r.ID, "ci")
+	if len(e) != 2 || !strings.HasPrefix(e[0], "CI failed on #1: ci / test. Loam could not run the failed jobs again: ") ||
+		!strings.Contains(e[0], "Not Found") || e[1] != "CI failed on #1: ci / test" {
+		t.Fatalf("ci events %q", e)
+	}
+	if prompt := lastPrompt(t); !strings.HasPrefix(prompt, "CI failed on #1 (try 1 of 3).") {
+		t.Fatalf("prompt %s", prompt)
 	}
 }
 

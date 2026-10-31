@@ -338,6 +338,10 @@ CREATE TABLE sandbox_settings (
 ALTER TABLE runs ADD COLUMN gate_timeouts INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE runs ADD COLUMN blocked_stops INTEGER NOT NULL DEFAULT 0;
 `,
+	// 28: ci_rerun is the head commit of the PR of a run whose failed CI
+	// jobs Loam ran again, or '', so it runs the jobs of a head again at most
+	// once (TAS-210).
+	`ALTER TABLE runs ADD COLUMN ci_rerun TEXT NOT NULL DEFAULT '';`,
 }
 
 // SchemaVersion is the schema version of this binary.

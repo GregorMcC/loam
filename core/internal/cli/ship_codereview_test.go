@@ -170,8 +170,7 @@ func TestRunTickPutsMinorReviewFindingsInTheShipNotes(t *testing.T) {
 
 	// A fix after a failed CI is reviewed again. Its findings replace those
 	// of the first push in the notes.
-	setGitHub(t, ciState(w.Branch, testutil.Git(t, r.Folder, "rev-parse", "HEAD"), "FAILURE"))
-	tick(t)
+	failCI(t, r, w)
 	testutil.FakeClaudePrintFor(t, codeReviewSchemaText, codeReviewAnswer(`[]`))
 	writeAndCommit(t, r.Folder, "fix.txt", "fixed\n")
 	if code, _ := stopHook(t, r, "Stop"); code != 0 {

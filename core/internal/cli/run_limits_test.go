@@ -393,13 +393,12 @@ func TestRunTickQueuesACIFailureWhenNoSlotIsFree(t *testing.T) {
 	tick(t)
 	setLimits(t, "--at-a-time", "1")
 	other := startRun(t, "Say bye")
-	setGitHub(t, ciState(w.Branch, testutil.Git(t, r.Folder, "rev-parse", "HEAD"), "FAILURE"))
-	tick(t)
+	failCI(t, r, w)
 	got, _ := s.GetRun(r.ID)
 	if got.State != store.RunQueued || got.Tries != 1 || got.Note != "Waits for a slot: 1 of 1 runs are running" {
 		t.Fatalf("%+v", got)
 	}
-	if e := events(t, s, r.ID, "try"); !slices.Equal(e, []string{"CI failed on #1: ci / test"}) {
+	if e := events(t, s, r.ID, "try"); !slices.Equal(e, []string{"CI failed twice on #1: ci / test"}) {
 		t.Fatalf("try events %q", e)
 	}
 	if _, _, err := lrRun(t, "", "run", "stop", other.ID); err != nil {
