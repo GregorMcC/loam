@@ -2,6 +2,13 @@ import Testing
 @testable import LoamKit
 
 @Suite struct PaneEnvironmentTests {
+    let bin = "/Applications/Loam.app/Contents/MacOS"
+    let helpers = "/Applications/Loam.app/Contents/Helpers"
+
+    func paneVariables(_ own: [String: String], inherited: [String: String]) -> [String: String] {
+        PaneEnvironment.paneVariables(own, inherited: inherited, binFolder: bin, helpersFolder: helpers)
+    }
+
     @Test func removesVariablesThatLeakFromTheHostTerminal() {
         let inherited = [
             "HOME": "/Users/me",
@@ -37,6 +44,46 @@ import Testing
         let inherited = ["CLAUDE_CONFIG_DIR": "/Users/me/.claude", "TERMINAL_EMULATOR": "x"]
 
         #expect(PaneEnvironment.scrubbed(inherited) == inherited)
+    }
+
+    @Test func thePanePathDropsTheFolderOfTheAppBinary() {
+        let inherited = ["PATH": "/usr/bin:\(bin):/bin:\(bin)/", "HOME": "/Users/me"]
+
+        // A PATH from the inherited environment, so it replaces the one libghostty extends (TAS-203).
+        #expect(paneVariables(["LOAM_HOME": "/tmp/l"], inherited: inherited)
+            == ["LOAM_HOME": "/tmp/l", "PATH": "/usr/bin:/bin", "GHOSTTY_BIN_DIR": helpers])
+        // The pane's own PATH wins over the inherited one.
+        #expect(paneVariables(["PATH": "\(bin):/opt/x"], inherited: inherited)["PATH"] == "/opt/x")
+        // Another app's folder stays, and a PATH without the folder is kept as it is.
+        #expect(paneVariables([:], inherited: ["PATH": "/Applications/Ghostty.app/Contents/MacOS:/bin"])["PATH"]
+            == "/Applications/Ghostty.app/Contents/MacOS:/bin")
+    }
+
+    @Test func theShellIntegrationGetsTheFolderOfTheBundledCLI() {
+        // The `path` shell feature appends GHOSTTY_BIN_DIR to PATH, so it must not be the app binary folder.
+        #expect(paneVariables([:], inherited: ["PATH": "/bin"])["GHOSTTY_BIN_DIR"] == helpers)
+        #expect(paneVariables(["GHOSTTY_BIN_DIR": bin], inherited: [:])["GHOSTTY_BIN_DIR"] == helpers)
+    }
+
+    @Test func thePanePathStartsFromThePathOfTheGhosttyConfig() {
+        // A surface PATH replaces the PATH of your `env` lines, so Loam starts from it.
+        let configured = PaneEnvironment.paneVariables([:], configured: "/opt/mine:\(bin)", inherited: ["PATH": "/bin"],
+                                                       binFolder: bin, helpersFolder: helpers)
+        #expect(configured["PATH"] == "/opt/mine")
+        // The pane's own PATH still wins.
+        #expect(PaneEnvironment.paneVariables(["PATH": "/own"], configured: "/opt/mine", inherited: [:],
+                                              binFolder: bin, helpersFolder: helpers)["PATH"] == "/own")
+    }
+
+    @Test func thePanePathIsTheDefaultWhenNothingIsLeft() {
+        // Without a PATH from Loam, libghostty keeps a PATH that is only the app binary folder.
+        let fallback = ["A": "1", "GHOSTTY_BIN_DIR": helpers, "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"]
+        #expect(paneVariables(["A": "1"], inherited: ["PATH": bin]) == fallback)
+        #expect(paneVariables(["A": "1"], inherited: [:]) == fallback)
+        #expect(paneVariables(["A": "1", "PATH": ""], inherited: ["PATH": "/bin"]) == fallback)
+        // Only empty entries are left: that PATH finds commands only in the current folder.
+        #expect(paneVariables(["A": "1"], inherited: ["PATH": ":\(bin):"]) == fallback)
+        #expect(paneVariables([:], inherited: ["PATH": ":/bin"])["PATH"] == ":/bin")
     }
 
     @Test func listsTheKeysToUnsetFromTheProcess() {

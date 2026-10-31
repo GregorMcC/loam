@@ -169,6 +169,19 @@ import Testing
         #expect(entries[2].number == 5)
     }
 
+    @Test func readsThePathOfTheEnvLines() {
+        func path(_ text: String) -> String? {
+            GhosttyConfigFiles.environmentPath(in: GhosttyConfigFiles.entries(in: text, file: "/c"))
+        }
+        #expect(path("font-size = 13") == nil)
+        #expect(path("env = PATH=/a:/b\nenv = LANG=C") == "/a:/b")
+        #expect(path("env = PATH=/a\nenv = PATH=/b") == "/b")
+        // `PATH=` removes the variable, and an empty `env =` removes every variable.
+        #expect(path("env = PATH=/a\nenv = PATH=") == nil)
+        #expect(path("env = PATH=/a\nenv =\nenv = LANG=C") == nil)
+        #expect(path("env = \"PATH=/a b\"") == "/a b")
+    }
+
     @Test func findsIncludesRelativeToTheirFile() {
         let text = """
         config-file = keys.conf

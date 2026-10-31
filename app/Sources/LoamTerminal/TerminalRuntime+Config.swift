@@ -15,6 +15,8 @@ public struct ConfigLoad: Sendable {
     public var watchedFiles: [String]
     /// The `keybind` lines that bind a fixed Loam key. Loam's key wins over each one.
     public var clashes: [GhosttyConfigFiles.Clash]
+    /// The PATH that your `env` lines set, in the config in use. Nil when none sets it.
+    public var environmentPath: String?
 
     public var errors: [String] { outcome.errors }
 }
@@ -41,6 +43,7 @@ extension TerminalRuntime {
         var files: [String]
         var watchedFiles: [String]
         var clashes: [GhosttyConfigFiles.Clash]
+        var environmentPath: String?
     }
 
     /// Loads Loam's defaults, then your files, then their `config-file` includes. Last wins.
@@ -64,7 +67,8 @@ extension TerminalRuntime {
         var watched: [String] = []
         for file in source.defaults + candidates + files where !watched.contains(file) { watched.append(file) }
         return RawLoad(config: config, errors: errors, files: files, watchedFiles: watched,
-                       clashes: GhosttyConfigFiles.clashes(in: entries))
+                       clashes: GhosttyConfigFiles.clashes(in: entries),
+                       environmentPath: GhosttyConfigFiles.environmentPath(in: entries))
     }
 
     func finishLoad(_ load: RawLoad, outcome: ConfigOutcome) -> ConfigLoad {
@@ -77,7 +81,11 @@ extension TerminalRuntime {
             configLog.warning("Ghostty config has errors. Loam keeps the last good config: \(errors.joined(separator: "; "), privacy: .public)")
         }
         for clash in load.clashes { configLog.notice("\(clash.description, privacy: .public)") }
-        return ConfigLoad(outcome: outcome, files: load.files, watchedFiles: load.watchedFiles, clashes: load.clashes)
+        // A config with errors keeps the last good one, so the PATH of that config stays too.
+        var path = load.environmentPath
+        if case .keptLastGood = outcome { path = lastConfigLoad?.environmentPath }
+        return ConfigLoad(outcome: outcome, files: load.files, watchedFiles: load.watchedFiles, clashes: load.clashes,
+                          environmentPath: path)
     }
 
     /// Reads the config files again (⌘⇧, or a file change). A config with errors keeps the last good one.
