@@ -543,7 +543,7 @@ A run is one goal that a background Claude Code session (`claude --bg`) works on
   - `running`: its session works, or the gate or CI sent failures back.
   - `shipping`: every check passed, and the repo is on GitHub. `loam run tick` pushes the branch, opens the PR, and reads CI.
   - `ready`: it waits for you to land it. Every check passed, and CI passed on its PR, or it has no PR. `note` says which. A review that requests changes can still be open when the review tries are used up, and `note` says so.
-  - `stopped`: it used all its tries, or a failure stopped it.
+  - `stopped`: it used all its tries, or a failure stopped it. A tick also stops a `running` run whose session ended a turn that Loam has no record of (see Ship).
   - `limited`: Claude Code hit a usage limit (Stopped by a limit). It counts no try.
   - `start_unknown`: `claude --bg` did not return in time. The session may exist.
   - `landed`, `cancelled` (stopped by you), and `skipped` (a recurring run found no work).
@@ -714,6 +714,8 @@ A Ready run with an open PR can also go back to `shipping`, so a later tick read
 - The review of the PR requests changes, Loam has something to send (see Reviews), and the run has review tries left: `note` and `review` event "Changes are requested on #12 after it was ready. Loam sends the review back". A later tick sends the review when CI passes.
 
 Neither applies while a land waits for GitHub (an auto merge, or a PR in a merge queue), because GitHub merges the PR as it is. A PR head that the branch does not have, such as a push from another machine, changes nothing, also when its checks run or fail, because Loam cannot push it. The Done when checks do not run again, and the run keeps the ship notes of its first push.
+
+A tick also stops a run that is `running` when its session ended a turn that Loam has no record of. That happens when the Stop hook cannot record the end of the turn: for example, the store fails with "database or disk is full", or the hook crashes or times out. The run must have a session, and no change and no event for 10 minutes. Then the tick reads the background sessions with `claude agents --json --all`, one call for all the runs. The session is idle when its `state` is `done` or `stopped`, or when the list does not have it. `working`, `blocked`, and any other state are not idle, and the run waits. An idle run is `stopped`, and counts no try. Its `note` is "The session ended a turn, but Loam has no record of its checks. Run loam run send-back to start it again". The tick does not run the gate, because the Stop hook may still run it. When claude is missing, or `claude agents` fails or gives a list that Loam cannot read, the tick gives a warning, and the run waits.
 
 #### Land
 

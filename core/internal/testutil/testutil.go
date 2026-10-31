@@ -97,6 +97,17 @@ func FakeClaudePrint(t *testing.T, text string) {
 	t.Setenv("LOAM_FAKE_CLAUDE_PRINT", file)
 }
 
+// FakeClaudeAgents makes claude agents of the fake claude print text, as
+// claude agents --json --all prints the background sessions.
+func FakeClaudeAgents(t *testing.T, text string) {
+	t.Helper()
+	file := filepath.Join(t.TempDir(), "agents.json")
+	if err := os.WriteFile(file, []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LOAM_FAKE_CLAUDE_AGENTS", file)
+}
+
 // FakeClaudePrintFor makes a -p call of the fake claude whose --json-schema
 // holds schemaText print text, in place of the text of [FakeClaudePrint].
 // Each schemaText gets its own text, and a later call for the same
