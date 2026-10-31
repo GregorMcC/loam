@@ -580,7 +580,7 @@ The gates take turns. Each gate holds the gate lock, `gate.lock` in the Loam hom
 - A check has 10 minutes. The wait for the lock does not count toward this timeout.
 - A gate has 28 minutes for the wait and every check together. The Stop hook has 30 minutes, and Loam keeps the last 2 to record the result.
 - A gate waits for the lock only while the gate has the time that its checks can take: 10 minutes for each check of the run and each rule of the plot, and 1 minute for "Work committed". A run with one check keeps 11 minutes, so it waits 17 minutes at most. When the wait uses that time, the gate runs no check, and it records "Waited 17m for the gate of another run, which left no time for the checks".
-- A run whose checks can take more than 28 minutes, such as a run with 3 checks, does not wait. When the lock is taken, the gate runs no check, and the prompt says that the checks of the run can take more than the whole gate budget. When the lock is free, the gate runs the checks.
+- A run whose checks can take more than 28 minutes, such as a run with 3 checks, cannot keep that time with any wait. So it keeps 11 minutes, as a run with one check does, and waits 17 minutes at most. When its checks then run out of the 28 minutes, the gate ran out of time because it waited (see below).
 
 A gate runs out of time when its wait left no time for the checks, or when each check that failed ran out of time. A check runs out of time when it does not end in 10 minutes, when it does not end before the gate runs out of time, or when it does not run because the gate ran out of time. Its `check` event names the check and the limit, such as "Checks did not end in 10m". The session cannot fix this, so no try counts:
 

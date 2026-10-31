@@ -3,6 +3,7 @@ package run
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -344,40 +345,55 @@ func TestSendBackStartsTheTimeoutsAgain(t *testing.T) {
 
 // TAS-213: the gate keeps the time that every check can take, so a run with
 // two checks waits less than a run with one. A run whose checks can take more
-// than the whole budget does not wait: with the lock taken, it runs no check,
-// and with the lock free, it runs them.
+// than the whole budget keeps the time of one check, so it still waits for
+// the lock and does not block the stop at once.
 func TestGateKeepsTimeForEachCheck(t *testing.T) {
-	// 2 checks of 2s and the 50ms of Work committed need 4.05s.
-	gateTimes(t, 2*time.Second, 3*time.Second)
-	marker := filepath.Join(t.TempDir(), "ran")
-	s, r := lockedGateRun(t, store.Check{Name: "Hello", Command: "touch " + shellQuote(marker)})
-	if _, err := s.UpdateRun(r.ID, func(r *store.Run) error {
-		r.DoneWhen = append(r.DoneWhen, store.Check{Name: "Also", Command: "true"})
-		return nil
-	}); err != nil {
-		t.Fatal(err)
+	cases := []struct {
+		name   string
+		checks int
+		// The budget is 3s and a check has 1s. The checks and the 50ms of
+		// Work committed need 1.05s, 2.05s, or 3.05s, more than the budget,
+		// so the last case keeps 1.05s.
+		minWait, maxWait time.Duration
+	}{
+		{"one check", 1, 1500 * time.Millisecond, 2500 * time.Millisecond},
+		{"two checks", 2, 500 * time.Millisecond, 1500 * time.Millisecond},
+		{"too many checks", 3, 1500 * time.Millisecond, 2500 * time.Millisecond},
 	}
-	unlock := holdGateLock(t, s)
-	start := time.Now()
-	code, reason := stop(t, s, r)
-	if code != 2 || !strings.Contains(reason, "can take more than the whole gate budget, so the gate did not wait") {
-		t.Fatalf("code %d, reason:\n%s", code, reason)
-	}
-	if waited := time.Since(start); waited > time.Second {
-		t.Fatalf("the gate waited %s for checks that cannot fit", waited)
-	}
-	if _, err := os.Stat(marker); err == nil {
-		t.Fatal("the check ran without the gate lock")
-	}
-	if got, _ := s.GetRun(r.ID); got.State != store.RunRunning || got.Tries != 0 || got.GateTimeouts != 0 {
-		t.Fatalf("after the gate: %+v", got)
-	}
-	unlock()
-	if code, reason = stop(t, s, r); code != 0 {
-		t.Fatalf("with the lock free: code %d, reason:\n%s", code, reason)
-	}
-	if _, err := os.Stat(marker); err != nil {
-		t.Fatal("the check did not run with the lock free")
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			gateTimes(t, time.Second, 3*time.Second)
+			marker := filepath.Join(t.TempDir(), "ran")
+			s, r := lockedGateRun(t, store.Check{Name: "Hello", Command: "touch " + shellQuote(marker)})
+			if _, err := s.UpdateRun(r.ID, func(r *store.Run) error {
+				for i := 1; i < c.checks; i++ {
+					r.DoneWhen = append(r.DoneWhen, store.Check{Name: fmt.Sprintf("Also %d", i), Command: "true"})
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			unlock := holdGateLock(t, s)
+			start := time.Now()
+			code, reason := stop(t, s, r)
+			waited := time.Since(start)
+			if code != 2 || !strings.Contains(reason, "which left no time for the checks") {
+				t.Fatalf("code %d, reason:\n%s", code, reason)
+			}
+			if waited < c.minWait || waited > c.maxWait {
+				t.Fatalf("the gate waited %s, want %s to %s", waited, c.minWait, c.maxWait)
+			}
+			if _, err := os.Stat(marker); err == nil {
+				t.Fatal("the check ran without the gate lock")
+			}
+			if got, _ := s.GetRun(r.ID); got.State != store.RunRunning || got.Tries != 0 || got.GateTimeouts != 0 {
+				t.Fatalf("after the gate: %+v", got)
+			}
+			unlock()
+			if code, reason = stop(t, s, r); code != 0 {
+				t.Fatalf("with the lock free: code %d, reason:\n%s", code, reason)
+			}
+		})
 	}
 }
 

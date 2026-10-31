@@ -86,9 +86,6 @@ type gateResult struct {
 	// waitedOut is true when the wait for the gate lock left no time for the
 	// checks. Then no check ran, and results is empty.
 	waitedOut bool
-	// tooLong is true when the checks of the run need more than the gate
-	// budget (see [checksNeed]), so the gate does not wait for the lock.
-	tooLong bool
 }
 
 // gate takes the gate lock (see [takeGateLock]), then runs each Done when
@@ -102,13 +99,16 @@ func gate(ctx context.Context, s *store.Store, r store.Run, logf func(string, ..
 		logf("run %s: read the rules: %v", r.ID, err)
 	}
 	need := checksNeed(len(r.DoneWhen) + len(rules))
-	tooLong := false
 	if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) < need {
-		tooLong = true
+		// The checks can take more than the budget, so no wait lets them
+		// fit. The gate keeps the time of one check, as for a run with one
+		// check, so it waits as long as such a run does, and does not block
+		// the stop at once.
+		need = checksNeed(1)
 	}
 	unlock, waited, ok := takeGateLock(ctx, s, r, need, logf)
 	if !ok {
-		return gateResult{waited: waited, waitedOut: true, tooLong: tooLong}
+		return gateResult{waited: waited, waitedOut: true}
 	}
 	defer unlock()
 	box := newCheckBox(s, r)
@@ -187,10 +187,7 @@ func checksNeed(n int) time.Duration {
 // try. A gate with any other failure did not run out of time, as the session
 // can fix that failure.
 func (g gateResult) outOfTime() (string, bool) {
-	switch {
-	case g.waitedOut && g.tooLong:
-		return "The gate of another run held the gate lock, and the checks of this run can take more than the whole gate budget, so the gate did not wait", true
-	case g.waitedOut:
+	if g.waitedOut {
 		return "The gate waited " + shortDuration(g.waited) + " for the gate of another run, which left no time for the checks", true
 	}
 	if len(g.failed) == 0 {
@@ -224,8 +221,7 @@ func (g gateResult) waitCaused() bool {
 // finds the lock taken records a gate event and waits. The wait does not
 // count toward [checkTimeout], but it counts toward the deadline of ctx, the
 // gate budget. So the gate waits only while the budget keeps need for the
-// checks, and reports false when that time is up. When the budget is less
-// than need from the start, the gate does not wait. waited is 0 when the gate
+// checks, and reports false when that time is up. waited is 0 when the gate
 // took the lock at once. A lock file that Loam cannot open or lock does not
 // hold the gate back: it logs the error and runs the checks.
 func takeGateLock(ctx context.Context, s *store.Store, r store.Run, need time.Duration, logf func(string, ...any)) (unlock func(), waited time.Duration, ok bool) {
