@@ -129,12 +129,15 @@ extension AppModel {
         pendingRunDefaults[plot] = RunDefaultsRequest(plot: plot, change: waiting?.overlaid(by: change) ?? change)
         guard savingRunDefaults.insert(plot).inserted else { return }
         defer { savingRunDefaults.remove(plot) }
+        // The error of a save stays until the loop ends, also when a later save of the loop works.
+        var failed = false
         while let request = pendingRunDefaults[plot] {
             pendingRunDefaults[plot] = nil
             do {
                 runDefaults = try await client.setRunDefaults(plot: request.plot, request.change)
-                runDefaultsError = nil
+                if !failed { runDefaultsError = nil }
             } catch {
+                failed = true
                 runDefaultsError = Self.message(for: error)
                 // A request that waits saves next. Else read what the core kept. A request that comes while the
                 // read runs is still in the queue when the loop checks it again.

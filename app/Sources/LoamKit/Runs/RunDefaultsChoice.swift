@@ -53,10 +53,11 @@ public struct RunDefaultsChoice: Equatable, Sendable {
             reviewEffort: reviewEffort == saved.reviewEffort ? nil : reviewEffort)
     }
 
-    /// True when a pick must be saved: the pickers hold the defaults of `plot`, as the core read them, and the pick
-    /// differs from the last one that was saved or asked for. Before the read ends, the pickers are empty, and a save
-    /// would overwrite the real defaults with empty values.
-    public static func needsSave(_ now: RunDefaultsChoice, requested: RunDefaultsChoice, loaded: RunDefaults?, plot: String) -> Bool {
-        loaded?.plotID == plot && now != requested
+    /// True when a pick must be saved: the pickers hold the defaults of their plot, as the core read them, and the
+    /// pick differs from the last one that was saved or asked for. Before the read ends, the pickers are empty, and a
+    /// save would overwrite the real defaults with empty values. The page knows when its read ended: the shared
+    /// `runDefaults` of the model can hold another plot, such as after a failed save of that plot.
+    public static func needsSave(_ now: RunDefaultsChoice, requested: RunDefaultsChoice, isLoaded: Bool) -> Bool {
+        isLoaded && now != requested
     }
 }

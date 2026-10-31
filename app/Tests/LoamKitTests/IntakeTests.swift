@@ -238,6 +238,7 @@ import Testing
     }
 
     /// A save fails while another waits: the waiting one saves next, with its own fields, and no read runs between.
+    /// The error of the failed save stays, though the waiting save works.
     @Test func aWaitingSaveGoesNextWhenASaveFails() async throws {
         let (model, fake) = try model([("error_generic", 1), ("run_defaults_set_mcp", 0)])
         let failing = Task { await model.setRunDefaults(plot: "plotaaaaae", review: false) }
@@ -247,7 +248,7 @@ import Testing
         #expect(fake.args().filter { $0.hasPrefix("run defaults") } == [
             "run defaults --review off --json -- plotaaaaae", "run defaults --mcp a --json -- plotaaaaae",
         ])
-        #expect(model.runDefaultsSaves == 1)
+        #expect(model.runDefaultsSaves == 1 && model.runDefaultsError != nil)
     }
 
     /// A pick that comes while a save runs waits, and the last pick is the last one saved.
@@ -280,17 +281,15 @@ import Testing
     @Test func aPickBeforeTheReadEndsSavesNothing() {
         let pick = RunDefaultsChoice(model: "opus", effort: "", servers: [])
         let empty = RunDefaultsChoice(model: "", effort: "", servers: [])
-        let read = RunDefaults(plotID: "plotaaaaae", model: "", effort: "", mcpServers: [], review: true, reviewEffort: "")
-        #expect(!RunDefaultsChoice.needsSave(pick, requested: empty, loaded: nil, plot: "plotaaaaae"))
-        #expect(!RunDefaultsChoice.needsSave(pick, requested: empty, loaded: read, plot: "plotaaaaaf"))
-        #expect(RunDefaultsChoice.needsSave(pick, requested: empty, loaded: read, plot: "plotaaaaae"))
-        #expect(!RunDefaultsChoice.needsSave(empty, requested: empty, loaded: read, plot: "plotaaaaae"))
+        #expect(!RunDefaultsChoice.needsSave(pick, requested: empty, isLoaded: false))
+        #expect(RunDefaultsChoice.needsSave(pick, requested: empty, isLoaded: true))
+        #expect(!RunDefaultsChoice.needsSave(empty, requested: empty, isLoaded: true))
         var off = empty
         off.review = false
-        #expect(RunDefaultsChoice.needsSave(off, requested: empty, loaded: read, plot: "plotaaaaae"))
+        #expect(RunDefaultsChoice.needsSave(off, requested: empty, isLoaded: true))
         var effort = empty
         effort.reviewEffort = "high"
-        #expect(RunDefaultsChoice.needsSave(effort, requested: empty, loaded: read, plot: "plotaaaaae"))
+        #expect(RunDefaultsChoice.needsSave(effort, requested: empty, isLoaded: true))
     }
 
     /// A failed read leaves no list, not the last one.

@@ -383,8 +383,7 @@ private struct RunDefaultsSection: View {
         .onChange(of: RunDefaultsChoice(
             model: chosenModel, effort: chosenEffort, servers: chosenServers, review: chosenReview,
             reviewEffort: chosenReviewEffort)) { _, now in
-            guard RunDefaultsChoice.needsSave(now, requested: requested, loaded: isLoaded ? model.runDefaults : nil, plot: plotID)
-            else { return }
+            guard RunDefaultsChoice.needsSave(now, requested: requested, isLoaded: isLoaded) else { return }
             let change = now.change(from: requested)
             requested = now
             Task {
