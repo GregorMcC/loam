@@ -133,7 +133,7 @@ func TestGateWaitsForTheGateOfAnotherRun(t *testing.T) {
 
 // TAS-213: when the wait for the lock leaves the budget no time for the
 // checks, the gate runs none and counts no try. The session ends its turn
-// again, and a second such gate in a row stops the run.
+// again, and Loam runs the gate again.
 func TestGateThatWaitsOutTheBudgetCountsNoTry(t *testing.T) {
 	gateTimes(t, 300*time.Millisecond, 500*time.Millisecond)
 	marker := filepath.Join(t.TempDir(), "ran")
@@ -149,7 +149,7 @@ func TestGateThatWaitsOutTheBudgetCountsNoTry(t *testing.T) {
 		t.Fatal("the check ran without the gate lock")
 	}
 	got, _ := s.GetRun(r.ID)
-	if got.State != store.RunRunning || got.Tries != 0 || got.GateTimeouts != 1 ||
+	if got.State != store.RunRunning || got.Tries != 0 || got.GateTimeouts != 0 ||
 		!strings.Contains(got.Note, "left no time for the checks. No try counted") {
 		t.Fatalf("after the first gate: %+v", got)
 	}
@@ -160,12 +160,41 @@ func TestGateThatWaitsOutTheBudgetCountsNoTry(t *testing.T) {
 		t.Fatalf("gate events %q", waits)
 	}
 
-	if code, reason = stop(t, s, r); code != 0 {
-		t.Fatalf("second gate: code %d, reason:\n%s", code, reason)
+	// The lock gives no turn order, so a run can wait out again. That never
+	// stops it.
+	for i := 2; i <= 3; i++ {
+		if code, reason = stop(t, s, r); code != 2 || !strings.Contains(reason, "left no time for the checks") {
+			t.Fatalf("gate %d: code %d, reason:\n%s", i, code, reason)
+		}
+		if got, _ = s.GetRun(r.ID); got.State != store.RunRunning || got.Tries != 0 || got.GateTimeouts != 0 {
+			t.Fatalf("after gate %d: %+v", i, got)
+		}
 	}
-	got, _ = s.GetRun(r.ID)
-	if got.State != store.RunStopped || got.Tries != 0 || !strings.HasSuffix(got.Note, ", 2 gates in a row. No try counted") {
-		t.Fatalf("after the second gate: %+v", got)
+}
+
+// TAS-213: a wait-out between two check timeouts leaves their count as it
+// is: the second check timeout still stops the run.
+func TestWaitOutLeavesTheTimeoutCount(t *testing.T) {
+	gateTimes(t, 200*time.Millisecond, time.Minute)
+	s, r := lockedGateRun(t, store.Check{Name: "Slow", Command: "exec sleep 5"})
+	if code, _ := stop(t, s, r); code != 2 {
+		t.Fatalf("first timeout: code %d", code)
+	}
+	unlock := holdGateLock(t, s)
+	gateBudget = 300 * time.Millisecond // less than checkTimeout: no wait at all
+	if code, reason := stop(t, s, r); code != 2 || !strings.Contains(reason, "left no time for the checks") {
+		t.Fatalf("wait-out: code %d, reason:\n%s", code, reason)
+	}
+	if got, _ := s.GetRun(r.ID); got.State != store.RunRunning || got.GateTimeouts != 1 {
+		t.Fatalf("after the wait-out: %+v", got)
+	}
+	unlock()
+	gateBudget = time.Minute
+	if code, _ := stop(t, s, r); code != 0 {
+		t.Fatalf("second timeout: code %d", code)
+	}
+	if got, _ := s.GetRun(r.ID); got.State != store.RunStopped || got.Note != "Slow did not end in 200ms, 2 gates in a row. No try counted" {
+		t.Fatalf("after the second timeout: %+v", got)
 	}
 }
 

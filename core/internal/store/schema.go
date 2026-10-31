@@ -330,8 +330,8 @@ CREATE TABLE sandbox_settings (
 	// the result of the check of a "check" event, with the end of the output
 	// of a failed check, and the findings of a "code_review" event.
 	`ALTER TABLE run_events ADD COLUMN data TEXT NOT NULL DEFAULT '';`,
-	// 27: gate_timeouts counts the gates of a run in a row that ran out of
-	// time, so the second one stops the run (TAS-213).
+	// 27: gate_timeouts counts the gates of a run in a row whose checks ran
+	// out of time, so the second one stops the run (TAS-213).
 	`ALTER TABLE runs ADD COLUMN gate_timeouts INTEGER NOT NULL DEFAULT 0;`,
 }
 

@@ -375,10 +375,11 @@ type Run struct {
 	// your notes or a CI failure. The turn limit counts the turns after it.
 	// It is not in the JSON.
 	TurnBase int `json:"-"`
-	// GateTimeouts counts the gates in a row that ran out of time: a check
-	// that did not end in its timeout, or a wait for the gate of another run
-	// that left no time for the checks. Such a gate counts no try. A gate that
-	// does not run out of time sets it to 0. It is not in the JSON.
+	// GateTimeouts counts the gates in a row whose checks ran out of time.
+	// Such a gate counts no try, and the second one stops the run. A gate that
+	// waited for the gate of another run until no time was left for its
+	// checks leaves it as it is. Any other gate, and each resume of the
+	// session, sets it to 0. It is not in the JSON.
 	GateTimeouts int `json:"-"`
 	// Queue says how a Queued run starts its session, or nil. It is not in
 	// the JSON.
