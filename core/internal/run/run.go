@@ -519,7 +519,7 @@ const noteTail = 20
 // failureNote is what, the error, and the last lines of the output.
 func failureNote(what string, err error, out string) string {
 	note := fmt.Sprintf("%s (%v)", what, err)
-	if t := strings.TrimSpace(tail(out, noteTail)); t != "" {
+	if t := strings.TrimSpace(Tail(out, noteTail)); t != "" {
 		note += ":\n" + t
 	}
 	return note
@@ -604,7 +604,8 @@ func Prompt(r store.Run, rules []store.Rule) string {
 	return b.String()
 }
 
-// Stop stops the background session of a run and marks the run Cancelled.
+// Stop stops the background session of a run, marks the run Cancelled, and
+// removes the private folder of the run (see [session.RunTemp]).
 // A Shaping run, and a Queued run that never started, have no session, so
 // Stop only cancels them. A run that has ended stays as it is. When claude
 // stop fails, for example because the session is gone, the run is Cancelled
@@ -628,6 +629,9 @@ func Stop(ctx context.Context, s *store.Store, id string) (store.Run, []string, 
 	})
 	if err != nil {
 		return r, warnings, err
+	}
+	if err := session.RemoveRunTemp(s, r.ID); err != nil {
+		warnings = append(warnings, err.Error())
 	}
 	if warning := finishLinearIssue(ctx, s, r); warning != "" {
 		warnings = append(warnings, warning)

@@ -326,6 +326,10 @@ CREATE TABLE sandbox_settings (
   updated_at INTEGER NOT NULL
 );
 `,
+	// 26: what a run event holds beside its detail (TAS-204), as JSON, or '':
+	// the result of the check of a "check" event, with the end of the output
+	// of a failed check, and the findings of a "code_review" event.
+	`ALTER TABLE run_events ADD COLUMN data TEXT NOT NULL DEFAULT '';`,
 }
 
 // SchemaVersion is the schema version of this binary.

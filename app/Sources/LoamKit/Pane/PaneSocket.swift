@@ -30,6 +30,8 @@ public final class PaneSocketServer: @unchecked Sendable {
 
     /// `accept()` on the listening socket: the new socket, or -1 and the error number.
     typealias Accept = @Sendable (_ listener: Int32) -> (client: Int32, error: Int32)
+    /// Starts the pause after an `accept` error. It calls `resume` once, on any queue, when the pause ends.
+    typealias Pause = @Sendable (_ resume: @escaping @Sendable () -> Void) -> Void
 
     /// The timing of the server, and the `accept` call. Tests change them.
     struct Options: Sendable {
@@ -38,9 +40,11 @@ public final class PaneSocketServer: @unchecked Sendable {
         /// writes one line in under 200 ms, so only a hung writer gets here.
         var readTimeout: DispatchTimeInterval = .seconds(5)
         /// After an `accept` error other than "no connection waiting" (for example `EMFILE`),
-        /// the server stops accepting for this long. Without the pause, the waiting connection
+        /// the server stops accepting for 250 ms. Without the pause, the waiting connection
         /// wakes the queue again at once, and the queue uses 100% CPU.
-        var acceptPause: DispatchTimeInterval = .milliseconds(250)
+        var acceptPause: Pause = { resume in
+            DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(250), execute: resume)
+        }
         var accept: Accept = { listener in
             let client = Darwin.accept(listener, nil, nil)
             return (client, client < 0 ? errno : 0)
@@ -166,7 +170,7 @@ public final class PaneSocketServer: @unchecked Sendable {
     }
 
     /// An `accept` error that waiting does not fix at once, such as `EMFILE` (too many open
-    /// files). The listener stops for `acceptPause`, then tries again.
+    /// files). The listener stops until `acceptPause` ends, then tries again.
     private func pauseAccepting(_ error: Int32) {
         guard let listener, !acceptPaused else { return }
         if !acceptErrorLogged {
@@ -175,10 +179,12 @@ public final class PaneSocketServer: @unchecked Sendable {
         }
         acceptPaused = true
         listener.suspend()
-        queue.asyncAfter(deadline: .now() + options.acceptPause) { [weak self] in
-            guard let self, self.acceptPaused, !self.closed else { return }
-            self.acceptPaused = false
-            self.listener?.resume()
+        options.acceptPause { [weak self] in
+            self?.queue.async { [weak self] in
+                guard let self, self.acceptPaused, !self.closed else { return }
+                self.acceptPaused = false
+                self.listener?.resume()
+            }
         }
     }
 

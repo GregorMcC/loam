@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -83,11 +84,43 @@ func gate(ctx context.Context, s *store.Store, r store.Run, logf func(string, ..
 		if !res.passed {
 			detail = fmt.Sprintf("%s failed (exit %d, %s)", res.check.Name, res.exit, res.duration.Round(time.Second))
 		}
-		if err := s.AddRunEvent(r.ID, "check", detail); err != nil {
+		if err := s.AddRunEventData(r.ID, "check", detail, store.RunEventData{Check: res.stored()}); err != nil {
 			logf("run %s: record check: %v", r.ID, err)
 		}
 	}
 	return g
+}
+
+// stored is the result as a "check" event keeps it: the output of a failed
+// check, cut to [store.CheckOutputMax], and no output of a check that passed.
+func (res checkResult) stored() *store.RunCheckResult {
+	c := &store.RunCheckResult{Name: res.check.Name, Command: res.check.Command, Passed: res.passed, Exit: res.exit}
+	if !res.passed {
+		c.Output, c.OutputCut = store.CutOutput(res.output)
+	}
+	return c
+}
+
+// LastGate returns the results of the checks of the last gate of a run, in
+// the order that they ran: the last block of "check" events in events. A
+// check event from before Loam stored its result is left out.
+func LastGate(events []store.RunEvent) []store.RunCheckResult {
+	var out []store.RunCheckResult
+	seen := false
+	for _, e := range slices.Backward(events) {
+		if e.Kind != "check" {
+			if seen {
+				break
+			}
+			continue
+		}
+		seen = true
+		if e.Check != nil {
+			out = append(out, *e.Check)
+		}
+	}
+	slices.Reverse(out)
+	return out
 }
 
 func (g *gateResult) add(res checkResult) {
@@ -106,31 +139,16 @@ type checkBox struct {
 	// that can hold their unix sockets.
 	dir string
 	// env is the environment of each check: TMPDIR, GOPROXY (see goProxy),
-	// and an xcrun_db in dir. With that cache, the xcrun shims of a check,
-	// such as /usr/bin/git, do not need the cache of the user, which the
-	// profile denies. A shim that misses a cache that it cannot write prints
-	// an error, which would fail the committed check. Only the processes of
-	// the sandbox get this env.
+	// and an xcrun_db in dir (see [sandbox.SeedXcrunCache]). With that cache,
+	// the xcrun shims of a check, such as /usr/bin/git, do not need the cache
+	// of the user, which the profile denies. A shim that misses a cache that
+	// it cannot write prints an error, which would fail the committed check.
+	// Only the processes of the sandbox get this env.
 	env []string
 	// err is why Loam cannot sandbox the checks. Then each check fails and
 	// does not run: a check runs code that the session wrote, and the gate
 	// works outside the sandbox of the session.
 	err error
-}
-
-// userXcrunCache is the cache of the xcrun shims of the user, for tests.
-var userXcrunCache = sandbox.XcrunCache
-
-// seedXcrunCache copies the cache of the user to cache, so the shims of a
-// check find their tools as they do outside the sandbox. A shim that misses
-// the cache runs xcodebuild to fill it, which is slow and, in a sandbox,
-// prints errors.
-func seedXcrunCache(cache string) {
-	if src := userXcrunCache(); src != "" {
-		if b, err := os.ReadFile(src); err == nil {
-			_ = os.WriteFile(cache, b, 0o600)
-		}
-	}
 }
 
 // goProxy is the module cache of Go as a file proxy. The profile denies the
@@ -214,10 +232,7 @@ func newCheckBox(s *store.Store, r store.Run) checkBox {
 		box.close()
 		return checkBox{err: fmt.Errorf("sandbox-exec cannot start the sandbox: %v %s", err, strings.TrimSpace(string(out)))}
 	}
-	// Not xcrun_db: the profile denies that name in each temp folder.
-	cache := filepath.Join(dir, "xcrun-cache")
-	seedXcrunCache(cache)
-	box.env = append(os.Environ(), "TMPDIR="+dir, "xcrun_db="+cache)
+	box.env = append(os.Environ(), "TMPDIR="+dir, "xcrun_db="+sandbox.SeedXcrunCache(dir))
 	if p := goProxy(); p != "" {
 		box.env = append(box.env, "GOPROXY="+p)
 	}
@@ -313,7 +328,7 @@ func reason(r store.Run, g gateResult) string {
 	fmt.Fprintf(&b, "Loam gate: %d of %d checks failed (try %d of %d). Fix the failures, then end your turn. Loam runs the checks again.\n%s",
 		len(g.failed), len(g.results), r.Tries, r.MaxTries, checksLine(len(g.results) > 1, leaveChecks)) // each gate has the committed check
 	for _, f := range g.failed {
-		fmt.Fprintf(&b, "\n## %s: `%s` (exit %d)\n%s\n", f.check.Name, f.check.Command, f.exit, tail(f.output, reasonTail))
+		fmt.Fprintf(&b, "\n## %s: `%s` (exit %d)\n%s\n", f.check.Name, f.check.Command, f.exit, Tail(f.output, reasonTail))
 	}
 	return b.String()
 }
@@ -327,8 +342,9 @@ func failedNames(g gateResult) string {
 	return strings.Join(names, ", ")
 }
 
-// tail returns the last n lines of text.
-func tail(text string, n int) string {
+// Tail returns the last n lines of text, after a line that counts the lines
+// that it cuts.
+func Tail(text string, n int) string {
 	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
 	if len(lines) > n {
 		lines = append([]string{fmt.Sprintf("(%d earlier lines cut)", len(lines)-n)}, lines[len(lines)-n:]...)

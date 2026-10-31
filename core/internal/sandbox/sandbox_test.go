@@ -109,6 +109,10 @@ func TestForPicksThePresetOfEachStackFile(t *testing.T) {
 			hosts: []string{"crates.io", "index.crates.io", "static.crates.io"},
 		},
 		{
+			file: "ghostty.pin",
+			read: []string{"/h/Library/Caches/Loam/ghosttykit"},
+		},
+		{
 			file:  "pyproject.toml",
 			read:  []string{"/h/Library/Caches/pip"},
 			write: []string{"/h/Library/Caches/pip"},
@@ -334,5 +338,28 @@ func TestForAllowsTheGitConfigFiles(t *testing.T) {
 	got := mustFor(t, Input{Home: home, Folder: repo, GitConfig: []string{inc, filepath.Join(home, ".ssh", "config")}, Getenv: noEnv})
 	if !slices.Contains(got.Read, inc) || slices.Contains(got.Read, filepath.Join(home, ".ssh", "config")) {
 		t.Errorf("Read = %q, want %s and no credential path", got.Read, inc)
+	}
+}
+
+// TAS-216: the run reads and writes its private folder. The run can put a
+// link in its place, so the rules leave out a link and do not follow it.
+func TestForAllowsThePrivateFolderOfTheRun(t *testing.T) {
+	work, parent := realTemp(t), realTemp(t)
+	dir := filepath.Join(parent, "r1")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	got := mustFor(t, Input{Home: "/h", Folder: work, Private: dir, Getenv: noEnv})
+	if !slices.Contains(got.Read, dir) || !slices.Contains(got.Write, dir) || !got.Writable(filepath.Join(dir, PrivateXcrunCache)) {
+		t.Errorf("Read = %q, Write = %q, want the private folder %s", got.Read, got.Write, dir)
+	}
+	target := realTemp(t)
+	link := filepath.Join(parent, "r2")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	got = mustFor(t, Input{Home: "/h", Folder: work, Private: link, Getenv: noEnv})
+	if slices.Contains(got.Write, target) || slices.Contains(got.Write, link) {
+		t.Errorf("Write = %q, want no link and no target of it", got.Write)
 	}
 }

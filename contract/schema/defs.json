@@ -711,7 +711,46 @@
         "run_id": { "$ref": "#/$defs/id" },
         "at": { "$ref": "#/$defs/time" },
         "kind": { "description": "state: the new state. try: a failed gate or CI, with its note. check: the result of one check. linear: what Loam did to the Linear issue of the run. ship: a push or a PR. ci: the result of CI on the PR. code_review: the result of the code review before a push, with the count of each severity and the round. review: your notes went back to the session, or the review of the PR requests changes. note: one of those notes, as <file> line <n>: <text> or as text alone. land: a merge of the PR, or where it waits. shape: a draft by Claude, or why it failed. draft: one step that Claude took while it drafted, such as Read window/frame.go. followup: a follow-up that approve filed as an issue, or why it could not.", "enum": ["state", "try", "check", "linear", "ship", "ci", "code_review", "review", "note", "land", "shape", "draft", "followup"] },
-        "detail": { "type": "string" }
+        "detail": { "type": "string" },
+        "check": { "description": "The result of the check of a check event. It is left out for another kind, and for an event from before Loam stored it.", "$ref": "#/$defs/runCheckResult" },
+        "code_review": { "description": "What the code review of a code_review event found. It is left out for another kind, for a review that did not run or was off, and for an event from before Loam stored it.", "$ref": "#/$defs/runCodeReviewRound" }
+      }
+    },
+    "runCheckResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "command", "passed", "exit", "output", "output_cut"],
+      "properties": {
+        "name": { "type": "string" },
+        "command": { "type": "string" },
+        "passed": { "type": "boolean" },
+        "exit": { "description": "The exit code, or -1 when the check did not run or did not end.", "type": "integer" },
+        "output": { "description": "The output of a failed check, stdout and stderr together, at most 32768 bytes from its end. Empty for a check that passed.", "type": "string" },
+        "output_cut": { "description": "True when the output was longer, so output is its end.", "type": "boolean" }
+      }
+    },
+    "runCodeReviewRound": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["findings", "more"],
+      "properties": {
+        "findings": {
+          "description": "Each finding of the review, most severe first, also the Minor ones that do not go to the session. At most 100.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/runFinding" }
+        },
+        "more": { "description": "How many findings the review found after the list.", "type": "integer", "minimum": 0 }
+      }
+    },
+    "runFinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["severity", "file", "line", "text"],
+      "properties": {
+        "severity": { "enum": ["critical", "major", "minor"] },
+        "file": { "description": "The path from the root of the repo, or empty.", "type": "string" },
+        "line": { "description": "The line in the new file, or 0.", "type": "integer", "minimum": 0 },
+        "text": { "type": "string" }
       }
     },
     "linearStatus": {

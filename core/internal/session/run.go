@@ -83,10 +83,13 @@ func prepareRun(s *store.Store, r store.Run, idArgs []string, loam, model, effor
 	if effort != "" {
 		lead = append(lead, "--effort", effort)
 	}
+	if err := makeRunTemp(RunTemp(s, r.ID)); err != nil {
+		return nil, sandbox.Rules{}, err
+	}
 	// The sandbox lets Bash write each added folder, so a run adds only the
 	// plot folder, and its rules deny writes to it. Bash reads the repos and
 	// the links through the rules.
-	box, err := runRules(s, plot, r.Folder)
+	box, err := runRules(s, plot, r.Folder, r.ID)
 	if err != nil {
 		return nil, sandbox.Rules{}, err
 	}
@@ -138,6 +141,58 @@ func runSettings(home, runID string, box sandbox.Rules) settingsFunc {
 	}
 }
 
+// RunTemp returns the private folder of the run runID: run-temp/<run-id> in
+// the Loam home. Loam makes it again each time that it prepares the session
+// of the run (see [makeRunTemp]), and removes it when the run ends (see
+// [RemoveRunTemp]). The sandbox of the run can read and write it.
+//
+// The rule of TAS-196 and TAS-199 holds for this folder: no process outside
+// the sandbox reads a file that the session writes. The folder holds the
+// xcrun cache of the session, and an xcrun shim runs each path that its cache
+// names. So only Bash gets xcrun_db (see [RunBashEnv]). Not the env of the
+// settings: Claude Code, its hooks, and its MCP servers get that env, and
+// they work outside the sandbox. They keep the cache of the user, which the
+// sandbox denies.
+func RunTemp(s *store.Store, runID string) string {
+	return filepath.Join(s.Home(), "run-temp", runID)
+}
+
+// makeRunTemp makes the private folder dir of a run again, with a copy of
+// the xcrun cache of the user. The session can write the folder, so Loam
+// removes what is there and makes a new folder, also on a resume. RemoveAll
+// removes a link that the session put there, and not its target. A link that
+// the session puts in place of dir while Loam seeds it gets no file but a new
+// one (see [sandbox.SeedXcrunCache]), and the rules do not follow it.
+func makeRunTemp(dir string) error {
+	if err := os.RemoveAll(dir); err != nil {
+		return fmt.Errorf("remove the private folder of the run: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(dir), 0o700); err != nil {
+		return fmt.Errorf("make the private folder of the run: %w", err)
+	}
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		return fmt.Errorf("make the private folder of the run: %w", err)
+	}
+	sandbox.SeedXcrunCache(dir)
+	return nil
+}
+
+// RemoveRunTemp removes the private folder of the run runID. Loam calls it
+// when the run ends: when it lands, and when you stop it. A Stopped run keeps
+// the folder, because a send-back can resume its session.
+func RemoveRunTemp(s *store.Store, runID string) error {
+	return os.RemoveAll(RunTemp(s, runID))
+}
+
+// RunBashEnv returns what the SessionStart hook of the run runID writes to
+// CLAUDE_ENV_FILE: xcrun_db names the xcrun cache in the private folder of
+// the run. Claude Code applies that file to the Bash commands of the session
+// only, and each one works in the sandbox (allowUnsandboxedCommands is
+// false). See [RunTemp] for why the settings do not set it.
+func RunBashEnv(s *store.Store, runID string) string {
+	return "export xcrun_db=" + shellQuote(filepath.Join(RunTemp(s, runID), sandbox.PrivateXcrunCache)) + "\n"
+}
+
 // RunSandboxNote returns what the stacks of the run need in the sandbox, or ""
 // when they need nothing. The first prompt of the run says it, and the run
 // hook says it again after a compact, which can drop that prompt.
@@ -156,11 +211,11 @@ func RunRules(s *store.Store, r store.Run) (sandbox.Rules, error) {
 	if err != nil {
 		return sandbox.Rules{}, err
 	}
-	return runRules(s, plot, r.Folder)
+	return runRules(s, plot, r.Folder, r.ID)
 }
 
-// runRules returns the sandbox rules of a run that works in folder.
-func runRules(s *store.Store, plot store.Plot, folder string) (sandbox.Rules, error) {
+// runRules returns the sandbox rules of the run runID that works in folder.
+func runRules(s *store.Store, plot store.Plot, folder, runID string) (sandbox.Rules, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return sandbox.Rules{}, fmt.Errorf("the sandbox needs the home folder: %w", err)
@@ -194,6 +249,9 @@ func runRules(s *store.Store, plot store.Plot, folder string) (sandbox.Rules, er
 		// The plot folder holds the seed, which only Loam writes.
 		NoWrite: []string{s.PlotDir(plot.ID)},
 		Getenv:  os.Getenv,
+	}
+	if runID != "" {
+		in.Private = RunTemp(s, runID)
 	}
 	for _, l := range plot.Links {
 		if linkkind.IsLocal(l.Target) {

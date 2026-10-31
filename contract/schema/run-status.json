@@ -1,12 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "loam run status --json",
-  "description": "A run and its history, oldest first.",
+  "description": "A run and its history, oldest first, with the failed checks of its last gate and the findings of its last code review.",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "run",
-    "events"
+    "events",
+    "failed_checks",
+    "code_review"
   ],
   "properties": {
     "run": {
@@ -17,6 +19,20 @@
       "items": {
         "$ref": "defs.json#/$defs/runEvent"
       }
+    },
+    "failed_checks": {
+      "description": "The checks that failed in the last gate of the run, in the order that they ran: the last block of check events. Empty when that gate passed or the run has none.",
+      "type": "array",
+      "items": {
+        "$ref": "defs.json#/$defs/runCheckResult"
+      }
+    },
+    "code_review": {
+      "description": "What the last code review of the run found: the round of its last code_review event. Null when that review did not run or was off, or the run has none.",
+      "anyOf": [
+        { "type": "null" },
+        { "$ref": "defs.json#/$defs/runCodeReviewRound" }
+      ]
     }
   }
 }
