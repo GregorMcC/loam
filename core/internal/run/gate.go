@@ -265,17 +265,44 @@ func runCheck(ctx context.Context, dir string, box checkBox, c store.Check) chec
 	return res
 }
 
-// committedScript fails when git status --porcelain prints a line. It reads
-// stdout only, because a tool that git starts, such as an xcrun shim, can
-// print a warning on stderr. The output still has that warning, and the error
-// of a git that fails.
-const committedScript = `s=$(git status --porcelain) || exit; [ -z "$s" ] && exit; ` +
-	`printf 'These files are not committed. Commit them, or add them to .gitignore:\n%s\n' "$s"; exit 1`
+// committedScript returns the script of the committed check. It fails when
+// git status --porcelain prints a line. It reads stdout only, because a tool
+// that git starts, such as an xcrun shim, can print a warning on stderr. The
+// output still has that warning, and the error of a git that fails. When
+// gateDir is inside dir, the script leaves that folder out: the checks keep
+// their cache there, and Loam removes it after the gate.
+func committedScript(dir, gateDir string) string {
+	status := "git status --porcelain"
+	if rel, ok := insideDir(dir, gateDir); ok {
+		status += " -- . " + shellQuote(":(exclude,literal)"+rel)
+	}
+	return `s=$(` + status + `) || exit; [ -z "$s" ] && exit; ` +
+		`printf 'These files are not committed. Commit them, or add them to .gitignore:\n%s\n' "$s"; exit 1`
+}
+
+// insideDir returns the path of sub relative to dir, when sub is a folder
+// below dir. Both paths are resolved, so a link does not hide the match.
+func insideDir(dir, sub string) (string, bool) {
+	if sub == "" {
+		return "", false
+	}
+	rel, err := filepath.Rel(sandbox.Real(dir), sandbox.Real(sub))
+	if err != nil || rel == "." || rel == ".." || filepath.IsAbs(rel) ||
+		strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	return filepath.ToSlash(rel), true
+}
+
+// shellQuote quotes s for sh.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
 
 // committed checks that git status in dir shows no work.
 func committed(ctx context.Context, dir string, box checkBox) checkResult {
 	c := store.Check{Name: CommittedCheck, Command: "git status --porcelain"}
-	res := runCheck(ctx, dir, box, store.Check{Name: c.Name, Command: committedScript})
+	res := runCheck(ctx, dir, box, store.Check{Name: c.Name, Command: committedScript(dir, box.dir)})
 	res.check = c
 	return res
 }

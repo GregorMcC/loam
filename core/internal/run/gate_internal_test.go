@@ -213,3 +213,46 @@ func TestNewCheckBoxFallsBackWhenTmpIsDenied(t *testing.T) {
 		t.Fatalf("TMPDIR of the check = %q (%+v), want %q", got.output, got, box.dir)
 	}
 }
+
+// The gate folder inside the run folder, as when TMPDIR is in the worktree,
+// is not uncommitted work. The committed check leaves that folder out and
+// still fails on any other untracked file.
+func TestCommittedLeavesOutTheGateFolderOnly(t *testing.T) {
+	testutil.GitEnv(t)
+	testutil.FakeSandbox(t)
+	repo, _ := testutil.GitRepo(t)
+	s, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	res, err := s.CreatePlot(store.PlotInput{Name: "Gate", Repos: []store.RepoInput{{Path: repo}}}, store.Actor{Kind: store.ActorCLI})
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := gateRoots
+	gateRoots = func() []string { return []string{repo} }
+	t.Cleanup(func() { gateRoots = old })
+
+	box := newCheckBox(s, store.Run{PlotID: res.Plot.ID, Folder: repo})
+	defer box.close()
+	if box.err != nil {
+		t.Fatal(box.err)
+	}
+	if filepath.Dir(box.dir) != repo {
+		t.Fatalf("dir = %q, want a folder in %q", box.dir, repo)
+	}
+	if got := runCheck(context.Background(), repo, box, store.Check{Name: "Cache", Command: `touch "$TMPDIR/cache"`}); !got.passed {
+		t.Fatalf("%+v", got)
+	}
+	if got := committed(context.Background(), repo, box); !got.passed {
+		t.Fatalf("the gate folder counts as uncommitted work: %+v", got)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "loose.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := committed(context.Background(), repo, box)
+	if got.passed || !strings.Contains(got.output, "loose.txt") || strings.Contains(got.output, "loam-gate-") {
+		t.Fatalf("want loose.txt alone to fail the check: %+v", got)
+	}
+}
