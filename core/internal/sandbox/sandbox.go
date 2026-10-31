@@ -96,6 +96,16 @@ var presets = []preset{
 		note: "Pass --disable-sandbox to swift build, swift test, and swift package: SwiftPM's own sandbox cannot start inside this one.",
 	},
 	{
+		// Loam itself: scripts/build-ghosttykit.sh links app/vendor to this
+		// cache, and the gate builds the terminal and the driver from it. Read
+		// only, so a run cannot change the GhosttyKit that an install builds
+		// with. Not the rest of ~/Library/Caches/Loam, which holds Zig and the
+		// ghostty source.
+		files:     []string{"ghostty.pin"},
+		caches:    below(),
+		toolchain: []string{"Library/Caches/Loam/ghosttykit"},
+	},
+	{
 		files:  []string{"package.json"},
 		caches: below(".npm"),
 		hosts:  []string{"registry.npmjs.org"},

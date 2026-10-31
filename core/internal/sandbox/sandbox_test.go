@@ -109,6 +109,10 @@ func TestForPicksThePresetOfEachStackFile(t *testing.T) {
 			hosts: []string{"crates.io", "index.crates.io", "static.crates.io"},
 		},
 		{
+			file: "ghostty.pin",
+			read: []string{"/h/Library/Caches/Loam/ghosttykit"},
+		},
+		{
 			file:  "pyproject.toml",
 			read:  []string{"/h/Library/Caches/pip"},
 			write: []string{"/h/Library/Caches/pip"},
