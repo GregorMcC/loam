@@ -74,10 +74,10 @@ func TestCleanFindingsCutsALongText(t *testing.T) {
 
 func TestCodeReviewPromptAndNoteCountTheFindingsAfterTheCap(t *testing.T) {
 	f := []codeReviewFinding{{Severity: severityMajor, File: "a.go", Line: 1, Text: "Loses the file."}}
-	if p := codeReviewPrompt(f, 3, 2); !strings.Contains(p, "The review found 3 more Critical or Major issues.") {
+	if p := codeReviewPrompt(f, 3, 2, true); !strings.Contains(p, "The review found 3 more Critical or Major issues.") {
 		t.Fatalf("prompt %q", p)
 	}
-	if p := codeReviewPrompt(f, 0, 2); strings.Contains(p, "more Critical") {
+	if p := codeReviewPrompt(f, 0, 2, true); strings.Contains(p, "more Critical") {
 		t.Fatalf("prompt with no more %q", p)
 	}
 	if l := findingLines(f, 1); l != "- Major: a.go:1: Loses the file.\n- and 1 more Critical or Major issue" {

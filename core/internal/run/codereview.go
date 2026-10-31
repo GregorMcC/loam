@@ -188,13 +188,14 @@ func (sh *shipper) failCodeReview(ctx context.Context, findings []codeReviewFind
 			r.State, r.Note = store.RunStopped, note
 		}))
 	}
-	return event(sh.resume(ctx, codeReviewPrompt(blocking, more, round), found, "code review", countRound))
+	return event(sh.resume(ctx, codeReviewPrompt(blocking, more, round, hasChecks(sh.s, sh.r)), found, "code review", countRound))
 }
 
 // codeReviewPrompt is the prompt that sends the Critical and Major findings of
 // a review back to the session. more is how many findings the review found
-// after [codeReviewSendMax].
-func codeReviewPrompt(blocking []codeReviewFinding, more, round int) string {
+// after [codeReviewSendMax]. checks is whether the run has checks (see
+// [hasChecks]).
+func codeReviewPrompt(blocking []codeReviewFinding, more, round int, checks bool) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Loam's code review found these issues in the diff of the run (round %d of %d):\n", round, codeReviewRounds)
 	for _, f := range blocking {
@@ -204,7 +205,7 @@ func codeReviewPrompt(blocking []codeReviewFinding, more, round int) string {
 		fmt.Fprintf(&b, "\nThe review found %s. Look for them when you fix these.\n", count(more, "more Critical or Major issue"))
 	}
 	b.WriteString("\nFix each issue, commit the fix, and end your turn. " +
-		"Loam runs the Done when checks again, then reviews the new diff before it pushes.\n" + leaveChecks + "\n")
+		"Loam runs the Done when checks again, then reviews the new diff before it pushes.\n" + checksLine(checks, leaveChecks))
 	return b.String()
 }
 

@@ -500,7 +500,7 @@ func (sh *shipper) failCI(ctx context.Context, repo github.Repo, pr *github.PR) 
 	if r.Tries+1 >= r.MaxTries {
 		return sh.moveTry(store.RunStopped, fmt.Sprintf("%s after %s: %s", failed, count(r.Tries+1, "try"), strings.Join(names, ", ")))
 	}
-	prompt := ciPrompt(ctx, sh.gh, repo, r, pr)
+	prompt := ciPrompt(ctx, sh.gh, repo, r, pr, hasChecks(sh.s, r))
 	return sh.resume(ctx, prompt, failed+": "+strings.Join(names, ", "), "CI failure", func(r *store.Run) { r.Tries++ })
 }
 
@@ -545,12 +545,12 @@ func (sh *shipper) resume(ctx context.Context, prompt, note, what string, addTry
 // ciChecks is [leaveChecks] for a CI failure. The gate does not run the
 // checks of CI, so the session can run the tests that failed there to find
 // the cause. It still leaves the Done when checks to the gate.
-const ciChecks = "To find the cause, run the tests that failed in CI. " +
-	"Do not run the Done when checks yourself: Loam runs them when you end your turn."
+const ciChecks = "To find the cause, run the tests that failed in CI. " + leaveToGate
 
 // ciPrompt is the prompt that sends a CI failure back: each failed check,
-// with the end of its log.
-func ciPrompt(ctx context.Context, gh *github.Client, repo github.Repo, r store.Run, pr *github.PR) string {
+// with the end of its log. checks is whether the run has checks (see
+// [hasChecks]).
+func ciPrompt(ctx context.Context, gh *github.Client, repo github.Repo, r store.Run, pr *github.PR, checks bool) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "CI failed on #%d (try %d of %d). These checks failed:\n", pr.Number, r.Tries+1, r.MaxTries)
 	logs := map[int64]string{}
@@ -572,7 +572,7 @@ func ciPrompt(ctx context.Context, gh *github.Client, repo github.Repo, r store.
 		}
 		fmt.Fprintf(&b, "\n```\n%s```\n", log)
 	}
-	fmt.Fprintf(&b, "\nFix the cause, commit the fix, and end your turn. Loam runs the Done when checks again, then pushes the fix to #%d.\n%s\n", pr.Number, ciChecks)
+	fmt.Fprintf(&b, "\nFix the cause, commit the fix, and end your turn. Loam runs the Done when checks again, then pushes the fix to #%d.\n%s", pr.Number, checksLine(checks, ciChecks))
 	return b.String()
 }
 

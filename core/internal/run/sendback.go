@@ -92,7 +92,7 @@ func sendBack(ctx context.Context, s *store.Store, id string, notes []Note) (sto
 	}
 	from, sent := r.State, false
 	note := "Sent back with " + count(len(notes), "note")
-	prompt := notesPrompt(r, notes)
+	prompt := notesPrompt(r, notes, hasChecks(s, r))
 	usageForHold(ctx, s)
 	r, err = s.TakeSlot(id, &store.RunQueue{Resume: prompt}, func(r *store.Run) error {
 		if r.State != from {
@@ -127,7 +127,8 @@ func sendBack(ctx context.Context, s *store.Store, id string, notes []Note) (sto
 }
 
 // notesPrompt is the prompt that sends your notes back to the session.
-func notesPrompt(r store.Run, notes []Note) string {
+// checks is whether the run has checks (see [hasChecks]).
+func notesPrompt(r store.Run, notes []Note, checks bool) string {
 	var b strings.Builder
 	where, then := "", "Loam runs the Done when checks again, and the run comes back to me."
 	if r.PR != nil {
@@ -139,7 +140,7 @@ func notesPrompt(r store.Run, notes []Note) string {
 	for _, n := range notes {
 		fmt.Fprintf(&b, "- %s\n", n)
 	}
-	fmt.Fprintf(&b, "\nMake the changes, commit them, and end your turn. %s\n%s\n", then, leaveChecks)
+	fmt.Fprintf(&b, "\nMake the changes, commit them, and end your turn. %s\n%s", then, checksLine(checks, leaveChecks))
 	return b.String()
 }
 
