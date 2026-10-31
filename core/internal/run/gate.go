@@ -18,13 +18,23 @@ import (
 	"github.com/GregorMcC/loam/core/internal/store"
 )
 
-// checkTimeout limits one Done when check.
-const checkTimeout = 10 * time.Minute
+// checkTimeout limits one Done when check. A var, for tests.
+var checkTimeout = 10 * time.Minute
 
-// gateBudget limits every check of one gate together. It ends 2 minutes
-// before [session.RunHookTimeout], so the hook has time to record the result
-// before Claude Code kills it.
-const gateBudget = session.RunHookTimeout*time.Second - 2*time.Minute
+// gateBudget limits one gate: the wait for the gate lock and every check
+// together. It ends 2 minutes before [session.RunHookTimeout], so the hook
+// has time to record the result before Claude Code kills it. A var, for
+// tests.
+var gateBudget = session.RunHookTimeout*time.Second - 2*time.Minute
+
+// gateLockFile is the lock file in the Loam home that a gate holds while it
+// runs its checks, so the gates of the runs on one Mac take turns. Checks
+// that run at once slow each other down past [checkTimeout].
+const gateLockFile = "gate.lock"
+
+// gateLockPoll is how often a gate that waits tries the gate lock again. A
+// var, for tests.
+var gateLockPoll = 5 * time.Second
 
 // reasonTail is how many lines of a failed check's output go back to the
 // session.
@@ -41,6 +51,9 @@ type checkResult struct {
 	exit     int
 	output   string
 	duration time.Duration
+	// timeout says how the check ran out of time, such as "did not end in
+	// 10m", or is "" when it did not. A check that ran out of time failed.
+	timeout string
 }
 
 // nestedSandbox is the error of a sandbox that cannot start inside another
@@ -58,16 +71,27 @@ type gateResult struct {
 	// unsandboxed is why Loam could not sandbox the checks. Then no check
 	// ran, and each one failed.
 	unsandboxed error
+	// waited is how long the gate waited for the gate lock.
+	waited time.Duration
+	// waitedOut is true when the wait for the gate lock left no time for the
+	// checks. Then no check ran, and results is empty.
+	waitedOut bool
 }
 
-// gate runs each Done when check of the run in its folder, then each rule
-// of its plot, then the committed check, and records each result as a run
-// event. Each check runs in the sandbox of the run. A rule that Loam cannot
-// read is left out, with a log line.
+// gate takes the gate lock (see [takeGateLock]), then runs each Done when
+// check of the run in its folder, then each rule of its plot, then the
+// committed check, and records each result as a run event. Each check runs
+// in the sandbox of the run. A rule that Loam cannot read is left out, with a
+// log line.
 func gate(ctx context.Context, s *store.Store, r store.Run, logf func(string, ...any)) gateResult {
+	unlock, waited, ok := takeGateLock(ctx, s, r, logf)
+	if !ok {
+		return gateResult{waited: waited, waitedOut: true}
+	}
+	defer unlock()
 	box := newCheckBox(s, r)
 	defer box.close()
-	g := gateResult{unsandboxed: box.err}
+	g := gateResult{unsandboxed: box.err, waited: waited}
 	for _, c := range r.DoneWhen {
 		g.add(runCheck(ctx, r.Folder, box, c))
 	}
@@ -81,7 +105,10 @@ func gate(ctx context.Context, s *store.Store, r store.Run, logf func(string, ..
 	g.add(committed(ctx, r.Folder, box))
 	for _, res := range g.results {
 		detail := fmt.Sprintf("%s passed (%s)", res.check.Name, res.duration.Round(time.Second))
-		if !res.passed {
+		switch {
+		case res.timeout != "":
+			detail = res.check.Name + " " + res.timeout
+		case !res.passed:
 			detail = fmt.Sprintf("%s failed (exit %d, %s)", res.check.Name, res.exit, res.duration.Round(time.Second))
 		}
 		if err := s.AddRunEventData(r.ID, "check", detail, store.RunEventData{Check: res.stored()}); err != nil {
@@ -128,6 +155,96 @@ func (g *gateResult) add(res checkResult) {
 	if !res.passed {
 		g.failed = append(g.failed, res)
 	}
+}
+
+// outOfTime says why the gate ran out of time, when it did: the wait for the
+// gate lock left no time for the checks, or a check failed only because it
+// ran out of time. The session cannot fix that, so such a gate counts no
+// try. A gate with any other failure did not run out of time, as the session
+// can fix that failure.
+func (g gateResult) outOfTime() (string, bool) {
+	if g.waitedOut {
+		return "The gate waited " + shortDuration(g.waited) + " for the gate of another run, which left no time for the checks", true
+	}
+	if len(g.failed) == 0 {
+		return "", false
+	}
+	for _, f := range g.failed {
+		if f.timeout == "" {
+			return "", false
+		}
+	}
+	// The first one ran out of time. The checks after it did not run.
+	f := g.failed[0]
+	return f.check.Name + " " + f.timeout, true
+}
+
+// takeGateLock takes the gate lock of the Loam home, so that one gate at a
+// time runs its checks. This lock is for every run of the home. A gate that
+// finds the lock taken records a gate event and waits. The wait does not
+// count toward [checkTimeout], but it counts toward the deadline of ctx, the
+// gate budget. So the gate waits only while the budget keeps checkTimeout for
+// the checks, and reports false when that time is up. A lock file that Loam
+// cannot open or lock does not hold the gate back: it logs the error and
+// runs the checks.
+func takeGateLock(ctx context.Context, s *store.Store, r store.Run, logf func(string, ...any)) (unlock func(), waited time.Duration, ok bool) {
+	path := filepath.Join(s.Home(), gateLockFile)
+	start := time.Now()
+	deadline, limited := ctx.Deadline()
+	deadline = deadline.Add(-checkTimeout)
+	event := func(detail string) {
+		if err := s.AddRunEvent(r.ID, "gate", detail); err != nil {
+			logf("run %s: record the gate wait: %v", r.ID, err)
+		}
+	}
+	waiting := false
+	for {
+		unlock, ok, err := lockFile(path)
+		switch {
+		case err != nil:
+			logf("run %s: take the gate lock: %v", r.ID, err)
+			return func() {}, time.Since(start), true
+		case ok:
+			if waiting {
+				event("Waited " + shortDuration(time.Since(start)) + " for the gate of another run")
+			}
+			return unlock, time.Since(start), true
+		case !waiting:
+			event("Waits for the gate of another run to end its checks")
+			waiting = true
+		}
+		wait := gateLockPoll
+		if limited {
+			left := time.Until(deadline)
+			if left <= 0 {
+				event("Waited " + shortDuration(time.Since(start)) + " for the gate of another run, which left no time for the checks")
+				return nil, time.Since(start), false
+			}
+			wait = min(wait, left)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, time.Since(start), false
+		case <-time.After(wait):
+		}
+	}
+}
+
+// shortDuration gives d in whole seconds without the zero units at the end,
+// such as "10m" or "3m12s". A duration under a second, as in tests, stays as
+// it is.
+func shortDuration(d time.Duration) string {
+	if d < time.Second {
+		return d.String()
+	}
+	out := d.Round(time.Second).String()
+	if strings.HasSuffix(out, "m0s") {
+		out = strings.TrimSuffix(out, "0s")
+	}
+	if strings.HasSuffix(out, "h0m") {
+		out = strings.TrimSuffix(out, "0m")
+	}
+	return out
 }
 
 // checkBox is the sandbox of the checks of one gate: sandbox-exec and the
@@ -262,7 +379,8 @@ func newCheckBox(s *store.Store, r store.Run) checkBox {
 // the check fails and does not run.
 func runCheck(ctx context.Context, dir string, box checkBox, c store.Check) checkResult {
 	if ctx.Err() != nil {
-		return checkResult{check: c, exit: -1, output: "Loam did not run the check: the checks ran out of time."}
+		return checkResult{check: c, exit: -1, output: "Loam did not run the check: the checks ran out of time.",
+			timeout: "did not run, because the gate ran out of time"}
 	}
 	if box.err != nil {
 		return checkResult{check: c, exit: -1, output: "Loam did not run the check, because it could not sandbox it: " + box.err.Error()}
@@ -283,9 +401,11 @@ func runCheck(ctx context.Context, dir string, box checkBox, c store.Check) chec
 	case parent.Err() != nil:
 		res.passed, res.exit = false, -1
 		res.output += "\nThe checks ran out of time before this check ended."
+		res.timeout = "did not end before the gate ran out of time"
 	case ctx.Err() != nil:
 		res.passed, res.exit = false, -1
-		res.output += fmt.Sprintf("\nThe check did not end in %s.", checkTimeout)
+		res.output += fmt.Sprintf("\nThe check did not end in %s.", shortDuration(checkTimeout))
+		res.timeout = "did not end in " + shortDuration(checkTimeout)
 	case errors.As(err, &exit):
 		res.exit = exit.ExitCode()
 	case err != nil:
@@ -349,6 +469,13 @@ func reason(r store.Run, g gateResult) string {
 		fmt.Fprintf(&b, "\n## %s: `%s` (exit %d)\n%s\n", f.check.Name, f.check.Command, f.exit, Tail(f.output, reasonTail))
 	}
 	return b.String()
+}
+
+// timeoutReason is the text that a blocked stop sends to the session when
+// the gate ran out of time, as why says.
+func timeoutReason(why string) string {
+	return "Loam gate: " + why + ". That is not a failure of your work, so no try counts. " +
+		"End your turn now and change nothing: Loam then runs the checks again."
 }
 
 // failedNames joins the names of the failed checks.

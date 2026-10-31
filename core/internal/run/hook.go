@@ -62,10 +62,13 @@ func Hook(s *store.Store, runID string, in io.Reader, out, errOut io.Writer) int
 // is on GitHub, else to Ready. When Loam cannot sandbox them, they do not
 // run: the run is Stopped with the reason, and no try counts. When they
 // fail, and the run has used the turns that the run limits allow since Loam
-// last resumed its session, the run is Stopped, and no try counts.
-// Else the try counts: the stop is blocked with the failures as the reason,
-// or the run is Stopped when it has no tries left. A run that is not running
-// lets the session stop: you may have typed in it after it was Ready.
+// last resumed its session, the run is Stopped, and no try counts. When the
+// gate ran out of time (see [gateResult.outOfTime]), no try counts: the stop
+// is blocked with a short note that tells the session to end its turn with
+// no change, and the second such gate in a row stops the run. Else the try
+// counts: the stop is blocked with the failures as the reason, or the run is
+// Stopped when it has no tries left. A run that is not running lets the
+// session stop: you may have typed in it after it was Ready.
 func stopped(s *store.Store, runID string, errOut io.Writer, logf func(string, ...any)) int {
 	r, err := s.GetRun(runID)
 	if err != nil {
@@ -86,14 +89,19 @@ func stopped(s *store.Store, runID string, errOut io.Writer, logf func(string, .
 	ctx, cancel := context.WithTimeout(context.Background(), gateBudget)
 	g := gate(ctx, s, r, logf)
 	cancel()
-	ships := len(g.failed) == 0 && onGitHub(s, r)
-	block := false
+	why, outOfTime := g.outOfTime()
+	ships := !outOfTime && len(g.failed) == 0 && onGitHub(s, r)
+	block := ""
 	r, err = s.UpdateRun(runID, func(r *store.Run) error {
+		block = ""
 		r.Turns++
 		if r.State != store.RunRunning && r.State != store.RunStarting && r.State != store.RunStartUnknown {
 			return nil // stopped while the checks ran
 		}
-		if len(g.failed) == 0 {
+		if !outOfTime {
+			r.GateTimeouts = 0
+		}
+		if !outOfTime && len(g.failed) == 0 {
 			r.State, r.Note = store.RunShipping, "All "+count(len(g.results), "check")+" passed"
 			if !ships {
 				r.State, r.Note = store.RunReady, r.Note+". The repo has no GitHub origin, so Loam opens no PR"
@@ -109,23 +117,33 @@ func stopped(s *store.Store, runID string, errOut io.Writer, logf func(string, .
 			r.State, r.Note = store.RunStopped, "Stopped after "+count(turns, "turn")+", the limit for each run"
 			return nil
 		}
+		if outOfTime {
+			r.GateTimeouts++
+			if r.GateTimeouts >= 2 {
+				r.State, r.Note = store.RunStopped, why+", 2 gates in a row. No try counted"
+				return nil
+			}
+			r.State, r.Note = store.RunRunning, why+". No try counted, and Loam runs the checks again"
+			block = timeoutReason(why)
+			return nil
+		}
 		r.Tries++
 		if r.Tries >= r.MaxTries {
 			r.State, r.Note = store.RunStopped, "Checks failed after "+count(r.Tries, "try")+": "+failedNames(g)
 			return nil
 		}
 		r.State, r.Note = store.RunRunning, fmt.Sprintf("Try %d failed: %s", r.Tries, failedNames(g))
-		block = true
+		block = reason(*r, g)
 		return nil
 	})
 	if err != nil {
 		logf("run %s: record the gate: %v", runID, err)
 		return 0
 	}
-	if !block {
+	if block == "" {
 		return 0
 	}
-	fmt.Fprint(errOut, reason(r, g))
+	fmt.Fprint(errOut, block)
 	return 2
 }
 
