@@ -120,6 +120,10 @@ func TestRunTickKeepsTheOldBodyWhenClaudeFailsOnATemplate(t *testing.T) {
 func TestRunTickKeepsTheOldBodyWhenTheFolderIsNotTrusted(t *testing.T) {
 	s, r, _ := shipRun(t, "3")
 	trustFolder(t)
+	// A review in a folder that is not trusted stops the run, so this test has none.
+	if _, errOut, err := lrRun(t, "", "run", "defaults", "alpha", "--review", "off"); err != nil {
+		t.Fatalf("%v %s", err, errOut)
+	}
 	testutil.FakeClaudePrint(t, templateAnswer)
 	writeTemplate(t, r.Folder, ".github/PULL_REQUEST_TEMPLATE/default.md", prTemplateText)
 	tick(t)

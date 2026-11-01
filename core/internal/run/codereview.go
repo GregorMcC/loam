@@ -30,18 +30,17 @@ var codeReviewSpentFact = fmt.Sprintf("The code review used all %d rounds of the
 // answers.
 const codeReviewTimeout = 10 * time.Minute
 
-// codeReviewDiffMax is how many characters of the diff the review prompt keeps.
-// Claude can read the rest of a changed file with its tools.
+// codeReviewDiffMax is how many characters of the diff one review prompt
+// holds. A longer diff goes to more than one review (see [splitDiff]).
 const codeReviewDiffMax = 60000
 
-// codeReviewCutFact is the ship note and the event text of a review that
-// passed with a diff that is cut, so that you know that the review saw only
-// part of it.
-var codeReviewCutFact = fmt.Sprintf("The diff is longer than %d characters, so the code review saw only its start in the prompt", codeReviewDiffMax)
+// codeReviewDiffTotal is how many characters of diff one head can have. A
+// longer diff does not get a review, so the run stops for you.
+const codeReviewDiffTotal = 360000
 
-// codeReviewCutAwayFact is [codeReviewCutFact] when the folder is not at the
-// head, so the tools of Claude could not read the rest of the diff either.
-var codeReviewCutAwayFact = fmt.Sprintf("The diff is longer than %d characters, and the folder is not at its head, so the code review did not see the rest of the diff", codeReviewDiffMax)
+// codeReviewTries is how many reviews of a run can fail in a row before the
+// run stops. A review that did not run never lets Loam push.
+const codeReviewTries = 2
 
 // codeReviewFactsMax is how many Minor findings the ship notes name.
 const codeReviewFactsMax = 10
@@ -120,16 +119,16 @@ func (f codeReviewFinding) needsYou() bool {
 
 // codeReview runs the code review of the diff of the run before Loam pushes
 // head, and reports whether Loam can push. It can when the review found no
-// Critical or Major issue, when the review did not run, when the review is
-// off for the plot, when the run has used all its rounds, or when an earlier
-// review let Loam push head. Each result is a "code_review" event. Minor
-// findings, and why a review did not run, go in the ship notes (see
-// [codeReviewFacts]). The prompt of the review holds the Critical and Major
-// findings of the earlier rounds of the run (see [earlierRounds]). The rest
-// is [shipper.judgeCodeReview]. When the review is off or did not run, the
-// findings that an earlier round held for you (see [withHeld]) still stop
-// the run. A store that cannot read the run defaults or the events of the
-// run is an error, for the next tick.
+// Critical or Major issue, when the review is off for the plot, when the run
+// has used all its rounds, or when an earlier review let Loam push head. A
+// review that did not run does not let Loam push (see
+// [shipper.reviewDidNotRun]). Each result is a "code_review" event. Minor
+// findings go in the ship notes (see [codeReviewFacts]). The prompt of the
+// review holds the Critical and Major findings of the earlier rounds of the
+// run (see [earlierRounds]). The rest is [shipper.judgeCodeReview]. When the
+// review is off or did not run, the findings that an earlier round held for
+// you (see [withHeld]) still stop the run. A store that cannot read the run
+// defaults or the events of the run is an error, for the next tick.
 func (sh *shipper) codeReview(ctx context.Context, w store.Worktree, head string) (push, moved bool, err error) {
 	if c := sh.r.CodeReview; c != nil && c.Head == head {
 		return true, false, nil
@@ -150,7 +149,7 @@ func (sh *shipper) codeReview(ctx context.Context, w store.Worktree, head string
 	if err != nil {
 		return false, false, err
 	}
-	findings, cutFact, why := askForCodeReview(ctx, sh.r, w, head, d, earlierRounds(events, sh.r.CodeReview))
+	findings, why := askForCodeReview(ctx, sh.r, w, head, d, earlierRounds(events, sh.r.CodeReview))
 	if ctx.Err() != nil {
 		return false, false, ctx.Err() // the tick ended: a later tick reviews head
 	}
@@ -159,10 +158,53 @@ func (sh *shipper) codeReview(ctx context.Context, w store.Worktree, head string
 			moved, err = sh.stopForYou(withHeld(nil, sh.r.CodeReview))
 			return false, moved, err
 		}
-		return sh.passCodeReview(head, []string{"The code review did not run: " + why},
-			"The code review did not run, so Loam pushes with no review: "+why, nil)
+		moved, err = sh.reviewDidNotRun(why)
+		return false, moved, err
 	}
-	return sh.judgeCodeReview(ctx, head, findings, cutFact)
+	if sh.r.CodeReview != nil && sh.r.CodeReview.Failed > 0 {
+		saved, err := sh.update(func(r *store.Run) {
+			if r.CodeReview != nil {
+				r.CodeReview.Failed = 0
+			}
+		})
+		if !saved || err != nil {
+			return false, false, err
+		}
+	}
+	return sh.judgeCodeReview(ctx, head, findings)
+}
+
+// reviewDidNotRun records a review that gave no result, and Loam does not
+// push. The next tick tries again. After [codeReviewTries] in a row, the run
+// stops with why in its note, so that a person can act on it. It reports
+// whether the run left its state.
+func (sh *shipper) reviewDidNotRun(why string) (moved bool, err error) {
+	tries := 1
+	if sh.r.CodeReview != nil {
+		tries += sh.r.CodeReview.Failed
+	}
+	if tries < codeReviewTries {
+		saved, err := sh.update(func(r *store.Run) {
+			c := cmp.Or(r.CodeReview, &store.RunCodeReview{})
+			c.Failed = tries
+			r.CodeReview = c
+		})
+		if !saved || err != nil {
+			return false, err
+		}
+		return false, sh.s.AddRunEvent(sh.r.ID, "code_review", "The code review did not run, so Loam does not push and tries again: "+why)
+	}
+	found := "The code review did not run, so Loam does not push and the run stops: " + why
+	moved, err = sh.update(func(r *store.Run) {
+		r.State, r.Note = store.RunStopped, found+"\nFix the cause, then run loam run send-back to start the run again."
+		if r.CodeReview != nil {
+			r.CodeReview.Failed = 0
+		}
+	})
+	if !moved || err != nil {
+		return moved, err
+	}
+	return moved, sh.s.AddRunEvent(sh.r.ID, "code_review", found)
 }
 
 // judgeCodeReview acts on the findings of the review of head, and reports
@@ -174,11 +216,10 @@ func (sh *shipper) codeReview(ctx context.Context, w store.Worktree, head string
 // needs you, or after the last round when one of them does, the run stops
 // (see [shipper.stopForYou]). After the last round, the other Critical and
 // Major findings go in the ship notes (see [shipper.pushPastCodeReview]).
-func (sh *shipper) judgeCodeReview(ctx context.Context, head string, findings []codeReviewFinding, cutFact string) (push, moved bool, err error) {
+func (sh *shipper) judgeCodeReview(ctx context.Context, head string, findings []codeReviewFinding) (push, moved bool, err error) {
 	findings = withHeld(findings, sh.r.CodeReview)
 	if !slices.ContainsFunc(findings, codeReviewFinding.blocks) {
-		facts, detail := withCutFact(cutFact, codeReviewFacts(findings), "The code review found "+countFindings(findings))
-		return sh.passCodeReview(head, facts, detail, storedRound(findings))
+		return sh.passCodeReview(head, codeReviewFacts(findings), "The code review found "+countFindings(findings), storedRound(findings))
 	}
 	forSession := slices.ContainsFunc(findings, func(f codeReviewFinding) bool { return f.blocks() && !f.needsYou() })
 	roundsLeft := roundsUsed(sh.r) < codeReviewRounds
@@ -190,7 +231,7 @@ func (sh *shipper) judgeCodeReview(ctx context.Context, head string, findings []
 		moved, err = sh.stopForYou(findings)
 		return false, moved, err
 	}
-	return sh.pushPastCodeReview(head, findings, cutFact)
+	return sh.pushPastCodeReview(head, findings)
 }
 
 // withHeld adds the findings that an earlier round held for you (see
@@ -283,15 +324,6 @@ func (sh *shipper) stopForYou(findings []codeReviewFinding) (bool, error) {
 	return moved, sh.s.AddRunEventData(sh.r.ID, "code_review", found, store.RunEventData{CodeReview: round})
 }
 
-// withCutFact puts cutFact, when the diff was cut, first in the facts and at
-// the end of the event detail.
-func withCutFact(cutFact string, facts []string, detail string) ([]string, string) {
-	if cutFact == "" {
-		return facts, detail
-	}
-	return append([]string{cutFact}, facts...), detail + ". " + cutFact
-}
-
 // roundsUsed is how many code review rounds of r sent a Critical or Major
 // issue back to the session.
 func roundsUsed(r store.Run) int {
@@ -317,7 +349,7 @@ func CodeReviewRounds(r store.Run) string {
 // [codeReviewSpentFact], at most [codeReviewSendMax] Critical and Major ones
 // and then a count of the rest, and then the Minor ones as
 // [codeReviewFacts] gives them.
-func (sh *shipper) pushPastCodeReview(head string, findings []codeReviewFinding, cutFact string) (push, moved bool, err error) {
+func (sh *shipper) pushPastCodeReview(head string, findings []codeReviewFinding) (push, moved bool, err error) {
 	facts := []string{codeReviewSpentFact}
 	var minor []codeReviewFinding
 	sent := 0
@@ -338,13 +370,12 @@ func (sh *shipper) pushPastCodeReview(head string, findings []codeReviewFinding,
 	}
 	detail := fmt.Sprintf("The code review found %s after all %d rounds of the run, so Loam pushes with them in the ship notes",
 		countFindings(findings), codeReviewRounds)
-	facts, detail = withCutFact(cutFact, facts, detail)
 	return sh.passCodeReview(head, facts, detail, storedRound(findings))
 }
 
 // passCodeReview records the review of head that lets Loam push it: the facts
 // that the review adds to the ship notes, and then the event with detail and
-// the round of the review, or nil when it did not run.
+// the round of the review, or nil when the review is off.
 // The facts replace those of the review before, in notes that the run has.
 // Facts with Critical or Major findings after the last round raise the risk
 // level of the notes to high. A run with a PR and no notes gets the notes of [spentNotes], when the facts
@@ -534,28 +565,28 @@ func SeverityLabel(sev string) string {
 // askForCodeReview has Claude review the diff of the branch from where it left
 // its base to head: claude -p in the worktree, with read-only tools, the
 // model of the run, and the review effort and the MCP servers of the run
-// defaults d (see [mcpArgs]). It returns the findings, or why the review did
-// not run.
-func askForCodeReview(ctx context.Context, r store.Run, w store.Worktree, head string, d store.RunDefaults, earlier []earlierRound) (findings []codeReviewFinding, cutFact string, why string) {
+// defaults d (see [mcpArgs]). A long diff gets one review for each part (see
+// [codeReviewAsk]), each with its own time limit. It returns the findings of
+// all the parts, or why the review did not run. One part that fails means
+// that the review did not run.
+func askForCodeReview(ctx context.Context, r store.Run, w store.Worktree, head string, d store.RunDefaults, earlier []earlierRound) (findings []codeReviewFinding, why string) {
 	if !claudebin.Trusted(r.Folder) {
-		return nil, "", fmt.Sprintf("Claude Code does not trust %s. Run claude in it once and choose Yes", r.Folder)
+		return nil, fmt.Sprintf("Claude Code does not trust %s. Run claude in it once and choose Yes", r.Folder)
 	}
 	claude, err := claudebin.Find()
 	if err != nil {
-		return nil, "", err.Error()
+		return nil, err.Error()
 	}
 	mcpFlags, removeConfig, err := mcpArgs(d.MCPServers)
 	if err != nil {
-		return nil, "", err.Error()
+		return nil, err.Error()
 	}
 	defer removeConfig()
-	ctx, cancel := context.WithTimeout(ctx, codeReviewTimeout)
-	defer cancel()
-	prompt, cutFact, why := codeReviewAsk(ctx, r, w, head, earlier)
+	prompts, why := codeReviewAsk(ctx, r, w, head, earlier)
 	if why != "" {
-		return nil, "", why
+		return nil, why
 	}
-	args := []string{"-p", prompt, "--output-format", "json", "--json-schema", codeReviewSchema,
+	args := []string{"--output-format", "json", "--json-schema", codeReviewSchema,
 		"--no-session-persistence", "--tools", "Read,Grep,Glob"}
 	args = append(args, mcpFlags...)
 	model := d.Model
@@ -568,20 +599,110 @@ func askForCodeReview(ctx context.Context, r store.Run, w store.Worktree, head s
 	if d.ReviewEffort != "" {
 		args = append(args, "--effort", d.ReviewEffort)
 	}
-	out, why := runPrint(ctx, claude, r.Folder, args, "review")
+	for i, prompt := range prompts {
+		part, why := reviewPart(ctx, claude, r.Folder, append([]string{"-p", prompt}, args...))
+		if why != "" {
+			if len(prompts) > 1 {
+				why = fmt.Sprintf("part %d of %d: %s", i+1, len(prompts), why)
+			}
+			return nil, why
+		}
+		findings = append(findings, part...)
+	}
+	return cleanFindings(findings), ""
+}
+
+// reviewPart runs one claude -p review, within [codeReviewTimeout].
+func reviewPart(ctx context.Context, claude, folder string, args []string) (findings []codeReviewFinding, why string) {
+	ctx, cancel := context.WithTimeout(ctx, codeReviewTimeout)
+	defer cancel()
+	out, why := runPrint(ctx, claude, folder, args, "review")
 	if why != "" {
-		return nil, "", why
+		return nil, why
 	}
 	var a struct {
 		Findings *[]codeReviewFinding `json:"findings"`
 	}
 	if err := json.Unmarshal(out, &a); err != nil {
-		return nil, "", "claude -p gave a review that Loam cannot read: " + err.Error()
+		return nil, "claude -p gave a review that Loam cannot read: " + err.Error()
 	}
 	if a.Findings == nil {
-		return nil, "", "claude -p gave a review with no findings list"
+		return nil, "claude -p gave a review with no findings list"
 	}
-	return cleanFindings(*a.Findings), cutFact, ""
+	return *a.Findings, ""
+}
+
+// splitDiff cuts a git diff into parts of about limit characters, in order. A
+// part ends where a file ends when it can. A file that is longer than limit
+// ends a part at the end of a line, and a line that is longer than limit is
+// cut. Each later part of such a file starts with the "diff --git" line of the
+// file and its last "@@" line, so the review can name the file and the line.
+// Those two lines can take a part over limit.
+func splitDiff(diff string, limit int) []string {
+	var parts []string
+	var b strings.Builder
+	size := 0
+	end := func() {
+		if size > 0 {
+			parts = append(parts, b.String())
+			b.Reset()
+			size = 0
+		}
+	}
+	write := func(s string) {
+		b.WriteString(s)
+		size += utf8.RuneCountInString(s)
+	}
+	for _, file := range diffFiles(diff) {
+		n := utf8.RuneCountInString(file)
+		if size+n > limit {
+			end()
+		}
+		if n <= limit {
+			write(file)
+			continue
+		}
+		context := ""
+		hunk := ""
+		for i, line := range strings.SplitAfter(file, "\n") {
+			if i == 0 {
+				context = line
+			}
+			for runes := []rune(line); len(runes) > 0; {
+				room := limit - size
+				if len(runes) > room && size > 0 {
+					end()
+					write(context + hunk)
+					room = max(limit-size, 1)
+				}
+				take := min(room, len(runes))
+				write(string(runes[:take]))
+				runes = runes[take:]
+			}
+			if strings.HasPrefix(line, "@@ ") {
+				hunk = line
+			}
+		}
+	}
+	end()
+	return parts
+}
+
+// diffFiles cuts a git diff before each "diff --git" line.
+func diffFiles(diff string) []string {
+	var files []string
+	var b strings.Builder
+	for _, line := range strings.SplitAfter(diff, "\n") {
+		if strings.HasPrefix(line, "diff --git ") && b.Len() > 0 {
+			files = append(files, b.String())
+			b.Reset()
+		}
+		b.WriteString(line)
+	}
+	if b.Len() > 0 {
+		files = append(files, b.String())
+	}
+	return files
 }
 
 // cleanFindings leaves out each Minor finding with no text, gives a Critical
@@ -749,22 +870,26 @@ func writeEarlier(b *strings.Builder, rounds []earlierRound) {
 // it. When the worktree is not at head, the prompt says so, because the
 // tools of Claude read other files then. It returns why there is no prompt
 // when git cannot give the diff.
-func codeReviewAsk(ctx context.Context, r store.Run, w store.Worktree, head string, earlier []earlierRound) (prompt, cutFact, why string) {
+func codeReviewAsk(ctx context.Context, r store.Run, w store.Worktree, head string, earlier []earlierRound) (prompts []string, why string) {
 	if w.Base == "" {
-		return "", "", "the worktree has no base branch to compare with"
+		return nil, "the worktree has no base branch to compare with"
 	}
 	base, err := gitOut(ctx, r.Folder, "merge-base", w.Base, head)
 	if err != nil || base == "" {
-		return "", "", fmt.Sprintf("git cannot find where the branch left %s", w.Base)
+		return nil, fmt.Sprintf("git cannot find where the branch left %s", w.Base)
 	}
 	diff, err := gitOut(ctx, r.Folder, "-c", "core.quotePath=off", "diff", "--no-ext-diff", "-M", base, head)
 	if err != nil {
-		return "", "", "git cannot give the diff of the branch: " + err.Error()
+		return nil, "git cannot give the diff of the branch: " + err.Error()
 	}
 	stat, err := gitOut(ctx, r.Folder, "-c", "core.quotePath=off", "diff", "--stat", "-M", base, head)
 	if err != nil {
-		return "", "", "git cannot give the diff of the branch: " + err.Error()
+		return nil, "git cannot give the diff of the branch: " + err.Error()
 	}
+	if utf8.RuneCountInString(diff) > codeReviewDiffTotal {
+		return nil, fmt.Sprintf("the diff is longer than the %d characters that Loam can review, so a person must split the change", codeReviewDiffTotal)
+	}
+	parts := splitDiff(diff, codeReviewDiffMax)
 	var b strings.Builder
 	b.WriteString("Review the changes of this branch before Loam pushes them. Find the problems that a careful reviewer finds in the diff below. " +
 		"Answer in the JSON shape that the schema gives.\n\n" +
@@ -800,13 +925,16 @@ func codeReviewAsk(ctx context.Context, r store.Run, w store.Worktree, head stri
 	}
 	b.WriteString("## Changed files\n\n" + fence + "\n" + truncate(stat, prContextMax) + "\n" + fence + "\n")
 	b.WriteString("\n## Diff\n\n")
-	if utf8.RuneCountInString(diff) > codeReviewDiffMax {
-		cutFact = codeReviewCutFact
-		if away {
-			cutFact = codeReviewCutAwayFact
+	head0 := b.String()
+	for i, part := range parts {
+		p := head0
+		if len(parts) > 1 {
+			p += fmt.Sprintf("This is part %d of %d of the diff. Other reviews read the other parts. Report the problems in this part. A part that starts inside a file repeats the \"diff --git\" line of the file and its last \"@@\" line.\n\n", i+1, len(parts))
 		}
-		fmt.Fprintf(&b, "The diff is longer than %d characters, so it is cut. Read the changed files that it leaves out with your tools.\n\n", codeReviewDiffMax)
+		prompts = append(prompts, p+fence+"diff\n"+part+"\n"+fence+"\n")
 	}
-	b.WriteString(fence + "diff\n" + truncate(diff, codeReviewDiffMax) + "\n" + fence + "\n")
-	return b.String(), cutFact, ""
+	if len(prompts) == 0 {
+		prompts = []string{head0 + fence + "diff\n\n" + fence + "\n"}
+	}
+	return prompts, ""
 }

@@ -164,7 +164,7 @@ func TestAReviewAfterTheLastRoundPutsTheFindingsInTheShipNotes(t *testing.T) {
 		{Severity: severityMajor, File: "b.go", Text: "Loses the file."},
 		{Severity: severityMinor, File: "c.go", Line: 2, Text: "A typo."},
 	}
-	push, moved, err := sh.pushPastCodeReview("new", findings, codeReviewCutFact)
+	push, moved, err := sh.pushPastCodeReview("new", findings)
 	if err != nil || !push || moved {
 		t.Fatalf("push %v, moved %v, err %v", push, moved, err)
 	}
@@ -174,7 +174,6 @@ func TestAReviewAfterTheLastRoundPutsTheFindingsInTheShipNotes(t *testing.T) {
 	}
 	want := []string{
 		"A small change.",
-		codeReviewCutFact,
 		"The code review used all 5 rounds of the run, so these findings wait for you:",
 		"Critical issue from the code review: a.go:4: Leaks the token.",
 		"Major issue from the code review: b.go: Loses the file.",
@@ -193,7 +192,7 @@ func TestAReviewAfterTheLastRoundPutsTheFindingsInTheShipNotes(t *testing.T) {
 		t.Fatalf("status line %q", line)
 	}
 	if e := lastEvent(t, s, sh.r.ID, "code_review"); e != "The code review found 1 critical issue, 1 major issue and 1 minor issue "+
-		"after all 5 rounds of the run, so Loam pushes with them in the ship notes. "+codeReviewCutFact {
+		"after all 5 rounds of the run, so Loam pushes with them in the ship notes" {
 		t.Fatalf("event %q", e)
 	}
 }
@@ -204,7 +203,7 @@ func TestAReviewAfterTheLastRoundCountsTheFindingsAfterTheCap(t *testing.T) {
 	for i := range findings {
 		findings[i] = codeReviewFinding{Severity: severityMajor, File: "a.go", Line: i + 1, Text: "Loses the file."}
 	}
-	if _, _, err := sh.pushPastCodeReview("new", findings, ""); err != nil {
+	if _, _, err := sh.pushPastCodeReview("new", findings); err != nil {
 		t.Fatal(err)
 	}
 	reasons := sh.r.Notes.Risk.Reasons
@@ -243,7 +242,7 @@ func TestAReviewAfterTheLastRoundGivesARunWithNoNotesNotes(t *testing.T) {
 	}
 	sh.r = r
 	findings := []codeReviewFinding{{Severity: severityMajor, File: "b.go", Text: "Loses the file."}}
-	if push, _, err := sh.pushPastCodeReview("new", findings, ""); err != nil || !push {
+	if push, _, err := sh.pushPastCodeReview("new", findings); err != nil || !push {
 		t.Fatalf("push %v, err %v", push, err)
 	}
 	got, err := s.GetRun(r.ID)
@@ -315,7 +314,7 @@ func reviewRepo(t *testing.T) (*store.Store, store.Run, store.Worktree, string) 
 // without a new reason.
 func TestTheReviewAfterARoundSeesTheEarlierFindings(t *testing.T) {
 	s, r, w, head := reviewRepo(t)
-	prompt, _, why := codeReviewAsk(context.Background(), r, w, head, nil)
+	prompt, why := firstAsk(r, w, head, nil)
 	if why != "" || strings.Contains(prompt, "## Earlier rounds") {
 		t.Fatalf("first review: why %q, prompt %q", why, prompt)
 	}
@@ -348,7 +347,7 @@ func TestTheReviewAfterARoundSeesTheEarlierFindings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prompt, _, why = codeReviewAsk(context.Background(), r, w, head, earlierRounds(events, r.CodeReview))
+	prompt, why = firstAsk(r, w, head, earlierRounds(events, r.CodeReview))
 	if why != "" {
 		t.Fatal(why)
 	}
@@ -419,7 +418,7 @@ func TestAFindingThatNeedsYouStopsTheRun(t *testing.T) {
 	if findings[1].NeedsYou != "" {
 		t.Fatalf("a Minor finding keeps needs_you: %+v", findings[1])
 	}
-	push, moved, err := sh.judgeCodeReview(context.Background(), "new", findings, "")
+	push, moved, err := sh.judgeCodeReview(context.Background(), "new", findings)
 	if err != nil || push || !moved {
 		t.Fatalf("push %v, moved %v, err %v", push, moved, err)
 	}
@@ -497,7 +496,7 @@ func TestAFindingThatNeedsYouLetsTheOtherFindingsGoToTheSession(t *testing.T) {
 			NeedsYou: "The sandbox needs a read path for the cache."},
 		{Severity: severityMajor, File: "b.go", Text: "Loses the file."},
 	}
-	push, moved, err := sh.judgeCodeReview(context.Background(), "new", findings, "")
+	push, moved, err := sh.judgeCodeReview(context.Background(), "new", findings)
 	if err != nil || push || !moved {
 		t.Fatalf("push %v, moved %v, err %v", push, moved, err)
 	}
@@ -537,7 +536,7 @@ func TestAFindingThatNeedsYouLetsTheOtherFindingsGoToTheSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	sh.r = r
-	push, moved, err = sh.judgeCodeReview(context.Background(), "newer", nil, "")
+	push, moved, err = sh.judgeCodeReview(context.Background(), "newer", nil)
 	if err != nil || push || !moved {
 		t.Fatalf("next review: push %v, moved %v, err %v", push, moved, err)
 	}
@@ -555,7 +554,7 @@ func TestAFindingThatNeedsYouLetsTheOtherFindingsGoToTheSession(t *testing.T) {
 	// After the last round, a finding that needs you stops the run, and the
 	// note names the other findings too.
 	s, sh = reviewedRun(t, codeReviewRounds)
-	if _, _, err := sh.judgeCodeReview(context.Background(), "new", findings, ""); err != nil {
+	if _, _, err := sh.judgeCodeReview(context.Background(), "new", findings); err != nil {
 		t.Fatal(err)
 	}
 	got, err = s.GetRun(sh.r.ID)
@@ -581,4 +580,56 @@ func TestWithHeldAddsTheHeldFindingsOnce(t *testing.T) {
 	if got := withHeld([]codeReviewFinding{minor}, nil); len(got) != 1 {
 		t.Fatalf("no review state: %+v", got)
 	}
+}
+
+func TestSplitDiffKeepsAllOfTheDiffAndTheContextOfEachPart(t *testing.T) {
+	file := func(name string, lines int) string {
+		return "diff --git a/" + name + " b/" + name + "\n@@ -1 +1 @@ " + name + "\n" + strings.Repeat("+é line\n", lines)
+	}
+	long := strings.Repeat("x", 90)
+	diff := file("a", 1) + file("b", 1) + file("c", 30) + "diff --git a/d b/d\n+" + long + "\n"
+	const limit = 60
+	parts := splitDiff(diff, limit)
+	joined := strings.Join(parts, "")
+	if n := strings.Count(joined, "+é line\n"); n != 32 {
+		t.Fatalf("%d of 32 lines in the parts: %q", n, parts)
+	}
+	if n := strings.Count(joined, "x"); n != len(long) {
+		t.Fatalf("%d of %d characters of the long line", n, len(long))
+	}
+	for _, p := range parts {
+		if !strings.HasPrefix(p, "diff --git ") {
+			t.Errorf("a part with no file: %q", p)
+		}
+		if n := utf8.RuneCountInString(p); n > limit+40 {
+			t.Errorf("part of %d characters: %q", n, p)
+		}
+	}
+	if strings.Count(joined, "diff --git a/c") < 2 || strings.Count(joined, "@@ -1 +1 @@ c") < 2 {
+		t.Errorf("a later part of a long file has no context: %q", parts)
+	}
+	if got := splitDiff("", limit); len(got) != 0 {
+		t.Errorf("an empty diff gives parts: %q", got)
+	}
+}
+
+// A diff of many files that do not fit together still gets a review, while it
+// is within the limit of all the parts.
+func TestSplitDiffPartsOfManyFiles(t *testing.T) {
+	var b strings.Builder
+	for i := range 7 {
+		fmt.Fprintf(&b, "diff --git a/%d b/%d\n%s\n", i, i, strings.Repeat("+", 31000))
+	}
+	if parts := splitDiff(b.String(), codeReviewDiffMax); len(parts) != 7 {
+		t.Fatalf("%d parts", len(parts))
+	}
+}
+
+// firstAsk is the prompt of the first part of the review.
+func firstAsk(r store.Run, w store.Worktree, head string, earlier []earlierRound) (prompt, why string) {
+	prompts, why := codeReviewAsk(context.Background(), r, w, head, earlier)
+	if why != "" {
+		return "", why
+	}
+	return prompts[0], ""
 }

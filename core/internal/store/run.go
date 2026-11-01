@@ -218,15 +218,18 @@ type RunQueue struct {
 // pushes a run.
 type RunCodeReview struct {
 	// Head is the last commit that the review let Loam push: it found no
-	// Critical or Major issue, it did not run, or it was off. Loam does not
-	// review that commit again.
+	// Critical or Major issue, or it was off. Loam does not review that
+	// commit again.
 	Head string `json:"head"`
+	// Failed counts the reviews in a row that did not run. Loam does not push
+	// then, and the run stops at the limit.
+	Failed int `json:"failed,omitempty"`
 	// Rounds counts the reviews of the run that sent a Critical or Major
 	// issue back to the session, up to the limit of rounds. It is for the
 	// whole run: a review that lets Loam push does not reset it.
 	Rounds int `json:"rounds"`
 	// Facts are what the review of Head adds to the risk of the ship notes:
-	// its Minor findings, or why it did not run.
+	// its Minor findings.
 	Facts []string `json:"facts"`
 	// ReplyRound is the round whose findings went to the session and whose
 	// reply Loam waits for, or 0. The Stop hook that lets the session stop
