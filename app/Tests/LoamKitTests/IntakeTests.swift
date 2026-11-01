@@ -5,7 +5,7 @@ import Testing
 
 /// Ticket 204: the Intake page lists the open issues and map tickets of a plot, and starts a run from one.
 @MainActor
-@Suite(.waitLimit) struct IntakeTests {
+@Suite(.waitLimit, .temporaryFolders) struct IntakeTests {
     /// The intake fixture is for the plot plotaaaaae, as the run fixtures are.
     func model(_ fixtures: [(String, Int32)]) throws -> (AppModel, FakeLoam) {
         let fake = try FakeLoam(fixtures)

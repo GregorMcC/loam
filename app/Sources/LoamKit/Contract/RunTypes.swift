@@ -316,7 +316,7 @@ public struct RunStatus: Codable, Equatable, Sendable {
     }
 }
 
-/// Output of `loam run stop` and `loam run send-back`: the run after the change. A send-back has a rule offer when
+/// Output of `loam run cancel` and `loam run send-back`: the run after the change. A send-back has a rule offer when
 /// a note is like a note that you sent back on another run of the plot (ticket 209).
 public struct RunResult: Codable, Equatable, Sendable {
     public var run: Run

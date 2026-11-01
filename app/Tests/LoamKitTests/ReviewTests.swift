@@ -15,8 +15,7 @@ private let claude = Actor(kind: .session, sessionID: "abcdef123456", loamStarte
 private let outside = Actor(kind: .session, sessionID: "fedcba654321", loamStarted: false)
 
 private func tempState() -> AppStateFile {
-    AppStateFile(url: FileManager.default.temporaryDirectory
-        .appendingPathComponent("state-\(UUID().uuidString)/state.json"))
+    AppStateFile(url: temporaryFolder("state").appendingPathComponent("state.json"))
 }
 
 @Suite struct WordDiffTests {
@@ -168,7 +167,7 @@ private func tempState() -> AppStateFile {
     }
 }
 
-@Suite struct AppStateFileTests {
+@Suite(.temporaryFolders) struct AppStateFileTests {
     @Test func keepsKeysItDoesNotKnow() throws {
         let state = tempState()
         try FileManager.default.createDirectory(at: state.url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -202,7 +201,7 @@ private func tempState() -> AppStateFile {
 }
 
 @MainActor
-@Suite struct ReviewModelTests {
+@Suite(.temporaryFolders) struct ReviewModelTests {
     /// `changes` fixture: three changes by the app and the CLI. A fake loam prints it for every call.
     private func model(_ outputs: [(fixture: String, exit: Int32)], state: AppStateFile? = nil) throws -> (ReviewModel, FakeLoam, AppStateFile) {
         let fake = try FakeLoam(outputs)
@@ -304,7 +303,7 @@ private func tempState() -> AppStateFile {
 }
 
 @MainActor
-@Suite struct ReviewAppModelTests {
+@Suite(.temporaryFolders) struct ReviewAppModelTests {
     private func launched(state: AppStateFile) async throws -> AppModel {
         let fake = try FakeLoam([
             ("version", 0), ("setup_check", 0), ("list", 0), ("list_archived", 0), ("changes", 0),

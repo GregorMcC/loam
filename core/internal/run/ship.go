@@ -137,6 +137,10 @@ type shipper struct {
 	warnings []string
 	// noLinearDone keeps the Linear issue where it is when the run lands.
 	noLinearDone bool
+	// movedOn is true when a write of the tick found that the run left the
+	// state that the tick read: you cancelled it or sent it back. Each later
+	// write of the tick then changes nothing (see [shipper.update]).
+	movedOn bool
 }
 
 // ship does the next step of the run. It returns true when the run record
@@ -188,7 +192,7 @@ func (sh *shipper) ship(ctx context.Context) (bool, error) {
 	}
 	if pr != nil && (r.PR == nil || r.PR.Number != pr.Number) {
 		// You or the session opened the PR: it is the run's PR now.
-		return sh.adopt(pr)
+		return sh.adopt(ctx, pr)
 	}
 	if pr == nil || pr.HeadOID != head {
 		return sh.push(ctx, repo, w, head, pr)
@@ -415,7 +419,11 @@ func (sh *shipper) push(ctx context.Context, repo github.Repo, w store.Worktree,
 	moved, err := sh.update(func(r *store.Run) {
 		r.PR, r.Notes, r.PRDraft = &store.RunPR{Number: opened.Number, URL: opened.URL}, prNotes(d, r.CodeReview), nil
 	})
-	if err != nil {
+	if !moved || err != nil {
+		// The run left Shipping while gh opened the PR: you cancelled it or
+		// sent it back. It gets no event and no Linear attach for a PR that
+		// it does not hold. A later ship finds the PR, and attaches it then
+		// (see [shipper.adopt]).
 		return moved, err
 	}
 	if err := sh.s.AddRunEvent(r.ID, "ship", fmt.Sprintf("Opened #%d", opened.Number)); err != nil {
@@ -453,18 +461,32 @@ func (sh *shipper) prDraft(ctx context.Context, repo github.Repo, w store.Worktr
 	return d, nil
 }
 
-// adopt makes an open PR of the branch the PR of the run. The conflict
-// send-backs of the old PR do not count for the new one, also on the same
-// head.
-func (sh *shipper) adopt(pr *github.PR) (bool, error) {
+// adopt makes an open PR of the branch the PR of the run, and attaches it to
+// the Linear issue of the run (see [shipper.attachToLinear]). That is how a PR
+// gets its attach when gh opened it after you sent the run back (see
+// [shipper.push]). A write that the run refuses, because it left Shipping,
+// gets no event and no attach. A run with no notes takes the notes of its
+// saved PR text. The conflict send-backs of the old PR do not count for the
+// new one, also on the same head.
+func (sh *shipper) adopt(ctx context.Context, pr *github.PR) (bool, error) {
 	moved, err := sh.update(func(r *store.Run) {
+		if r.Notes == nil && r.PRDraft != nil {
+			// gh opened the PR with the saved draft, and the run went back
+			// before it took the PR (see [shipper.push]): the PR keeps the
+			// notes of its text.
+			r.Notes = prNotes(r.PRDraft, r.CodeReview)
+		}
 		r.PR, r.PRDraft = &store.RunPR{Number: pr.Number, URL: pr.URL}, nil
 		r.ConflictSends, r.ConflictHead = 0, ""
 	})
-	if err != nil {
+	if !moved || err != nil {
 		return moved, err
 	}
-	return moved, sh.s.AddRunEvent(sh.r.ID, "ship", fmt.Sprintf("Found #%d, the open PR of the branch", pr.Number))
+	if err := sh.s.AddRunEvent(sh.r.ID, "ship", fmt.Sprintf("Found #%d, the open PR of the branch", pr.Number)); err != nil {
+		return moved, err
+	}
+	sh.attachToLinear(ctx, github.OpenedPR{Number: pr.Number, URL: pr.URL})
+	return moved, nil
 }
 
 // readCI reads the checks on the head of the PR.
@@ -652,23 +674,34 @@ func runList(runs []int64) string {
 // sends it. A prompt that does not reach the session stops the run, and its
 // note names what (such as "CI failure").
 func (sh *shipper) resume(ctx context.Context, prompt, note, what string, addTry func(*store.Run)) (bool, error) {
-	from, moved := sh.r.State, false
+	if sh.movedOn {
+		return false, nil
+	}
+	from := sh.r
 	r, err := sh.s.TakeSlot(sh.r.ID, &store.RunQueue{Resume: prompt}, func(r *store.Run) error {
-		if r.State == from { // you may have changed the run during the tick
-			r.State, r.Note, moved = store.RunRunning, note, true
-			r.TurnBase = r.Turns // the turn limit counts from the resume
-			r.GateTimeouts = 0   // and the gates that ran out of time
-			r.BlockedStops = 0   // and the stops that the gate blocked
-			addTry(r)
+		// You may have changed the run during the tick. Then the write ends
+		// here, before TakeSlot checks a slot, so a run that you sent back
+		// stays Running with your notes, and gets no prompt.
+		if runMovedOn(from, *r) {
+			return errMovedOn
 		}
+		r.State, r.Note = store.RunRunning, note
+		r.TurnBase = r.Turns // the turn limit counts from the resume
+		r.GateTimeouts = 0   // and the gates that ran out of time
+		r.BlockedStops = 0   // and the stops that the gate blocked
+		addTry(r)
 		return nil
 	})
+	if errors.Is(err, errMovedOn) {
+		sh.movedOn = true
+		return false, nil
+	}
 	if err != nil {
 		return false, err
 	}
 	sh.r = r
-	if !moved || r.State == store.RunQueued {
-		return moved, nil // a run that you changed gets no prompt, and a Queued run gets it from a later tick
+	if r.State == store.RunQueued {
+		return true, nil // a Queued run gets the prompt from a later tick
 	}
 	if err := send(ctx, sh.s, sh.r, prompt); err != nil {
 		note := "Could not send the " + what + " to the session: " + err.Error()
@@ -679,11 +712,11 @@ func (sh *shipper) resume(ctx context.Context, prompt, note, what string, addTry
 			return nil
 		})
 		if uerr != nil {
-			return moved, uerr
+			return true, uerr
 		}
 		sh.r = r
 	}
-	return moved, nil
+	return true, nil
 }
 
 // ciTests is in each prompt of a CI failure. The gate does not run the
@@ -892,23 +925,47 @@ func (sh *shipper) moveTry(state store.RunState, note string) (bool, error) {
 	return sh.update(func(r *store.Run) { r.State, r.Note, r.Tries = state, note, r.Tries+1 })
 }
 
-// update changes the run when it is still in the state that the tick found:
-// you may have stopped it while the tick ran.
+// runMovedOn reports whether the run now is not the run that the tick
+// read. A state that differs is a cancel or a send-back. A count of turns
+// that differs catches a round trip in one tick: you send the run back, its
+// session ends a turn, and the gate puts it back in the same state, with a
+// new head and a new result. Each Stop hook counts a turn (see
+// [gateOutcome]), so a run that went round has more turns. Then a write of
+// the tick, such as a CI failure that it read for the old head, is stale.
+func runMovedOn(read, now store.Run) bool {
+	return now.State != read.State || now.Turns != read.Turns
+}
+
+// errMovedOn ends a write to a run that left the state that its caller read,
+// such as a tick or a send-back, so the write changes nothing.
+var errMovedOn = errors.New("the run left the state that Loam read")
+
+// update changes the run when it is still as the tick found it (see
+// [runMovedOn]): you may have cancelled it or sent it back while the tick ran.
+// A run that moved on stays as it is, with no write, for the rest of the tick:
+// sh.r keeps the run as the tick read it, so a later step does not take the
+// new state as its own and write over it (see [shipper.movedOn]).
 func (sh *shipper) update(fn func(*store.Run)) (bool, error) {
-	moved, from := false, sh.r.State
+	if sh.movedOn {
+		return false, nil
+	}
+	from := sh.r
 	r, err := sh.s.UpdateRun(sh.r.ID, func(r *store.Run) error {
-		if r.State != from {
-			return nil
+		if runMovedOn(from, *r) {
+			return errMovedOn
 		}
 		fn(r)
-		moved = true
 		return nil
 	})
+	if errors.Is(err, errMovedOn) {
+		sh.movedOn = true
+		return false, nil
+	}
 	if err != nil {
 		return false, err
 	}
 	sh.r = r
-	return moved, nil
+	return true, nil
 }
 
 // gitPush pushes the commit head to the branch on origin, from the worktree

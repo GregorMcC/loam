@@ -5,7 +5,7 @@ import Testing
 
 /// Ticket 99: Home, the space above the plots for tabs that belong to no plot.
 @MainActor
-@Suite struct HomeTests {
+@Suite(.temporaryFolders) struct HomeTests {
     func session(_ space: Space, _ id: String) -> PaneSpec {
         PaneSpec(kind: .session, space: space, command: "loam start", title: "claude", sessionID: id)
     }
@@ -23,8 +23,7 @@ import Testing
     }
 
     func tempFile() -> AppStateFile {
-        AppStateFile(url: FileManager.default.temporaryDirectory
-            .appendingPathComponent("loam-home-\(UUID().uuidString)/state.json"))
+        AppStateFile(url: temporaryFolder("home").appendingPathComponent("state.json"))
     }
 
     /// Home: a session tab, then a shell tab (selected). Plot A: one shell tab. Home is active.

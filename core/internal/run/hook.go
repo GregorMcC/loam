@@ -26,6 +26,9 @@ type hookInput struct {
 	StopHookActive bool   `json:"stop_hook_active"`
 	Error          string `json:"error"`
 	ErrorDetails   string `json:"error_details"`
+	// LastMessage is the last message of the session in a Stop hook, when
+	// Claude Code gives it.
+	LastMessage string `json:"last_assistant_message"`
 }
 
 // Hook answers one hook call of a run session and returns the exit code for
@@ -51,7 +54,7 @@ func Hook(s *store.Store, runID string, in io.Reader, out, errOut io.Writer) int
 		exportBashEnv(s, runID, logf)
 		sessionStarted(s, runID, h, out, logf)
 	case "Stop":
-		return stopped(s, runID, errOut, logf)
+		return stopped(s, runID, h.LastMessage, errOut, logf)
 	case "StopFailure":
 		stopFailed(s, runID, h, logf)
 	}
@@ -81,8 +84,10 @@ func Hook(s *store.Store, runID string, in io.Reader, out, errOut io.Writer) int
 // gate waits out the gate lock: the stop is blocked, and the gate runs again
 // at the next stop. The hook holds the
 // gate lock of the run (see [holdGate]) from the first read of the run to the
-// record of the gate.
-func stopped(s *store.Store, runID string, errOut io.Writer, logf func(string, ...any)) int {
+// record of the gate. A stop that the gate lets end keeps reply, the last
+// message of the session, as the reply to a code review round (see
+// [keepReply]).
+func stopped(s *store.Store, runID, reply string, errOut io.Writer, logf func(string, ...any)) int {
 	// While the gate runs, a tick does not take the run as idle.
 	defer holdGate(s, runID, logf)()
 	r, err := s.GetRun(runID)
@@ -125,16 +130,18 @@ func stopped(s *store.Store, runID string, errOut io.Writer, logf func(string, .
 	block := ""
 	_, err = s.UpdateRun(runID, func(r *store.Run) error {
 		block = gateOutcome(r, g, limits, ships, recent)
-		if block == "" {
+		switch {
+		case block == "":
 			r.BlockedStops = 0
-			return nil
-		}
-		r.BlockedStops++
-		if r.BlockedStops > maxBlockedStops {
+		case r.BlockedStops+1 > maxBlockedStops:
 			last := strings.TrimSuffix(r.Note, ", and Loam runs the checks again")
 			block, r.BlockedStops = "", 0
 			r.State, r.Note = store.RunStopped, fmt.Sprintf("Stopped after %d blocked stops in a row, the most that Claude Code allows. The last gate: %s", maxBlockedStops, last)
+		default:
+			r.BlockedStops++
+			return nil // the session works on, so its reply comes at a later stop
 		}
+		keepReply(r, reply) // the session stops
 		return nil
 	})
 	if err != nil {
@@ -146,6 +153,26 @@ func stopped(s *store.Store, runID string, errOut io.Writer, logf func(string, .
 	}
 	fmt.Fprint(errOut, block)
 	return 2
+}
+
+// keepReply keeps msg, the last message of the session at a stop that ends
+// its work, as the reply to the code review round that Loam waits for (see
+// [store.RunCodeReview.ReplyRound]). The next review of the run shows it
+// after the findings of that round (see [writeEarlier]). A stop with no
+// message ends the wait too, so a later stop, such as after a CI failure, is
+// not taken as the reply.
+func keepReply(r *store.Run, msg string) {
+	c := r.CodeReview
+	if c == nil || c.ReplyRound == 0 {
+		return
+	}
+	if msg = strings.TrimSpace(msg); msg != "" {
+		if c.Replies == nil {
+			c.Replies = map[int]string{}
+		}
+		c.Replies[c.ReplyRound] = cutText(msg, store.CodeReviewReplyMax)
+	}
+	c.ReplyRound = 0
 }
 
 // maxBlockedStops is the most stops in a row that the gate blocks. Claude

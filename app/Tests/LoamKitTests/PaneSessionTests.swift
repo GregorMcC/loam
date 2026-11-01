@@ -90,7 +90,7 @@ private func typed(_ session: inout PaneSession) -> Bool { session.typed() }
 }
 
 /// The alert states (spec 8.4): needs you and done, unread, and their clear rules.
-@Suite struct PaneAttentionTests {
+@Suite(.temporaryFolders) struct PaneAttentionTests {
     private func started() -> PaneSession {
         var s = PaneSession(sessionID: "a")
         s.apply(paneEvent("SessionStart", "a", source: "startup"), now: anyTime)
@@ -221,7 +221,7 @@ private func typed(_ session: inout PaneSession) -> Bool { session.typed() }
     }
 }
 
-@Suite struct PaneCommandTests {
+@Suite(.temporaryFolders) struct PaneCommandTests {
     @Test func aSeededPaneExecsLoamStartInALoginShell() {
         let command = PaneCommand.start(shell: "/bin/zsh", loam: "/Users/me/.local/bin/loam", plot: "k3v9q2mxa7", sessionID: "1111-2222")
         #expect(command == "/bin/zsh -lc 'exec /Users/me/.local/bin/loam start k3v9q2mxa7 --session-id 1111-2222'")
@@ -243,7 +243,7 @@ private func typed(_ session: inout PaneSession) -> Bool { session.typed() }
     }
 
     @Test func pathsWithSpacesAndQuotesSurviveTwoShells() throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pane-command-\(UUID().uuidString)/My Loam/it's")
+        let dir = temporaryFolder("pane-command").appendingPathComponent("My Loam/it's")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let loam = dir.appendingPathComponent("loam").path
         try FakeScript.install("#!/bin/sh\nprintf '%s\\n' ran \"$@\"\n", at: URL(fileURLWithPath: loam))

@@ -2,6 +2,7 @@ package run
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -57,13 +58,14 @@ type RuleOffer struct {
 }
 
 // SendBack resumes the session of a run that waits for you, Ready to land or
-// Stopped, with your notes. The run goes back to Running, and then round the
-// gate and Ship again. When no slot is free, the run waits in Queued with
-// the notes, and a tick sends them. A usage that is stale is probed first
-// (see [usageForHold]). A note is not a failure, so it uses no try. A run
-// that has used all its tries gets one more, up to the limit of tries. The
-// code review rounds count for the whole run, so a send-back gives no more of
-// them (see [codeReviewRounds]).
+// Stopped, or that is Shipping, with your notes. The run goes back to
+// Running, and then round the gate and Ship again. A tick that ships the run
+// at that moment leaves it as it is (see [shipper.update]). When no slot is
+// free, the run waits in Queued with the notes, and a tick sends them. A
+// usage that is stale is probed first (see [usageForHold]). A note is not a
+// failure, so it uses no try. A run that has used all its tries gets one
+// more, up to the limit of tries. The code review rounds count for the whole
+// run, so a send-back gives no more of them (see [codeReviewRounds]).
 // Each note is a note event of the run.
 // When a note is like one that you sent back on another run of the plot, and
 // no rule came from such a note, the offer says so.
@@ -83,28 +85,16 @@ func sendBack(ctx context.Context, s *store.Store, id string, notes []Note) (sto
 	if err != nil {
 		return r, err
 	}
-	if r.State != store.RunReady && r.State != store.RunStopped {
-		return r, fmt.Errorf("only a run that is Ready to land or Stopped can go back, and this run is %s: %w", r.State, store.ErrInvalid)
+	if r.State != store.RunReady && r.State != store.RunStopped && r.State != store.RunShipping {
+		return r, fmt.Errorf("only a run that is Ready to land, Shipping, or Stopped can go back, and this run is %s: %w", r.State, store.ErrInvalid)
 	}
 	if r.SessionID == "" {
 		return r, fmt.Errorf("the run has no session to send the notes to: %w", store.ErrInvalid)
 	}
-	from, sent := r.State, false
-	note := "Sent back with " + count(len(notes), "note")
 	prompt := notesPrompt(r, notes, hasChecks(s, r))
 	usageForHold(ctx, s)
-	r, err = s.TakeSlot(id, &store.RunQueue{Resume: prompt}, func(r *store.Run) error {
-		if r.State != from {
-			return nil
-		}
-		r.State, r.Note, sent = store.RunRunning, note, true
-		r.TurnBase = r.Turns // the turn limit counts from the resume
-		r.GateTimeouts = 0   // and the gates that ran out of time
-		r.BlockedStops = 0   // and the stops that the gate blocked
-		r.MaxTries = min(max(r.MaxTries, r.Tries+1), store.MaxTriesLimit)
-		return nil
-	})
-	if err != nil || !sent {
+	r, err = takeSendBack(s, r, len(notes), prompt)
+	if err != nil {
 		return r, err
 	}
 	if err := s.AddRunEvent(id, "review", "Sent back "+count(len(notes), "note")); err != nil {
@@ -122,6 +112,35 @@ func sendBack(ctx context.Context, s *store.Store, id string, notes []Note) (sto
 		return r, stopAfter(s, id, fmt.Errorf("could not send the notes to the session: %w", err))
 	}
 	return r, nil
+}
+
+// takeSendBack puts the run back to Running with the note of the send-back,
+// in the write that checks its slot (see [store.Store.TakeSlot]). from is the
+// run as sendBack read it. A tick can move the run in the meantime, for
+// example to resume a Shipping run with a CI failure. Then the write ends
+// before TakeSlot checks a slot, the run stays as the tick left it, and the
+// error says that the notes did not go back.
+func takeSendBack(s *store.Store, from store.Run, notes int, prompt string) (store.Run, error) {
+	r, err := s.TakeSlot(from.ID, &store.RunQueue{Resume: prompt}, func(r *store.Run) error {
+		if r.State != from.State {
+			return errMovedOn
+		}
+		r.State, r.Note = store.RunRunning, "Sent back with "+count(notes, "note")
+		r.TurnBase = r.Turns // the turn limit counts from the resume
+		r.GateTimeouts = 0   // and the gates that ran out of time
+		r.BlockedStops = 0   // and the stops that the gate blocked
+		r.MaxTries = min(max(r.MaxTries, r.Tries+1), store.MaxTriesLimit)
+		return nil
+	})
+	if errors.Is(err, errMovedOn) {
+		now, gerr := s.GetRun(from.ID)
+		if gerr != nil {
+			return now, gerr
+		}
+		return now, fmt.Errorf("the run moved from %s to %s while Loam sent your notes, so they did not go back. Look at the run, then send them again: %w",
+			from.State, now.State, store.ErrInvalid)
+	}
+	return r, err
 }
 
 // notesPrompt is the prompt that sends your notes back to the session.

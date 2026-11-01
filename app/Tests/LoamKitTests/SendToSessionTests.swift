@@ -194,7 +194,7 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
 /// The session that gets the prompt, the rule for when Loam may type, and the model that types, copies, or starts a
 /// session.
 @MainActor
-@Suite(.waitLimit) struct SendToSessionTests {
+@Suite(.waitLimit, .temporaryFolders) struct SendToSessionTests {
     let plotID = "plotaaaaab"
     /// native-panel, #16, Checks failed.
     let failed = "wtreaaaaah"
@@ -215,8 +215,7 @@ private func row(_ stage: WorktreeStage) throws -> WorktreeStatus {
 
     /// The rig, and the file of rows that the fake `loam` prints, so a test can change the rows.
     func rigWithRows() async throws -> (model: AppModel, record: SendRecord, rows: URL) {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("send-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let dir = temporaryFolder("send")
         let rows = dir.appendingPathComponent(Self.rowsFile)
         try Fixtures.data("worktree_list_stages").write(to: rows)
         try FakeScript.install("#!/bin/sh\ncat '\(rows.path)'\n", at: dir.appendingPathComponent("loam"))

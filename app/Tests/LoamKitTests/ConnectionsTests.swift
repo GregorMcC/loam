@@ -5,7 +5,7 @@ import Testing
 
 /// Ticket 205: Settings > Connections reads, sets, and removes the Linear API key through the core.
 @MainActor
-@Suite(.waitLimit) struct ConnectionsTests {
+@Suite(.waitLimit, .temporaryFolders) struct ConnectionsTests {
     @Test func loadsTheStatusOfTheKey() async throws {
         let fake = try FakeLoam([("linear_status", 0), ("linear_updates", 0), ("list", 0), ("show", 0)])
         let model = ConnectionsModel(client: fake.client())

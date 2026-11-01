@@ -66,7 +66,7 @@ import Testing
 }
 
 @MainActor
-@Suite(.waitLimit) struct PRPopoverGoalEditTests {
+@Suite(.waitLimit, .temporaryFolders) struct PRPopoverGoalEditTests {
     let plotID = "plotaaaaab"
     let id = "wtreaaaaab"
 
@@ -87,8 +87,7 @@ import Testing
     }
 
     func rig() async throws -> Rig {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("popover-goal-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let dir = temporaryFolder("popover-goal")
         for name in ["worktree_list", "worktree_list_stages", "worktree_edit", "error_stale_worktree", "error_invalid"] {
             try Fixtures.data(name).write(to: dir.appendingPathComponent("\(name).json"))
         }

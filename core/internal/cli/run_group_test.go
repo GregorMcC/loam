@@ -361,9 +361,9 @@ func TestRunTickOfAGroupWithARunLeftKeepsTheIssueInProgress(t *testing.T) {
 	}
 }
 
-// When you stop the last run of a group, and another run landed, the issue
+// When you cancel the last run of a group, and another run landed, the issue
 // is done.
-func TestRunStopOfTheLastRunOfAGroupMovesTheIssueToDone(t *testing.T) {
+func TestRunCancelOfTheLastRunOfAGroupMovesTheIssueToDone(t *testing.T) {
 	s, p, repo := wtCLI(t)
 	testutil.FakeLinear(t)
 	r, err := s.AddRun(store.Run{PlotID: p.ID, Folder: repo, Title: "Rename the setting", State: store.RunShaping})
@@ -371,7 +371,7 @@ func TestRunStopOfTheLastRunOfAGroupMovesTheIssueToDone(t *testing.T) {
 		t.Fatal(err)
 	}
 	linearGroup(t, s, r, store.RunLanded)
-	r = shapeRun(t, "stop", r.ID)
+	r = shapeRun(t, "cancel", r.ID)
 	if r.State != store.RunCancelled {
 		t.Fatalf("run %+v", r)
 	}
@@ -380,8 +380,8 @@ func TestRunStopOfTheLastRunOfAGroupMovesTheIssueToDone(t *testing.T) {
 	}
 }
 
-// A lone run that you stop leaves its issue as it is.
-func TestRunStopOfALoneRunLeavesTheIssue(t *testing.T) {
+// A lone run that you cancel leaves its issue as it is.
+func TestRunCancelOfALoneRunLeavesTheIssue(t *testing.T) {
 	s, p, repo := wtCLI(t)
 	lin := testutil.FakeLinear(t)
 	r, err := s.AddRun(store.Run{PlotID: p.ID, Folder: repo, Title: "Rename the setting", State: store.RunShaping,
@@ -389,7 +389,7 @@ func TestRunStopOfALoneRunLeavesTheIssue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	shapeRun(t, "stop", r.ID)
+	shapeRun(t, "cancel", r.ID)
 	if n := linearMoves(lin); n != 0 || len(events(t, s, r.ID, "linear")) != 0 {
 		t.Fatalf("%d moves in Linear", n)
 	}

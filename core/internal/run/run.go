@@ -616,15 +616,18 @@ func Prompt(r store.Run, rules []store.Rule) string {
 	return b.String()
 }
 
-// Stop stops the background session of a run, marks the run Cancelled, and
+// CancelledNote is the note of a run that you cancelled.
+const CancelledNote = "Cancelled by you"
+
+// Cancel stops the background session of a run, marks the run Cancelled, and
 // removes the private folder of the run (see [session.RunTemp]).
 // A Shaping run, and a Queued run that never started, have no session, so
-// Stop only cancels them. A run that has ended stays as it is. When claude
+// Cancel only cancels them. A run that has ended stays as it is. When claude
 // stop fails, for example because the session is gone, the run is Cancelled
 // anyway and the result has a warning. When the run is the last of its
 // group, and another run of the group landed, its Linear issue moves to
 // Done.
-func Stop(ctx context.Context, s *store.Store, id string) (store.Run, []string, error) {
+func Cancel(ctx context.Context, s *store.Store, id string) (store.Run, []string, error) {
 	r, err := s.GetRun(id)
 	if err != nil || r.State.Ended() {
 		return r, nil, err
@@ -636,7 +639,7 @@ func Stop(ctx context.Context, s *store.Store, id string) (store.Run, []string, 
 		}
 	}
 	r, err = s.UpdateRun(id, func(r *store.Run) error {
-		r.State, r.Note = store.RunCancelled, "Stopped by you"
+		r.State, r.Note = store.RunCancelled, CancelledNote
 		return nil
 	})
 	if err != nil {

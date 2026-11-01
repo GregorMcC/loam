@@ -128,7 +128,7 @@ import Testing
     }
 }
 
-@Suite struct GhosttyConfigFilesTests {
+@Suite(.temporaryFolders) struct GhosttyConfigFilesTests {
     let home = "/Users/me"
 
     @Test func searchesTheXDGFolderThenApplicationSupportInGhosttysOrder() {
@@ -263,9 +263,7 @@ import Testing
 
     @Test func theFilterMatchesTheRealPathOfAFile() throws {
         // FSEvents reports /private/var for a file under /var.
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("loam-filter-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: folder) }
+        let folder = temporaryFolder("filter")
         let file = folder.appendingPathComponent("config").path
         let real = (realpath(folder.path, nil).map { p in defer { free(p) }; return String(cString: p) } ?? folder.path) + "/config"
         let filter = ConfigEventFilter(files: [file])
@@ -339,7 +337,7 @@ import Testing
 }
 
 @MainActor
-@Suite(.waitLimit) struct ConfigWatchTests {
+@Suite(.waitLimit, .temporaryFolders) struct ConfigWatchTests {
     @Test func aBurstOfEventsIsOneReload() async throws {
         let (stream, continuation) = AsyncStream<Void>.makeStream()
         let watch = ConfigWatch(debounce: .milliseconds(50)) { _ in stream }
@@ -381,9 +379,7 @@ import Testing
     }
 
     @Test(.outsideASandbox) func reloadsWhenTheFileChangesOnDisk() async throws {
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("loam-config-watch-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: folder) }
+        let folder = temporaryFolder("config-watch")
         let file = folder.appendingPathComponent("config").path
         try "background = #000000\n".write(toFile: file, atomically: true, encoding: .utf8)
         let watch = ConfigWatch(debounce: .milliseconds(50))
@@ -398,10 +394,9 @@ import Testing
 
     @Test(.outsideASandbox) func followsAConfigFileThatBecomesALink() async throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("loam-config-link-\(UUID().uuidString)")
+        let root = temporaryFolder("config-link")
         try fm.createDirectory(at: root.appendingPathComponent("ghostty"), withIntermediateDirectories: true)
         try fm.createDirectory(at: root.appendingPathComponent("dotfiles"), withIntermediateDirectories: true)
-        defer { try? fm.removeItem(at: root) }
         let file = root.appendingPathComponent("ghostty/config").path
         let target = root.appendingPathComponent("dotfiles/config").path
         try "background = #000000\n".write(toFile: file, atomically: true, encoding: .utf8)
@@ -426,9 +421,7 @@ import Testing
     }
 
     @Test(.outsideASandbox) func seesAConfigMadeInAFolderThatDidNotExist() async throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("loam-config-new-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
+        let root = temporaryFolder("config-new")
         let file = root.appendingPathComponent("ghostty/config").path
         let watch = ConfigWatch(debounce: .milliseconds(50))
         var reloads = 0

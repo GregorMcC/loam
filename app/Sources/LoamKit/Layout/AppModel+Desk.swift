@@ -250,11 +250,11 @@ extension AppModel {
         await reloadRuns()
     }
 
-    /// Not now: cancels the run in Shaping (`loam run stop`), and shows the next run.
+    /// Not now: cancels the run in Shaping (`loam run cancel`), and shows the next run.
     public func notNowDeskRun() async {
         guard let id = desk.runID, !desk.busy, !desk.drafting.contains(id) else { return }
         await deskAction(id) {
-            _ = try await self.client.runStop(id)
+            _ = try await self.client.runCancel(id)
             self.desk.shapeEdits[id] = nil
         }
     }

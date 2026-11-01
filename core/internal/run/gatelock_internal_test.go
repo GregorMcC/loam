@@ -65,7 +65,7 @@ func holdGateLock(t *testing.T, s *store.Store) func() {
 func stop(t *testing.T, s *store.Store, r store.Run) (int, string) {
 	t.Helper()
 	var errOut bytes.Buffer
-	code := stopped(s, r.ID, &errOut, func(format string, a ...any) { t.Logf(format, a...) })
+	code := stopped(s, r.ID, "", &errOut, func(format string, a ...any) { t.Logf(format, a...) })
 	return code, errOut.String()
 }
 
@@ -100,7 +100,7 @@ func TestGateWaitsForTheGateOfAnotherRun(t *testing.T) {
 	done := make(chan result, 1)
 	go func() {
 		var errOut bytes.Buffer
-		code := stopped(s, r.ID, &errOut, func(string, ...any) {})
+		code := stopped(s, r.ID, "", &errOut, func(string, ...any) {})
 		done <- result{code, errOut.String()}
 	}()
 	deadline := time.Now().Add(10 * time.Second)
@@ -465,5 +465,43 @@ func TestGateBlocksAtMostSevenStopsInARow(t *testing.T) {
 		!strings.HasPrefix(got.Note, "Stopped after 7 blocked stops in a row, the most that Claude Code allows. The last gate: The gate waited ") ||
 		!strings.HasSuffix(got.Note, "which left no time for the checks. No try counted") {
 		t.Fatalf("after the 8th blocked stop: %+v", got)
+	}
+}
+
+// TAS-212: the stop that the gate lets end after a code review round keeps
+// the last message of the session as the reply to the round. A stop that
+// the gate blocks keeps none, because the session works on.
+func TestTheGateKeepsTheReplyToACodeReviewRound(t *testing.T) {
+	gateTimes(t, time.Minute, time.Minute)
+	waitForReply := func(r *store.Run) error {
+		r.CodeReview = &store.RunCodeReview{Rounds: 1, ReplyRound: 1}
+		return nil
+	}
+	s, r := lockedGateRun(t, store.Check{Name: "Fails", Command: "false"})
+	if _, err := s.UpdateRun(r.ID, waitForReply); err != nil {
+		t.Fatal(err)
+	}
+	var errOut bytes.Buffer
+	if code := stopped(s, r.ID, "Not yet.", &errOut, func(string, ...any) {}); code != 2 {
+		t.Fatalf("code %d, want a blocked stop", code)
+	}
+	if got, _ := s.GetRun(r.ID); got.CodeReview.ReplyRound != 1 || len(got.CodeReview.Replies) != 0 {
+		t.Fatalf("a blocked stop changed the review state: %+v", got.CodeReview)
+	}
+
+	s, r = lockedGateRun(t, store.Check{Name: "Hello", Command: "true"})
+	if _, err := s.UpdateRun(r.ID, waitForReply); err != nil {
+		t.Fatal(err)
+	}
+	errOut.Reset()
+	if code := stopped(s, r.ID, "I made the gate warn and skip.", &errOut, func(string, ...any) {}); code != 0 {
+		t.Fatalf("code %d: %s", code, errOut.String())
+	}
+	got, err := s.GetRun(r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State == store.RunRunning || got.CodeReview.ReplyRound != 0 || got.CodeReview.Replies[1] != "I made the gate warn and skip." {
+		t.Fatalf("run %s, review %+v", got.State, got.CodeReview)
 	}
 }

@@ -9,7 +9,7 @@ import Testing
 /// script itself is a plain file next to it that `/bin/sh` reads.
 enum FakeScript {
     static let launcher: URL = {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("fake-loam-launcher-\(UUID().uuidString)")
+        let url = runFolder.appendingPathComponent("fake-loam-launcher")
         // A script run through a link gets the link path as $0.
         try! "#!/bin/sh\nexec /bin/sh \"$0.sh\" \"$@\"\n".write(to: url, atomically: true, encoding: .utf8)
         try! FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
@@ -42,8 +42,7 @@ struct FakeLoam {
     /// `outputs` holds one entry per call: the fixture name (or "" for none) and the exit code.
     /// Each call takes a number, so a test can script a sequence. The last entry repeats.
     init(_ outputs: [(fixture: String, exit: Int32)]) throws {
-        dir = FileManager.default.temporaryDirectory.appendingPathComponent("fake-loam-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        dir = temporaryFolder("fake-loam")
         var cases = ""
         for (i, o) in outputs.enumerated() {
             let file = o.fixture.isEmpty ? "/dev/null" : Fixtures.dir.appendingPathComponent("\(o.fixture).json").path
@@ -70,7 +69,7 @@ struct FakeLoam {
     func client() -> LoamClient { LoamClient(binary: binary) }
 }
 
-@Suite struct LoamClientTests {
+@Suite(.temporaryFolders) struct LoamClientTests {
     @Test func readsUseJSONOnly() async throws {
         let fake = try FakeLoam([("list", 0)])
         let plots = try await fake.client().list()
@@ -421,10 +420,9 @@ struct FakeLoam {
     }
 }
 
-@Suite struct LoamClientProcessTests {
+@Suite(.temporaryFolders) struct LoamClientProcessTests {
     private func script(_ body: String) throws -> LoamClient {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("fake-loam-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let dir = temporaryFolder("fake-loam")
         let bin = dir.appendingPathComponent("loam")
         try FakeScript.install("#!/bin/sh\n\(body)\n", at: bin)
         return LoamClient(binary: bin)

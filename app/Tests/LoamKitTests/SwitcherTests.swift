@@ -188,10 +188,9 @@ private func at(_ seconds: Double) -> Date { Date(timeIntervalSince1970: seconds
 }
 
 @MainActor
-@Suite struct SwitcherModelTests {
+@Suite(.temporaryFolders) struct SwitcherModelTests {
     func tempFile() -> AppStateFile {
-        AppStateFile(url: FileManager.default.temporaryDirectory
-            .appendingPathComponent("switcher-\(UUID().uuidString)/state.json"))
+        AppStateFile(url: temporaryFolder("switcher").appendingPathComponent("state.json"))
     }
 
     func model(_ file: AppStateFile? = nil) -> AppModel {
@@ -391,7 +390,7 @@ private func at(_ seconds: Double) -> Date { Date(timeIntervalSince1970: seconds
     }
 }
 
-@Suite struct SwitcherSectionTests {
+@Suite(.temporaryFolders) struct SwitcherSectionTests {
     private func result(_ id: String, _ kind: SwitcherItem.Kind) -> SwitcherResult {
         SwitcherResult(item: item(id, kind, id), score: 0, titleMatches: [])
     }
@@ -402,8 +401,7 @@ private func at(_ seconds: Double) -> Date { Date(timeIntervalSince1970: seconds
     }
 
     @MainActor @Test func sectionsCoverTheRowsOfEachKind() {
-        let app = AppModel(client: LoamClient(), stateFile: AppStateFile(url: FileManager.default.temporaryDirectory
-            .appendingPathComponent("sections-\(UUID().uuidString)/state.json")))
+        let app = AppModel(client: LoamClient(), stateFile: AppStateFile(url: temporaryFolder("sections").appendingPathComponent("state.json")))
         app.apply([plot("p1", "Alpha"), plot("p2", "Beta")])
         let switcher = SwitcherModel()
         switcher.app = app
@@ -420,10 +418,9 @@ private func at(_ seconds: Double) -> Date { Date(timeIntervalSince1970: seconds
 }
 
 @MainActor
-@Suite struct UseTimesTests {
+@Suite(.temporaryFolders) struct UseTimesTests {
     func tempFile() -> AppStateFile {
-        AppStateFile(url: FileManager.default.temporaryDirectory
-            .appendingPathComponent("usetimes-\(UUID().uuidString)/state.json"))
+        AppStateFile(url: temporaryFolder("usetimes").appendingPathComponent("state.json"))
     }
 
     @Test func keepsTimesInStateJsonAndOtherKeys() throws {

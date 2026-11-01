@@ -2,11 +2,10 @@ import Foundation
 import Testing
 @testable import LoamKit
 
-@Suite struct ShellEnvironmentTests {
+@Suite(.temporaryFolders) struct ShellEnvironmentTests {
     /// A fake login shell. It ignores its arguments and runs `body`.
     private func shell(_ body: String) throws -> String {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("fake-shell-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let dir = temporaryFolder("fake-shell")
         let path = dir.appendingPathComponent("sh")
         try FakeScript.install("#!/bin/sh\n\(body)\n", at: path)
         return path.path

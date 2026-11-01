@@ -6,7 +6,7 @@ import Testing
 /// Ticket 32: the alert states in the app model (spec 8.4). Needs you and done, unread, their clear
 /// rules, ⌘L, the banner and the Dock badge, and done, unread in `state.json`.
 @MainActor
-@Suite struct AttentionTests {
+@Suite(.temporaryFolders) struct AttentionTests {
     func plot(_ id: String) -> PlotSummary {
         PlotSummary(id: id, name: "Plot \(id)", what: "", createdAt: "2026-01-01T00:00:00Z")
     }
@@ -80,8 +80,7 @@ import Testing
     }
 
     @Test func doneUnreadGoesToStateJSON() throws {
-        let file = AppStateFile(url: FileManager.default.temporaryDirectory
-            .appendingPathComponent("loam-attention-\(UUID().uuidString)/state.json"))
+        let file = AppStateFile(url: temporaryFolder("attention").appendingPathComponent("state.json"))
         let model = AppModel(client: LoamClient(binary: URL(fileURLWithPath: "/opt/loam/bin/loam"), environment: [:]))
         model.isFrontmost = { true }
         model.startRestore(from: file, writeDelay: .milliseconds(10))

@@ -7,7 +7,7 @@ import Testing
 /// the core would give after an archive, so the reload after each call fails here (`error_generic`)
 /// and keeps what the call itself set. The driver test runs the real core.
 @MainActor
-@Suite(.waitLimit) struct PlotLifecycleTests {
+@Suite(.waitLimit, .temporaryFolders) struct PlotLifecycleTests {
     func plot(_ id: String, _ name: String) -> PlotSummary {
         PlotSummary(id: id, name: name, what: "", createdAt: "2026-01-01T00:00:00Z")
     }

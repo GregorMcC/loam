@@ -6,7 +6,7 @@ import Testing
 /// Ticket 115: ⌘Return on an issue link in the switcher starts work. Return still opens the link. The second action is a
 /// field of the item (`SwitcherItem.alternate`), so another kind can add one.
 @MainActor
-@Suite(.waitLimit) struct SwitcherStartWorkTests {
+@Suite(.waitLimit, .temporaryFolders) struct SwitcherStartWorkTests {
     let plotID = "plotaaaaab"
     let linear = SwitcherLink(plotID: "plotaaaaab", linkID: "lnkaaaaaaa", label: "ENG-482 Link kinds for Figma",
                               target: "https://linear.app/example/issue/ENG-482/link-kinds-for-figma", kind: .linear)
@@ -21,7 +21,7 @@ import Testing
 
     func items(_ links: [SwitcherLink]) -> [SwitcherItem] {
         let app = AppModel(client: LoamClient(), stateFile: AppStateFile(
-            url: FileManager.default.temporaryDirectory.appendingPathComponent("switcher-\(UUID().uuidString)/state.json")))
+            url: temporaryFolder("switcher").appendingPathComponent("state.json")))
         app.apply([PlotSummary(id: plotID, name: "Widgets", what: "", createdAt: "2026-01-01T00:00:00Z")])
         return SwitcherModel.items(plots: app.plots, workspace: app.workspace, terminalTitles: [:], attention: { _ in .none },
                                    savedPanes: [], links: links, actions: [])
@@ -63,8 +63,7 @@ import Testing
     }
 
     func rig(links: [SwitcherLink]) async throws -> Rig {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("switcher-start-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let dir = temporaryFolder("switcher-start")
         var export = try #require(try JSONSerialization.jsonObject(with: Fixtures.data("export")) as? [String: Any])
         var plots = try #require(export["plots"] as? [[String: Any]])
         let index = try #require(plots.firstIndex { ($0["id"] as? String) == plotID })

@@ -501,9 +501,9 @@ public struct LoamClient: Sendable {
         return one.updates
     }
 
-    /// `loam run stop <run>`: stops the background session of a run.
-    public func runStop(_ id: String) async throws -> RunResult {
-        try await read(["run", "stop"], positionals: [id])
+    /// `loam run cancel <run>`: stops the background session of a run, and the run is Cancelled.
+    public func runCancel(_ id: String) async throws -> RunResult {
+        try await read(["run", "cancel"], positionals: [id])
     }
 
     /// `loam run diff`: the work that a run committed (ticket 207).

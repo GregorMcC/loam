@@ -4,7 +4,7 @@ import Testing
 @testable import LoamKit
 
 @MainActor
-@Suite(.waitLimit) struct AppModelTests {
+@Suite(.waitLimit, .temporaryFolders) struct AppModelTests {
     func plot(_ id: String, _ name: String) -> PlotSummary {
         PlotSummary(id: id, name: name, what: "", createdAt: "2026-01-01T00:00:00Z")
     }

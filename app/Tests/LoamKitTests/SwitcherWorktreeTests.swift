@@ -6,7 +6,7 @@ import Testing
 /// Ticket 109: a worktree with a PR is an item of the quick switcher. "#16" or a word of the PR title
 /// finds it. The worktrees come from the `worktree_list_stages` fixture (made-up example/widgets data).
 @MainActor
-@Suite struct SwitcherWorktreeTests {
+@Suite(.temporaryFolders) struct SwitcherWorktreeTests {
     let plots = [PlotSummary(id: "plotaaaaab", name: "Widgets", what: "", createdAt: "2026-01-01T00:00:00Z")]
 
     func rows() throws -> [WorktreeStatus] {

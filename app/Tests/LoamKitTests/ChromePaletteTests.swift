@@ -371,7 +371,7 @@ import Testing
 }
 
 /// Ticket 69: the subtitle follows a checkout.
-@Suite struct HeadWatcherTests {
+@Suite(.temporaryFolders) struct HeadWatcherTests {
     @Test func gitDirectoryOfARepoIsDotGit() {
         #expect(RepoLine.gitDirectory(path: "/src/loam", read: { _ in nil }).path == "/src/loam/.git")
     }
@@ -383,10 +383,9 @@ import Testing
 
     @MainActor @Test func aCheckoutCallsOnChange() async throws {
         let fm = FileManager.default
-        let repo = fm.temporaryDirectory.appendingPathComponent("headwatcher-\(UUID().uuidString)")
+        let repo = temporaryFolder("headwatcher")
         let git = repo.appendingPathComponent(".git")
         try fm.createDirectory(at: git, withIntermediateDirectories: true)
-        defer { try? fm.removeItem(at: repo) }
         try "ref: refs/heads/main\n".write(to: git.appendingPathComponent("HEAD"), atomically: true, encoding: .utf8)
 
         var changes = 0
@@ -406,10 +405,9 @@ import Testing
 
     @MainActor @Test func stoppedWatcherSaysNothing() async throws {
         let fm = FileManager.default
-        let repo = fm.temporaryDirectory.appendingPathComponent("headwatcher-\(UUID().uuidString)")
+        let repo = temporaryFolder("headwatcher")
         let git = repo.appendingPathComponent(".git")
         try fm.createDirectory(at: git, withIntermediateDirectories: true)
-        defer { try? fm.removeItem(at: repo) }
         var changes = 0
         let watcher = HeadWatcher { changes += 1 }
         watcher.watch(repo: repo.path)

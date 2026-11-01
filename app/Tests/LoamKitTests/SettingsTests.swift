@@ -4,8 +4,7 @@ import Testing
 
 /// A temp folder with a settings file path in it. The file does not exist yet.
 private func tempFile() throws -> SettingsFile {
-    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("loam-settings-\(UUID().uuidString)")
-    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let dir = temporaryFolder("settings")
     return SettingsFile(url: dir.appendingPathComponent("settings.json"))
 }
 
@@ -13,7 +12,7 @@ private func object(_ file: SettingsFile) throws -> [String: Any] {
     try JSONSerialization.jsonObject(with: Data(contentsOf: file.url)) as? [String: Any] ?? [:]
 }
 
-@Suite struct SettingsFileTests {
+@Suite(.temporaryFolders) struct SettingsFileTests {
     @Test func aMissingFileGivesTheDefaultsAndNoError() throws {
         let file = try tempFile()
         let load = file.read()
@@ -87,7 +86,7 @@ private func object(_ file: SettingsFile) throws -> [String: Any] {
     }
 
     @Test func aWriteMakesTheFolder() throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("loam-settings-\(UUID().uuidString)")
+        let dir = temporaryFolder("settings").appendingPathComponent("new")
         let file = SettingsFile(url: dir.appendingPathComponent("settings.json"))
         try file.write(.defaults)
         #expect(file.read().error == nil)
@@ -120,7 +119,7 @@ private func object(_ file: SettingsFile) throws -> [String: Any] {
     }
 }
 
-@Suite struct LoamBinaryTests {
+@Suite(.temporaryFolders) struct LoamBinaryTests {
     let home = "/Users/me"
 
     /// The fake file system: each file in `executable` is a real file with the name in its path.
@@ -176,9 +175,7 @@ private func object(_ file: SettingsFile) throws -> [String: Any] {
     }
 
     @Test func theRealNameKeepsTheCaseOnDiskAndFollowsSymlinks() throws {
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("loam-realname-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: folder) }
+        let folder = temporaryFolder("realname")
         let gui = folder.appendingPathComponent("Loam").path
         try Data().write(to: URL(fileURLWithPath: gui))
         let link = folder.appendingPathComponent("link").path
@@ -207,7 +204,7 @@ private func object(_ file: SettingsFile) throws -> [String: Any] {
 }
 
 @MainActor
-@Suite struct SettingsModelTests {
+@Suite(.temporaryFolders) struct SettingsModelTests {
     let home = "/Users/me"
 
     func model(_ file: SettingsFile, launch: String = "/Users/me/.local/bin/loam",

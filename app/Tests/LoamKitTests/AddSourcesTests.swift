@@ -3,10 +3,10 @@ import Testing
 @testable import LoamKit
 
 /// Ticket 78: repo suggestions and drops on the plot panel.
-@Suite struct AddSourcesTests {
+@Suite(.temporaryFolders) struct AddSourcesTests {
     /// A temp folder with the given subfolders. A name in `checkouts` gets a `.git` folder.
     private func folder(_ names: [String], checkouts: Set<String>) throws -> String {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("add-sources-\(UUID().uuidString)")
+        let root = temporaryFolder("add-sources")
         for name in names {
             let dir = root.appendingPathComponent(name)
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
