@@ -515,9 +515,14 @@
       "description": "The model and the effort that a run of a plot uses when it names none, the MCP servers that claude -p loads when it drafts a run, writes the PR text, or reviews the code, and the code review before each push (loam run defaults).",
       "type": "object",
       "additionalProperties": false,
-      "required": ["plot_id", "model", "effort", "mcp_servers", "review", "review_effort"],
+      "required": ["plot_id", "model", "effort", "mcp_servers", "review", "review_effort", "checks"],
       "properties": {
         "plot_id": { "$ref": "#/$defs/id" },
+        "checks": {
+          "description": "The Done when checks of a run of the plot that names none.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/runCheck" }
+        },
         "model": { "description": "The Claude model, or empty for the Claude Code setting.", "type": "string" },
         "effort": { "$ref": "#/$defs/effort" },
         "mcp_servers": {
