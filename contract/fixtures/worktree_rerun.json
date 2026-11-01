@@ -1,6 +1,5 @@
 {
   "pr": {
-    "app_comments": [],
     "approvals": 0,
     "base": "main",
     "behind_base": 0,
@@ -37,7 +36,6 @@
     ],
     "head": "native-panel",
     "head_oid": "6666666666666666666666666666666666666666",
-    "head_reviewers": [],
     "in_merge_queue": false,
     "merge_state": "BLOCKED",
     "mergeable": "MERGEABLE",

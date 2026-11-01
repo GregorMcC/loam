@@ -1,7 +1,6 @@
 {
   "fetched": true,
   "pr": {
-    "app_comments": [],
     "approvals": 1,
     "base": "main",
     "behind_base": 3,
@@ -23,7 +22,6 @@
     "failed_checks": [],
     "head": "update-deps",
     "head_oid": "8888888888888888888888888888888888888888",
-    "head_reviewers": [],
     "in_merge_queue": false,
     "merge_state": "BEHIND",
     "mergeable": "MERGEABLE",

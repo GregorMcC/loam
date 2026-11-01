@@ -5,32 +5,23 @@ import (
 	"regexp"
 	"slices"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/GregorMcC/loam/core/internal/github"
 	"github.com/GregorMcC/loam/core/internal/store"
 )
 
-// CodeRabbitWait is how long a run whose CI passed waits for CodeRabbit when
-// CodeRabbit did not review the head of its PR (see [codeRabbitMissed]).
-// CodeRabbit reviews at most 10 commits an hour, so a wait can end in a
-// review. After the wait, the run is Ready, and its note says that
-// CodeRabbit did not review the head.
-var CodeRabbitWait = 30 * time.Minute
-
 // majorMark finds the header of a Critical or Major finding in the body of a
-// review. CodeRabbit writes the severity in the header of each finding, also
-// for a finding on a line outside the diff, which has no thread. It has two
-// forms: an emoji, such as "_⚠️ Potential issue_ | _🟠 Major_", and an icon,
-// an <img> in a <picture> before the word, such as
-// "**<picture><img src=\".../major-16.svg\" ...></picture> Major**". A Minor
-// or Trivial finding has another word. The mark is an emoji or the end of
-// the <picture> before the word, or an emphasis that holds only the word,
-// such as "**Major**". So the word in the text of a finding does not count,
-// and nor does a bold title that starts with it, such as "**Critical section
-// is not locked.**". No letter follows the word: "_" is a word character, so
-// a word boundary does not end "_Major_".
+// review. A review app can write the severity in the header of each finding,
+// also for a finding on a line outside the diff, which has no thread. A header
+// can have one of three forms: an emoji, such as "_⚠️ Potential issue_ |
+// _🟠 Major_", an icon, which is an <img> in a <picture> before the word, such
+// as "**<picture><img src=\".../major-16.svg\" ...></picture> Major**", or an
+// emphasis that holds only the word, such as "**Major**". A Minor or Trivial
+// finding has another word. So the word in the text of a finding does not
+// count, and nor does a bold title that starts with it, such as "**Critical
+// section is not locked.**". No letter follows the word: "_" is a word
+// character, so a word boundary does not end "_Major_".
 var majorMark = regexp.MustCompile(severityPattern("🔴|🟠", "Critical|Major"))
 
 // hasMajorFinding reports whether the body of a review has a Critical or
@@ -111,12 +102,13 @@ func majorFindings(body string, spans []span) string {
 	return strings.Join(parts, "\n\n")
 }
 
-// fileLine is a line of CodeRabbit that names the file of the findings below
-// it, once its HTML tags are removed. It has two forms: the file with the
-// count of its findings, such as "core/run.go (2)", and the file with the
-// lines and the count of a finding, such as "core/run.go-213-214: 1". A path
-// has no space, so a line such as "Nitpick comments (3)" does not count, and
-// nor does the summary of the prompt for AI agents of a finding.
+// fileLine is a line of a review body that names the file of the findings
+// below it, once its HTML tags are removed. A review app can write it in two
+// forms: the file with the count of its findings, such as "core/run.go (2)",
+// and the file with the lines and the count of a finding, such as
+// "core/run.go-213-214: 1". A path has no space, so a line such as "Nitpick
+// comments (3)" does not count, and nor does the summary of the prompt for AI
+// agents of a finding.
 var fileLine = regexp.MustCompile(`^[^\s:()<>]+(?: \(\d+\)|-\d+(?:-\d+)?: \d+)$`)
 
 // htmlTag is an HTML tag, such as <summary> or </code>.
@@ -150,95 +142,6 @@ func majorReviews(r store.Run, pr *github.PR) []github.Review {
 	}
 	return out
 }
-
-// isCodeRabbit reports whether the login of an app, or the name of a check,
-// is of CodeRabbit.
-func isCodeRabbit(name string) bool { return strings.HasPrefix(strings.ToLower(name), "coderabbit") }
-
-// codeRabbitNotice finds the heading of a notice of CodeRabbit that it did
-// not review: "## Reviews paused", or "## Rate limit exceeded" for its review
-// limit. A notice is a quote, so "> " can come before the heading. Only a
-// heading counts: the summary comment of CodeRabbit also describes the PR,
-// and a PR can be about these words.
-var codeRabbitNotice = regexp.MustCompile(`(?mi)^[>\s]*#{1,6}\s*(reviews paused|rate limit exceeded|review limit reached)\s*$`)
-
-// codeRabbitMissed says why CodeRabbit did not review the head of pr, or ""
-// when nothing says so: its check on the head was skipped, or its last
-// comment on the PR has the notice that its reviews are paused or that it
-// reached its review limit (see [codeRabbitNotice]). CodeRabbit edits its
-// comments, so its last comment is the one that it edited or wrote last (see
-// [github.PR.AppComments]). A review of CodeRabbit on the head says that it
-// reviewed the head, whatever its check or its comment says.
-func codeRabbitMissed(pr *github.PR) string {
-	if codeRabbitReviewed(pr) {
-		return ""
-	}
-	for _, c := range pr.PassedChecks {
-		if c.Skipped && isCodeRabbit(c.Name) {
-			return "its check was skipped"
-		}
-	}
-	for _, c := range pr.AppComments {
-		if !isCodeRabbit(c.Author) {
-			continue
-		}
-		m := codeRabbitNotice.FindStringSubmatch(c.Body)
-		switch {
-		case m == nil:
-		case strings.EqualFold(m[1], "reviews paused"):
-			return "its reviews are paused"
-		default:
-			return "it reached its review limit"
-		}
-	}
-	return ""
-}
-
-// codeRabbitReviewed reports whether pr has a review of CodeRabbit on its
-// head that approves, requests changes, or has a body (see
-// [github.PR.HeadReviewers]). With request_changes_workflow on, CodeRabbit
-// approves a head that has no open finding.
-func codeRabbitReviewed(pr *github.PR) bool {
-	return slices.ContainsFunc(pr.HeadReviewers, isCodeRabbit) ||
-		slices.ContainsFunc(pr.CommentReviews, func(c github.Review) bool { return isCodeRabbit(c.Author) }) ||
-		slices.ContainsFunc(pr.ChangeRequests, func(c github.Review) bool { return isCodeRabbit(c.Author) && c.Commit == pr.HeadOID })
-}
-
-// waitForCodeRabbit keeps the run in Shipping while CodeRabbit did not review
-// the head of pr, for why, until [CodeRabbitWait] after the first tick that
-// found it. That tick sets the note of the run and adds a review event,
-// which holds the head, so a new head waits again. wait is false when the
-// wait is over.
-func (sh *shipper) waitForCodeRabbit(pr *github.PR, why string) (wait, moved bool, err error) {
-	mark := fmt.Sprintf("CodeRabbit did not review %s, the head of #%d", shortOID(pr.HeadOID), pr.Number)
-	if since, ok := sh.sinceFirst("review", mark); ok {
-		return since < CodeRabbitWait, false, nil
-	}
-	note := fmt.Sprintf("%s: %s. Loam waits up to %d minutes for its review", mark, why, int(CodeRabbitWait.Minutes()))
-	moved, err = sh.update(func(r *store.Run) { r.Note = note })
-	if !moved || err != nil {
-		return true, moved, err
-	}
-	return true, moved, sh.s.AddRunEvent(sh.r.ID, "review", note)
-}
-
-// sinceFirst is how long ago the run got its first event of the kind whose
-// detail starts with prefix. ok is false when it has none.
-func (sh *shipper) sinceFirst(kind, prefix string) (since time.Duration, ok bool) {
-	events, err := sh.s.RunEvents(sh.r.ID)
-	if err != nil {
-		return 0, false
-	}
-	for _, e := range events {
-		if e.Kind == kind && strings.HasPrefix(e.Detail, prefix) {
-			return time.Since(e.At), true
-		}
-	}
-	return 0, false
-}
-
-// shortOID is the first 7 characters of a commit ID.
-func shortOID(oid string) string { return oid[:min(len(oid), 7)] }
 
 // olderChangeRequest is the part of a Ready note that says that the review
 // decision of pr is CHANGES_REQUESTED only because of a review of an older

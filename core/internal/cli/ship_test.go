@@ -171,6 +171,7 @@ func TestRunTickPushesTheBranchAndOpensAPR(t *testing.T) {
 	}
 }
 
+// The PR of this run has no review app: it has no review and no thread, and its only check is the CI of the repo.
 func TestRunTickMakesARunReadyWhenCIPasses(t *testing.T) {
 	s, r, w := shipRun(t, "3")
 	tick(t)

@@ -88,12 +88,6 @@ func decodeCached(row store.PRState) cachedPR {
 		if c.PR.CommentReviews == nil {
 			c.PR.CommentReviews = []github.Review{}
 		}
-		if c.PR.HeadReviewers == nil {
-			c.PR.HeadReviewers = []string{}
-		}
-		if c.PR.AppComments == nil {
-			c.PR.AppComments = []github.AppComment{}
-		}
 	}
 	return c
 }

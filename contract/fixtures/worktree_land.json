@@ -51,7 +51,6 @@
     "rebase"
   ],
   "pr": {
-    "app_comments": [],
     "approvals": 1,
     "base": "main",
     "behind_base": 0,
@@ -73,7 +72,6 @@
     "failed_checks": [],
     "head": "link-labels",
     "head_oid": "2222222222222222222222222222222222222222",
-    "head_reviewers": [],
     "in_merge_queue": false,
     "merge_state": "CLEAN",
     "mergeable": "MERGEABLE",

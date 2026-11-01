@@ -110,13 +110,13 @@ import Testing
 
     @Test func changesRequestedWithTwoThreadsListsTheTwoCommentsAndSendsBackFirst() throws {
         let pr = try Self.pr(decision: "CHANGES_REQUESTED", threads: [
-            Self.thread("T1", path: "search/match.go", line: 8, body: Self.bot, author: "coderabbitai"),
+            Self.thread("T1", path: "search/match.go", line: 8, body: Self.bot, author: "reviewbot"),
             Self.thread("T2", path: "search/match_test.go", line: 0, body: "Add a case for a link with no label."),
         ])
         let review = try Self.review(pr)
         #expect(review.decision == .changesRequested && review.sendBackIsPrimary && review.canSendBack)
         #expect(review.line.title == "Review \u{00B7} Changes requested" && review.line.caption == "2 open threads")
-        #expect(review.comments.map(\.reviewer) == ["coderabbitai", "alice"])
+        #expect(review.comments.map(\.reviewer) == ["reviewbot", "alice"])
         // A thread on a line that the head no longer has shows its file only.
         #expect(review.comments.map(\.place) == ["search/match.go:8", "search/match_test.go"])
         #expect(review.comments[1].excerpt == "Add a case for a link with no label.")

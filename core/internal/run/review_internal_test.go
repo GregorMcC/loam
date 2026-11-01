@@ -241,7 +241,7 @@ func TestHasMajorFindingReadsTheSeverityOfAFindingHeader(t *testing.T) {
 		"`a.go`: _🧹 Nitpick_ | _🔵 Trivial_":                                 false,
 		"A Major rewrite of the Critical path.":                             false,
 		"_Majority_ of the code.":                                           false,
-		// The icon form of CodeRabbit on this repo, from a review of #95.
+		// The icon form: an <img> in a <picture> before the word.
 		pictureHeader("major", "Major"): true,
 		pictureHeader("amber", "Minor"): false,
 		// A bold title or emphasis that starts with the word is not a severity.
@@ -266,7 +266,7 @@ func TestReviewPromptSendsTheMajorFindingsOfALongReview(t *testing.T) {
 		"<details>\n<summary>🤖 Prompt for AI Agents</summary>\nFix the wait.\n</details>\n\n" +
 		"`30-31`: _🛠️ Refactor suggestion_ | _🟡 Minor_\n\n**A small thing.**\n</details>\n</details>\n"
 	pr := &github.PR{Number: 1}
-	long := github.Review{ID: "R1", Author: "coderabbitai", Body: nitpicks + major}
+	long := github.Review{ID: "R1", Author: "reviewbot", Body: nitpicks + major}
 	prompt, _ := reviewPromptFor("Opening.", pr, review{requests: []github.Review{long}}, "/r.json", false)
 	for _, want := range []string{
 		"Loam sends only its Critical and Major findings. Read the rest on GitHub.",
@@ -280,57 +280,16 @@ func TestReviewPromptSendsTheMajorFindingsOfALongReview(t *testing.T) {
 		t.Errorf("the prompt has a Minor or Trivial finding, or a cut:\n%s", prompt)
 	}
 	// The Major finding is in the first 4000 characters, so the body goes as it is, cut.
-	early := github.Review{ID: "R2", Author: "coderabbitai", Body: major + nitpicks}
+	early := github.Review{ID: "R2", Author: "reviewbot", Body: major + nitpicks}
 	prompt, _ = reviewPromptFor("Opening.", pr, review{requests: []github.Review{early}}, "/r.json", false)
 	if strings.Contains(prompt, "Loam sends only") || !strings.Contains(prompt, "> **Rename x.**") || !strings.Contains(prompt, cutMark) {
 		t.Errorf("the body did not go as it is:\n%s", prompt)
 	}
 }
 
-// Only the heading of a notice of CodeRabbit says that it did not review: its summary also describes the PR, which
-// can be about these words. A review of CodeRabbit on the head says that it reviewed the head.
-func TestCodeRabbitMissedReadsTheNoticeHeadingOnly(t *testing.T) {
-	comment := func(body string) *github.PR {
-		return &github.PR{HeadOID: "h1", AppComments: []github.AppComment{{Author: "coderabbitai", Body: body}}}
-	}
-	for body, want := range map[string]string{
-		"> [!NOTE]\n> ## Reviews paused\n>\n> Use `@coderabbitai resume`.":                    "its reviews are paused",
-		"> [!WARNING]\n> ## Rate limit exceeded\n>\n> Wait 12 minutes.":                       "it reached its review limit",
-		"## Walkthrough\nA run waits when reviews are paused or the review limit is reached.": "",
-		"## Walkthrough\n- Reviews paused, rate limit exceeded: the run waits.":               "",
-	} {
-		if got := codeRabbitMissed(comment(body)); got != want {
-			t.Errorf("codeRabbitMissed(%q) = %q, want %q", body, got, want)
-		}
-	}
-	skipped := []github.Check{{Name: "CodeRabbit", Skipped: true}}
-	if got := codeRabbitMissed(&github.PR{HeadOID: "h1", PassedChecks: skipped}); got != "its check was skipped" {
-		t.Errorf("skipped check: %q", got)
-	}
-	reviewed := &github.PR{HeadOID: "h1", PassedChecks: skipped, AppComments: comment("> ## Reviews paused").AppComments,
-		CommentReviews: []github.Review{{ID: "R1", Author: "coderabbitai", Commit: "h1"}}}
-	if got := codeRabbitMissed(reviewed); got != "" {
-		t.Errorf("a review that only comments on the head: %q", got)
-	}
-	reviewed.CommentReviews = nil
-	reviewed.ChangeRequests = []github.Review{{ID: "R2", Author: "coderabbitai", Commit: "h1"}}
-	if got := codeRabbitMissed(reviewed); got != "" {
-		t.Errorf("a change request on the head: %q", got)
-	}
-	reviewed.ChangeRequests[0].Commit = "h0"
-	if got := codeRabbitMissed(reviewed); got != "its check was skipped" {
-		t.Errorf("a change request on an older commit: %q", got)
-	}
-	// With request_changes_workflow on, CodeRabbit approves a head with no open finding.
-	reviewed.HeadReviewers = []string{"alice", "coderabbitai"}
-	if got := codeRabbitMissed(reviewed); got != "" {
-		t.Errorf("an approval of the head: %q", got)
-	}
-}
-
-// pictureHeader is a finding header in the icon form of CodeRabbit, with the icon and the severity.
+// pictureHeader is a finding header in the icon form, with the icon and the severity.
 func pictureHeader(icon, severity string) string {
-	return "`213-214`: **<picture><img src=\"https://storage.googleapis.com/coderabbit_public_assets/review-comment-icons-v1/" + icon +
+	return "`213-214`: **<picture><img src=\"https://example.com/icons/" + icon +
 		"-16.svg\" width=\"16\" height=\"16\" align=\"absmiddle\" alt=\"\"></picture> " + severity +
 		"** · **Data Integrity & Integration** · **Quick win**"
 }
@@ -344,7 +303,7 @@ func TestReviewPromptSendsTheMajorFindingsOfALongReviewInTheIconForm(t *testing.
 	if !hasMajorFinding(body) {
 		t.Fatal("no Major finding")
 	}
-	rv := review{requests: []github.Review{{ID: "R1", Author: "coderabbitai", Body: body}}}
+	rv := review{requests: []github.Review{{ID: "R1", Author: "reviewbot", Body: body}}}
 	prompt, _ := reviewPromptFor("Opening.", &github.PR{Number: 1}, rv, "/r.json", false)
 	for _, want := range []string{"Loam sends only its Critical and Major findings", "> core/run.go (2)",
 		"major-16.svg", "> **The wait never ends.**"} {
@@ -378,8 +337,8 @@ func TestReviewPromptSendsAMajorFindingThatTheCutEnds(t *testing.T) {
 	}
 }
 
-// CodeRabbit names the file of a finding in two forms: with the count of its findings, and with the lines and the
-// count of a finding, as in its review of #95. Each can be in HTML tags.
+// A review app can name the file of a finding in two forms: with the count of its findings, and with the lines and
+// the count of a finding. Each can be in HTML tags.
 func TestMajorFindingsNameTheFileOfEachFinding(t *testing.T) {
 	nitpicks := strings.Repeat("`a.go`: _🧹 Nitpick_ | _🔵 Trivial_\n\n**Rename x.**\n\n", 200)
 	for _, c := range []struct{ line, want string }{
