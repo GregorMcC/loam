@@ -5,7 +5,7 @@ import Testing
 /// The app opens a window for a few seconds. The panes run `zsh -f` or
 /// `bash --noprofile --norc`, so the tests cost no usage.
 /// Set LOAM_SKIP_DRIVER=1 to skip them.
-@Suite(.serialized, .enabled(if: ProcessInfo.processInfo.environment["LOAM_SKIP_DRIVER"] == nil))
+@Suite(.serialized, .enabled(if: ProcessInfo.processInfo.environment["LOAM_SKIP_DRIVER"] == nil), .temporaryFolders)
 struct DriverTests {
     /// The debug Loam binary that `swift test` builds, or LOAM_APP_BINARY.
     static var appBinary: URL {
@@ -20,9 +20,7 @@ struct DriverTests {
     }
 
     func drive(_ scenario: String, environment extra: [String: String] = [:]) async throws -> Run {
-        let out = FileManager.default.temporaryDirectory
-            .appendingPathComponent("loam-driver-\(scenario)-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+        let out = temporaryFolder("driver-\(scenario)")
         let process = Process()
         process.executableURL = Self.appBinary
         var environment = ProcessInfo.processInfo.environment
@@ -104,7 +102,7 @@ struct DriverTests {
         if let path = ProcessInfo.processInfo.environment["LOAM_DRIVER_LOAM"] { return path }
         let core = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("core")
-        let out = FileManager.default.temporaryDirectory.appendingPathComponent("loam-driver-core-\(UUID().uuidString)")
+        let out = runFolder.appendingPathComponent("loam")
         let build = Process()
         build.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         build.arguments = ["go", "build", "-o", out.path, "./cmd/loam"]
@@ -155,7 +153,7 @@ struct DriverTests {
         if let path = ProcessInfo.processInfo.environment[environment] { return path }
         let core = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("core")
-        let out = FileManager.default.temporaryDirectory.appendingPathComponent("loam-driver-\(name)-\(UUID().uuidString)")
+        let out = runFolder.appendingPathComponent(name)
         let build = Process()
         build.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         build.arguments = ["go", "build", "-o", out.path, "./internal/testutil/\(name)"]
@@ -265,7 +263,7 @@ struct DriverTests {
     /// Ticket 29: quit with 2 plots of panes (a mid-turn session makes quit ask), relaunch on the
     /// same temp store and `state.json`, show each plot, and see each session resume.
     @Test func restoresThePanesAfterAQuit() async throws {
-        let rig = FileManager.default.temporaryDirectory.appendingPathComponent("loam-driver-restore-\(UUID().uuidString)")
+        let rig = temporaryFolder("driver-restore").appendingPathComponent("rig")
         let environment = [
             "LOAM_DRIVER_LOAM": Self.loamBinary, "LOAM_DRIVER_FAKE_CLAUDE": Self.fakeClaude, "LOAM_DRIVER_RIG": rig.path,
         ]
@@ -276,7 +274,7 @@ struct DriverTests {
     /// Ticket 99: a store with no plot opens Home, and ⌘T starts a session there with no plot. ⌃0, ⌘⌥T,
     /// and ⌘J "New session in Home" work from a plot. A relaunch brings the Home tabs back and resumes each session.
     @Test func opensTabsInHomeAndRestoresThem() async throws {
-        let rig = FileManager.default.temporaryDirectory.appendingPathComponent("loam-driver-home-\(UUID().uuidString)")
+        let rig = temporaryFolder("driver-home").appendingPathComponent("rig")
         let environment = [
             "LOAM_DRIVER_LOAM": Self.loamBinary, "LOAM_DRIVER_FAKE_CLAUDE": Self.fakeClaude, "LOAM_DRIVER_RIG": rig.path,
         ]
@@ -288,7 +286,7 @@ struct DriverTests {
     /// and the session resumes in the plot. "Move to New Plot…" makes a plot first. A relaunch
     /// brings the moved tab back in the plot.
     @Test func movesAHomeTabToAPlot() async throws {
-        let rig = FileManager.default.temporaryDirectory.appendingPathComponent("loam-driver-move-\(UUID().uuidString)")
+        let rig = temporaryFolder("driver-move").appendingPathComponent("rig")
         let environment = [
             "LOAM_DRIVER_LOAM": Self.loamBinary, "LOAM_DRIVER_FAKE_CLAUDE": Self.fakeClaude, "LOAM_DRIVER_RIG": rig.path,
         ]

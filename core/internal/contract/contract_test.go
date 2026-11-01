@@ -79,7 +79,7 @@ func newHarness(t *testing.T) *harness {
 	}
 	h := &harness{t: t, root: root, tokens: map[string]string{}, counts: map[string]int{}, outputs: map[string][]byte{}}
 	h.home = filepath.Join(root, "loamhome")
-	for _, d := range []string{h.home, filepath.Join(root, "userhome"), filepath.Join(root, "repos")} {
+	for _, d := range []string{h.home, filepath.Join(root, "userhome"), filepath.Join(root, "repos"), filepath.Join(root, "tmp")} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -130,6 +130,8 @@ func newHarness(t *testing.T) *harness {
 		"HOME="+filepath.Join(root, "userhome"),
 		"CLAUDE_CONFIG_DIR="+filepath.Join(root, "userhome"),
 		"VISUAL="+ed,
+		// A file that loam keeps, such as the text of a failed edit, goes with the test.
+		"TMPDIR="+filepath.Join(root, "tmp"),
 		"PATH="+fake+string(os.PathListSeparator)+os.Getenv("PATH"),
 	)
 	return h

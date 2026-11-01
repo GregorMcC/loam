@@ -5,7 +5,7 @@ import Testing
 
 /// TAS-176: the Metrics page reads `loam run metrics`, and Fix this drafts a run that fixes a landed run.
 @MainActor
-@Suite(.waitLimit) struct MetricsTests {
+@Suite(.waitLimit, .temporaryFolders) struct MetricsTests {
     func model(_ fixtures: [(String, Int32)]) throws -> (AppModel, FakeLoam) {
         let fake = try FakeLoam(fixtures)
         let model = AppModel(client: fake.client())

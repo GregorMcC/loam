@@ -5,7 +5,7 @@ import Testing
 
 /// Seeded and shell panes in the workspace and the app model (ticket 28).
 @MainActor
-@Suite struct PaneModelTests {
+@Suite(.temporaryFolders) struct PaneModelTests {
     func plot(_ id: String, _ name: String) -> PlotSummary {
         PlotSummary(id: id, name: name, what: "", createdAt: "2026-01-01T00:00:00Z")
     }

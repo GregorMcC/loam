@@ -51,7 +51,7 @@ import Testing
 }
 
 @MainActor
-@Suite(.waitLimit) struct LandLinkModelTests {
+@Suite(.waitLimit, .temporaryFolders) struct LandLinkModelTests {
     let plotID = "plotaaaaab"
     let ready = "wtreaaaaao"
     let linkID = "lnkaaaaaaa"
@@ -78,8 +78,7 @@ import Testing
     /// A model whose plot has the link `lnkaaaaaaa` (unless `inPlot` is false) and whose plan for `link-labels` says that the
     /// work started from it (unless `linkID` is empty, as for a URL).
     func rig(inPlot: Bool = true, startedFrom startID: String? = nil, key: String = "ENG-482") async throws -> Rig {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("land-link-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let dir = temporaryFolder("land-link")
         let rows = try Fixtures.data("worktree_list_stages")
         try rows.write(to: dir.appendingPathComponent("list.json"))
         let left = try (JSONSerialization.jsonObject(with: rows) as? [[String: Any]] ?? []).filter {

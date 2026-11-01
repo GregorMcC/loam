@@ -7,7 +7,7 @@ import Testing
 /// through `loam`. The fake `loam` logs its arguments. The check prints `check.json`, `worktree new` prints the
 /// fixture, and the list is the `worktree_list` fixture (made-up example/widgets data).
 @MainActor
-@Suite(.waitLimit) struct NewWorktreeFlowTests {
+@Suite(.waitLimit, .temporaryFolders) struct NewWorktreeFlowTests {
     let plotID = "plotaaaaab"
     let linear = "lnkaaaaaaa"
 
@@ -53,8 +53,7 @@ import Testing
     }
 
     func rig() async throws -> Rig {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("newworktree-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let dir = temporaryFolder("newworktree")
         for name in ["worktree_list", "worktree_new", "worktree_edit", "error_invalid", "error_stale_worktree"] {
             try Fixtures.data(name).write(to: dir.appendingPathComponent("\(name).json"))
         }

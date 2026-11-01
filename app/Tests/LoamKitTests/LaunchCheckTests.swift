@@ -4,7 +4,7 @@ import Testing
 @testable import LoamKit
 
 @MainActor
-@Suite struct LaunchCheckTests {
+@Suite(.temporaryFolders) struct LaunchCheckTests {
     @Test func aContractMismatchBlocksAndLoadsNothing() async throws {
         let fake = try FakeLoam([("version", 0)])
         let client = LoamClient(binary: fake.binary, expectedContract: 2)
@@ -26,7 +26,7 @@ import Testing
     @Test func aMatchingContractLoadsPlotsAndShowsPendingSetupSteps() async throws {
         let fake = try FakeLoam([("version", 0), ("setup_check", 0), ("list", 0), ("list_archived", 0), ("changes", 0), ("worktree_list_empty", 0),
                                   ("run_list", 0)])
-        let state = AppStateFile(url: FileManager.default.temporaryDirectory.appendingPathComponent("state-\(UUID().uuidString)/state.json"))
+        let state = AppStateFile(url: temporaryFolder("state").appendingPathComponent("state.json"))
         let model = AppModel(client: fake.client(), stateFile: state)
         await model.launch(startFeed: false)
         #expect(model.launchBlock == nil)

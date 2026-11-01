@@ -7,7 +7,7 @@ import Testing
 /// The worktrees come from the `worktree_list_stages` fixture (made-up example/widgets data), moved
 /// into the plots of each test.
 @MainActor
-@Suite struct ReadyToMergeTests {
+@Suite(.temporaryFolders) struct ReadyToMergeTests {
     func plot(_ id: String) -> PlotSummary {
         PlotSummary(id: id, name: "Plot \(id)", what: "", createdAt: "2026-01-01T00:00:00Z")
     }
@@ -195,8 +195,7 @@ import Testing
         let list = try [("a-fail", "a"), ("a-ready", "a"), ("b-ready", "b")].map {
             try worktree($0.0, $0.1, stage($0.0), note: note)
         }
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("ready-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let dir = temporaryFolder("ready")
         let json = dir.appendingPathComponent("list.json")
         try JSONEncoder().encode(list).write(to: json)
         // `loam worktree list --json` prints the file, whatever the arguments are.

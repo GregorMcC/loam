@@ -52,7 +52,7 @@ private func nextChanges(_ it: inout AsyncStream<FeedUpdate>.Iterator) async -> 
 
 /// The waits end on what the fakes did, and the test ends the debounce by hand where it counts. The time limit only
 /// ends a test whose file event never comes.
-@Suite(.waitLimit) struct ChangeFeedTests {
+@Suite(.waitLimit, .temporaryFolders) struct ChangeFeedTests {
     @MainActor @Test func aBurstOfEventsMakesOnePoll() async throws {
         let log = FakeLog([1, 2])
         let sleep = ManualSleep()
@@ -122,9 +122,7 @@ private func nextChanges(_ it: inout AsyncStream<FeedUpdate>.Iterator) async -> 
     }
 
     @Test(.outsideASandbox) func realFileEventsDriveTheFeed() async throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("loam-watch-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: dir) }
+        let dir = temporaryFolder("watch")
         let log = FakeLog([1])
         let feed = ChangeFeed(
             fetch: { try await log.fetch($0) },
@@ -137,9 +135,7 @@ private func nextChanges(_ it: inout AsyncStream<FeedUpdate>.Iterator) async -> 
     }
 
     @Test func shmEventsAreIgnored() async throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("loam-watch-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: dir) }
+        let dir = temporaryFolder("watch")
         // Let the folder's own create event pass before the watch starts. Under
         // load, FSEvents can deliver it after the stream opens.
         try await Task.sleep(for: .milliseconds(1000))
@@ -189,10 +185,9 @@ private func nextChanges(_ it: inout AsyncStream<FeedUpdate>.Iterator) async -> 
     /// only the marker counts. Without that, each poll starts the next one.
     @Test(.outsideASandbox) func feedFollowsLoamHomeAndIgnoresEverythingButTheMarker() async throws {
         let fm = FileManager.default
-        let home = fm.temporaryDirectory.appendingPathComponent("loam-home-\(UUID().uuidString)")
+        let home = temporaryFolder("home")
         try fm.createDirectory(at: home.appendingPathComponent("plots"), withIntermediateDirectories: true)
         try fm.createDirectory(at: home.appendingPathComponent("worktrees"), withIntermediateDirectories: true)
-        defer { try? fm.removeItem(at: home) }
         #expect(DirectoryWatcher.home(environment: ["LOAM_HOME": home.path]).path == home.path)
         let log = FakeLog([1])
         let env = ["LOAM_HOME": home.path]
@@ -219,10 +214,7 @@ private func nextChanges(_ it: inout AsyncStream<FeedUpdate>.Iterator) async -> 
     /// `loam mcp` keeps the database open, so its writes reach the feed through the marker that
     /// each commit rewrites (ticket 67).
     @Test(.outsideASandbox) func theChangedMarkerDrivesTheFeed() async throws {
-        let fm = FileManager.default
-        let home = fm.temporaryDirectory.appendingPathComponent("loam-home-\(UUID().uuidString)")
-        try fm.createDirectory(at: home, withIntermediateDirectories: true)
-        defer { try? fm.removeItem(at: home) }
+        let home = temporaryFolder("home")
         let log = FakeLog([1])
         let env = ["LOAM_HOME": home.path]
         let feed = ChangeFeed(

@@ -5,7 +5,7 @@ import Testing
 
 /// Ticket 203: Today and the run page in the well, and the tab that watches a run.
 @MainActor
-@Suite(.waitLimit) struct RunPageTests {
+@Suite(.waitLimit, .temporaryFolders) struct RunPageTests {
     /// The run of the fixtures is in the plot plotaaaaae.
     func model(_ fixtures: [(String, Int32)]) throws -> (AppModel, FakeLoam) {
         let fake = try FakeLoam(fixtures)

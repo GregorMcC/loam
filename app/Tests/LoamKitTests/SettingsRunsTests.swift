@@ -5,7 +5,7 @@ import Testing
 
 /// Settings > Runs and the Linear parts of Settings > Connections: the words and the rows that the views show.
 @MainActor
-@Suite(.waitLimit) struct SettingsRunsTests {
+@Suite(.waitLimit, .temporaryFolders) struct SettingsRunsTests {
     private func plot(_ name: String, archived: Bool = false, links: [(String, String)]) -> Plot {
         let items = links.enumerated().map { index, link in
             PlotLink(id: "l\(index)", label: link.0, target: link.1, note: "", position: index, version: 1,

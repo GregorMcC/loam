@@ -208,7 +208,7 @@ import Testing
     }
 }
 
-@MainActor @Suite struct ActionMenuModelTests {
+@MainActor @Suite(.temporaryFolders) struct ActionMenuModelTests {
     private func model() -> ActionMenuModel {
         let menu = ActionMenuModel()
         menu.open(ActionMenu.sections(paneTitle: "claude", plotName: "Loam", chord: { LoamKeys.chord(for: $0) },

@@ -7,7 +7,7 @@ import Testing
 /// hold one session. Each test plays the window: it closes what `toClose` names, builds what
 /// `toBuild` names, and finishes the closes by hand.
 @MainActor
-@Suite struct PaneViewPlanTests {
+@Suite(.temporaryFolders) struct PaneViewPlanTests {
     func plot(_ id: String) -> PlotSummary {
         PlotSummary(id: id, name: id, what: "", createdAt: "2026-01-01T00:00:00Z")
     }

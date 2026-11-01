@@ -151,7 +151,7 @@ final class Watchdog: @unchecked Sendable {
         try? sample.run()
         sample.waitUntilExit()
         Log.line("HANG: sample in \(path)")
-        _exit(3)
+        endDriver(3, now: true)
     }
 }
 
@@ -186,6 +186,11 @@ final class DriverApp: NSObject, NSApplicationDelegate {
         let environment = ProcessInfo.processInfo.environment
         outFolder = environment["LOAM_DRIVER_OUT"] ?? NSTemporaryDirectory() + "loam-driver-\(getpid())"
         super.init()
+    }
+
+    /// A quit through AppKit, such as the Quit menu item, does not come back through `endDriver`.
+    func applicationWillTerminate(_ notification: Notification) {
+        PaneSocketFolder().removeAll()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -231,13 +236,13 @@ final class DriverApp: NSObject, NSApplicationDelegate {
                 let fail = "FAIL \(self.scenario): the scenario ran past \(Int(run.limit)) s"
                     + (self.waiting.map { " while it waited for: \($0)" } ?? "")
                 if self.waiting != nil {
-                    DispatchQueue.global().asyncAfter(deadline: .now() + 10) { Log.line(fail); _exit(4) }
+                    DispatchQueue.global().asyncAfter(deadline: .now() + 10) { Log.line(fail); endDriver(4, now: true) }
                     if self.host != nil { self.dumpAccessibility() }
                     self.screenshot("fail")
                 }
                 Log.line(fail)
             }
-            _exit(4)
+            endDriver(4, now: true)
         }
         RunLoop.main.add(limit, forMode: .common)
         Task { @MainActor in
@@ -259,11 +264,11 @@ final class DriverApp: NSObject, NSApplicationDelegate {
         switch result {
         case .success:
             Log.line("PASS \(scenario)")
-            exit(0)
+            endDriver(0)
         case .failure(let error):
             screenshot("fail")
             Log.line("FAIL \(scenario): \(error)")
-            exit(1)
+            endDriver(1)
         }
     }
 
@@ -362,4 +367,13 @@ final class DriverApp: NSObject, NSApplicationDelegate {
         shot.waitUntilExit()
         Log.line("screenshot \(path)\(FileManager.default.fileExists(atPath: path) ? "" : " (not written)")")
     }
+}
+
+/// Ends the driver with `code`. The app removes its pane sockets at quit, and a driver run ends with no quit, so this
+/// removes them. Else each run leaves a folder `loam-<process ID>` in the temp folder (TAS-214). With `now`, it ends with
+/// `_exit`, which runs no exit handler: a hung main thread can hold one.
+func endDriver(_ code: Int32, now: Bool = false) -> Never {
+    PaneSocketFolder().removeAll()
+    if now { _exit(code) }
+    exit(code)
 }

@@ -105,7 +105,7 @@ import Testing
 
 /// What Today reads from the core, and when it reads it again.
 @MainActor
-@Suite(.waitLimit) struct TodayReadTests {
+@Suite(.waitLimit, .temporaryFolders) struct TodayReadTests {
     static let plot = PlotSummary(id: "plotaaaaae", name: "Runs", what: "", createdAt: "2026-01-01T00:00:00Z")
 
     func model(_ fixtures: [(String, Int32)]) throws -> (AppModel, FakeLoam) {
