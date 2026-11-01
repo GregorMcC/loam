@@ -221,6 +221,7 @@ func For(in Input) (Rules, error) {
 		// folder of the run, it would make the next git command of Loam run
 		// a hook or a config command of the run outside the sandbox.
 		deny.add(dotgit)
+		notes.add(sharedGitNote)
 	}
 	if git := Real(in.GitDir); git != "" {
 		// A hook or a config that the run writes would run outside the
@@ -230,6 +231,12 @@ func For(in Input) (Rules, error) {
 	r.Read, r.Write, r.DenyWrite, r.Hosts, r.Notes = read.list, write.list, deny.list, hosts.list, notes.list
 	return r, nil
 }
+
+// sharedGitNote tells the session of a run in a worktree why it must not run
+// the git commands that clean the git folder. Loam rebuilds the metadata of a
+// run worktree that such a command deletes, but not of your other worktrees.
+const sharedGitNote = "The git folder of the repo also holds the metadata of the other worktrees, and this sandbox does not show their folders. " +
+	"So do not run git worktree add, remove, or prune, or git gc: git would take the other worktrees as gone and delete their metadata."
 
 // private returns the private folder dir by the real path of its parent, or
 // "" when dir is not a folder. The run can write dir, so it can put a link in
