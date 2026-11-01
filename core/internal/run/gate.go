@@ -86,6 +86,10 @@ type gateResult struct {
 	// waitedOut is true when the wait for the gate lock left no time for the
 	// checks. Then no check ran, and results is empty.
 	waitedOut bool
+	// noGit is why Loam could not make the git metadata of the worktree
+	// ready (see [keepGit]), such as a rebuild in another Loam process that
+	// did not end in time. Then no check ran, and results is empty.
+	noGit error
 }
 
 // gate takes the gate lock (see [takeGateLock]), then runs each Done when
@@ -187,6 +191,9 @@ func checksNeed(n int) time.Duration {
 // try. A gate with any other failure did not run out of time, as the session
 // can fix that failure.
 func (g gateResult) outOfTime() (string, bool) {
+	if g.noGit != nil {
+		return "Loam did not run the checks, because the git metadata of the worktree was not ready: " + g.noGit.Error(), true
+	}
 	if g.waitedOut {
 		return "The gate waited " + shortDuration(g.waited) + " for the gate of another run, which left no time for the checks", true
 	}
@@ -204,7 +211,8 @@ func (g gateResult) outOfTime() (string, bool) {
 }
 
 // waitCaused reports whether the gate ran out of time because of the gates
-// of other runs: the wait left no time for the checks, or the gate waited
+// of other runs, or of a git metadata that was not ready (see
+// [gateResult.noGit]): the wait left no time for the checks, or the gate waited
 // and then a check ran out of the gate budget. Such a gate never stops the
 // run. After a wait of W, checks that run out of the budget needed more than
 // the budget less W, and the gate cannot know if they fit the whole budget.
@@ -214,7 +222,7 @@ func (g gateResult) outOfTime() (string, bool) {
 // after [maxBlockedStops] blocked stops in a row anyway. A check that ran out
 // of [checkTimeout] did not run out of time because of the wait.
 func (g gateResult) waitCaused() bool {
-	if g.waitedOut {
+	if g.waitedOut || g.noGit != nil {
 		return true
 	}
 	_, ok := g.outOfTime()
