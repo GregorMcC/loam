@@ -32,7 +32,7 @@ func linearUpdateOff(s *store.Store, r store.Run, what string, on func(store.Lin
 
 // commentWalkthrough adds the walkthrough of a landed run to its Linear
 // issue as a comment, when that update is on and the run has a PR and notes
-// with a walkthrough. The notes of [spentNotes] have none.
+// with a walkthrough.
 // It records what happened as a "linear" event, and returns a warning when
 // the comment failed.
 func commentWalkthrough(ctx context.Context, s *store.Store, r store.Run) string {

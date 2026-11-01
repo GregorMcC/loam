@@ -187,11 +187,11 @@ func TestRunTickPutsMinorReviewFindingsInTheShipNotes(t *testing.T) {
 	}
 }
 
-// TAS-219: after the 5 rounds of the run, the review of a new head still runs,
-// and Loam pushes with its Critical and Major findings in the ship notes.
-func TestRunTickPushesWithTheFindingsInTheNotesAfterFiveReviewRounds(t *testing.T) {
+// A Major finding that does not fall over three reviews stops the run for a
+// decision, and Loam does not push.
+func TestRunTickStopsWhenTheReviewFindingsDoNotFall(t *testing.T) {
 	s, r, w := codeReviewRun(t, majorFinding)
-	for round := 1; round <= 5; round++ {
+	for round := 1; round <= 2; round++ {
 		got := tick(t)
 		if len(got.Runs) != 1 || got.Runs[0].State != store.RunRunning {
 			t.Fatalf("round %d: %+v", round, got)
@@ -201,46 +201,19 @@ func TestRunTickPushesWithTheFindingsInTheNotesAfterFiveReviewRounds(t *testing.
 			t.Fatalf("round %d: the gate did not pass the fix", round)
 		}
 	}
-	if !strings.Contains(resumePrompt(t), "This is the last code review round of the run.") {
-		t.Fatalf("the prompt of round 5 does not say that it is the last:\n%s", resumePrompt(t))
-	}
-	prompts := func() int {
-		return len(slices.DeleteFunc(testutil.FakeClaudeCalls(t), func(c []string) bool { return !slices.Contains(c, "--resume") }))
-	}
-	if n := prompts(); n != 5 {
-		t.Fatalf("%d prompts, want 5", n)
-	}
 	tick(t)
-	if !pushedBranch(t, r, w) || len(ghCreates(t)) != 1 {
-		t.Fatalf("Loam did not push after the last round: %q", ghCreates(t))
-	}
-	if n := prompts(); n != 5 {
-		t.Fatalf("the findings after the last round went to the session: %d prompts", n)
-	}
 	got, err := s.GetRun(r.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	reasons := got.Notes.Risk.Reasons
-	i := slices.Index(reasons, "The code review used all 5 rounds of the run, so these findings wait for you:")
-	if i < 0 || i+2 >= len(reasons) || reasons[i+1] != "Major issue from the code review: hello.txt:1: The greeting has no capital letter." ||
-		reasons[i+2] != "Minor issue from the code review: hello.txt:1: The greeting has no full stop." {
-		t.Fatalf("reasons %q", reasons)
+	if got.State != store.RunStopped || !strings.Contains(got.Note, "did not fall over 3 reviews") || !strings.Contains(got.Note, "hello.txt:1") {
+		t.Fatalf("state %s note %q", got.State, got.Note)
 	}
-	e := events(t, s, r.ID, "code_review")
-	if len(e) != 6 || e[4] != "The code review found 1 major issue and 1 minor issue (round 5 of 5)" ||
-		e[5] != "The code review found 1 major issue and 1 minor issue after all 5 rounds of the run, so Loam pushes with them in the ship notes" {
-		t.Fatalf("code_review events %q", e)
+	if pushedBranch(t, r, w) || len(ghCreates(t)) != 0 {
+		t.Fatal("Loam pushed a head with a Major finding")
 	}
-	out, errOut, err := lrRun(t, "", "run", "status", r.ID)
-	if err != nil || !strings.Contains(out, "\nCode review: 5 of 5 rounds\n") {
-		t.Fatalf("status %v %s:\n%s", err, errOut, out)
-	}
-
-	// The same head starts no new round.
-	tick(t)
-	if calls := codeReviewCalls(t); len(calls) != 6 {
-		t.Fatalf("review calls %d, want 6", len(calls))
+	if calls := codeReviewCalls(t); len(calls) != 3 {
+		t.Fatalf("review calls %d, want 3", len(calls))
 	}
 }
 

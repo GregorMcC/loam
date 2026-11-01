@@ -155,63 +155,6 @@ func TestAReviewThatLetsLoamPushKeepsTheRoundsOfTheRun(t *testing.T) {
 	}
 }
 
-// After the last round, the review of a new head still runs, and its
-// Critical and Major findings go in the ship notes, not to the session.
-func TestAReviewAfterTheLastRoundPutsTheFindingsInTheShipNotes(t *testing.T) {
-	s, sh := reviewedRun(t, codeReviewRounds)
-	findings := []codeReviewFinding{
-		{Severity: severityCritical, File: "a.go", Line: 4, Text: "Leaks the token."},
-		{Severity: severityMajor, File: "b.go", Text: "Loses the file."},
-		{Severity: severityMinor, File: "c.go", Line: 2, Text: "A typo."},
-	}
-	push, moved, err := sh.pushPastCodeReview("new", findings)
-	if err != nil || !push || moved {
-		t.Fatalf("push %v, moved %v, err %v", push, moved, err)
-	}
-	got, err := s.GetRun(sh.r.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []string{
-		"A small change.",
-		"The code review used all 5 rounds of the run, so these findings wait for you:",
-		"Critical issue from the code review: a.go:4: Leaks the token.",
-		"Major issue from the code review: b.go: Loses the file.",
-		"Minor issue from the code review: c.go:2: A typo.",
-	}
-	if got.Notes == nil || !slices.Equal(got.Notes.Risk.Reasons, want) {
-		t.Fatalf("reasons %q", got.Notes.Risk.Reasons)
-	}
-	if got.Notes.Risk.Level != store.RiskHigh {
-		t.Fatalf("risk level %q, want high: the notes hold a Major finding", got.Notes.Risk.Level)
-	}
-	if got.State != store.RunShipping || got.CodeReview.Rounds != codeReviewRounds || got.CodeReview.Head != "new" {
-		t.Fatalf("run %s, review %+v", got.State, got.CodeReview)
-	}
-	if line := CodeReviewRounds(got); line != "Code review: 5 of 5 rounds" {
-		t.Fatalf("status line %q", line)
-	}
-	if e := lastEvent(t, s, sh.r.ID, "code_review"); e != "The code review found 1 critical issue, 1 major issue and 1 minor issue "+
-		"after all 5 rounds of the run, so Loam pushes with them in the ship notes" {
-		t.Fatalf("event %q", e)
-	}
-}
-
-func TestAReviewAfterTheLastRoundCountsTheFindingsAfterTheCap(t *testing.T) {
-	_, sh := reviewedRun(t, codeReviewRounds)
-	findings := make([]codeReviewFinding, codeReviewSendMax+2)
-	for i := range findings {
-		findings[i] = codeReviewFinding{Severity: severityMajor, File: "a.go", Line: i + 1, Text: "Loses the file."}
-	}
-	if _, _, err := sh.pushPastCodeReview("new", findings); err != nil {
-		t.Fatal(err)
-	}
-	reasons := sh.r.Notes.Risk.Reasons
-	if n := len(reasons); n != 1+1+codeReviewSendMax+1 || reasons[n-1] != "The code review found 2 more Critical or Major issues." {
-		t.Fatalf("reasons %q", reasons)
-	}
-}
-
 func TestCodeReviewRoundsIsEmptyForARunWithNoReview(t *testing.T) {
 	if line := CodeReviewRounds(store.Run{}); line != "" {
 		t.Fatalf("status line %q", line)
@@ -226,66 +169,6 @@ func TestTheLastRoundTellsTheSessionThatItIsTheLast(t *testing.T) {
 	}
 	if p := codeReviewPrompt(f, 0, codeReviewRounds-1, true); strings.Contains(p, last) {
 		t.Fatalf("prompt before the last round %q", p)
-	}
-}
-
-// A run whose PR has no ship notes, because Claude wrote none, still gets the
-// Critical and Major findings after the last round in notes.risk.reasons.
-func TestAReviewAfterTheLastRoundGivesARunWithNoNotesNotes(t *testing.T) {
-	s, sh := reviewedRun(t, codeReviewRounds)
-	r, err := s.UpdateRun(sh.r.ID, func(r *store.Run) error {
-		r.Notes, r.PR = nil, &store.RunPR{Number: 12, URL: "https://github.com/o/r/pull/12"}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	sh.r = r
-	findings := []codeReviewFinding{{Severity: severityMajor, File: "b.go", Text: "Loses the file."}}
-	if push, _, err := sh.pushPastCodeReview("new", findings); err != nil || !push {
-		t.Fatalf("push %v, err %v", push, err)
-	}
-	got, err := s.GetRun(r.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []string{codeReviewSpentFact, "Major issue from the code review: b.go: Loses the file."}
-	if got.Notes == nil || got.Notes.Risk.Level != store.RiskHigh || !slices.Equal(got.Notes.Risk.Reasons, want) {
-		t.Fatalf("notes %+v", got.Notes)
-	}
-	// A review that lets Loam push with nothing to wait for gives no notes.
-	r, err = s.UpdateRun(r.ID, func(r *store.Run) error { r.Notes = nil; return nil })
-	if err != nil {
-		t.Fatal(err)
-	}
-	sh.r = r
-	if _, _, err := sh.passCodeReview("newer", []string{"Minor issue from the code review: a.go:1: A typo."}, "The code review found 1 minor issue", nil); err != nil {
-		t.Fatal(err)
-	}
-	if got, _ := s.GetRun(r.ID); got.Notes != nil {
-		t.Fatalf("notes %+v", got.Notes)
-	}
-}
-
-// The PR that Loam opens with no notes of Claude gets the notes of the
-// findings after the last round, and no notes otherwise.
-func TestPRNotesFallBackToTheFindingsAfterTheLastRound(t *testing.T) {
-	spent := &store.RunCodeReview{Facts: []string{codeReviewSpentFact, "Major issue from the code review: b.go: Loses the file."}}
-	if n := prNotes(&store.RunPRDraft{}, spent); n == nil || n.Risk.Level != store.RiskHigh || !slices.Equal(n.Risk.Reasons, spent.Facts) {
-		t.Fatalf("notes %+v", n)
-	}
-	claude := &store.RunNotes{Walkthrough: "Says hi.", Risk: store.NoteRisk{Level: store.RiskLow}}
-	if n := prNotes(&store.RunPRDraft{Notes: claude}, spent); n == nil || n.Walkthrough != "Says hi." || n.Risk.Level != store.RiskHigh {
-		t.Fatalf("notes %+v", n)
-	}
-	if n := prNotes(&store.RunPRDraft{Notes: claude}, &store.RunCodeReview{}); n != claude || n.Risk.Level != store.RiskLow {
-		t.Fatalf("notes with no findings past the last round %+v", n)
-	}
-	if n := prNotes(&store.RunPRDraft{}, &store.RunCodeReview{Facts: []string{"The code review did not run: no claude"}}); n != nil {
-		t.Fatalf("notes %+v", n)
-	}
-	if n := prNotes(&store.RunPRDraft{}, nil); n != nil {
-		t.Fatalf("notes %+v", n)
 	}
 }
 
@@ -622,6 +505,78 @@ func TestSplitDiffPartsOfManyFiles(t *testing.T) {
 	}
 	if parts := splitDiff(b.String(), codeReviewDiffMax); len(parts) != 7 {
 		t.Fatalf("%d parts", len(parts))
+	}
+}
+
+// After the last round, a Critical or Major finding stops the run, and Loam
+// does not push.
+func TestAReviewAfterTheLastRoundStopsTheRun(t *testing.T) {
+	s, sh := reviewedRun(t, codeReviewRounds)
+	findings := []codeReviewFinding{
+		{Severity: severityMajor, File: "b.go", Text: "Loses the file."},
+		{Severity: severityMinor, File: "c.go", Line: 2, Text: "A typo."},
+	}
+	push, moved, err := sh.judgeCodeReview(context.Background(), "new", findings)
+	if err != nil || push || !moved {
+		t.Fatalf("push %v, moved %v, err %v", push, moved, err)
+	}
+	got, err := s.GetRun(sh.r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State != store.RunStopped || !strings.Contains(got.Note, "the run has used all 5 rounds") || !strings.Contains(got.Note, "b.go: Loses the file.") {
+		t.Fatalf("state %s note %q", got.State, got.Note)
+	}
+	if got.CodeReview.Head == "new" {
+		t.Fatal("the stop let Loam push the head")
+	}
+}
+
+// Three reviews with no fall in the findings stop the run. A fall, or a stop
+// for you, keeps it going.
+func TestStalledComparesTheCountOverThreeReviews(t *testing.T) {
+	major := func(n int) []codeReviewFinding {
+		out := make([]codeReviewFinding, n)
+		for i := range out {
+			out[i] = codeReviewFinding{Severity: severityMajor, File: "a.go", Line: i + 1, Text: "Loses the file."}
+		}
+		return out
+	}
+	for _, tc := range []struct {
+		name   string
+		rounds []int
+		stop   bool
+		now    int
+		want   bool
+	}{
+		{"first review", nil, false, 5, false},
+		{"second review", []int{5}, false, 5, false},
+		{"no fall", []int{5, 5}, false, 5, true},
+		{"up", []int{1, 1}, false, 2, true},
+		{"a fall", []int{3, 2}, false, 2, false},
+		{"after a stop for you", []int{5, 5}, true, 5, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, sh := reviewedRun(t, len(tc.rounds))
+			for i, n := range tc.rounds {
+				stored := storedRound(major(n))
+				stored.Round = i + 1
+				if err := s.AddRunEventData(sh.r.ID, "code_review", "round", store.RunEventData{CodeReview: stored}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tc.stop {
+				stored := storedRound(nil)
+				stored.NeedsYou = true
+				if err := s.AddRunEventData(sh.r.ID, "code_review", "stop", store.RunEventData{CodeReview: stored}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			got, err := sh.stalled(major(tc.now))
+			if err != nil || got != tc.want {
+				t.Fatalf("stalled %v, err %v, want %v", got, err, tc.want)
+			}
+		})
 	}
 }
 
