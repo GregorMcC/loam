@@ -455,6 +455,8 @@ func TestAFindingThatNeedsYouStopsTheRun(t *testing.T) {
 	if p := b.String(); !strings.Contains(p, "### Stopped the run for the user\n\n- Major: gate.go:7:") ||
 		!strings.Contains(p, "(needs the user: The sandbox needs a read path for the GhosttyKit cache.)") {
 		t.Fatalf("earlier rounds:\n%s", p)
+	} else if strings.Contains(p, "b.go") || strings.Contains(p, "c.go") {
+		t.Fatalf("the earlier rounds hold a finding that went nowhere:\n%s", p)
 	}
 }
 

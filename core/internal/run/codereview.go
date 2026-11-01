@@ -570,7 +570,8 @@ type earlierRound struct {
 
 // earlierRounds are the reviews of the "code_review" events that sent
 // Critical and Major findings back to the session or stopped the run for
-// you, oldest first, with their Critical and Major findings only. The reply
+// you, oldest first. A round keeps its Critical and Major findings, and a
+// review that stopped the run keeps only the findings that need you. The reply
 // of a round comes from c (see [store.RunCodeReview.Replies]). An event from
 // before Loam stored the round of a review is not one of them.
 func earlierRounds(events []store.RunEvent, c *store.RunCodeReview) []earlierRound {
@@ -582,7 +583,10 @@ func earlierRounds(events []store.RunEvent, c *store.RunCodeReview) []earlierRou
 		}
 		er := earlierRound{round: cr.Round, needsYou: cr.NeedsYou}
 		for _, f := range cr.Findings {
-			if f := codeReviewFinding(f); f.blocks() {
+			// A review that stopped the run sent only the findings that need
+			// you to the user. The others went nowhere, so the next review
+			// must find them again.
+			if f := codeReviewFinding(f); f.blocks() && (!cr.NeedsYou || f.needsYou()) {
 				er.findings = append(er.findings, f)
 			}
 		}

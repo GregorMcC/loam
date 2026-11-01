@@ -110,19 +110,18 @@ func stopped(s *store.Store, runID, reply string, errOut io.Writer, logf func(st
 	block := ""
 	_, err = s.UpdateRun(runID, func(r *store.Run) error {
 		block = gateOutcome(r, g, limits, ships, recent)
-		if block == "" {
+		switch {
+		case block == "":
 			r.BlockedStops = 0
-			return nil
-		}
-		r.BlockedStops++
-		if r.BlockedStops > maxBlockedStops {
+		case r.BlockedStops+1 > maxBlockedStops:
 			last := strings.TrimSuffix(r.Note, ", and Loam runs the checks again")
 			block, r.BlockedStops = "", 0
 			r.State, r.Note = store.RunStopped, fmt.Sprintf("Stopped after %d blocked stops in a row, the most that Claude Code allows. The last gate: %s", maxBlockedStops, last)
+		default:
+			r.BlockedStops++
+			return nil // the session works on, so its reply comes at a later stop
 		}
-		if block == "" {
-			keepReply(r, reply)
-		}
+		keepReply(r, reply) // the session stops
 		return nil
 	})
 	if err != nil {
