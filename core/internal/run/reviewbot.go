@@ -25,11 +25,13 @@ var CodeRabbitWait = 30 * time.Minute
 // forms: an emoji, such as "_⚠️ Potential issue_ | _🟠 Major_", and an icon,
 // an <img> in a <picture> before the word, such as
 // "**<picture><img src=\".../major-16.svg\" ...></picture> Major**". A Minor
-// or Trivial finding has another word. The mark is an emoji, an emphasis, or
-// the end of the <picture> before the word, so the word in the text of a
-// finding does not count. No letter follows the word: "_" is a word
-// character, so a word boundary does not end "_Major_".
-var majorMark = regexp.MustCompile(`(?:🔴|🟠|[_*]|</picture>)\s*(?:Critical|Major)(?:[^\pL]|$)`)
+// or Trivial finding has another word. The mark is an emoji or the end of
+// the <picture> before the word, or an emphasis that holds only the word,
+// such as "**Major**". So the word in the text of a finding does not count,
+// and nor does a bold title that starts with it, such as "**Critical section
+// is not locked.**". No letter follows the word: "_" is a word character, so
+// a word boundary does not end "_Major_".
+var majorMark = regexp.MustCompile(severityPattern("🔴|🟠", "Critical|Major"))
 
 // hasMajorFinding reports whether the body of a review has a Critical or
 // Major finding.
@@ -37,7 +39,14 @@ func hasMajorFinding(body string) bool { return majorMark.MatchString(body) }
 
 // severityMark finds the header of a finding of each severity, as
 // [majorMark] does for Critical and Major.
-var severityMark = regexp.MustCompile(`(?:🔴|🟠|🟡|🔵|[_*]|</picture>)\s*(?:Critical|Major|Minor|Trivial)(?:[^\pL]|$)`)
+var severityMark = regexp.MustCompile(severityPattern("🔴|🟠|🟡|🔵", "Critical|Major|Minor|Trivial"))
+
+// severityPattern is the pattern of a finding header with one of the words,
+// after one of the emojis or a <picture>, or alone in an emphasis (see
+// [majorMark]).
+func severityPattern(emojis, words string) string {
+	return `(?:(?:` + emojis + `|</picture>)\s*(?:` + words + `)(?:[^\pL]|$)|[_*]{1,2}(?:` + words + `)[_*]{1,2})`
+}
 
 // reviewText is the text of a review body that goes to the session. It is
 // the body, which [quote] cuts to [reviewTextMax] characters, when the body

@@ -244,6 +244,11 @@ func TestHasMajorFindingReadsTheSeverityOfAFindingHeader(t *testing.T) {
 		// The icon form of CodeRabbit on this repo, from a review of #95.
 		pictureHeader("major", "Major"): true,
 		pictureHeader("amber", "Minor"): false,
+		// A bold title or emphasis that starts with the word is not a severity.
+		"`a.go`: _🧹 Nitpick_ | _🔵 Trivial_\n\n**Critical section is not locked.**":        false,
+		"`a.go`: _🛠️ Refactor suggestion_ | _🟡 Minor_\n\n**Major improvement verified.**": false,
+		"_Major_ rewrite is fine.":     true,
+		"*Critical path* of the gate.": false,
 	} {
 		if got := hasMajorFinding(body); got != want {
 			t.Errorf("hasMajorFinding(%q) = %v, want %v", body, got, want)

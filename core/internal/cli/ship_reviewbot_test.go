@@ -52,7 +52,7 @@ const (
 		"width=\"16\" height=\"16\" align=\"absmiddle\" alt=\"\"></picture> Major** · **Data Integrity & Integration** · **Quick win**\n\n" +
 		"**The greeting drops the name.**\n</details>"
 	minorBody = "**Actionable comments posted: 0**\n\n<details>\n<summary>🧹 Nitpick comments (1)</summary>\n\n" +
-		"`hello.txt`: _🛠️ Refactor suggestion_ | _🟡 Minor_\n\n**Say hi with a capital letter.**\n</details>"
+		"`hello.txt`: _🛠️ Refactor suggestion_ | _🟡 Minor_\n\n**Critical section of the greeting: say hi with a capital letter.**\n</details>"
 )
 
 func TestRunTickSendsAMajorFindingInTheBodyOfACommentReviewBack(t *testing.T) {
