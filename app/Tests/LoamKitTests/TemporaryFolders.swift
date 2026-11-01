@@ -61,7 +61,7 @@ extension Trait where Self == TemporaryFoldersTrait {
 
 /// The tag of the test run in the names of its temp folders: `LOAM_TEST_RUN` and a hyphen, or nothing. scripts/check.sh
 /// sets it, so that its check of the shared temp folder sees the folders of this run only, not those of another process.
-private let runTag = ProcessInfo.processInfo.environment["LOAM_TEST_RUN"].map { "\($0)-" } ?? ""
+let runTag = ProcessInfo.processInfo.environment["LOAM_TEST_RUN"].map { "\($0)-" } ?? ""
 
 /// Makes a new empty folder `loam-test-<run tag><name>-<UUID>` in the temp folder. The folder and all that the test puts in it
 /// go when the test ends. The test or its suite needs the trait `.temporaryFolders`: without it, the test fails.

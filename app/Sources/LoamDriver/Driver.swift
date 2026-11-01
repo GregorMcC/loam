@@ -188,6 +188,11 @@ final class DriverApp: NSObject, NSApplicationDelegate {
         super.init()
     }
 
+    /// A quit through AppKit, such as the Quit menu item, does not come back through `endDriver`.
+    func applicationWillTerminate(_ notification: Notification) {
+        PaneSocketFolder().removeAll()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         try? FileManager.default.createDirectory(atPath: outFolder, withIntermediateDirectories: true)
         Log.open("\(outFolder)/driver.log")

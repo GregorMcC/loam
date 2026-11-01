@@ -146,12 +146,13 @@ ghosttykit_unreadable() {
 }
 
 # temp_folders prints the shared temp folders that the app tests write, one a
-# line: the temp folder of Foundation, which can differ from TMPDIR, and
-# TMPDIR.
+# line: the temp folder of Foundation, which can differ from TMPDIR, TMPDIR,
+# and /tmp, where PaneSocketTests put their sockets when TMPDIR is long.
 temp_folders() {
   {
     getconf DARWIN_USER_TEMP_DIR 2>/dev/null || true
     echo "${TMPDIR:-}"
+    echo /tmp
   } | while IFS= read -r folder; do
     if [ -n "$folder" ]; then (cd "$folder" 2>/dev/null && pwd -P); fi
   done | sort -u
@@ -163,16 +164,14 @@ temp_folders() {
 # in LOAM_TEST_RUN. In the shared temp folders, only those names count: other
 # processes, such as a Loam app, a run that starts, or the tests of another
 # worktree, make other loam-* items there. In swift_tmp, which only swift and
-# the tests write, each name of a test item counts: loam-*, and the names of
-# older tests. The Swift tools make TemporaryDirectory.* folders there, and the
-# script removes swift_tmp at the end.
+# the tests write, each item counts but the TemporaryDirectory.* folders of the
+# Swift tools. The script removes swift_tmp at the end.
 temp_items() {
   {
     temp_folders | while IFS= read -r folder; do
       find "$folder" -mindepth 1 -maxdepth 1 -name "loam-test-$run_tag-*" 2>/dev/null
     done
-    find "$swift_tmp" -mindepth 1 -maxdepth 1 \( -name 'loam-*' -o -name 'fake-loam-*' -o -name 'land-*' \
-      -o -name 'merge-*' -o -name 'popover-*' -o -name 'send-*' -o -name 'newworktree-*' \) 2>/dev/null
+    find "$swift_tmp" -mindepth 1 -maxdepth 1 ! -name 'TemporaryDirectory.*' 2>/dev/null
   } | sort
 }
 
