@@ -2,6 +2,8 @@ package run
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/GregorMcC/loam/core/internal/store"
@@ -93,5 +95,35 @@ func TestATickLeavesARunThatWentBackDuringTheTick(t *testing.T) {
 			!got.UpdatedAt.Equal(back.UpdatedAt) {
 			t.Errorf("%s: the run is %s (%q, %d tries), want it as send-back left it", name, got.State, got.Note, got.Tries)
 		}
+	}
+}
+
+// TAS-220: a tick can resume a Shipping run, for example with a CI failure,
+// after send-back read it. With every slot taken, the send-back must not put
+// the run in Queued with your notes while its session works on the CI
+// prompt, and it must say that the notes did not go back.
+func TestASendBackLeavesARunThatATickMoved(t *testing.T) {
+	s, r := runWithTemp(t, store.RunShipping)
+	moved, err := s.UpdateRun(r.ID, func(r *store.Run) error {
+		r.State, r.Note, r.Tries = store.RunRunning, "Fixing the CI failure", r.Tries+1
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddRun(store.Run{PlotID: r.PlotID, Title: "Other", Folder: t.TempDir(), State: store.RunRunning}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SetRunLimits(store.RunLimits{AtATime: 1}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := takeSendBack(s, r, 1, "the notes")
+	if !errors.Is(err, store.ErrInvalid) || !strings.Contains(err.Error(), "did not go back") {
+		t.Fatalf("err %v, want the notes refused", err)
+	}
+	after, _ := s.GetRun(r.ID)
+	if got.State != store.RunRunning || after.State != store.RunRunning || after.Note != moved.Note || after.Queue != nil ||
+		!after.UpdatedAt.Equal(moved.UpdatedAt) {
+		t.Fatalf("the run is %s (%q), want it as the tick left it", after.State, after.Note)
 	}
 }

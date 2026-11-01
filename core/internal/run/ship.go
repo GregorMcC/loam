@@ -891,9 +891,9 @@ func (sh *shipper) moveTry(state store.RunState, note string) (bool, error) {
 	return sh.update(func(r *store.Run) { r.State, r.Note, r.Tries = state, note, r.Tries+1 })
 }
 
-// errMovedOn ends the write of a tick to a run that left the state that the
-// tick found, so the write changes nothing.
-var errMovedOn = errors.New("the run left the state that the tick found")
+// errMovedOn ends a write to a run that left the state that its caller read,
+// such as a tick or a send-back, so the write changes nothing.
+var errMovedOn = errors.New("the run left the state that Loam read")
 
 // update changes the run when it is still in the state that the tick found:
 // you may have cancelled it or sent it back while the tick ran. A run that
