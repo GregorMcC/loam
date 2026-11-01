@@ -87,3 +87,65 @@ func TestRunGateStopsARunWithAGitConfigIncludeInAWritePath(t *testing.T) {
 		t.Fatalf("after the gate: %+v, want stopped with a note on %s", got, target)
 	}
 }
+
+// TAS-191: a check of the gate can write the commondir file after Loam builds
+// the rules, and a tick then runs git with no new check. The file names a copy
+// of the git folder whose config sets a hook folder of the run. Git of Loam
+// ignores it: the hook does not run, and the push and the PR go on.
+func TestRunTickIgnoresAConfigThatACommondirFileNames(t *testing.T) {
+	s, r, w := shipRun(t, "3")
+	git := filepath.Join(w.Repo, ".git")
+	admin := filepath.Join(git, "worktrees", filepath.Base(r.Folder))
+	if _, err := os.Stat(filepath.Join(admin, "commondir")); err != nil {
+		t.Fatal(err)
+	}
+	fake := filepath.Join(r.Folder, "fake")
+	for _, d := range []string{"refs", "hooks"} {
+		if err := os.MkdirAll(filepath.Join(fake, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(filepath.Join(git, "objects"), filepath.Join(fake, "objects")); err != nil {
+		t.Fatal(err)
+	}
+	testutil.Git(t, r.Folder, "pack-refs", "--all")
+	copyFile := func(from, to string) {
+		t.Helper()
+		b, err := os.ReadFile(from)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(to, b, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	copyFile(filepath.Join(git, "packed-refs"), filepath.Join(fake, "packed-refs"))
+	copyFile(filepath.Join(git, "HEAD"), filepath.Join(fake, "HEAD"))
+	copyFile(filepath.Join(git, "config"), filepath.Join(fake, "config"))
+	f, err := os.OpenFile(filepath.Join(fake, "config"), os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("[core]\n\thooksPath = " + filepath.Join(fake, "hooks") + "\n"); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	marker := filepath.Join(t.TempDir(), "hook-ran")
+	hook := "#!/bin/sh\ntouch '" + marker + "'\n"
+	if err := os.WriteFile(filepath.Join(fake, "hooks", "pre-push"), []byte(hook), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(admin, "commondir"), []byte(fake+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := testutil.Git(t, r.Folder, "config", "core.hooksPath"); got != filepath.Join(fake, "hooks") {
+		t.Fatalf("git does not follow the commondir file: %q", got)
+	}
+	tick(t)
+	if _, err := os.Stat(marker); err == nil {
+		t.Error("the hook of the config that the commondir file names ran outside the sandbox")
+	}
+	if e := events(t, s, r.ID, "ship"); !slices.ContainsFunc(e, func(x string) bool { return strings.HasPrefix(x, "Opened") }) {
+		t.Errorf("ship events %q, want the push and the PR", e)
+	}
+}

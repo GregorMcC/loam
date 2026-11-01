@@ -1,0 +1,210 @@
+package gitcmd_test
+
+import (
+	"context"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"regexp"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/GregorMcC/loam/core/internal/gitcmd"
+	"github.com/GregorMcC/loam/core/internal/testutil"
+)
+
+func real(t *testing.T, p string) string {
+	t.Helper()
+	r, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+func write(t *testing.T, name, text string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(name), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(name, []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCommonDir(t *testing.T) {
+	testutil.GitEnv(t)
+	repo, _ := testutil.GitRepo(t)
+	repo = real(t, repo)
+	wt := filepath.Join(real(t, t.TempDir()), "wt")
+	testutil.Git(t, repo, "worktree", "add", "-q", wt)
+	git := filepath.Join(repo, ".git")
+	sub := filepath.Join(wt, "a", "b")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	module := real(t, t.TempDir())
+	write(t, filepath.Join(module, ".git"), "gitdir: ../somewhere/modules/x\n")
+	broken := real(t, t.TempDir())
+	write(t, filepath.Join(broken, ".git"), "not a gitdir\n")
+	for dir, want := range map[string]string{
+		repo:                   git,
+		wt:                     git,
+		sub:                    git,
+		filepath.Join(git):     git,
+		module:                 "",
+		broken:                 "",
+		real(t, t.TempDir()):   "",
+		filepath.Join(wt, "x"): git,
+	} {
+		if got := gitcmd.CommonDir(dir); got != want {
+			t.Errorf("CommonDir(%s) = %q, want %q", dir, got, want)
+		}
+	}
+}
+
+// fakeCommon makes a folder that git takes as a common git folder. Its config
+// sets user.email and turns the extension on.
+func fakeCommon(t *testing.T, dir string) {
+	t.Helper()
+	write(t, filepath.Join(dir, "config"), "[user]\n\temail = fake@example.com\n[extensions]\n\tworktreeConfig = true\n")
+	write(t, filepath.Join(dir, "HEAD"), "ref: refs/heads/main\n")
+	for _, d := range []string{"objects", "refs"} {
+		if err := os.MkdirAll(filepath.Join(dir, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func email(t *testing.T, dir string) string {
+	t.Helper()
+	out, err := gitcmd.Command(context.Background(), dir, "config", "user.email").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// Each way that a run can make git take another folder as the common git
+// folder: git with no setting follows it, and a command of Loam does not.
+func TestCommandIgnoresTheConfigThatACommondirFileNames(t *testing.T) {
+	testutil.GitEnv(t)
+	repo, _ := testutil.GitRepo(t)
+	repo = real(t, repo)
+	wt := filepath.Join(real(t, t.TempDir()), "wt")
+	testutil.Git(t, repo, "worktree", "add", "-q", wt)
+	const want = "test@example.com"
+	admin := filepath.Join(repo, ".git", "worktrees", "wt")
+	fake := filepath.Join(wt, "fake")
+	fakeCommon(t, fake)
+	write(t, filepath.Join(admin, "config.worktree"), "[user]\n\temail = worktree@example.com\n")
+
+	write(t, filepath.Join(admin, "commondir"), fake+"\n")
+	if got := testutil.Git(t, wt, "config", "user.email"); got == want {
+		t.Fatalf("git does not follow the file of the worktree: %q", got)
+	}
+	if got := email(t, wt); got != want {
+		t.Errorf("a commondir file in the metadata folder: user.email %q, want %q", got, want)
+	}
+	write(t, filepath.Join(admin, "commondir"), "../..\n")
+
+	// With no commondir file, git takes the metadata folder as the git folder.
+	fakeCommon(t, admin)
+	if err := os.Remove(filepath.Join(admin, "commondir")); err != nil {
+		t.Fatal(err)
+	}
+	if got := email(t, wt); got != want {
+		t.Errorf("no commondir file: user.email %q, want %q", got, want)
+	}
+	write(t, filepath.Join(admin, "commondir"), "../..\n")
+
+	file := filepath.Join(repo, ".git", "commondir")
+	write(t, file, fake+"\n")
+	if got := testutil.Git(t, repo, "config", "user.email"); got == want {
+		t.Fatalf("git does not follow the file of the main checkout: %q", got)
+	}
+	if got := email(t, repo); got != want {
+		t.Errorf("a commondir file in the git folder: user.email %q, want %q", got, want)
+	}
+}
+
+// The work of a worktree goes on with the setting.
+func TestCommandWorksInAWorktree(t *testing.T) {
+	testutil.GitEnv(t)
+	repo, remote := testutil.GitRepo(t)
+	repo = real(t, repo)
+	wt := filepath.Join(real(t, t.TempDir()), "wt")
+	run := func(dir string, args ...string) string {
+		t.Helper()
+		out, err := gitcmd.Command(context.Background(), dir, args...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %q: %v\n%s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	run(repo, "worktree", "add", "-q", "-b", "work", wt)
+	write(t, filepath.Join(wt, "a.txt"), "a\n")
+	run(wt, "add", "a.txt")
+	run(wt, "commit", "-q", "-m", "a")
+	run(wt, "push", "-q", "origin", "work:refs/heads/work")
+	run(wt, "branch", "--set-upstream-to=origin/work", "work")
+	run(wt, "fetch", "-q", "--no-tags", "origin", "+refs/heads/main:refs/remotes/origin/main")
+	if got := run(wt, "rev-parse", "refs/heads/work"); got != testutil.Git(t, remote, "rev-parse", "refs/heads/work") {
+		t.Errorf("work = %s, and the remote does not have it", got)
+	}
+	if got := testutil.Git(t, repo, "config", "branch.work.remote"); got != "origin" {
+		t.Errorf("branch.work.remote = %q, want origin in the config of the repo", got)
+	}
+	if got := run(wt, "rev-parse", "--path-format=absolute", "--git-common-dir"); got != filepath.Join(repo, ".git") {
+		t.Errorf("git-common-dir = %q", got)
+	}
+	run(repo, "worktree", "remove", "--force", wt)
+	if strings.Contains(run(repo, "worktree", "list"), wt) {
+		t.Error("the worktree is still in the list")
+	}
+}
+
+// With GIT_DIR set, git does not look in dir, so the setting would name the
+// wrong repo.
+func TestEnvSetsNoCommonDirWithGitDir(t *testing.T) {
+	testutil.GitEnv(t)
+	repo, _ := testutil.GitRepo(t)
+	t.Setenv("GIT_DIR", filepath.Join(repo, ".git"))
+	if slices.ContainsFunc(gitcmd.Env(repo), func(kv string) bool { return strings.HasPrefix(kv, "GIT_COMMON_DIR=") }) {
+		t.Error("Env sets GIT_COMMON_DIR with GIT_DIR set")
+	}
+}
+
+// Each git of Loam goes through this package. session/run.go runs git config
+// with --file, or with GIT_COMMON_DIR that it sets itself, from the root.
+func TestLoamRunsGitOnlyThroughThisPackage(t *testing.T) {
+	direct := regexp.MustCompile(`exec\.Command(Context)?\([^\n]*"git"`)
+	root := filepath.Join("..")
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		if slices.Contains([]string{filepath.Join("gitcmd", "gitcmd.go"), filepath.Join("session", "run.go"), filepath.Join("testutil", "git.go")}, rel) {
+			return nil
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if m := direct.Find(b); m != nil {
+			t.Errorf("%s runs git with no gitcmd: %s", rel, m)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}

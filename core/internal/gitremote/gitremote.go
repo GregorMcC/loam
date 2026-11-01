@@ -5,12 +5,12 @@ package gitremote
 import (
 	"context"
 	"net/url"
-	"os/exec"
 	"path"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/GregorMcC/loam/core/internal/gitcmd"
 	"github.com/GregorMcC/loam/core/internal/store"
 )
 
@@ -97,7 +97,7 @@ func Origin(repoPath string) (string, bool) {
 func gitIn(repoPath string) (git func(args ...string) string, cancel context.CancelFunc) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	return func(args ...string) string {
-		out, err := exec.CommandContext(ctx, "git", append([]string{"-C", repoPath}, args...)...).Output()
+		out, err := gitcmd.Command(ctx, repoPath, args...).Output()
 		if err != nil {
 			return ""
 		}

@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/GregorMcC/loam/core/internal/gitcmd"
 	"github.com/GregorMcC/loam/core/internal/github"
 	"github.com/GregorMcC/loam/core/internal/store"
 	"github.com/GregorMcC/loam/core/internal/worktree"
@@ -113,7 +114,7 @@ func (sh *shipper) fetchBase(ctx context.Context, base string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, fetchTimeout)
 	defer cancel()
 	refspec := "+refs/heads/" + base + ":refs/remotes/origin/" + base
-	out, err := exec.CommandContext(ctx, "git", "-C", sh.r.Folder, "fetch", "--no-tags", "origin", refspec).CombinedOutput()
+	out, err := gitcmd.Command(ctx, sh.r.Folder, "fetch", "--no-tags", "origin", refspec).CombinedOutput()
 	return string(out), err
 }
 
@@ -121,7 +122,7 @@ func (sh *shipper) fetchBase(ctx context.Context, base string) (string, error) {
 // git merge-tree, which changes no file and no ref. It returns nil when git
 // finds no conflict or cannot tell, such as a git before 2.38.
 func conflictFiles(ctx context.Context, dir, base, head string) []string {
-	out, err := exec.CommandContext(ctx, "git", "-C", dir, "-c", "core.quotePath=off",
+	out, err := gitcmd.Command(ctx, dir, "-c", "core.quotePath=off",
 		"merge-tree", "--write-tree", "--name-only", "--no-messages", base, head).Output()
 	var exit *exec.ExitError
 	if !errors.As(err, &exit) || exit.ExitCode() != 1 {
