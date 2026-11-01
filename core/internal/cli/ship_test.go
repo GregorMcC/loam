@@ -336,6 +336,29 @@ func TestRunTickStopsARunWhoseSessionMadeNoCommitForTheCIFailure(t *testing.T) {
 	}
 }
 
+// GitHub runs the failed jobs of a run again only when all its jobs have
+// ended. So while another job of the head runs, a fast failed job waits for
+// it, and costs no try.
+func TestRunTickWaitsForTheRunningJobsBeforeTheRerun(t *testing.T) {
+	_, r, w := shipRun(t, "3")
+	tick(t)
+	failed := ciState(w.Branch, testutil.Git(t, r.Folder, "rev-parse", "HEAD"), "FAILURE")
+	build := `{"__typename": "CheckRun", "name": "build", "status": "IN_PROGRESS", "conclusion": "", "isRequired": true,
+     "checkSuite": {"workflowRun": {"databaseId": 9001, "workflow": {"name": "ci"}}}},
+    {"__typename": "CheckRun", "name": "test",`
+	running := strings.Replace(strings.Replace(failed, `"totalCount": 1`, `"totalCount": 2`, 1),
+		`{"__typename": "CheckRun", "name": "test",`, build, 1)
+	setGitHub(t, running)
+	if got := tick(t); len(got.Runs) != 0 || len(ghReruns(t)) != 0 {
+		t.Fatalf("a job still runs: %+v, reruns %q", got, ghReruns(t))
+	}
+	setGitHub(t, failed)
+	got := tick(t)
+	if len(got.Runs) != 1 || got.Runs[0].State != store.RunShipping || got.Runs[0].Tries != 0 || len(ghReruns(t)) != 1 {
+		t.Fatalf("after the jobs ended: %+v, reruns %q", got, ghReruns(t))
+	}
+}
+
 // GitHub can show the failed jobs of the first attempt for a moment after
 // the rerun, so a failure soon after it waits.
 func TestRunTickWaitsForTheRerunBeforeTheSecondFailure(t *testing.T) {

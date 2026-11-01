@@ -549,11 +549,14 @@ func (sh *shipper) failCI(ctx context.Context, repo github.Repo, pr *github.PR) 
 // rerunCI runs the failed jobs of pr again, with one gh run rerun --failed
 // for each GitHub Actions run of a failed check, so a flaky job costs no try.
 // The run stays in its state, and keeps the head of pr in [store.Run.CIRerun],
-// so Loam runs the jobs of a head again at most once. rerun is false when Loam
-// ran nothing again: a failed check that is not a job of GitHub Actions
-// fails again on the same head, and a rerun that GitHub refuses, such as of a
-// run that is gone, is a ci event. Then the failure goes back to the session.
-// A rerun that cannot reach GitHub is an error, for the next tick.
+// so Loam runs the jobs of a head again at most once. While a check of the
+// head still runs, rerunCI waits, with rerun true: GitHub refuses to run the
+// failed jobs of a run again before all its jobs end, and the PR does not say
+// which run a check that runs is in. rerun is false when Loam ran nothing
+// again: a failed check that is not a job of GitHub Actions fails again on
+// the same head, and a rerun that GitHub refuses, such as of a run that is
+// gone, is a ci event. Then the failure goes back to the session. A rerun
+// that cannot reach GitHub is an error, for the next tick.
 func (sh *shipper) rerunCI(ctx context.Context, repo github.Repo, pr *github.PR) (moved, rerun bool, err error) {
 	var runs []int64
 	for _, c := range pr.FailedChecks {
@@ -566,6 +569,9 @@ func (sh *shipper) rerunCI(ctx context.Context, repo github.Repo, pr *github.PR)
 	}
 	if len(runs) == 0 {
 		return false, false, nil
+	}
+	if pr.Checks.Running > 0 {
+		return false, true, nil // the run of a failed check may not have ended
 	}
 	names := strings.Join(checkNames(pr.FailedChecks), ", ")
 	for _, id := range runs {
