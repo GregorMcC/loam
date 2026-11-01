@@ -83,7 +83,7 @@ func TestATickLeavesARunThatWentBackDuringTheTick(t *testing.T) {
 		},
 	}
 	for name, step := range steps {
-		sh.r = r
+		sh.r, sh.movedOn = r, false
 		if moved, err := step(); err != nil || moved {
 			t.Errorf("%s: moved %v, %v; want the run left as it is", name, moved, err)
 		}
@@ -94,6 +94,19 @@ func TestATickLeavesARunThatWentBackDuringTheTick(t *testing.T) {
 		if got.State != store.RunRunning || got.Note != back.Note || got.Tries != back.Tries || got.CIRerun != "" || got.Queue != nil ||
 			!got.UpdatedAt.Equal(back.UpdatedAt) {
 			t.Errorf("%s: the run is %s (%q, %d tries), want it as send-back left it", name, got.State, got.Note, got.Tries)
+		}
+		// A later step of the same tick, such as passCI after a guard that
+		// failed in endReplies, must not take Running as the state it read.
+		if sh.r.State != store.RunShipping {
+			t.Errorf("%s: the shipper took the state %s as its own", name, sh.r.State)
+		}
+		for later, step := range steps {
+			if moved, err := step(); err != nil || moved {
+				t.Errorf("%s then %s: moved %v, %v; want no write", name, later, moved, err)
+			}
+		}
+		if got, _ := s.GetRun(r.ID); got.State != store.RunRunning || !got.UpdatedAt.Equal(back.UpdatedAt) {
+			t.Errorf("%s: a later step wrote the run: %s (%q)", name, got.State, got.Note)
 		}
 	}
 }

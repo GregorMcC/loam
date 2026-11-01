@@ -137,6 +137,10 @@ type shipper struct {
 	warnings []string
 	// noLinearDone keeps the Linear issue where it is when the run lands.
 	noLinearDone bool
+	// movedOn is true when a write of the tick found that the run left the
+	// state that the tick read: you cancelled it or sent it back. Each later
+	// write of the tick then changes nothing (see [shipper.update]).
+	movedOn bool
 }
 
 // ship does the next step of the run. It returns true when the run record
@@ -641,6 +645,9 @@ func runList(runs []int64) string {
 // sends it. A prompt that does not reach the session stops the run, and its
 // note names what (such as "CI failure").
 func (sh *shipper) resume(ctx context.Context, prompt, note, what string, addTry func(*store.Run)) (bool, error) {
+	if sh.movedOn {
+		return false, nil
+	}
 	from := sh.r.State
 	r, err := sh.s.TakeSlot(sh.r.ID, &store.RunQueue{Resume: prompt}, func(r *store.Run) error {
 		// You may have changed the run during the tick. Then the write ends
@@ -657,9 +664,7 @@ func (sh *shipper) resume(ctx context.Context, prompt, note, what string, addTry
 		return nil
 	})
 	if errors.Is(err, errMovedOn) {
-		if r, err := sh.s.GetRun(sh.r.ID); err == nil {
-			sh.r = r
-		}
+		sh.movedOn = true
 		return false, nil
 	}
 	if err != nil {
@@ -897,8 +902,13 @@ var errMovedOn = errors.New("the run left the state that Loam read")
 
 // update changes the run when it is still in the state that the tick found:
 // you may have cancelled it or sent it back while the tick ran. A run that
-// left that state stays as it is, with no write.
+// left that state stays as it is, with no write, for the rest of the tick:
+// sh.r keeps the run as the tick read it, so a later step does not take the
+// new state as its own and write over it (see [shipper.movedOn]).
 func (sh *shipper) update(fn func(*store.Run)) (bool, error) {
+	if sh.movedOn {
+		return false, nil
+	}
 	from := sh.r.State
 	r, err := sh.s.UpdateRun(sh.r.ID, func(r *store.Run) error {
 		if r.State != from {
@@ -908,9 +918,7 @@ func (sh *shipper) update(fn func(*store.Run)) (bool, error) {
 		return nil
 	})
 	if errors.Is(err, errMovedOn) {
-		if r, err := sh.s.GetRun(sh.r.ID); err == nil {
-			sh.r = r
-		}
+		sh.movedOn = true
 		return false, nil
 	}
 	if err != nil {
