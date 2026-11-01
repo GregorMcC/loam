@@ -24,3 +24,18 @@ func TestAGateWithNoGitCountsNoTryAndRunsAgain(t *testing.T) {
 		}
 	}
 }
+
+// stopAfter stops a run that has not ended. A run that you cancelled while
+// Loam waited, such as for the rebuild lock, stays Cancelled.
+func TestStopAfterKeepsARunThatEnded(t *testing.T) {
+	s, r := runWithTemp(t, store.RunRunning)
+	_ = stopAfter(s, r.ID, errors.New("the branch is gone"))
+	if got, _ := s.GetRun(r.ID); got.State != store.RunStopped || got.Note != "the branch is gone" {
+		t.Fatalf("running run: %+v", got)
+	}
+	s, r = runWithTemp(t, store.RunCancelled)
+	_ = stopAfter(s, r.ID, errors.New("the branch is gone"))
+	if got, _ := s.GetRun(r.ID); got.State != store.RunCancelled || got.Note == "the branch is gone" {
+		t.Fatalf("cancelled run: %+v", got)
+	}
+}

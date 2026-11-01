@@ -351,11 +351,15 @@ func moveLinearIssue(ctx context.Context, s *store.Store, r store.Run, to, stays
 	return warning
 }
 
-// stopAfter marks a recorded run Stopped by err, and returns err.
+// stopAfter marks a recorded run Stopped by err, and returns err. A run that
+// ended meanwhile, such as one that you cancelled while Loam waited, keeps
+// its state and its note.
 func stopAfter(s *store.Store, id string, err error) error {
 	// A failed record still returns err, the cause that the caller needs.
 	_, _ = s.UpdateRun(id, func(r *store.Run) error {
-		r.State, r.Note = store.RunStopped, err.Error()
+		if !r.State.Ended() {
+			r.State, r.Note = store.RunStopped, err.Error()
+		}
 		return nil
 	})
 	return err
