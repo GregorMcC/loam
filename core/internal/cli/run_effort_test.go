@@ -85,10 +85,10 @@ func TestRunShapePassesTheEffortToTheDraftAndTheApprovedSession(t *testing.T) {
 
 func TestRunDefaultsShowSetAndClear(t *testing.T) {
 	s, p := runCLI(t)
-	if d := runDefaultsOut(t, "alpha"); !reflect.DeepEqual(d, store.RunDefaults{PlotID: p.ID, MCPServers: []string{}, Review: true}) {
+	if d := runDefaultsOut(t, "alpha"); !reflect.DeepEqual(d, store.RunDefaults{PlotID: p.ID, MCPServers: []string{}, Review: true, Checks: []store.Check{}}) {
 		t.Fatalf("defaults of a new plot %+v", d)
 	}
-	if d := runDefaultsOut(t, "alpha", "--model", "opus", "--effort", "max"); !reflect.DeepEqual(d, store.RunDefaults{PlotID: p.ID, Model: "opus", Effort: "max", MCPServers: []string{}, Review: true}) {
+	if d := runDefaultsOut(t, "alpha", "--model", "opus", "--effort", "max"); !reflect.DeepEqual(d, store.RunDefaults{PlotID: p.ID, Model: "opus", Effort: "max", MCPServers: []string{}, Review: true, Checks: []store.Check{}}) {
 		t.Fatalf("set %+v", d)
 	}
 	// A flag sets its own field and leaves the other.
@@ -128,7 +128,7 @@ func TestRunDefaultsSetShowAndClearTheMCPServers(t *testing.T) {
 
 func TestRunDefaultsTurnTheCodeReviewOffAndSetItsEffort(t *testing.T) {
 	_, p := runCLI(t)
-	want := store.RunDefaults{PlotID: p.ID, Effort: "low", MCPServers: []string{}, Review: false, ReviewEffort: "high"}
+	want := store.RunDefaults{PlotID: p.ID, Effort: "low", MCPServers: []string{}, Review: false, ReviewEffort: "high", Checks: []store.Check{}}
 	if d := runDefaultsOut(t, "alpha", "--effort", "low", "--review", "off", "--review-effort", "high"); !reflect.DeepEqual(d, want) {
 		t.Fatalf("set %+v", d)
 	}
@@ -192,5 +192,42 @@ func TestRecurringAddKeepsTheEffort(t *testing.T) {
 	}
 	if err := json.Unmarshal([]byte(out), &got); err != nil || got.Recurring.Effort != "low" {
 		t.Fatalf("%v: %s", err, out)
+	}
+}
+
+// The default checks of a plot go to a run that names none, and a flag
+// replaces or clears them.
+func TestRunDefaultsSetAndClearTheChecks(t *testing.T) {
+	s, _, _ := shipRun(t, "3")
+	if _, errOut, err := lrRun(t, "", "run", "defaults", "alpha", "--check", "Tests=go test ./...", "--check", "Lint=make lint"); err != nil {
+		t.Fatalf("%v %s", err, errOut)
+	}
+	out, errOut, err := lrRun(t, "", "run", "defaults", "alpha")
+	if err != nil || !strings.Contains(out, "check: Tests=go test ./...\ncheck: Lint=make lint\n") {
+		t.Fatalf("%v %s:\n%s", err, errOut, out)
+	}
+	p, err := s.ListPlots()
+	if err != nil || len(p) == 0 {
+		t.Fatalf("%v %+v", err, p)
+	}
+	d, err := s.GetRunDefaults(p[0].ID)
+	if err != nil || len(d.Checks) != 2 || d.Checks[1] != (store.Check{Name: "Lint", Command: "make lint"}) {
+		t.Fatalf("%v %+v", err, d)
+	}
+	// Another flag keeps them.
+	if _, errOut, err := lrRun(t, "", "run", "defaults", "alpha", "--review", "off"); err != nil {
+		t.Fatalf("%v %s", err, errOut)
+	}
+	if d, err = s.GetRunDefaults(p[0].ID); err != nil || len(d.Checks) != 2 {
+		t.Fatalf("%v %+v", err, d)
+	}
+	if _, errOut, err := lrRun(t, "", "run", "defaults", "alpha", "--no-checks"); err != nil {
+		t.Fatalf("%v %s", err, errOut)
+	}
+	if d, err = s.GetRunDefaults(p[0].ID); err != nil || len(d.Checks) != 0 {
+		t.Fatalf("%v %+v", err, d)
+	}
+	if _, _, err := lrRun(t, "", "run", "defaults", "alpha", "--check", "no equals sign"); err == nil {
+		t.Fatal("a bad check was accepted")
 	}
 }

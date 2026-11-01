@@ -129,6 +129,9 @@ func Start(ctx context.Context, s *store.Store, o StartOptions) (*StartResult, e
 		return nil, err
 	}
 	o.fixedRepo = fixed
+	if o.DoneWhen, err = checksOrDefaults(s, plot.ID, o.DoneWhen); err != nil {
+		return nil, err
+	}
 	usageForHold(ctx, s) // before Loam makes anything, so a probe that is cut short leaves nothing
 	res := &StartResult{}
 	wt, err := prepare(s, plot, o, title, ticket, res)
@@ -571,6 +574,19 @@ func failureNote(what string, err error, out string) string {
 		note += ":\n" + t
 	}
 	return note
+}
+
+// checksOrDefaults returns the checks of a run, or the default checks of its
+// plot when the run names none.
+func checksOrDefaults(s *store.Store, plotID string, checks []store.Check) ([]store.Check, error) {
+	if len(checks) > 0 {
+		return checks, nil
+	}
+	d, err := s.GetRunDefaults(plotID)
+	if err != nil {
+		return nil, err
+	}
+	return d.Checks, nil
 }
 
 // leaveChecks is in each prompt that sends work back to the session of a

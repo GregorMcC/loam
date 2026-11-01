@@ -240,6 +240,10 @@ func Approve(ctx context.Context, s *store.Store, id string, o ApproveOptions) (
 	if err != nil {
 		return nil, err
 	}
+	defaults, err := s.GetRunDefaults(plot.ID)
+	if err != nil {
+		return nil, err
+	}
 	usageForHold(ctx, s)
 	r, err = s.TakeSlot(r.ID, &store.RunQueue{Model: so.Model, Effort: so.Effort}, func(r *store.Run) error {
 		if r.State != store.RunShaping {
@@ -251,6 +255,9 @@ func Approve(ctx context.Context, s *store.Store, id string, o ApproveOptions) (
 		}
 		if o.DoneWhen != nil {
 			r.DoneWhen = o.DoneWhen
+		}
+		if len(r.DoneWhen) == 0 { // a run that names no check uses those of the plot
+			r.DoneWhen = defaults.Checks
 		}
 		for n, answer := range o.Answers {
 			r.Shape.Assumptions[n-1].Answer = strings.TrimSpace(answer)
