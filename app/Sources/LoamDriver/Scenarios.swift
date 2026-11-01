@@ -84,6 +84,7 @@ enum Scenarios {
         Scenario(name: "metrics-shot", limit: 120, body: metricsShot),
         Scenario(name: "key-sweep", limit: 180, body: keySweep),
         Scenario(name: "key-sweep-desk", limit: 180, body: keySweepDesk),
+        Scenario(name: "intake-setup-shot", limit: 120, body: intakeSetupShot),
         Scenario(name: "recurring-shot", limit: 120, body: recurringShot),
         Scenario(name: "rule-shot", limit: 120, body: ruleShot),
         Scenario(name: "run-defaults-mcp-shot", limit: 120, body: runDefaultsMCPShot),
