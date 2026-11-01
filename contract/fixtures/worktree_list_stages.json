@@ -5,6 +5,7 @@
     "merged_into": "origin/main",
     "missing": false,
     "pr": {
+      "app_comments": [],
       "approvals": 0,
       "base": "main",
       "behind_base": 0,
@@ -20,6 +21,7 @@
         "waiting": 0
       },
       "closed_at": "2026-01-01T00:00:00Z",
+      "comment_reviews": [],
       "comments": 0,
       "commits": 2,
       "draft": false,
@@ -65,6 +67,7 @@
     "merged_into": "origin/main",
     "missing": false,
     "pr": {
+      "app_comments": [],
       "approvals": 0,
       "base": "main",
       "behind_base": 0,
@@ -80,6 +83,7 @@
         "waiting": 0
       },
       "closed_at": "2026-01-01T00:00:00Z",
+      "comment_reviews": [],
       "comments": 0,
       "commits": 2,
       "draft": false,
@@ -124,6 +128,7 @@
     "merged_into": "origin/main",
     "missing": false,
     "pr": {
+      "app_comments": [],
       "approvals": 1,
       "base": "main",
       "behind_base": 0,
@@ -138,6 +143,7 @@
         "total": 1,
         "waiting": 0
       },
+      "comment_reviews": [],
       "comments": 0,
       "commits": 2,
       "draft": false,
@@ -189,6 +195,7 @@
     "merged_into": "origin/main",
     "missing": false,
     "pr": {
+      "app_comments": [],
       "approvals": 0,
       "base": "main",
       "behind_base": 0,
@@ -203,6 +210,7 @@
         "total": 1,
         "waiting": 0
       },
+      "comment_reviews": [],
       "comments": 0,
       "commits": 2,
       "draft": false,
@@ -254,6 +262,7 @@
     "merged_into": "origin/main",
     "missing": false,
     "pr": {
+      "app_comments": [],
       "approvals": 0,
       "base": "main",
       "behind_base": 0,
@@ -275,6 +284,7 @@
         "total": 1,
         "waiting": 0
       },
+      "comment_reviews": [],
       "comments": 3,
       "commits": 2,
       "draft": false,
@@ -375,6 +385,7 @@
     "merged_into": "origin/main",
     "missing": false,
     "pr": {
+      "app_comments": [],
       "approvals": 0,
       "base": "main",
       "behind_base": 0,
@@ -389,6 +400,7 @@
         "total": 3,
         "waiting": 0
       },
+      "comment_reviews": [],
       "comments": 0,
       "commits": 2,
       "draft": false,
@@ -455,6 +467,7 @@
     "merged_into": "origin/main",
     "missing": false,
     "pr": {
+      "app_comments": [],
       "approvals": 0,
       "base": "main",
       "behind_base": 0,
@@ -469,6 +482,7 @@
         "total": 2,
         "waiting": 1
       },
+      "comment_reviews": [],
       "comments": 0,
       "commits": 2,
       "draft": false,
@@ -520,6 +534,7 @@
     "merged_into": "origin/main",
     "missing": false,
     "pr": {
+      "app_comments": [],
       "approvals": 0,
       "base": "main",
       "behind_base": 0,
@@ -534,6 +549,7 @@
         "total": 1,
         "waiting": 0
       },
+      "comment_reviews": [],
       "comments": 0,
       "commits": 2,
       "draft": true,
@@ -585,6 +601,7 @@
     "merged_into": "origin/main",
     "missing": false,
     "pr": {
+      "app_comments": [],
       "approvals": 1,
       "base": "main",
       "behind_base": 3,
@@ -599,6 +616,7 @@
         "total": 1,
         "waiting": 0
       },
+      "comment_reviews": [],
       "comments": 0,
       "commits": 2,
       "draft": false,
@@ -650,6 +668,7 @@
     "merged_into": "origin/main",
     "missing": false,
     "pr": {
+      "app_comments": [],
       "approvals": 0,
       "base": "main",
       "behind_base": 0,
@@ -664,6 +683,7 @@
         "total": 2,
         "waiting": 0
       },
+      "comment_reviews": [],
       "comments": 0,
       "commits": 2,
       "draft": false,
@@ -715,6 +735,7 @@
     "merged_into": "origin/main",
     "missing": false,
     "pr": {
+      "app_comments": [],
       "approvals": 0,
       "base": "main",
       "behind_base": 0,
@@ -729,6 +750,7 @@
         "total": 1,
         "waiting": 0
       },
+      "comment_reviews": [],
       "comments": 0,
       "commits": 2,
       "draft": false,
@@ -780,6 +802,7 @@
     "merged_into": "origin/main",
     "missing": false,
     "pr": {
+      "app_comments": [],
       "approvals": 1,
       "base": "main",
       "behind_base": 0,
@@ -794,6 +817,7 @@
         "total": 1,
         "waiting": 0
       },
+      "comment_reviews": [],
       "comments": 0,
       "commits": 2,
       "draft": false,
@@ -845,6 +869,7 @@
     "merged_into": "origin/main",
     "missing": false,
     "pr": {
+      "app_comments": [],
       "approvals": 1,
       "base": "main",
       "behind_base": 0,
@@ -859,6 +884,7 @@
         "total": 1,
         "waiting": 0
       },
+      "comment_reviews": [],
       "comments": 0,
       "commits": 9,
       "draft": false,
@@ -963,6 +989,7 @@
     "merged_into": "origin/main",
     "missing": false,
     "pr": {
+      "app_comments": [],
       "approvals": 1,
       "base": "main",
       "behind_base": 0,
@@ -977,6 +1004,7 @@
         "total": 4,
         "waiting": 0
       },
+      "comment_reviews": [],
       "comments": 0,
       "commits": 3,
       "draft": false,

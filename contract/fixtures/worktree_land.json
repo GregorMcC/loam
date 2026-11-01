@@ -51,6 +51,7 @@
     "rebase"
   ],
   "pr": {
+    "app_comments": [],
     "approvals": 1,
     "base": "main",
     "behind_base": 0,
@@ -65,6 +66,7 @@
       "total": 1,
       "waiting": 0
     },
+    "comment_reviews": [],
     "comments": 0,
     "commits": 9,
     "draft": false,

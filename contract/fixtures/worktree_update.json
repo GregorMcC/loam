@@ -1,6 +1,7 @@
 {
   "fetched": true,
   "pr": {
+    "app_comments": [],
     "approvals": 1,
     "base": "main",
     "behind_base": 3,
@@ -15,6 +16,7 @@
       "total": 1,
       "waiting": 0
     },
+    "comment_reviews": [],
     "comments": 0,
     "commits": 2,
     "draft": false,
