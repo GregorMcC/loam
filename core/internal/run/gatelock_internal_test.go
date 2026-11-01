@@ -65,7 +65,7 @@ func holdGateLock(t *testing.T, s *store.Store) func() {
 func stop(t *testing.T, s *store.Store, r store.Run) (int, string) {
 	t.Helper()
 	var errOut bytes.Buffer
-	code := stopped(s, r.ID, &errOut, func(format string, a ...any) { t.Logf(format, a...) })
+	code := stopped(s, r.ID, "", &errOut, func(format string, a ...any) { t.Logf(format, a...) })
 	return code, errOut.String()
 }
 
@@ -100,7 +100,7 @@ func TestGateWaitsForTheGateOfAnotherRun(t *testing.T) {
 	done := make(chan result, 1)
 	go func() {
 		var errOut bytes.Buffer
-		code := stopped(s, r.ID, &errOut, func(string, ...any) {})
+		code := stopped(s, r.ID, "", &errOut, func(string, ...any) {})
 		done <- result{code, errOut.String()}
 	}()
 	deadline := time.Now().Add(10 * time.Second)

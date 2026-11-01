@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -227,7 +228,20 @@ type RunCodeReview struct {
 	// Facts are what the review of Head adds to the risk of the ship notes:
 	// its Minor findings, or why it did not run.
 	Facts []string `json:"facts"`
+	// ReplyRound is the round whose findings went to the session and whose
+	// reply Loam waits for, or 0. The Stop hook that lets the session stop
+	// after that round keeps the last message of the session in Replies,
+	// and sets ReplyRound to 0.
+	ReplyRound int `json:"reply_round,omitempty"`
+	// Replies are the last messages of the session after the rounds, by
+	// round, at most [CodeReviewReplyMax] characters each. A round has none
+	// when Claude Code gave the hook no message.
+	Replies map[int]string `json:"replies,omitempty"`
 }
+
+// CodeReviewReplyMax is how many characters of the last message of the
+// session after a code review round Loam keeps.
+const CodeReviewReplyMax = 2000
 
 // clone copies the review state, with an empty list where it has none.
 func (c *RunCodeReview) clone() *RunCodeReview {
@@ -236,6 +250,7 @@ func (c *RunCodeReview) clone() *RunCodeReview {
 	}
 	out := *c
 	out.Facts = append([]string{}, c.Facts...)
+	out.Replies = maps.Clone(c.Replies)
 	return &out
 }
 
@@ -501,6 +516,12 @@ type RunCodeReviewRound struct {
 	Findings []RunFinding `json:"findings"`
 	// More is how many findings the review found after the list.
 	More int `json:"more"`
+	// Round is the round of the run whose findings went back to the
+	// session, or 0 when the review sent nothing back.
+	Round int `json:"round,omitempty"`
+	// NeedsYou is true when the review stopped the run, because a Critical
+	// or Major finding needs a setting that only you can change.
+	NeedsYou bool `json:"needs_you,omitempty"`
 }
 
 // CodeReviewFindingsMax is how many findings of one code review a
@@ -516,6 +537,9 @@ type RunFinding struct {
 	// Line is the line in the new file, or 0.
 	Line int    `json:"line"`
 	Text string `json:"text"`
+	// NeedsYou is why the fix needs a setting that only you can change,
+	// such as a sandbox read path, or empty.
+	NeedsYou string `json:"needs_you,omitempty"`
 }
 
 // encode is the data as the JSON of the data column, or "" when it has none.
