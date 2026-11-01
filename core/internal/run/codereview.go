@@ -34,9 +34,9 @@ const codeReviewTimeout = 10 * time.Minute
 // holds. A longer diff goes to more than one review (see [splitDiff]).
 const codeReviewDiffMax = 60000
 
-// codeReviewPartsMax is how many reviews one head can use. A longer diff does
-// not get a review, so the run stops for you.
-const codeReviewPartsMax = 6
+// codeReviewDiffTotal is how many characters of diff one head can have. A
+// longer diff does not get a review, so the run stops for you.
+const codeReviewDiffTotal = 360000
 
 // codeReviewTries is how many reviews of a run can fail in a row before the
 // run stops. A review that did not run never lets Loam push.
@@ -632,51 +632,77 @@ func reviewPart(ctx context.Context, claude, folder string, args []string) (find
 	return *a.Findings, ""
 }
 
-// splitDiff cuts a git diff into parts of at most limit characters, and keeps
-// each part in order. A part ends where a file ends when it can, and a file
-// that is longer than limit ends a part at the end of a line. A line that is
-// longer than limit is cut.
+// splitDiff cuts a git diff into parts of about limit characters, in order. A
+// part ends where a file ends when it can. A file that is longer than limit
+// ends a part at the end of a line, and a line that is longer than limit is
+// cut. Each later part of such a file starts with the "diff --git" line of the
+// file and its last "@@" line, so the review can name the file and the line.
+// Those two lines can take a part over limit.
 func splitDiff(diff string, limit int) []string {
 	var parts []string
 	var b strings.Builder
 	size := 0
-	add := func(s string) {
-		n := utf8.RuneCountInString(s)
-		if size > 0 && size+n > limit {
+	end := func() {
+		if size > 0 {
 			parts = append(parts, b.String())
 			b.Reset()
 			size = 0
 		}
-		b.WriteString(s)
-		size += n
 	}
-	var file []string
-	flush := func() {
-		text := strings.Join(file, "")
-		file = nil
-		if utf8.RuneCountInString(text) <= limit {
-			add(text)
-			return
+	write := func(s string) {
+		b.WriteString(s)
+		size += utf8.RuneCountInString(s)
+	}
+	for _, file := range diffFiles(diff) {
+		n := utf8.RuneCountInString(file)
+		if size+n > limit {
+			end()
 		}
-		for _, line := range strings.SplitAfter(text, "\n") {
+		if n <= limit {
+			write(file)
+			continue
+		}
+		context := ""
+		hunk := ""
+		for i, line := range strings.SplitAfter(file, "\n") {
+			if i == 0 {
+				context = line
+			}
 			for runes := []rune(line); len(runes) > 0; {
-				n := min(limit, len(runes))
-				add(string(runes[:n]))
-				runes = runes[n:]
+				room := limit - size
+				if len(runes) > room && size > 0 {
+					end()
+					write(context + hunk)
+					room = max(limit-size, 1)
+				}
+				take := min(room, len(runes))
+				write(string(runes[:take]))
+				runes = runes[take:]
+			}
+			if strings.HasPrefix(line, "@@ ") {
+				hunk = line
 			}
 		}
 	}
-	for _, line := range strings.SplitAfter(diff, "\n") {
-		if strings.HasPrefix(line, "diff --git ") {
-			flush()
-		}
-		file = append(file, line)
-	}
-	flush()
-	if size > 0 {
-		parts = append(parts, b.String())
-	}
+	end()
 	return parts
+}
+
+// diffFiles cuts a git diff before each "diff --git" line.
+func diffFiles(diff string) []string {
+	var files []string
+	var b strings.Builder
+	for _, line := range strings.SplitAfter(diff, "\n") {
+		if strings.HasPrefix(line, "diff --git ") && b.Len() > 0 {
+			files = append(files, b.String())
+			b.Reset()
+		}
+		b.WriteString(line)
+	}
+	if b.Len() > 0 {
+		files = append(files, b.String())
+	}
+	return files
 }
 
 // cleanFindings leaves out each Minor finding with no text, gives a Critical
@@ -860,11 +886,10 @@ func codeReviewAsk(ctx context.Context, r store.Run, w store.Worktree, head stri
 	if err != nil {
 		return nil, "git cannot give the diff of the branch: " + err.Error()
 	}
-	parts := splitDiff(diff, codeReviewDiffMax)
-	if len(parts) > codeReviewPartsMax {
-		return nil, fmt.Sprintf("the diff is longer than the %d characters that Loam can review, so a person must split the change",
-			codeReviewPartsMax*codeReviewDiffMax)
+	if utf8.RuneCountInString(diff) > codeReviewDiffTotal {
+		return nil, fmt.Sprintf("the diff is longer than the %d characters that Loam can review, so a person must split the change", codeReviewDiffTotal)
 	}
+	parts := splitDiff(diff, codeReviewDiffMax)
 	var b strings.Builder
 	b.WriteString("Review the changes of this branch before Loam pushes them. Find the problems that a careful reviewer finds in the diff below. " +
 		"Answer in the JSON shape that the schema gives.\n\n" +
@@ -904,7 +929,7 @@ func codeReviewAsk(ctx context.Context, r store.Run, w store.Worktree, head stri
 	for i, part := range parts {
 		p := head0
 		if len(parts) > 1 {
-			p += fmt.Sprintf("This is part %d of %d of the diff. Other reviews read the other parts. Report the problems in this part.\n\n", i+1, len(parts))
+			p += fmt.Sprintf("This is part %d of %d of the diff. Other reviews read the other parts. Report the problems in this part. A part that starts inside a file repeats the \"diff --git\" line of the file and its last \"@@\" line.\n\n", i+1, len(parts))
 		}
 		prompts = append(prompts, p+fence+"diff\n"+part+"\n"+fence+"\n")
 	}

@@ -582,27 +582,46 @@ func TestWithHeldAddsTheHeldFindingsOnce(t *testing.T) {
 	}
 }
 
-func TestSplitDiffKeepsAllOfTheDiffWithinTheLimit(t *testing.T) {
+func TestSplitDiffKeepsAllOfTheDiffAndTheContextOfEachPart(t *testing.T) {
 	file := func(name string, lines int) string {
-		return "diff --git a/" + name + " b/" + name + "\n" + strings.Repeat("+é line\n", lines)
+		return "diff --git a/" + name + " b/" + name + "\n@@ -1 +1 @@ " + name + "\n" + strings.Repeat("+é line\n", lines)
 	}
-	long := strings.Repeat("x", 50)
-	diff := file("a", 2) + file("b", 2) + file("c", 9) + "diff --git a/d b/d\n+" + long + "\n"
-	const limit = 40
+	long := strings.Repeat("x", 90)
+	diff := file("a", 1) + file("b", 1) + file("c", 30) + "diff --git a/d b/d\n+" + long + "\n"
+	const limit = 60
 	parts := splitDiff(diff, limit)
-	if got := strings.Join(parts, ""); got != diff {
-		t.Fatalf("parts lose text:\n%q\n%q", got, diff)
+	joined := strings.Join(parts, "")
+	if n := strings.Count(joined, "+é line\n"); n != 32 {
+		t.Fatalf("%d of 32 lines in the parts: %q", n, parts)
+	}
+	if n := strings.Count(joined, "x"); n != len(long) {
+		t.Fatalf("%d of %d characters of the long line", n, len(long))
 	}
 	for _, p := range parts {
-		if n := utf8.RuneCountInString(p); n > limit || n == 0 {
+		if !strings.HasPrefix(p, "diff --git ") {
+			t.Errorf("a part with no file: %q", p)
+		}
+		if n := utf8.RuneCountInString(p); n > limit+40 {
 			t.Errorf("part of %d characters: %q", n, p)
 		}
 	}
-	if !strings.HasPrefix(parts[1], "diff --git a/b") {
-		t.Errorf("a file that fits does not start a part: %q", parts[1])
+	if strings.Count(joined, "diff --git a/c") < 2 || strings.Count(joined, "@@ -1 +1 @@ c") < 2 {
+		t.Errorf("a later part of a long file has no context: %q", parts)
 	}
 	if got := splitDiff("", limit); len(got) != 0 {
 		t.Errorf("an empty diff gives parts: %q", got)
+	}
+}
+
+// A diff of many files that do not fit together still gets a review, while it
+// is within the limit of all the parts.
+func TestSplitDiffPartsOfManyFiles(t *testing.T) {
+	var b strings.Builder
+	for i := range 7 {
+		fmt.Fprintf(&b, "diff --git a/%d b/%d\n%s\n", i, i, strings.Repeat("+", 31000))
+	}
+	if parts := splitDiff(b.String(), codeReviewDiffMax); len(parts) != 7 {
+		t.Fatalf("%d parts", len(parts))
 	}
 }
 
