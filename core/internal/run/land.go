@@ -64,6 +64,12 @@ func Land(ctx context.Context, s *store.Store, id string, o LandOptions) (*LandR
 	case err != nil:
 		return nil, err
 	}
+	if err := keepGit(ctx, s, r); err != nil {
+		if gitRefused(err) {
+			return nil, stopAfter(s, r.ID, err)
+		}
+		return nil, err
+	}
 	wo := worktree.LandOptions{Head: o.Head, KeepWorktree: o.KeepWorktree, OpenPanes: o.OpenPanes, DryRun: true}
 	plan, err := worktree.Land(ctx, s, r.PlotID, r.WorktreeID, wo)
 	if err != nil {

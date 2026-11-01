@@ -556,8 +556,15 @@ func checksLine(checks bool, line string) string {
 	return line + "\n"
 }
 
+// sharedGit is the line of the first prompt about the git folder of the
+// repo, which the worktree of the run shares with the other worktrees (see
+// [keepGit]).
+const sharedGit = "Do not run git worktree add, remove, or prune, or git gc, and do not change a ref other than the branch of this worktree. " +
+	"To compare with a base, use git show <rev>:<path>, or git archive <rev> | tar -x -C <temp folder>.\n"
+
 // Prompt is the first prompt of a run's session: the title, the goal, the
-// Done when checks, the rules of the plot, and how the gate works.
+// Done when checks, the rules of the plot, how the gate works, and the git
+// commands that the session must not run.
 func Prompt(r store.Run, rules []store.Rule) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Loam run %s: %s\n", r.ID, r.Title)
@@ -601,6 +608,7 @@ func Prompt(r store.Run, rules []store.Rule) string {
 	}
 	b.WriteString("\nNobody watches this session, so do not ask questions: make a sensible choice and say what you chose in your last message. " +
 		"Work only in this worktree. When the work is done, commit it on this branch with a clear message. Do not push and do not open a PR: Loam does that.\n")
+	b.WriteString(sharedGit)
 	return b.String()
 }
 
