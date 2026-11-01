@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -213,6 +214,27 @@ func TestRunTickStartsTheConflictCountAgainForANewPR(t *testing.T) {
 	note := "#2 conflicts with main. Loam sends the run back to merge main (conflict send-back 1 of 2)"
 	if len(got.Runs) != 1 || got.Runs[0].State != store.RunRunning || got.Runs[0].Note != note {
 		t.Fatalf("%+v", got)
+	}
+}
+
+// A run folder whose HEAD is on another branch stops the run, because the
+// merge of the session would not reach the PR.
+func TestRunTickStopsAConflictWhenTheFolderIsOnAnotherBranch(t *testing.T) {
+	_, r, w := shipRun(t, "3")
+	tick(t)
+	landOnMain(t, w)
+	head := testutil.Git(t, r.Folder, "rev-parse", "HEAD")
+	testutil.Git(t, r.Folder, "checkout", "-q", "-b", "elsewhere")
+	setGitHub(t, conflicting(w.Branch, head))
+	got := tick(t)
+	note := "#1 conflicts with main, and the run folder is not on " + w.Branch + ". Check out " + w.Branch + ", then merge main into it yourself"
+	if len(got.Runs) != 1 || got.Runs[0].State != store.RunStopped || got.Runs[0].Note != note {
+		t.Fatalf("%+v", got)
+	}
+	for _, c := range testutil.FakeClaudeCalls(t) {
+		if slices.Contains(c, "--resume") {
+			t.Fatalf("the session got a prompt: %q", c)
+		}
 	}
 }
 

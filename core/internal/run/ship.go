@@ -55,11 +55,10 @@ type TickResult struct {
 // run goes back to its session with the failed logs, and the failure counts a
 // try (see [shipper.failCI]). Tick also watches the PR of each run that is
 // Ready: a merge on GitHub lands the run, and a close stops it. It stops a
-// Running run whose session
-// ended a turn that Loam has no record of (see [stopIdle]). Then it starts
-// the Queued runs, oldest first, while a slot is free and the week's usage
-// is under the hold. loam is the loam binary, for the hooks of a new
-// session. A tick that waits on GitHub or for a slot changes nothing, so the
+// Running run whose session ended a turn that Loam has no record of (see
+// [stopIdle]). Then it starts the Queued runs, oldest first, while a slot is
+// free and the week's usage is under the hold. loam is the loam binary, for
+// the hooks of a new session. A tick that waits on GitHub or for a slot changes nothing, so the
 // app and a timer can run one as often as they like. Only one tick runs at a
 // time: a second one returns at once with nothing.
 func Tick(ctx context.Context, s *store.Store, loam string) (TickResult, error) {
@@ -215,8 +214,9 @@ func (sh *shipper) ship(ctx context.Context) (bool, error) {
 // [shipper.conflicts]). A PR head that the branch does not have, such as a
 // push from another machine, keeps the run Ready, because Loam cannot push
 // it. A land that waits for GitHub, with an auto merge or a merge queue,
-// merges the PR as it is, so watch changes nothing while one waits. A run that cannot reach GitHub waits with no warning, because it
-// needs nothing from a tick. A store that cannot read the worktree is an
+// merges the PR as it is, so watch changes nothing while one waits. A run
+// that cannot reach GitHub waits with no warning, because it needs nothing
+// from a tick. A store that cannot read the worktree is an
 // error, not a worktree that is gone.
 func (sh *shipper) watch(ctx context.Context) (bool, error) {
 	w, err := sh.s.GetWorktree(sh.r.WorktreeID)

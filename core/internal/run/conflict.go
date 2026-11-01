@@ -56,12 +56,22 @@ func (sh *shipper) conflicts(ctx context.Context, w store.Worktree, pr *github.P
 // the gate and the push follow as for a CI fix. Loam sends one send-back for
 // each head, and at most [maxConflictSends] in a row: a PR that still
 // conflicts after them, or on a head that already went back, stops the run,
-// and the note names the files that conflict, for you to merge. A fetch that
-// fails is an error, and the next tick tries again.
+// and the note names the files that conflict, for you to merge. A run folder
+// whose HEAD is not on the branch of the run stops the run too, because the
+// merge of the session would not reach the PR. A fetch that fails is an
+// error, and the next tick tries again.
 func (sh *shipper) sendConflict(ctx context.Context, w store.Worktree, pr *github.PR) (bool, error) {
 	base := cmp.Or(pr.Base, worktree.CompareBase(w))
 	if base == "" {
 		return sh.move(store.RunStopped, fmt.Sprintf("#%d conflicts with its base branch, and Loam cannot tell which branch that is. Merge the base into the branch yourself", pr.Number))
+	}
+	if on, err := gitOut(ctx, sh.r.Folder, "symbolic-ref", "--quiet", "--short", "HEAD"); err != nil || on != w.Branch {
+		// A merge there would not reach the branch of the PR.
+		note := fmt.Sprintf("#%d conflicts with %s, and the run folder is not on %s. Check out %s, then merge %s into it yourself", pr.Number, base, w.Branch, w.Branch, base)
+		if err := sh.s.AddRunEvent(sh.r.ID, conflictEvent, note); err != nil {
+			return false, err
+		}
+		return sh.move(store.RunStopped, note)
 	}
 	if out, err := sh.fetchBase(ctx, base); err != nil {
 		return false, errors.New(failureNote("git fetch of "+base+" failed", err, out))
