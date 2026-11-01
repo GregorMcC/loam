@@ -168,13 +168,57 @@ func TestCommandWorksInAWorktree(t *testing.T) {
 
 // With GIT_DIR set, git does not look in dir, so the setting would name the
 // wrong repo.
-func TestEnvSetsNoCommonDirWithGitDir(t *testing.T) {
+// Loam can inherit these variables from a git hook that starts it. Each command
+// here names its folder, so git acts on that folder, with the setting that keeps
+// out a commondir file. With GIT_DIR, -C does not choose the repo.
+func TestEnvDropsTheRepoOfTheEnvironment(t *testing.T) {
 	testutil.GitEnv(t)
 	repo, _ := testutil.GitRepo(t)
-	t.Setenv("GIT_DIR", filepath.Join(repo, ".git"))
-	if slices.ContainsFunc(gitcmd.Env(repo), func(kv string) bool { return strings.HasPrefix(kv, "GIT_COMMON_DIR=") }) {
-		t.Error("Env sets GIT_COMMON_DIR with GIT_DIR set")
+	other, _ := testutil.GitRepo(t)
+	git := real(t, filepath.Join(repo, ".git"))
+	for _, k := range repoVars {
+		t.Setenv(k, filepath.Join(other, ".git"))
 	}
+	env := gitcmd.Env(repo)
+	for _, k := range repoVars {
+		if k != "GIT_COMMON_DIR" && slices.ContainsFunc(env, func(kv string) bool { return strings.HasPrefix(kv, k+"=") }) {
+			t.Errorf("Env keeps %s", k)
+		}
+	}
+	if !slices.Contains(env, "GIT_COMMON_DIR="+git) || slices.Contains(env, "GIT_COMMON_DIR="+filepath.Join(other, ".git")) {
+		t.Errorf("Env does not set GIT_COMMON_DIR to %s", git)
+	}
+	if env := gitcmd.Env(t.TempDir()); slices.ContainsFunc(env, func(kv string) bool { return strings.HasPrefix(kv, "GIT_COMMON_DIR=") }) {
+		t.Error("Env keeps GIT_COMMON_DIR for a folder in no repo")
+	}
+	out, err := gitcmd.Command(context.Background(), repo, "rev-parse", "--absolute-git-dir").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(out)); real(t, got) != git {
+		t.Errorf("git acts on %s, want %s", got, git)
+	}
+}
+
+func TestNoRepoEnvDropsTheRepoOfTheEnvironment(t *testing.T) {
+	for _, k := range repoVars {
+		t.Setenv(k, "/inherited")
+	}
+	env := gitcmd.NoRepoEnv()
+	for _, k := range repoVars {
+		if slices.Contains(env, k+"=/inherited") {
+			t.Errorf("NoRepoEnv keeps %s", k)
+		}
+	}
+	if !slices.Contains(env, "GIT_DIR="+gitcmd.NoRepoDir) {
+		t.Errorf("no GIT_DIR=%s", gitcmd.NoRepoDir)
+	}
+}
+
+// repoVars are the variables that choose a repo or a part of it.
+var repoVars = []string{
+	"GIT_DIR", "GIT_WORK_TREE", "GIT_IMPLICIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE",
+	"GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_GRAFT_FILE", "GIT_SHALLOW_FILE", "GIT_PREFIX",
 }
 
 // Each git of Loam goes through this package. session/run.go runs git config

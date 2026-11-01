@@ -311,7 +311,7 @@ func runRules(s *store.Store, plot store.Plot, folder, runID string) (sandbox.Ru
 	r.Notes = append(r.Notes, unchecked...)
 	// A failed list can come from one of these, and this error says more.
 	if err := checkGitFolder(admin, git); err != nil {
-		return sandbox.Rules{}, err
+		return sandbox.Rules{}, fmt.Errorf("the run does not start: %w", err)
 	}
 	if listErr != nil {
 		return sandbox.Rules{}, fmt.Errorf("the run does not start: Loam cannot list the git config files that the run reads: %w", listErr)
@@ -415,10 +415,10 @@ func checkGitFolder(admin, git string) error {
 	local := filepath.Join(git, "config")
 	on, err := worktreeConfigOn(local)
 	if err != nil {
-		return fmt.Errorf("the run does not start: Loam cannot read extensions.worktreeConfig in %s: %w", local, err)
+		return fmt.Errorf("Loam cannot read extensions.worktreeConfig in %s: %w", local, err)
 	}
 	if on {
-		return fmt.Errorf("the run does not start: extensions.worktreeConfig is on in %s. With it, git reads config.worktree in the git folder, which the run can write, also outside the sandbox. Turn it off with: git config --file %s --unset-all extensions.worktreeConfig", local, shellQuote(local))
+		return fmt.Errorf("extensions.worktreeConfig is on in %s. With it, git reads config.worktree in the git folder, which the run can write, also outside the sandbox. Turn it off with: git config --file %s --unset-all extensions.worktreeConfig", local, shellQuote(local))
 	}
 	if err := checkCommonDir(admin, git); err != nil {
 		return err
@@ -507,9 +507,9 @@ func checkCommonDir(dir, git string) error {
 	case errors.Is(err, fs.ErrNotExist) && own:
 		return nil
 	case errors.Is(err, fs.ErrNotExist):
-		return fmt.Errorf("the run does not start: the git metadata of the worktree has no %s, so git outside the sandbox would read the config in %s. %s", file, dir, fix)
+		return fmt.Errorf("the git metadata of the worktree has no %s, so git outside the sandbox would read the config in %s. %s", file, dir, fix)
 	case err != nil:
-		return fmt.Errorf("the run does not start: Loam cannot read %s: %w", file, err)
+		return fmt.Errorf("Loam cannot read %s: %w", file, err)
 	}
 	named := strings.TrimRight(string(b), "\r\n")
 	raw := named
@@ -518,10 +518,10 @@ func checkCommonDir(dir, git string) error {
 	}
 	target, err := sandbox.Resolve(raw)
 	if err != nil {
-		return fmt.Errorf("the run does not start: Loam cannot tell where %s goes: %w. %s", file, err, fix)
+		return fmt.Errorf("Loam cannot tell where %s goes: %w. %s", file, err, fix)
 	}
 	if target != git {
-		return fmt.Errorf("the run does not start: %s names %s, not the git folder %s. Git outside the sandbox would read the config in that folder. %s", file, named, git, fix)
+		return fmt.Errorf("%s names %s, not the git folder %s. Git outside the sandbox would read the config in that folder. %s", file, named, git, fix)
 	}
 	return nil
 }

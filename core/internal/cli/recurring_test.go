@@ -257,6 +257,9 @@ func TestTickDoesNotRunThePrecheckWhenACommondirFileNamesAnotherFolder(t *testin
 		!strings.Contains(got.Recurring[0].Note, "commondir") {
 		t.Fatalf("%+v", got.Recurring)
 	}
+	if strings.Contains(got.Recurring[0].Note, "the run does not start") {
+		t.Errorf("a precheck that did not run gives the note of a run: %q", got.Recurring[0].Note)
+	}
 	if runs := recurringRuns(t, s, r.ID); len(runs) != 1 || runs[0].State != store.RunSkipped {
 		t.Fatalf("%+v", runs)
 	}

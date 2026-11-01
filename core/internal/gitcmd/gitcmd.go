@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -46,27 +47,42 @@ const NoRepoDir = "/dev/null/loam-no-repo"
 // a flag on the git command stops that start: config in .gitmodules, which the
 // run can write, undoes -c diff.ignoreSubmodules=all.
 func NoRepoEnv() []string {
-	return append(os.Environ(), "GIT_DIR="+NoRepoDir)
+	return append(ownEnv(), "GIT_DIR="+NoRepoDir)
 }
 
 // Env returns the environment of this process with GIT_COMMON_DIR set to the
-// git folder of the repo that holds dir. It sets no value when dir is in no
-// repo, when the .git file of dir does not name a worktree, or when GIT_DIR
-// already names the repo, because git then does not look in dir.
+// git folder of the repo that holds dir, and with no other variable that chooses
+// a repo (see [ownEnv]). It sets no value when dir is in no repo, or when the
+// .git file of dir does not name a worktree.
 //
 // Git clears this setting for the git that it starts in a nested repo, which a
 // run can make. So a git command that can start one, such as status, diff with
 // the work tree, a switch that prints local changes, or fetch, must also say not
 // to: see [NoRepoEnv].
 func Env(dir string) []string {
-	env := os.Environ()
-	if os.Getenv("GIT_DIR") != "" {
-		return env
-	}
+	env := ownEnv()
 	if common := CommonDir(dir); common != "" {
 		env = append(env, "GIT_COMMON_DIR="+common)
 	}
 	return env
+}
+
+// ownEnv returns the environment of this process with no variable that chooses
+// a repo or a part of it. Loam inherits these from a git hook that starts it.
+// Each command here names its folder, and -C does not override GIT_DIR. An
+// inherited GIT_DIR can also name the metadata folder of a worktree of a run, and
+// git then follows the commondir file in it. The config variables stay: they do
+// not come from a file that a run can write.
+func ownEnv() []string {
+	return slices.DeleteFunc(os.Environ(), func(kv string) bool {
+		k, _, _ := strings.Cut(kv, "=")
+		switch k {
+		case "GIT_DIR", "GIT_WORK_TREE", "GIT_IMPLICIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE",
+			"GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_GRAFT_FILE", "GIT_SHALLOW_FILE", "GIT_PREFIX":
+			return true
+		}
+		return false
+	})
 }
 
 // CommonDir returns the git folder that the worktree or the repo that holds dir
