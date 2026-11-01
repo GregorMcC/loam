@@ -148,3 +148,52 @@ func TestASendBackLeavesARunThatATickMoved(t *testing.T) {
 		t.Fatalf("the run is %s (%q), want it as the tick left it", after.State, after.Note)
 	}
 }
+
+// TAS-220: in one slow tick, you can send a run back, its session can end a
+// turn, and the gate can put it back in Shipping with a new head. The tick
+// read the old head, so its writes are stale: each Stop hook counts a turn,
+// and the tick sees the new count.
+func TestATickLeavesARunThatWentRoundDuringTheTick(t *testing.T) {
+	s, r := runWithTemp(t, store.RunShipping)
+	sh := &shipper{s: s, r: r}
+	round, err := s.UpdateRun(r.ID, func(r *store.Run) error {
+		r.Turns++ // the gate after the send-back
+		r.Note = "All 1 check passed"
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if moved, err := sh.resume(context.Background(), "CI failed", "CI failed on #1", "CI failure", func(r *store.Run) { r.Tries++ }); err != nil || moved {
+		t.Fatalf("resume: moved %v, %v", moved, err)
+	}
+	if moved, err := sh.move(store.RunReady, "CI passed"); err != nil || moved {
+		t.Fatalf("move: moved %v, %v", moved, err)
+	}
+	got, _ := s.GetRun(r.ID)
+	if got.State != store.RunShipping || got.Tries != round.Tries || got.Note != round.Note || !got.UpdatedAt.Equal(round.UpdatedAt) {
+		t.Fatalf("the run is %s (%q, %d tries), want it as the gate left it", got.State, got.Note, got.Tries)
+	}
+}
+
+// TAS-220: when you send a run back while gh opens its PR, the run keeps the
+// saved PR text. The PR that a later tick finds keeps the notes of that text.
+func TestAdoptKeepsTheNotesOfTheSavedPRText(t *testing.T) {
+	s, r := runWithTemp(t, store.RunShipping)
+	notes := &store.RunNotes{Walkthrough: "The form checks the email."}
+	r, err := s.UpdateRun(r.ID, func(r *store.Run) error {
+		r.PRDraft = &store.RunPRDraft{Head: "abc", Title: "Fix the form", Body: "Body", Notes: notes}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sh := &shipper{s: s, r: r}
+	if moved, err := sh.adopt(context.Background(), &github.PR{Number: 7, URL: "https://github.com/acme/web/pull/7"}); err != nil || !moved {
+		t.Fatalf("adopt: moved %v, %v", moved, err)
+	}
+	got, _ := s.GetRun(r.ID)
+	if got.PR == nil || got.PR.Number != 7 || got.PRDraft != nil || got.Notes == nil || got.Notes.Walkthrough != notes.Walkthrough {
+		t.Fatalf("run PR %+v, draft %+v, notes %+v", got.PR, got.PRDraft, got.Notes)
+	}
+}
