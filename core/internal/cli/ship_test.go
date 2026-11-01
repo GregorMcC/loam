@@ -305,6 +305,37 @@ func TestRunTickRerunsTheFailedJobsOnceForEachHead(t *testing.T) {
 	}
 }
 
+// A session whose CI failure is outside its change says so and makes no
+// commit. CI fails again on the same head, and the run stops with no more
+// tries, so the same failure does not go back again and again.
+func TestRunTickStopsARunWhoseSessionMadeNoCommitForTheCIFailure(t *testing.T) {
+	s, r, w := shipRun(t, "3")
+	tick(t)
+	failCI(t, r, w)
+	resumes := len(testutil.FakeClaudeCalls(t))
+	if code, _ := stopHook(t, r, "Stop"); code != 0 {
+		t.Fatal("the gate did not pass the session that changed nothing")
+	}
+	if got, _ := s.GetRun(r.ID); got.State != store.RunShipping {
+		t.Fatalf("after the gate: %+v", got)
+	}
+	note := "CI failed again on #1: ci / test. The session made no commit for the failure. " +
+		"Read its last message, then send the run back or cancel it"
+	got := tick(t)
+	if len(got.Runs) != 1 || got.Runs[0].State != store.RunStopped || got.Runs[0].Tries != 1 || got.Runs[0].Note != note {
+		t.Fatalf("%+v", got)
+	}
+	if n := len(testutil.FakeClaudeCalls(t)); n != resumes {
+		t.Fatalf("the session got the failure again: %q", testutil.FakeClaudeCalls(t)[resumes:])
+	}
+	if e := events(t, s, r.ID, "ci"); len(e) == 0 || e[len(e)-1] != note {
+		t.Fatalf("ci events %q", e)
+	}
+	if len(ghReruns(t)) != 1 {
+		t.Fatalf("reruns %q", ghReruns(t))
+	}
+}
+
 // GitHub can show the failed jobs of the first attempt for a moment after
 // the rerun, so a failure soon after it waits.
 func TestRunTickWaitsForTheRerunBeforeTheSecondFailure(t *testing.T) {

@@ -508,9 +508,20 @@ func (sh *shipper) passCI(ctx context.Context, pr *github.PR, note string) (bool
 // or a failure that Loam cannot run again, counts a try, and sends the failed
 // logs back to the session. On the last try, the run stops. When no slot is
 // free, the run waits in Queued with the failed logs, and a later tick sends
-// them.
+// them. A failure on a head whose failure went back to the session already
+// means that the session made no commit for it, such as when the failure is
+// outside its change (see [ciOutside]): the run stops, with no try, so you
+// read the last message of the session and decide.
 func (sh *shipper) failCI(ctx context.Context, repo github.Repo, pr *github.PR) (bool, error) {
 	r := sh.r
+	if r.CISent == pr.HeadOID {
+		note := fmt.Sprintf("CI failed again on #%d: %s. The session made no commit for the failure. "+
+			"Read its last message, then send the run back or cancel it", pr.Number, strings.Join(checkNames(pr.FailedChecks), ", "))
+		if err := sh.s.AddRunEvent(r.ID, "ci", note); err != nil {
+			return false, err
+		}
+		return sh.move(store.RunStopped, note)
+	}
 	twice := r.CIRerun == pr.HeadOID
 	if twice && sh.sinceCI() < CIRerunWait {
 		return false, nil // GitHub may not show the rerun yet
@@ -532,7 +543,7 @@ func (sh *shipper) failCI(ctx context.Context, repo github.Repo, pr *github.PR) 
 		return sh.moveTry(store.RunStopped, fmt.Sprintf("%s after %s: %s", failed, count(r.Tries+1, "try"), names))
 	}
 	prompt := ciPrompt(ctx, sh.gh, repo, r, pr, twice, hasChecks(sh.s, r))
-	return sh.resume(ctx, prompt, failed+": "+names, "CI failure", func(r *store.Run) { r.Tries++ })
+	return sh.resume(ctx, prompt, failed+": "+names, "CI failure", func(r *store.Run) { r.Tries, r.CISent = r.Tries+1, pr.HeadOID })
 }
 
 // rerunCI runs the failed jobs of pr again, with one gh run rerun --failed
@@ -645,8 +656,9 @@ const ciTests = "To find the cause, read the logs above, and run only the tests 
 
 // ciOutside is in each prompt of a CI failure. A flaky test that the run did
 // not touch can fail CI, and a change to it to make CI pass is outside the
-// goal of the run. The session says so instead, and Loam shows its last
-// message.
+// goal of the run. The session says so instead, and makes no commit. Then CI
+// fails again on the same head, and Loam stops the run (see
+// [shipper.failCI]), so you read the last message of the session.
 const ciOutside = "Do not change a test outside the goal of the run to make CI pass. When the failure is outside your change, say so in your last message, change nothing, and end your turn."
 
 // ciPrompt is the prompt that sends a CI failure back: each failed check,
