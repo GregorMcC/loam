@@ -24,7 +24,7 @@ extension AppModel {
     }
 
     /// True when the last run did not start because the setup command of the repo is new or changed. The page then
-    /// offers to approve it, since the core names the command in `runStartError`.
+    /// offers to approve it, and shows the command as `runStartSetup`.
     public var runStartNeedsSetupApproval: Bool {
         runStartError?.contains("--approve-setup") == true
     }
@@ -56,10 +56,11 @@ extension AppModel {
 
     /// The bar of the Intake page: `loam run shape` or `loam run start` for each draft, one after another. The page
     /// stays, and each row shows its run. It stops at the first failure, and `runStartError` says why. It returns
-    /// how many runs it made. A chore that waits for its setup approval gets it when `runStartNeedsSetupApproval`.
+    /// how many runs it made. A chore of the repo of `runStartSetup` approves that command, by its hash. A chore of
+    /// another repo approves nothing, so it stops with its own approval error when its repo needs one.
     public func startIntakeBatch(plot: String, drafts: [RunDraft], shape: Bool) async -> Int {
         guard !isStartingRun else { return 0 }
-        let approve = runStartNeedsSetupApproval
+        let shown = runStartSetup
         isStartingRun = true
         runStartError = nil
         var made = 0
@@ -68,12 +69,12 @@ extension AppModel {
                 if shape {
                     _ = try await client.runShape(plot: plot, draft: draft)
                 } else {
-                    draft.approveSetup = approve
+                    draft.approveSetup = shown?.hash(forRepo: draft.repo)
                     _ = try await client.runStart(plot: plot, draft: draft)
                 }
                 made += 1
             } catch {
-                runStartError = Self.message(for: error)
+                await noteRunStartFailure(error, plot: plot, draft: draft)
                 break
             }
         }
@@ -186,9 +187,12 @@ extension AppModel {
     }
 
     /// `loam run start` from the Intake page. On success the run page shows the new run, and it returns true. On a
-    /// failure, `runStartError` says why, and the page stays.
+    /// failure, `runStartError` says why, and the page stays. A draft of the repo of `runStartSetup` approves that
+    /// command, by its hash.
     public func startRun(plot: String, draft: RunDraft) async -> Bool {
         guard !isStartingRun else { return false }
+        var draft = draft
+        draft.approveSetup = runStartSetup?.hash(forRepo: draft.repo)
         isStartingRun = true
         runStartError = nil
         defer { isStartingRun = false }
@@ -198,8 +202,20 @@ extension AppModel {
             await openRun(result.run.id)
             return true
         } catch {
-            runStartError = Self.message(for: error)
+            await noteRunStartFailure(error, plot: plot, draft: draft)
             return false
+        }
+    }
+
+    /// Records why the draft did not start. When the setup command of its repo needs an approval, it reads that
+    /// command for the page to show, so the next start approves the text that you saw. A failed read shows none, and
+    /// the next start approves nothing.
+    private func noteRunStartFailure(_ error: Error, plot: String, draft: RunDraft) async {
+        runStartError = Self.message(for: error)
+        guard runStartNeedsSetupApproval, let read = try? await client.show(plot: plot) else { return }
+        let repo = draft.repo.map { id in read.repos.first { $0.id == id } } ?? read.repos.first(where: \.main)
+        if let repo, let command = repo.setup, !command.isEmpty {
+            runStartSetup = ShownSetup(repo: repo.id, isMain: repo.main, command: command)
         }
     }
 }

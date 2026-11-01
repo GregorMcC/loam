@@ -111,6 +111,12 @@ Details of an `error` that refuses `loam worktree rm` (ticket 113). Other errors
 - `open_panes` has the number of panes that are open in the worktree.
 - The message names flags of the CLI, such as `--force`. The app words the refusal from the details.
 
+Details of an `invalid` error that refuses a setup command. Other errors of kind `invalid` have no details. See [Setup approval](#setup-approval).
+
+```json
+{ "command": "npm ci", "hash": "<the lowercase hex SHA-256 of the command>" }
+```
+
 ## Commands
 
 ### `loam version --json`
@@ -601,7 +607,7 @@ A full check can take minutes, and the gate runs it anyway. So the first prompt 
 
 | Command | Output |
 | :- | :- |
-| `loam run start <plot> --title <text> [--goal <text>] [--check <name>=<command>]... [--worktree <name>] [--repo <repo>] [--base <branch>] [--link <link-id or URL> \| --ticket <file>] [--max-tries <n>] [--model <model>] [--effort <level>] [--approve-setup] [--fixes <run>]` | `{ "run": {...}, "worktree": {...} }` |
+| `loam run start <plot> --title <text> [--goal <text>] [--check <name>=<command>]... [--worktree <name>] [--repo <repo>] [--base <branch>] [--link <link-id or URL> \| --ticket <file>] [--max-tries <n>] [--model <model>] [--effort <level>] [--approve-setup <sha256>] [--fixes <run>]` | `{ "run": {...}, "worktree": {...} }` |
 | `loam run list [<plot>]` | An array of runs, newest first. It is `[]` when none exists. |
 | `loam run events [--since <time>] [--plot <plot>]` | `{ "events": [{ "run_id": "...", "plot_id": "...", "run_title": "...", "at": "...", "kind": "state", "detail": "running" }] }` |
 | `loam run status <run>` | `{ "run": {...}, "events": [{ "id": 1, "run_id": "...", "at": "...", "kind": "state", "detail": "running" }], "failed_checks": [{ "name": "Go tests", "command": "go test ./...", "passed": false, "exit": 1, "output": "...", "output_cut": false }], "code_review": { "findings": [{ "severity": "major", "file": "core/app.go", "line": 42, "text": "..." }], "more": 0 } }`. `kind` is `state`, `try`, `check`, `gate`, `linear`, `ship`, `ci`, `conflict`, `code_review`, `review`, `note`, `land`, `shape`, `draft`, `followup`, or `git`. See "Run status" below. |
@@ -620,11 +626,26 @@ The text of `run status` shows the run, then the code review rounds that the run
 
 `run events` lists the events of every run of every plot, or of the runs of one plot with `--plot`, newest first, at most 200. `--since` takes an RFC 3339 time and lists only the events after it. A time that does not parse gives exit code 2. `run_title` and `plot_id` are those of the run. `kind` is as in `run status`. The Today screen shows the list as "While you were away".
 
-`run start` uses the worktree that `--worktree` names, or makes it. With no `--worktree`, it makes a worktree with a name from the key of the link or the ticket, and the title. With no `--repo`, a new worktree is in the repo of the plot whose origin the `--link` is a GitHub issue of, else in the main repo. `--repo` always wins. `run shape` picks its repo in the same way. A run has `--link` or `--ticket`, not both (exit code 2). It refuses, with exit code 1, a folder that Claude Code does not trust: a background session cannot show the trust prompt. In git, Claude Code trusts a worktree when it trusts the main checkout of the repo. A setup command that you have not approved gives exit code 2 (`invalid`); `--approve-setup` approves it. When `claude --bg` fails, the run is `stopped` with the output in `note`, and the command exits 0. When no slot is free, the run is `queued` with the reason in `note`, and the command exits 0 (see [Limits, the queue, and usage](#limits-the-queue-and-usage)).
+`run start` uses the worktree that `--worktree` names, or makes it. With no `--worktree`, it makes a worktree with a name from the key of the link or the ticket, and the title. With no `--repo`, a new worktree is in the repo of the plot whose origin the `--link` is a GitHub issue of, else in the main repo. `--repo` always wins. `run shape` picks its repo in the same way. A run has `--link` or `--ticket`, not both (exit code 2). It refuses, with exit code 1, a folder that Claude Code does not trust: a background session cannot show the trust prompt. In git, Claude Code trusts a worktree when it trusts the main checkout of the repo. A setup command that you have not approved gives exit code 2 (`invalid`); `--approve-setup <sha256>` approves it (see [Setup approval](#setup-approval)). When `claude --bg` fails, the run is `stopped` with the output in `note`, and the command exits 0. When no slot is free, the run is `queued` with the reason in `note`, and the command exits 0 (see [Limits, the queue, and usage](#limits-the-queue-and-usage)).
 
 `--fixes` takes the ID of a run of the same plot that is `landed`. Another run gives exit code 2 (`invalid`), and a run that does not exist gives exit code 1. Nothing is made. With no `--repo`, a new worktree goes in the repo of the run that it fixes: the repo of its draft, else of its worktree, else its folder. When that repo is no longer in the plot, the run takes the usual repo. `run shape` takes `--fixes` too, and each run of a split fixes the same run.
 
 The settings file of a run names the Loam home of the store that holds the run. Claude Code runs each background session under one supervisor, which keeps the environment of the first `claude --bg` call. Each session and each hook gets that environment. So the command of each run hook is `LOAM_HOME=<home> <loam> run hook <run>`, with the home and the loam path in shell quotes. The `env` of the settings sets `LOAM_HOME` to the home, so the `loam` calls of the session use the same store. It also sets `LOAM_PANE_SOCKET` to an empty value, so that no run session gets the socket of the pane that started the supervisor. An empty `LOAM_PANE_SOCKET` means no pane.
+
+#### Setup approval
+
+`run start`, `run approve`, and `recurring add` read the setup command of the repo. A run has no terminal to ask on, so a person approves the command with `--approve-setup <sha256>`. The value is the lowercase hex SHA-256 of the exact text of the command that the person read. The flag has no bare form: a missing or malformed hash gives exit code 2 (`invalid`).
+
+- With a hash that is the hash of the command that the repo holds now, Loam approves the command and runs it.
+- With a hash of another text, Loam refuses with exit code 2 (`invalid`) and runs nothing, also when the command that the repo holds now is approved, or when the worktree has finished its setup. A session can change the command with `update_repo` after a person reads it, so this refusal stops a command that nobody read.
+- With no hash, a command that you have approved runs. A new or changed command gives exit code 2 (`invalid`) and runs nothing.
+- A refused command makes no worktree when `run start` or `run approve` makes a new one.
+
+Each refusal names the command and its hash in `message` and in `details` (see [The JSON error](#the-json-error)). A person reads the command, then passes the hash. When the repo has no setup command now, the error has no details: start the run again with no hash.
+
+Loam runs the text that it checked. A change after the check does not run.
+
+The app computes the hash of the text that it shows. The desk uses the setup command that it shows under If you approve, and reads the command again after a refused approval. The Intake page reads the command of the repo of the draft that the core refused, and shows it with the error. The next press passes the hash for the drafts of that repo, and no hash for a draft of another repo, so that draft stops with its own refusal.
 
 #### Sandbox
 
@@ -807,7 +828,7 @@ A tick also stops a run that is `running` when its session ended a turn that Loa
 | :- | :- |
 | `loam run shape <plot> --title <text> [--repo <repo> \| --split] [--base <branch>] [--link <link> \| --ticket <file>] [--max-tries <n>] [--model <model>] [--effort <level>] [--fixes <run>]` | `{ "run": { ..., "state": "shaping", "shape": { "assumptions": [{ "text": "...", "answer": "" }], "follow_ups": [{ "title": "...", "body": "...", "target": { "kind": "github", "label": "owner/name", "url": "https://github.com/owner/name" }, "kept": true }], "plan": ["..."], "size": "...", "drafted_at": "...", "repo": "repoaaaaag", "base": "", "link": "", "model": "", "effort": "" } }, "runs": [{ ... }] }` |
 | `loam run redraft <run> [--change <text>]` | `{ "run": { ... }, "runs": [{ ... }] }` |
-| `loam run approve <run> [--goal <text>] [--check <name>=<command>]... [--no-checks] [--answer <n>=<text>]... [--drop-follow-up <n>]... [--approve-setup]` | `{ "run": { ... }, "worktree": { ... } }`, as for `run start` |
+| `loam run approve <run> [--goal <text>] [--check <name>=<command>]... [--no-checks] [--answer <n>=<text>]... [--drop-follow-up <n>]... [--approve-setup <sha256>]` | `{ "run": { ... }, "worktree": { ... } }`, as for `run start` |
 
 - `run shape` records a run that is `shaping`, with the repo as its `folder` and no worktree, then has Claude draft it: `claude -p` in the repo, with the tools Read, Grep, and Glob only, `--output-format stream-json --verbose`, a `--json-schema`, and `--no-session-persistence`. The prompt holds the title and the text of the issue: the ticket file, `gh issue view`, or the Linear issue. The draft sets `goal` and `done_when`, and `shape` holds the rest (event `shape`). The command can take minutes. While Claude drafts, each step that it takes is an event `draft`, such as `Read window/frame.go`, `Searched for SaveFrame`, or the first line of its text, up to 100 steps for one draft. The app reads them to show the draft as it happens.
 - While Claude drafts, the `note` is "Claude is drafting the run". A run that Claude has not drafted yet has no `drafted_at`. A first draft that fails keeps the run `shaping` with no `drafted_at`, and the `note` says why ("Claude could not draft the run: ..."). The command exits 0.
@@ -981,7 +1002,7 @@ A recurring run starts on a timetable, such as weekdays at 06:30, when its prech
 
 | Command | Output |
 | :- | :- |
-| `loam recurring add <plot> --title <text> --prompt <text> --kind shape\|chore --days <days> --at <HH:MM> [--precheck <command>] [--if-asleep once\|skip] [--repo <repo>] [--check <name>=<command>]... [--max-tries <n>] [--model <model>] [--effort <level>] [--approve-setup]` | `{ "recurring": {...} }` |
+| `loam recurring add <plot> --title <text> --prompt <text> --kind shape\|chore --days <days> --at <HH:MM> [--precheck <command>] [--if-asleep once\|skip] [--repo <repo>] [--check <name>=<command>]... [--max-tries <n>] [--model <model>] [--effort <level>] [--approve-setup <sha256>]` | `{ "recurring": {...} }` |
 | `loam recurring list [<plot>]` | `{ "recurring": [...] }`, the next due first |
 | `loam recurring rm <recurring>` | `{ "recurring": {...} }`, the one that it removed. Its runs stay. |
 | `loam recurring run <recurring>` | `{ "recurring": {...}, "run": {...}, "note": "..." }`: it starts the run now, as a tick does. `next_at` stays. |
@@ -991,7 +1012,7 @@ A recurring run starts on a timetable, such as weekdays at 06:30, when its prech
 | `loam tick uninstall` | The same, with `installed` false |
 
 - `--days` is `daily`, `weekdays`, `weekends`, or days such as `mon,wed,fri`. `days` holds them in the order of the week. `at` is the time on the clock of the Mac.
-- `kind` `shape` has Claude draft a run in `shaping` from the prompt, as `run shape` does, for you to approve. `kind` `chore` starts a run with the prompt as its goal, as `run start` does, in a new worktree. A chore cannot ask to approve the setup command of the repo: `--approve-setup` on `recurring add` approves it then.
+- `kind` `shape` has Claude draft a run in `shaping` from the prompt, as `run shape` does, for you to approve. `kind` `chore` starts a run with the prompt as its goal, as `run start` does, in a new worktree. A chore cannot ask to approve the setup command of the repo: `--approve-setup <sha256>` on `recurring add` approves it then (see [Setup approval](#setup-approval)).
 - When a recurring run is due, `loam tick` first moves `next_at` to the next time after the tick. Two ticks at once never start it twice. Then:
   1. A plot that is archived, or a run of the recurring run that has not ended (`source` `kind` `recurring`, `key` its ID), starts nothing: runs never stack. `note` says why, and no run is made.
   2. A time more than 15 minutes late counts as one time that the Mac slept through, however many it missed. With `if_asleep` `skip`, the run is skipped.

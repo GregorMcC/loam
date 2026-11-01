@@ -1,0 +1,11 @@
+{
+  "error": {
+    "details": {
+      "command": "true",
+      "hash": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b"
+    },
+    "exit_code": 2,
+    "kind": "invalid",
+    "message": "the setup command of web is not the command that you approved. The command now: true. Read it, add --approve-setup b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b to approve it, then start the run again: invalid input"
+  }
+}

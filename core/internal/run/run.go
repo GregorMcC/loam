@@ -15,6 +15,8 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -73,9 +75,10 @@ type StartOptions struct {
 	// of the plot, then the Claude Code setting.
 	Model  string
 	Effort string
-	// ApproveSetup approves the setup command of the repo when it is new or
-	// changed. A run has no terminal to ask on.
-	ApproveSetup bool
+	// ApproveSetup is the [SetupHash] of the setup command that you read, and
+	// it approves that command when it is new or changed. A run has no terminal
+	// to ask on. Empty approves nothing.
+	ApproveSetup string
 	// Loam is the absolute path of the loam binary, for the hook command.
 	Loam string
 	// Fixes is the ID of the landed run of the plot that this run fixes, or
@@ -397,7 +400,7 @@ func findOrMakeWorktree(s *store.Store, plot store.Plot, o StartOptions, title s
 	}
 	// A refused setup command makes no worktree, so a second start with
 	// --approve-setup gets the same name.
-	if err := approveSetup(s, repo.Path, o.ApproveSetup); err != nil {
+	if _, err := approveSetup(s, repo.Path, o.ApproveSetup); err != nil {
 		return store.Worktree{}, nil, err
 	}
 	res, err := worktree.Create(s, worktree.CreateOptions{PlotID: plot.ID, Repo: repo.ID, Name: name, Base: o.Base, Goal: title, Link: o.Link})
@@ -466,35 +469,73 @@ func slug(text string) string {
 	return out
 }
 
-// approveSetup checks that the setup command of the repo is approved. With
-// approve, it approves a new or changed command. A repo with no setup command
-// needs nothing.
-func approveSetup(s *store.Store, repoPath string, approve bool) error {
+// SetupHash is the name of a setup command in an approval: the lowercase hex
+// SHA-256 of its exact text. An approval that holds the hash approves only the
+// command that a person read.
+func SetupHash(command string) string {
+	sum := sha256.Sum256([]byte(command))
+	return hex.EncodeToString(sum[:])
+}
+
+// setupRefusal is a refused setup command. The error holds the command and its
+// hash, so a person can read the command and approve it.
+type setupRefusal struct {
+	err     error
+	command string
+}
+
+func (e *setupRefusal) Error() string { return e.err.Error() }
+func (e *setupRefusal) Unwrap() error { return e.err }
+
+// ErrorDetails gives the details of the JSON error.
+func (e *setupRefusal) ErrorDetails() any {
+	return struct {
+		Command string `json:"command"`
+		Hash    string `json:"hash"`
+	}{e.command, SetupHash(e.command)}
+}
+
+// approveSetup returns the setup command of the repo that can run, or "" when
+// the repo has none. A hash must name the command that the repo holds now, or
+// nothing runs, and a command that hash names is approved. With no hash, only
+// a command that is already approved can run.
+func approveSetup(s *store.Store, repoPath, hash string) (string, error) {
 	set, err := s.RepoSettings(repoPath)
-	if err != nil || set.Setup == "" || set.Setup == set.SetupApproved {
-		return err
+	if err != nil {
+		return "", err
 	}
-	if !approve {
-		return fmt.Errorf("the setup command of %s is new or changed: %s. A run cannot ask, so add --approve-setup to approve it, then start the run again: %w",
-			filepath.Base(repoPath), set.Setup, store.ErrInvalid)
+	name := filepath.Base(repoPath)
+	switch {
+	case hash != "" && set.Setup == "":
+		return "", fmt.Errorf("the setup approval names a command, but %s has no setup command now. Start the run again with no setup approval: %w",
+			name, store.ErrInvalid)
+	case hash != "" && hash != SetupHash(set.Setup):
+		return "", &setupRefusal{command: set.Setup, err: fmt.Errorf(
+			"the setup command of %s is not the command that you approved. The command now: %s. Read it, add --approve-setup %s to approve it, then start the run again: %w",
+			name, set.Setup, SetupHash(set.Setup), store.ErrInvalid)}
+	case set.Setup == "" || set.Setup == set.SetupApproved:
+		return set.Setup, nil
+	case hash == "":
+		return "", &setupRefusal{command: set.Setup, err: fmt.Errorf(
+			"the setup command of %s is new or changed: %s. A run cannot ask, so read it, add --approve-setup %s to approve it, then start the run again: %w",
+			name, set.Setup, SetupHash(set.Setup), store.ErrInvalid)}
 	}
-	return s.ApproveSetup(repoPath, set.Setup)
+	return set.Setup, s.ApproveSetup(repoPath, set.Setup)
 }
 
 // setUp runs the setup command of the worktree's repo while setup has not
-// succeeded. A command that you have not approved runs only with approve.
-func setUp(s *store.Store, w store.Worktree, approve bool) error {
-	if w.SetupDone {
+// succeeded. It runs the text that it checked, so a change after the check
+// does not run. A command that you have not approved runs only with its hash.
+// A hash that names another command refuses, also when setup has succeeded.
+func setUp(s *store.Store, w store.Worktree, hash string) error {
+	if w.SetupDone && hash == "" {
 		return nil
 	}
-	if err := approveSetup(s, w.Repo, approve); err != nil {
+	command, err := approveSetup(s, w.Repo, hash)
+	if err != nil || w.SetupDone || command == "" {
 		return err
 	}
-	set, err := s.RepoSettings(w.Repo)
-	if err != nil || set.Setup == "" {
-		return err
-	}
-	cmd := exec.Command("sh", "-c", set.Setup)
+	cmd := exec.Command("sh", "-c", command)
 	cmd.Dir = w.Path
 	out, err := cmd.CombinedOutput()
 	if err != nil {

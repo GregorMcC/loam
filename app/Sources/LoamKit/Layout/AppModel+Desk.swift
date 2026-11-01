@@ -210,11 +210,12 @@ extension AppModel {
     }
 
     /// Starts the run with its draft and your edits (`loam run approve`), and shows the next run. The desk shows
-    /// the setup command of the repo, so this approval approves it, as it does after the core refused a new one.
+    /// the setup command of the repo, so this approval approves that text, by its hash. The core refuses when the
+    /// repo holds another command by then, and the desk then reads the command again and shows it.
     public func approveDeskRun() async {
         guard let id = desk.runID, !desk.busy, !desk.drafting.contains(id) else { return }
         let edit = desk.currentEdit
-        let approveSetup = desk.needsSetupApproval || desk.setup != nil
+        let approveSetup = desk.setup.map(setupHash)
         await deskAction(id) {
             let started = try await self.client.runApprove(id, goal: edit.goal, checks: edit.checks, answers: edit.answers,
                                                            dropFollowUps: edit.droppedFollowUps, approveSetup: approveSetup)
@@ -226,6 +227,7 @@ extension AppModel {
                               + "The run events say why.", .notice)
             }
         }
+        if desk.error != nil, desk.runID == id, let run = deskRun { await readDeskSetup(run) }
     }
 
     /// Claude drafts the run again with your change (`loam run redraft`). The draft takes a while, so the desk
@@ -331,14 +333,18 @@ extension AppModel {
         }
     }
 
+    /// Reads the setup command of the repo of the run. A failed read keeps what the desk shows.
+    private func readDeskSetup(_ run: Run) async {
+        guard let plot = try? await client.show(plot: run.plotID), desk.runID == run.id else { return }
+        let repo = run.shape?.repo ?? ""
+        let setup = (repo.isEmpty ? plot.repos.first(where: \.main) : plot.repos.first { $0.id == repo })?.setup ?? ""
+        desk.setup = setup.isEmpty ? nil : setup
+    }
+
     /// Reads what an approval of the run does: the setup command of its repo, the run limits, the Linear updates
     /// for a run from Linear, and the recurring run that shaped it. A failed read shows nothing.
     private func readDeskApproval(_ run: Run) async {
-        if let plot = try? await client.show(plot: run.plotID), desk.runID == run.id {
-            let repo = run.shape?.repo ?? ""
-            let setup = (repo.isEmpty ? plot.repos.first(where: \.main) : plot.repos.first { $0.id == repo })?.setup ?? ""
-            desk.setup = setup.isEmpty ? nil : setup
-        }
+        await readDeskSetup(run)
         if let limits = try? await client.runLimits() { desk.limits = limits }
         if run.source?.kind == "linear" { await readDeskLinearUpdates() }
         if let source = run.source, source.kind == "recurring",

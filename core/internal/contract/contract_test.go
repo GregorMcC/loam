@@ -796,6 +796,10 @@ func scenario(t *testing.T) *harness {
 		"--ticket", filepath.Join(tickets, "12-run-page-plan.md")), &shaped)
 	h.run("run_redraft", "run-shape", 0, "run", "redraft", shaped.Run.ID, "--change", "Add a check for a run with no plan")
 	h.run("error_run_approve_no_assumption", "error", 2, "run", "approve", shaped.Run.ID, "--answer", "5=No")
+	// A hash of a setup command that the repo does not hold now, and the flag
+	// with no hash, which takes --json as its value.
+	h.run("error_run_approve_setup_hash", "error", 2, "run", "approve", shaped.Run.ID, "--approve-setup", strings.Repeat("0", 64))
+	h.run("error_run_approve_setup_no_hash", "error", 2, "run", "approve", shaped.Run.ID, "--approve-setup")
 	// The approve files the follow-up in Linear, so the key is back for it.
 	if err := os.WriteFile(secrets, []byte(`{"linear-api-key":"`+testutil.LinearKey+`"}`), 0o600); err != nil {
 		t.Fatal(err)

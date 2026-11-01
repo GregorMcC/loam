@@ -1,0 +1,7 @@
+{
+  "error": {
+    "exit_code": 2,
+    "kind": "invalid",
+    "message": "invalid argument \"--json\" for \"--approve-setup\" flag: give the lowercase hex SHA-256 hash of the setup command that you read. The refusal of the run names it"
+  }
+}
