@@ -81,3 +81,22 @@ func TestRunTickStopsARunWhoseBranchIsGoneWithItsMetadata(t *testing.T) {
 		t.Fatalf("git events %q", e)
 	}
 }
+
+// A dry run of a land changes nothing: Loam neither rebuilds the metadata
+// nor stops a run whose metadata it would not rebuild.
+func TestRunLandDryRunLeavesAPrunedWorktree(t *testing.T) {
+	s, r, w := readyRun(t)
+	admin := pruneMetadata(t, r.Folder)
+	runLand(t, r.ID, "--dry-run")
+	if _, err := os.Lstat(admin); !os.IsNotExist(err) {
+		t.Fatalf("a dry run wrote %s: %v", admin, err)
+	}
+	testutil.Git(t, w.Repo, "update-ref", "-d", "refs/heads/"+w.Branch)
+	runLand(t, r.ID, "--dry-run")
+	if r2, _ := s.GetRun(r.ID); r2.State != store.RunReady {
+		t.Fatalf("a dry run moved the run: %+v", r2)
+	}
+	if e := events(t, s, r.ID, "git"); len(e) != 0 {
+		t.Fatalf("git events %q", e)
+	}
+}
