@@ -12,8 +12,8 @@ public struct RunDraft: Equatable, Sendable {
     public var ticket: String?
     /// The branch for `--base`, or nil for the default branch of origin (TAS-21).
     public var base: String?
-    /// True when you saw the setup command of the repo and start the run with it.
-    public var approveSetup = false
+    /// The hash for `--approve-setup`: `setupHash` of the setup command that you saw. Nil approves nothing.
+    public var approveSetup: String?
     /// The model for `--model`, or "" for the plot default.
     public var model = ""
     /// The level for `--effort`, or "" for the plot default.

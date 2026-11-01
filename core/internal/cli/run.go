@@ -2,10 +2,12 @@ package cli
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/signal"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -43,11 +45,11 @@ func newRunStartCmd() *cobra.Command {
 	var o run.StartOptions
 	var checks []string
 	c := &cobra.Command{
-		Use:   "start <plot> --title <text> [--goal <text>] [--check <name>=<command>]... [--worktree <name>] [--repo <repo>] [--base <branch>] [--link <link-id or URL> | --ticket <file>] [--max-tries <n>] [--model <model>] [--effort <level>] [--approve-setup] [--fixes <run>]",
+		Use:   "start <plot> --title <text> [--goal <text>] [--check <name>=<command>]... [--worktree <name>] [--repo <repo>] [--base <branch>] [--link <link-id or URL> | --ticket <file>] [--max-tries <n>] [--model <model>] [--effort <level>] [--approve-setup <sha256>] [--fixes <run>]",
 		Short: "Start a run in a worktree of a plot",
 		Long: "Start a run. Loam uses the worktree that --worktree names, or makes it. With no --worktree, Loam makes a new worktree with a name from the link key and the title.\n" +
 			"--check adds one Done when check: a name, \"=\", and a shell command that passes when it exits 0 in the worktree. Give it once for each check.\n" +
-			"Claude Code must trust the worktree folder, because a background session cannot ask. The setup command of the repo must be approved: --approve-setup approves it.\n" +
+			"Claude Code must trust the worktree folder, because a background session cannot ask. The setup command of the repo must be approved: --approve-setup with the SHA-256 hash of the command approves it, and Loam refuses a hash of another command.\n" +
 			"The session runs in auto mode. It commits its work on the branch of the worktree.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -98,7 +100,7 @@ func newRunStartCmd() *cobra.Command {
 	f.IntVar(&o.MaxTries, "max-tries", store.DefaultMaxTries, "how many times the checks can fail before the run stops")
 	f.StringVar(&o.Model, "model", "", "the Claude model of the session (default: the run defaults of the plot, then your Claude Code setting)")
 	f.StringVar(&o.Effort, "effort", "", "the effort level of the session: "+strings.Join(store.Efforts, ", ")+" (default: the run defaults of the plot, then your Claude Code setting)")
-	f.BoolVar(&o.ApproveSetup, "approve-setup", false, "approve the setup command of the repo when it is new or changed")
+	f.Var(setupHashFlag{&o.ApproveSetup}, "approve-setup", "approve the setup command of the repo when it is new or changed: the SHA-256 hash of the command that you read")
 	f.StringVar(&o.Fixes, "fixes", "", "the ID of the landed run of the plot that this run fixes")
 	must(c.MarkFlagRequired("title"))
 	return c
@@ -178,7 +180,7 @@ func newRunApproveCmd() *cobra.Command {
 	var checks, answers []string
 	var noChecks bool
 	c := &cobra.Command{
-		Use:   "approve <run> [--goal <text>] [--check <name>=<command>]... [--no-checks] [--answer <n>=<text>]... [--drop-follow-up <n>]... [--approve-setup]",
+		Use:   "approve <run> [--goal <text>] [--check <name>=<command>]... [--no-checks] [--answer <n>=<text>]... [--drop-follow-up <n>]... [--approve-setup <sha256>]",
 		Short: "Start a Shaping run with your edits to its draft",
 		Long: "Start a Shaping run: Loam makes its worktree and starts its session, as loam run start does.\n" +
 			"--goal replaces the drafted goal. --check replaces the drafted checks: give it once for each check. --no-checks removes the drafted checks. " +
@@ -237,8 +239,33 @@ func newRunApproveCmd() *cobra.Command {
 	f.BoolVar(&noChecks, "no-checks", false, "remove the drafted checks: the run is done when its work is committed")
 	f.StringArrayVar(&answers, "answer", nil, "your answer to an assumption, as <n>=<text> (repeatable)")
 	f.IntSliceVar(&o.DropFollowUps, "drop-follow-up", nil, "drop follow-up <n> of the draft, so Loam files no issue for it (repeatable)")
-	f.BoolVar(&o.ApproveSetup, "approve-setup", false, "approve the setup command of the repo when it is new or changed")
+	f.Var(setupHashFlag{&o.ApproveSetup}, "approve-setup", "approve the setup command of the repo when it is new or changed: the SHA-256 hash of the command that you read")
 	return c
+}
+
+// setupHashPattern is the form of a hash for --approve-setup: lowercase hex.
+var setupHashPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// setupHashFlag is the value of --approve-setup: the [run.SetupHash] of the
+// setup command that you read. The flag has no bare form, because a bare flag
+// would approve a command that nobody named.
+type setupHashFlag struct{ hash *string }
+
+func (f setupHashFlag) String() string {
+	if f.hash == nil {
+		return ""
+	}
+	return *f.hash
+}
+
+func (f setupHashFlag) Type() string { return "sha256" }
+
+func (f setupHashFlag) Set(v string) error {
+	if !setupHashPattern.MatchString(v) {
+		return errors.New("give the lowercase hex SHA-256 hash of the setup command that you read. The refusal of the run names it")
+	}
+	*f.hash = v
+	return nil
 }
 
 // parseAnswers reads --answer values: the number of an assumption, "=", and

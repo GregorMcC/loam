@@ -250,7 +250,7 @@ import Testing
         #expect(model.desk.limits?.maxTurns == 40 && model.desk.setup == nil)
     }
 
-    /// The desk shows the setup command of the repo under If you approve, so the approval approves it.
+    /// The desk shows the setup command of the repo under If you approve, so the approval names that text.
     @Test func anApprovalApprovesTheSetupThatTheDeskShows() async throws {
         let (model, fake) = try model([("run_status", 0), ("rule_list", 0), ("show", 0), ("run_limits_get", 0),
                                        ("run_approve", 0), ("run_list", 0)])
@@ -258,7 +258,7 @@ import Testing
         await model.openDesk()
         model.desk.setup = "scripts/link-vendor.sh"
         await model.approveDeskRun()
-        #expect(fake.args().dropFirst(4).first == "run approve --approve-setup --json -- s1")
+        #expect(fake.args().dropFirst(4).first == "run approve --approve-setup \(setupHash("scripts/link-vendor.sh")) --json -- s1")
     }
 
     /// The run of a Shaping row on Today opens at the desk, where you can approve it.
@@ -321,15 +321,15 @@ import Testing
         #expect(fake.args().dropFirst(4).first == "run approve --no-checks --json -- s1")
     }
 
-    /// When the core refuses a new setup command, the next approval approves it, as at Intake.
-    @Test func anApprovalThatTheSetupStopsOffersToApproveIt() async throws {
+    /// The desk offers to approve after a refusal, but it names no command that it does not show.
+    @Test func anApprovalNamesNoSetupThatTheDeskDoesNotShow() async throws {
         let (model, fake) = try model([("run_status", 0), ("rule_list", 0), ("show", 0), ("run_limits_get", 0), ("run_approve", 0), ("run_list", 0)])
         model.runs.append(Self.shaping())
         await model.openDesk()
         model.desk.error = "the setup command of web is new or changed: make. add --approve-setup to approve it"
-        #expect(model.desk.needsSetupApproval)
+        #expect(model.desk.needsSetupApproval && model.desk.setup == nil)
         await model.approveDeskRun()
-        #expect(fake.args().dropFirst(4).first == "run approve --approve-setup --json -- s1")
+        #expect(fake.args().dropFirst(4).first == "run approve --json -- s1")
     }
 
     @Test func aChangeGoesToClaudeForANewDraft() async throws {

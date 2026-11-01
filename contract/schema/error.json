@@ -24,7 +24,10 @@
           "if": { "properties": { "kind": { "const": "error" } } },
           "then": { "properties": { "exit_code": { "const": 1 }, "details": { "$ref": "#/$defs/refusalDetails" } } }
         },
-        { "if": { "properties": { "kind": { "const": "invalid" } } }, "then": { "properties": { "exit_code": { "const": 2 } } } },
+        {
+          "if": { "properties": { "kind": { "const": "invalid" } } },
+          "then": { "properties": { "exit_code": { "const": 2 }, "details": { "$ref": "#/$defs/setupRefusalDetails" } } }
+        },
         {
           "if": { "properties": { "kind": { "const": "stale" } } },
           "then": {
@@ -72,6 +75,16 @@
         "unpushed": { "type": "integer", "minimum": 1 },
         "check_error": { "type": "string", "minLength": 1 },
         "open_panes": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "setupRefusalDetails": {
+      "description": "A refused setup command of loam run start, loam run approve, or loam recurring add: the command that the repo holds now, and its hash for --approve-setup. Other errors of kind invalid have no details.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command", "hash"],
+      "properties": {
+        "command": { "type": "string", "minLength": 1 },
+        "hash": { "description": "The lowercase hex SHA-256 of the exact text of command.", "type": "string", "pattern": "^[0-9a-f]{64}$" }
       }
     },
     "staleDetails": {

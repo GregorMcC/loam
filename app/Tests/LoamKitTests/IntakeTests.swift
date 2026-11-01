@@ -25,7 +25,7 @@ import Testing
         #expect(issue.link == "https://github.com/example/widgets/issues/57" && issue.ticket == nil)
         let ticket = RunDraft(item: Self.item("map", url: "/maps/build/issues/12-plan.md"))
         #expect(ticket.ticket == "/maps/build/issues/12-plan.md" && ticket.link == nil)
-        #expect(ticket.maxTries == 3 && ticket.checks.isEmpty && !ticket.approveSetup)
+        #expect(ticket.maxTries == 3 && ticket.checks.isEmpty && ticket.approveSetup == nil)
     }
 
     @Test func intakeReadsTheListOfThePlot() async throws {
@@ -61,13 +61,12 @@ import Testing
         var draft = RunDraft(item: try #require(model.intake?.items[4]))
         draft.goal = "Show the plan."
         draft.checks = [RunCheck(name: "Tests", command: "go test ./...")]
-        draft.approveSetup = true
         #expect(await model.startRun(plot: "plotaaaaae", draft: draft))
         #expect(model.page == .run("runraaaaab"))
         #expect(model.runStartError == nil)
         let start = try #require(fake.args().dropFirst().first)
         #expect(start == "run start --title Run page: show the plan --goal Show the plan. --check Tests=go test ./... "
-            + "--max-tries 3 --ticket /tmp/loam-contract/build/issues/12-run-page-plan.md --approve-setup --json -- plotaaaaae")
+            + "--max-tries 3 --ticket /tmp/loam-contract/build/issues/12-run-page-plan.md --json -- plotaaaaae")
         #expect(Array(fake.args().suffix(2)) == ["run list --json", "run status --json -- runraaaaab"])
     }
 

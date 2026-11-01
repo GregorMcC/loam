@@ -195,8 +195,10 @@ public final class AppModel {
     public internal(set) var runDefaultsError: String?
     /// The intake that the Intake page shows, as the core last read it (ticket 204).
     public internal(set) var intake: IntakeList?
-    /// Why the last run did not start, for the Intake page.
-    public internal(set) var runStartError: String?
+    /// Why the last run did not start, for the Intake page. With no error, the page shows no setup command.
+    public internal(set) var runStartError: String? { didSet { if runStartError == nil { runStartSetup = nil } } }
+    /// The setup command that the Intake page shows with `runStartError`. The next start approves it, for its repo.
+    public internal(set) var runStartSetup: ShownSetup?
     /// True while `loam run start` runs.
     public internal(set) var isStartingRun = false
     /// The bases of the main repo of the plot of the start form (TAS-21), or nil before they are read.

@@ -20,7 +20,8 @@ public struct DeskState: Equatable, Sendable {
     public var limits: RunLimits?
     /// The switches of the updates to Linear, read for a run from Linear. Nil before the read, or when it failed.
     public var linearUpdates: LinearUpdates?
-    /// The setup command of the repo of the run in Shaping, or nil when the repo has none. An approval approves it.
+    /// The setup command of the repo of the run in Shaping, or nil when the repo has none. An approval approves this
+    /// text, by its hash.
     public var setup: String?
     /// The title of the recurring run that shaped the run in Shaping, or nil.
     public var recurringTitle: String?
@@ -57,7 +58,7 @@ public struct DeskState: Equatable, Sendable {
     public var currentEdit: ShapeEdit { runID.flatMap { shapeEdits[$0] } ?? ShapeEdit() }
 
     /// True when the last approval stopped at a new or changed setup command. The core names the command in
-    /// `error`, and the next approval approves it.
+    /// `error`, the desk reads `setup` again, and the next approval approves what `setup` then shows.
     public var needsSetupApproval: Bool { error?.contains("--approve-setup") == true }
 }
 

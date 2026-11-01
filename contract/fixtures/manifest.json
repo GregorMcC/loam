@@ -1239,6 +1239,31 @@
     "schema": "error"
   },
   {
+    "name": "error_run_approve_setup_hash",
+    "args": [
+      "run",
+      "approve",
+      "runraaaaad",
+      "--approve-setup",
+      "0000000000000000000000000000000000000000000000000000000000000000",
+      "--json"
+    ],
+    "exit_code": 2,
+    "schema": "error"
+  },
+  {
+    "name": "error_run_approve_setup_no_hash",
+    "args": [
+      "run",
+      "approve",
+      "runraaaaad",
+      "--approve-setup",
+      "--json"
+    ],
+    "exit_code": 2,
+    "schema": "error"
+  },
+  {
     "name": "run_approve",
     "args": [
       "run",
