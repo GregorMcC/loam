@@ -154,7 +154,7 @@ func TestRunTickWaitsForCodeRabbitWhenItDidNotReviewTheHead(t *testing.T) {
 		{"paused", "", "[" + botComment("> [!NOTE]\n> ## Reviews paused\n>\n> Use `@coderabbitai resume`.", "2026-01-01T10:00:00Z") + "]", "its reviews are paused"},
 		{"limit", "", "[" + botComment("> [!WARNING]\n> ## Rate limit exceeded\n>\n> Wait 12 minutes.", "2026-01-01T10:00:00Z") + "]", "it reached its review limit"},
 		// The summary comment, which CodeRabbit wrote first and edited last, is its last word.
-		{"edited", "", "[" + botComment("Walkthrough. Reviews paused.", "2026-01-01T11:00:00Z") + ", " +
+		{"edited", "", "[" + botComment("## Walkthrough\n\n> [!NOTE]\n> ## Reviews paused", "2026-01-01T11:00:00Z") + ", " +
 			botComment("A reply.", "2026-01-01T10:00:00Z") + "]", "its reviews are paused"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -191,16 +191,30 @@ func TestRunTickWaitsForCodeRabbitWhenItDidNotReviewTheHead(t *testing.T) {
 	}
 }
 
-// CodeRabbit's last comment that says nothing of a pause or a limit does not stop the run, and nor does a comment
-// of a person.
+// CodeRabbit's last comment with no notice heading does not stop the run, also when its text is about a pause or
+// a limit, and nor does a comment of a person. A review of CodeRabbit on the head stops no run, whatever its check
+// and its comment say.
 func TestRunTickDoesNotWaitForCodeRabbitThatSaysNothingOfAPause(t *testing.T) {
 	_, r, w := shipRun(t, "3")
 	tick(t)
 	head := testutil.Git(t, r.Folder, "rev-parse", "HEAD")
-	person := strings.Replace(botComment("Reviews paused, I think.", "2026-01-01T12:00:00Z"), `"Bot", "login": "coderabbitai"`, `"User", "login": "coderabbitfan"`, 1)
-	comments := "[" + botComment("Reviews paused.", "2026-01-01T10:00:00Z") + ", " + botComment("Walkthrough.", "2026-01-01T11:00:00Z") + ", " + person + "]"
+	person := strings.Replace(botComment("> ## Reviews paused", "2026-01-01T12:00:00Z"), `"Bot", "login": "coderabbitai"`, `"User", "login": "coderabbitfan"`, 1)
+	comments := "[" + botComment("> ## Reviews paused", "2026-01-01T10:00:00Z") + ", " +
+		botComment("## Walkthrough\nA run waits when reviews are paused or the review limit is reached.", "2026-01-01T11:00:00Z") + ", " + person + "]"
 	setGitHub(t, botState(w.Branch, head, "REVIEW_REQUIRED", "[]", "[]", comments))
 	if got := tick(t); len(got.Runs) != 1 || got.Runs[0].State != store.RunReady || got.Runs[0].Note != "CI passed on #1: 1 of 1 checks" {
+		t.Fatalf("%+v", got)
+	}
+}
+
+func TestRunTickDoesNotWaitForCodeRabbitThatReviewedTheHead(t *testing.T) {
+	_, r, w := shipRun(t, "3")
+	tick(t)
+	head := testutil.Git(t, r.Folder, "rev-parse", "HEAD")
+	state := botState(w.Branch, head, "REVIEW_REQUIRED", "[]", "["+botReview("PRR_minor", head, minorBody)+"]",
+		"["+botComment("> ## Reviews paused", "2026-01-01T10:00:00Z")+"]")
+	setGitHub(t, withSkippedCodeRabbit(state))
+	if got := tick(t); len(got.Runs) != 1 || got.Runs[0].State != store.RunReady || got.Runs[0].Note != "CI passed on #1: 2 of 2 checks" {
 		t.Fatalf("%+v", got)
 	}
 }

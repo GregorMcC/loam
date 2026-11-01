@@ -247,3 +247,70 @@ func TestHasMajorFindingReadsTheSeverityOfAFindingHeader(t *testing.T) {
 		}
 	}
 }
+
+// A review body that the cut would end before a Major finding, such as after a long list of nitpicks, goes to the
+// session as its Critical and Major findings, each with its file. A body whose findings fit goes as it is.
+func TestReviewPromptSendsTheMajorFindingsOfALongReview(t *testing.T) {
+	nitpicks := "<details>\n<summary>🧹 Nitpick comments (40)</summary>\n\n" +
+		strings.Repeat("`a.go`: _🧹 Nitpick_ | _🔵 Trivial_\n\n**Rename x.**\n\n", 200) + "</details>\n"
+	major := "<details>\n<summary>⚠️ Outside diff range comments (1)</summary>\n<details>\n<summary>core/run.go (1)</summary>\n\n" +
+		"`12-20`: _⚠️ Potential issue_ | _🟠 Major_\n\n**The wait never ends.**\n\n" +
+		"<details>\n<summary>🤖 Prompt for AI Agents</summary>\nFix the wait.\n</details>\n\n" +
+		"`30-31`: _🛠️ Refactor suggestion_ | _🟡 Minor_\n\n**A small thing.**\n</details>\n</details>\n"
+	pr := &github.PR{Number: 1}
+	long := github.Review{ID: "R1", Author: "coderabbitai", Body: nitpicks + major}
+	prompt, _ := reviewPromptFor("Opening.", pr, review{requests: []github.Review{long}}, "/r.json", false)
+	for _, want := range []string{
+		"Loam sends only its Critical and Major findings. Read the rest on GitHub.",
+		"> <summary>core/run.go (1)</summary>\n> `12-20`: _⚠️ Potential issue_ | _🟠 Major_", "> **The wait never ends.**", "> Fix the wait.",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("the prompt misses %q:\n%s", want, prompt)
+		}
+	}
+	if strings.Contains(prompt, "Rename x.") || strings.Contains(prompt, "A small thing.") || strings.Contains(prompt, cutMark) {
+		t.Errorf("the prompt has a Minor or Trivial finding, or a cut:\n%s", prompt)
+	}
+	// The Major finding is in the first 4000 characters, so the body goes as it is, cut.
+	early := github.Review{ID: "R2", Author: "coderabbitai", Body: major + nitpicks}
+	prompt, _ = reviewPromptFor("Opening.", pr, review{requests: []github.Review{early}}, "/r.json", false)
+	if strings.Contains(prompt, "Loam sends only") || !strings.Contains(prompt, "> **Rename x.**") || !strings.Contains(prompt, cutMark) {
+		t.Errorf("the body did not go as it is:\n%s", prompt)
+	}
+}
+
+// Only the heading of a notice of CodeRabbit says that it did not review: its summary also describes the PR, which
+// can be about these words. A review of CodeRabbit on the head says that it reviewed the head.
+func TestCodeRabbitMissedReadsTheNoticeHeadingOnly(t *testing.T) {
+	comment := func(body string) *github.PR {
+		return &github.PR{HeadOID: "h1", AppComments: []github.AppComment{{Author: "coderabbitai", Body: body}}}
+	}
+	for body, want := range map[string]string{
+		"> [!NOTE]\n> ## Reviews paused\n>\n> Use `@coderabbitai resume`.":                    "its reviews are paused",
+		"> [!WARNING]\n> ## Rate limit exceeded\n>\n> Wait 12 minutes.":                       "it reached its review limit",
+		"## Walkthrough\nA run waits when reviews are paused or the review limit is reached.": "",
+		"## Walkthrough\n- Reviews paused, rate limit exceeded: the run waits.":               "",
+	} {
+		if got := codeRabbitMissed(comment(body)); got != want {
+			t.Errorf("codeRabbitMissed(%q) = %q, want %q", body, got, want)
+		}
+	}
+	skipped := []github.Check{{Name: "CodeRabbit", Skipped: true}}
+	if got := codeRabbitMissed(&github.PR{HeadOID: "h1", PassedChecks: skipped}); got != "its check was skipped" {
+		t.Errorf("skipped check: %q", got)
+	}
+	reviewed := &github.PR{HeadOID: "h1", PassedChecks: skipped, AppComments: comment("> ## Reviews paused").AppComments,
+		CommentReviews: []github.Review{{ID: "R1", Author: "coderabbitai", Commit: "h1"}}}
+	if got := codeRabbitMissed(reviewed); got != "" {
+		t.Errorf("a review that only comments on the head: %q", got)
+	}
+	reviewed.CommentReviews = nil
+	reviewed.ChangeRequests = []github.Review{{ID: "R2", Author: "coderabbitai", Commit: "h1"}}
+	if got := codeRabbitMissed(reviewed); got != "" {
+		t.Errorf("a change request on the head: %q", got)
+	}
+	reviewed.ChangeRequests[0].Commit = "h0"
+	if got := codeRabbitMissed(reviewed); got != "its check was skipped" {
+		t.Errorf("a change request on an older commit: %q", got)
+	}
+}

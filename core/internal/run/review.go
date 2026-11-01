@@ -269,7 +269,11 @@ func reviewPromptFor(opening string, pr *github.PR, rv review, replies string, c
 			fmt.Fprintf(&b, "%s\n", c.URL)
 		}
 		if body := strings.TrimSpace(c.Body); body != "" {
-			fmt.Fprintf(&b, "\n%s\n", quote(body))
+			text, excerpt := reviewText(body)
+			if excerpt {
+				b.WriteString("\nThe review is longer than Loam sends, so Loam sends only its Critical and Major findings. Read the rest on GitHub.\n")
+			}
+			fmt.Fprintf(&b, "\n%s\n", quote(text))
 		}
 	}
 	for _, t := range rv.threads {
