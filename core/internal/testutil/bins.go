@@ -39,6 +39,9 @@ type bin struct {
 // in GOTMPDIR when it is set. Its path is absolute, so the symlinks of
 // [link] work from any folder.
 func Main(m *testing.M) {
+	// A Claude Code session sets CLAUDECODE, and with it a link command records
+	// a session actor. The tests must not depend on who runs them.
+	_ = os.Unsetenv("CLAUDECODE")
 	dir, err := os.MkdirTemp(os.Getenv("GOTMPDIR"), "loam-testbin-")
 	if err == nil {
 		var abs string

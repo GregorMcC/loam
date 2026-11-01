@@ -284,8 +284,17 @@ func runRules(s *store.Store, plot store.Plot, folder, runID string) (sandbox.Ru
 	if runID != "" {
 		in.Private = RunTemp(s, runID)
 	}
+	// add_link needs no prompt, so a link that a session set gives no read
+	// path until a person changes it. The note names the link by its ID, which
+	// Loam made: the target, the label, and the note are text that a session
+	// wrote, so they must not reach the prompt of a run.
+	var unchecked []string
 	for _, l := range plot.Links {
-		if linkkind.IsLocal(l.Target) {
+		switch {
+		case !linkkind.IsLocal(l.Target):
+		case l.Unchecked:
+			unchecked = append(unchecked, fmt.Sprintf("The sandbox does not allow the local link with the ID %s, because a session added or last changed it. A person must change the link first.", l.ID))
+		default:
 			in.Links = append(in.Links, linkkind.Expand(l.Target))
 		}
 	}
@@ -293,6 +302,7 @@ func runRules(s *store.Store, plot store.Plot, folder, runID string) (sandbox.Ru
 	if err != nil {
 		return sandbox.Rules{}, err
 	}
+	r.Notes = append(r.Notes, unchecked...)
 	// The includes come after the rules, so that Loam knows which files the
 	// run can write.
 	temps := runTemps()

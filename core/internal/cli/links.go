@@ -53,8 +53,10 @@ func newLinkEditCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "edit <plot> <link>",
 		Short: "Change the label, target, or note of a link",
-		Long:  "Change a link. <link> is a link ID or an exact label. Only the flags you give change.",
-		Args:  cobra.ExactArgs(2),
+		Long: "Change a link. <link> is a link ID or an exact label. Only the flags you give change.\n" +
+			"A session can add a link with no prompt, so a local link that a session added or last changed is not an added folder.\n" +
+			"When you change the label, the target, or the note of such a link, it becomes an added folder. An edit that changes no value records nothing.",
+		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			f := cmd.Flags()
 			if !f.Changed("label") && !f.Changed("target") && !f.Changed("note") {
@@ -144,7 +146,11 @@ func writeLink(cmd *cobra.Command, plotArg string, expectVals []string, build fu
 		return err
 	}
 	defer s.Close()
-	res, edits, item, err := writeEdits(cmd, s, plotArg, expect, build)
+	actor, err := linkActor(cmd, s)
+	if err != nil {
+		return err
+	}
+	res, edits, item, err := writeEdits(cmd, s, actor, plotArg, expect, build)
 	if err != nil {
 		return err
 	}

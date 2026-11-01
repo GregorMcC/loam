@@ -57,7 +57,12 @@ func newUndoCmd() *cobra.Command {
 }
 
 func runUndo(cmd *cobra.Command, s *store.Store, id int64, overwrite bool) error {
-	res, err := s.Undo(id, cliActor(cmd), overwrite)
+	// An undo can bring back the value of a link that a session set.
+	actor, err := linkActor(cmd, s)
+	if err != nil {
+		return err
+	}
+	res, err := s.Undo(id, actor, overwrite)
 	var ce *store.UndoClashError
 	if errors.As(err, &ce) {
 		if JSON(cmd) || !stdinIsTerminal(cmd.InOrStdin()) {
@@ -69,7 +74,7 @@ func runUndo(cmd *cobra.Command, s *store.Store, id int64, overwrite bool) error
 		if a := strings.ToLower(strings.TrimSpace(line)); a != "y" && a != "yes" {
 			return errors.New("nothing was changed")
 		}
-		res, err = s.Undo(id, cliActor(cmd), true)
+		res, err = s.Undo(id, actor, true)
 	}
 	if err != nil {
 		return err

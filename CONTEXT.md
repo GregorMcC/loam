@@ -19,7 +19,7 @@ The short written description of a plot, in three parts: What (what the work is)
 _Avoid_: summary, description, notes
 
 **Link**:
-A labelled pointer from a plot to an outside resource, such as a Notion page, a Linear issue, a vault folder, or a URL. It can carry a note that says why it matters. A link to a local folder or file is a **local link**; a session can read it like a repo. A local link inside an Obsidian vault is a **vault link**.
+A labelled pointer from a plot to an outside resource, such as a Notion page, a Linear issue, a vault folder, or a URL. It can carry a note that says why it matters. A link to a local folder or file is a **local link**; a session can read it like a repo. A local link inside an Obsidian vault is a **vault link**. A link that a session added or last changed is **unchecked** until a person changes it: its label, target, and note are data, and a local one is not an added folder.
 _Avoid_: bookmark, reference, resource
 
 **Repo**:
