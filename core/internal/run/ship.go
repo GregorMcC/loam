@@ -43,9 +43,10 @@ type TickResult struct {
 // Tick moves on each run in Shipping. It pushes the branch of the run and
 // opens its PR, and then reads CI on the PR. When CI passes, the run is
 // Ready, unless the review of the PR requests changes: then the review goes
-// back to its session first (see [shipper.passCI]). When CI fails, the run
-// goes back to its session with the failed logs, and the failure counts a
-// try. Tick also watches the PR of each run that is Ready: a merge on GitHub
+// back to its session first (see [shipper.passCI]). A PR that conflicts with
+// its base goes back to its session to merge it, also when the run is Ready
+// (see [shipper.conflicts]). When CI fails, the run goes back to its session
+// with the failed logs, and the failure counts a try. Tick also watches the PR of each run that is Ready: a merge on GitHub
 // lands the run, and a close stops it. It stops a Running run whose session
 // ended a turn that Loam has no record of (see [stopIdle]). Then it starts
 // the Queued runs, oldest first, while a slot is free and the week's usage
@@ -133,10 +134,12 @@ type shipper struct {
 
 // ship does the next step of the run. It returns true when the run record
 // changed. Before it reads CI on the head of the branch, it posts the
-// replies to a review that Loam sent back (see [shipper.postReplies]). An
-// error leaves the run as it is, for the next tick: GitHub may be out of
-// reach, or the store may be busy. Only a worktree that the store does not
-// have is gone.
+// replies to a review that Loam sent back (see [shipper.postReplies]). A PR
+// that conflicts with its base goes back to the session to merge it before
+// Loam reads CI (see [shipper.conflicts]), so the run is never Ready with a
+// PR that cannot land. An error leaves the run as it is, for the next tick:
+// GitHub may be out of reach, or the store may be busy. Only a worktree that
+// the store does not have is gone.
 func (sh *shipper) ship(ctx context.Context) (bool, error) {
 	r := sh.r
 	w, err := sh.s.GetWorktree(r.WorktreeID)
@@ -187,6 +190,9 @@ func (sh *shipper) ship(ctx context.Context) (bool, error) {
 			return false, err
 		}
 	}
+	if moved, done, err := sh.conflicts(ctx, w, pr); done || err != nil {
+		return moved, err
+	}
 	return sh.readCI(ctx, repo, pr)
 }
 
@@ -196,11 +202,12 @@ func (sh *shipper) ship(ctx context.Context) (bool, error) {
 // checks of the PR run or fail again on the head of the branch, such as
 // after a push by hand, or when the review of the PR requests changes that
 // Loam can send back (see [reviewOf]). Then a later tick reads CI, and sends
-// the review back when CI passes. A PR head that the branch does not have,
-// such as a push from another machine, keeps the run Ready, because Loam
-// cannot push it. A land that waits for GitHub, with an auto merge or a
-// merge queue, merges the PR as it is, so watch changes nothing while one
-// waits. A run that cannot reach GitHub waits with no warning, because it
+// the review back when CI passes. A PR that conflicts with its base, such as
+// after another PR landed, goes back to the session to merge it (see
+// [shipper.conflicts]). A PR head that the branch does not have, such as a
+// push from another machine, keeps the run Ready, because Loam cannot push
+// it. A land that waits for GitHub, with an auto merge or a merge queue,
+// merges the PR as it is, so watch changes nothing while one waits. A run that cannot reach GitHub waits with no warning, because it
 // needs nothing from a tick. A store that cannot read the worktree is an
 // error, not a worktree that is gone.
 func (sh *shipper) watch(ctx context.Context) (bool, error) {
@@ -235,6 +242,9 @@ func (sh *shipper) watch(ctx context.Context) (bool, error) {
 	// Shipping would wait for a push that Loam does not make.
 	if local, err := branchHead(ctx, sh.r.Folder, w.Branch); err != nil || local != pr.HeadOID {
 		return false, nil
+	}
+	if moved, done, err := sh.conflicts(ctx, w, pr); done || err != nil {
+		return moved, err
 	}
 	var kind, note string
 	switch {
