@@ -27,6 +27,11 @@ import (
 // new head.
 var NoCIWait = 3 * time.Minute
 
+// CIRerunWait is how long Loam waits after it runs the failed jobs of a head
+// again before it takes a failure on that head as the second one. GitHub can
+// show the failed jobs of the first attempt for a moment after the rerun.
+var CIRerunWait = time.Minute
+
 // ciLogLines is how many lines of each failed log go back to the session.
 const ciLogLines = 60
 
@@ -43,14 +48,17 @@ type TickResult struct {
 // Tick moves on each run in Shipping. It pushes the branch of the run and
 // opens its PR, and then reads CI on the PR. When CI passes, the run is
 // Ready, unless the review of the PR requests changes: then the review goes
-// back to its session first (see [shipper.passCI]). When CI fails, the run
-// goes back to its session with the failed logs, and the failure counts a
-// try. Tick also watches the PR of each run that is Ready: a merge on GitHub
-// lands the run, and a close stops it. It stops a Running run whose session
-// ended a turn that Loam has no record of (see [stopIdle]). Then it starts
-// the Queued runs, oldest first, while a slot is free and the week's usage
-// is under the hold. loam is the loam binary, for the hooks of a new
-// session. A tick that waits on GitHub or for a slot changes nothing, so the
+// back to its session first (see [shipper.passCI]). A PR that conflicts with
+// its base goes back to its session to merge it, also when the run is Ready
+// (see [shipper.conflicts]). When CI fails on a head for the first time, Loam
+// runs the failed jobs again, and counts no try. When the jobs fail again, the
+// run goes back to its session with the failed logs, and the failure counts a
+// try (see [shipper.failCI]). Tick also watches the PR of each run that is
+// Ready: a merge on GitHub lands the run, and a close stops it. It stops a
+// Running run whose session ended a turn that Loam has no record of (see
+// [stopIdle]). Then it starts the Queued runs, oldest first, while a slot is
+// free and the week's usage is under the hold. loam is the loam binary, for
+// the hooks of a new session. A tick that waits on GitHub or for a slot changes nothing, so the
 // app and a timer can run one as often as they like. Only one tick runs at a
 // time: a second one returns at once with nothing.
 func Tick(ctx context.Context, s *store.Store, loam string) (TickResult, error) {
@@ -133,10 +141,12 @@ type shipper struct {
 
 // ship does the next step of the run. It returns true when the run record
 // changed. Before it reads CI on the head of the branch, it posts the
-// replies to a review that Loam sent back (see [shipper.postReplies]). An
-// error leaves the run as it is, for the next tick: GitHub may be out of
-// reach, or the store may be busy. Only a worktree that the store does not
-// have is gone.
+// replies to a review that Loam sent back (see [shipper.postReplies]). A PR
+// that conflicts with its base goes back to the session to merge it before
+// Loam reads CI (see [shipper.conflicts]), so the run is never Ready with a
+// PR that cannot land. An error leaves the run as it is, for the next tick:
+// GitHub may be out of reach, or the store may be busy. Only a worktree that
+// the store does not have is gone.
 func (sh *shipper) ship(ctx context.Context) (bool, error) {
 	r := sh.r
 	w, err := sh.s.GetWorktree(r.WorktreeID)
@@ -190,6 +200,9 @@ func (sh *shipper) ship(ctx context.Context) (bool, error) {
 			return false, err
 		}
 	}
+	if moved, done, err := sh.conflicts(ctx, w, pr); done || err != nil {
+		return moved, err
+	}
 	return sh.readCI(ctx, repo, pr)
 }
 
@@ -199,12 +212,14 @@ func (sh *shipper) ship(ctx context.Context) (bool, error) {
 // checks of the PR run or fail again on the head of the branch, such as
 // after a push by hand, or when the review of the PR requests changes that
 // Loam can send back (see [reviewOf]). Then a later tick reads CI, and sends
-// the review back when CI passes. A PR head that the branch does not have,
-// such as a push from another machine, keeps the run Ready, because Loam
-// cannot push it. A land that waits for GitHub, with an auto merge or a
-// merge queue, merges the PR as it is, so watch changes nothing while one
-// waits. A run that cannot reach GitHub waits with no warning, because it
-// needs nothing from a tick. A store that cannot read the worktree is an
+// the review back when CI passes. A PR that conflicts with its base, such as
+// after another PR landed, goes back to the session to merge it (see
+// [shipper.conflicts]). A PR head that the branch does not have, such as a
+// push from another machine, keeps the run Ready, because Loam cannot push
+// it. A land that waits for GitHub, with an auto merge or a merge queue,
+// merges the PR as it is, so watch changes nothing while one waits. A run
+// that cannot reach GitHub waits with no warning, because it needs nothing
+// from a tick. A store that cannot read the worktree is an
 // error, not a worktree that is gone.
 func (sh *shipper) watch(ctx context.Context) (bool, error) {
 	w, err := sh.s.GetWorktree(sh.r.WorktreeID)
@@ -241,6 +256,9 @@ func (sh *shipper) watch(ctx context.Context) (bool, error) {
 	// Shipping would wait for a push that Loam does not make.
 	if local, err := branchHead(ctx, sh.r.Folder, w.Branch); err != nil || local != pr.HeadOID {
 		return false, nil
+	}
+	if moved, done, err := sh.conflicts(ctx, w, pr); done || err != nil {
+		return moved, err
 	}
 	var kind, note string
 	switch {
@@ -435,9 +453,14 @@ func (sh *shipper) prDraft(ctx context.Context, repo github.Repo, w store.Worktr
 	return d, nil
 }
 
-// adopt makes an open PR of the branch the PR of the run.
+// adopt makes an open PR of the branch the PR of the run. The conflict
+// send-backs of the old PR do not count for the new one, also on the same
+// head.
 func (sh *shipper) adopt(pr *github.PR) (bool, error) {
-	moved, err := sh.update(func(r *store.Run) { r.PR, r.PRDraft = &store.RunPR{Number: pr.Number, URL: pr.URL}, nil })
+	moved, err := sh.update(func(r *store.Run) {
+		r.PR, r.PRDraft = &store.RunPR{Number: pr.Number, URL: pr.URL}, nil
+		r.ConflictSends, r.ConflictHead = 0, ""
+	})
 	if err != nil {
 		return moved, err
 	}
@@ -462,13 +485,21 @@ func (sh *shipper) readCI(ctx context.Context, repo github.Repo, pr *github.PR) 
 }
 
 // sincePush is how long ago Loam last pushed the run or opened its PR.
-func (sh *shipper) sincePush() time.Duration {
+func (sh *shipper) sincePush() time.Duration { return sh.since("ship") }
+
+// sinceCI is how long ago Loam last recorded a ci event of the run, such as
+// the rerun of its failed jobs.
+func (sh *shipper) sinceCI() time.Duration { return sh.since("ci") }
+
+// since is how long ago the run got its last event of the kind, or 0 when it
+// has none.
+func (sh *shipper) since(kind string) time.Duration {
 	events, err := sh.s.RunEvents(sh.r.ID)
 	if err != nil {
 		return 0
 	}
 	for _, e := range slices.Backward(events) {
-		if e.Kind == "ship" {
+		if e.Kind == kind {
 			return time.Since(e.At)
 		}
 	}
@@ -494,24 +525,114 @@ func (sh *shipper) passCI(ctx context.Context, pr *github.PR, note string) (bool
 	return sh.sendReview(ctx, pr, rv, false)
 }
 
-// failCI counts a try, and sends the failed logs back to the session. On the
-// last try, the run stops. When no slot is free, the run waits in Queued with
-// the failed logs, and a later tick sends them.
+// failCI runs the failed jobs of pr again on the first failure of its head
+// (see [shipper.rerunCI]), and counts no try. A second failure on that head,
+// or a failure that Loam cannot run again, counts a try, and sends the failed
+// logs back to the session. On the last try, the run stops. When no slot is
+// free, the run waits in Queued with the failed logs, and a later tick sends
+// them. A failure on a head whose failure went back to the session already
+// means that the session made no commit for it, such as when the failure is
+// outside its change (see [ciOutside]): the run stops, with no try, so you
+// read the last message of the session and decide.
 func (sh *shipper) failCI(ctx context.Context, repo github.Repo, pr *github.PR) (bool, error) {
 	r := sh.r
-	var names []string
-	for _, c := range pr.FailedChecks {
-		names = append(names, c.Name)
+	if r.CISent == pr.HeadOID {
+		note := fmt.Sprintf("CI failed again on #%d: %s. The session made no commit for the failure. "+
+			"Read its last message, then send the run back or cancel it", pr.Number, strings.Join(checkNames(pr.FailedChecks), ", "))
+		if err := sh.s.AddRunEvent(r.ID, "ci", note); err != nil {
+			return false, err
+		}
+		return sh.move(store.RunStopped, note)
 	}
+	twice := r.CIRerun == pr.HeadOID
+	if twice && sh.sinceCI() < CIRerunWait {
+		return false, nil // GitHub may not show the rerun yet
+	}
+	if !twice {
+		if moved, rerun, err := sh.rerunCI(ctx, repo, pr); rerun || err != nil {
+			return moved, err
+		}
+	}
+	names := strings.Join(checkNames(pr.FailedChecks), ", ")
 	failed := fmt.Sprintf("CI failed on #%d", pr.Number)
-	if err := sh.s.AddRunEvent(r.ID, "ci", failed+": "+strings.Join(names, ", ")); err != nil {
+	if twice {
+		failed = fmt.Sprintf("CI failed twice on #%d", pr.Number)
+	}
+	if err := sh.s.AddRunEvent(r.ID, "ci", failed+": "+names); err != nil {
 		return false, err
 	}
 	if r.Tries+1 >= r.MaxTries {
-		return sh.moveTry(store.RunStopped, fmt.Sprintf("%s after %s: %s", failed, count(r.Tries+1, "try"), strings.Join(names, ", ")))
+		return sh.moveTry(store.RunStopped, fmt.Sprintf("%s after %s: %s", failed, count(r.Tries+1, "try"), names))
 	}
-	prompt := ciPrompt(ctx, sh.gh, repo, r, pr, hasChecks(sh.s, r))
-	return sh.resume(ctx, prompt, failed+": "+strings.Join(names, ", "), "CI failure", func(r *store.Run) { r.Tries++ })
+	prompt := ciPrompt(ctx, sh.gh, repo, r, pr, twice, hasChecks(sh.s, r))
+	return sh.resume(ctx, prompt, failed+": "+names, "CI failure", func(r *store.Run) { r.Tries, r.CISent = r.Tries+1, pr.HeadOID })
+}
+
+// rerunCI runs the failed jobs of pr again, with one gh run rerun --failed
+// for each GitHub Actions run of a failed check, so a flaky job costs no try.
+// The run stays in its state, and keeps the head of pr in [store.Run.CIRerun],
+// so Loam runs the jobs of a head again at most once. While a check of the
+// head still runs, rerunCI waits, with rerun true: GitHub refuses to run the
+// failed jobs of a run again before all its jobs end, and the PR does not say
+// which run a check that runs is in. rerun is false when Loam ran nothing
+// again: a failed check that is not a job of GitHub Actions fails again on
+// the same head, and a rerun that GitHub refuses, such as of a run that is
+// gone, is a ci event. Then the failure goes back to the session. A rerun
+// that cannot reach GitHub is an error, for the next tick.
+func (sh *shipper) rerunCI(ctx context.Context, repo github.Repo, pr *github.PR) (moved, rerun bool, err error) {
+	var runs []int64
+	for _, c := range pr.FailedChecks {
+		if c.RunID == 0 {
+			return false, false, nil
+		}
+		if !slices.Contains(runs, c.RunID) {
+			runs = append(runs, c.RunID)
+		}
+	}
+	if len(runs) == 0 {
+		return false, false, nil
+	}
+	if pr.Checks.Running > 0 {
+		return false, true, nil // the run of a failed check may not have ended
+	}
+	names := strings.Join(checkNames(pr.FailedChecks), ", ")
+	for _, id := range runs {
+		if err := sh.gh.RerunFailed(ctx, repo, id); err != nil {
+			if errors.Is(err, github.ErrOffline) || errors.Is(err, github.ErrRateLimited) {
+				return false, false, err
+			}
+			note := fmt.Sprintf("CI failed on #%d: %s. Loam could not run the failed jobs again: %v", pr.Number, names, err)
+			return false, false, sh.s.AddRunEvent(sh.r.ID, "ci", note)
+		}
+	}
+	note := fmt.Sprintf("CI failed on #%d: %s. Loam runs the failed jobs again (%s)", pr.Number, names, runList(runs))
+	moved, err = sh.update(func(r *store.Run) { r.CIRerun, r.Note = pr.HeadOID, note })
+	if !moved || err != nil {
+		return moved, true, err
+	}
+	return moved, true, sh.s.AddRunEvent(sh.r.ID, "ci", note)
+}
+
+// checkNames are the names of the checks.
+func checkNames(checks []github.Check) []string {
+	names := make([]string, len(checks))
+	for i, c := range checks {
+		names[i] = c.Name
+	}
+	return names
+}
+
+// runList names the GitHub Actions runs, such as "run 9001" or "runs 9001,
+// 9002".
+func runList(runs []int64) string {
+	ids := make([]string, len(runs))
+	for i, id := range runs {
+		ids[i] = fmt.Sprint(id)
+	}
+	if len(ids) == 1 {
+		return "run " + ids[0]
+	}
+	return "runs " + strings.Join(ids, ", ")
 }
 
 // resume sends the prompt back to the session of the run, and the run is
@@ -561,12 +682,24 @@ func (sh *shipper) resume(ctx context.Context, prompt, note, what string, addTry
 // checks also gets [leaveToGate].
 const ciTests = "To find the cause, read the logs above, and run only the tests that failed in CI, such as one test or one package."
 
+// ciOutside is in each prompt of a CI failure. A flaky test that the run did
+// not touch can fail CI, and a change to it to make CI pass is outside the
+// goal of the run. The session says so instead, and makes no commit. Then CI
+// fails again on the same head, and Loam stops the run (see
+// [shipper.failCI]), so you read the last message of the session.
+const ciOutside = "Do not change a test outside the goal of the run to make CI pass. When the failure is outside your change, say so in your last message, change nothing, and end your turn."
+
 // ciPrompt is the prompt that sends a CI failure back: each failed check,
-// with the end of its log. checks is whether the run has checks (see
+// with the end of its log. twice is whether the checks failed again after
+// Loam ran the failed jobs again. checks is whether the run has checks (see
 // [hasChecks]).
-func ciPrompt(ctx context.Context, gh *github.Client, repo github.Repo, r store.Run, pr *github.PR, checks bool) string {
+func ciPrompt(ctx context.Context, gh *github.Client, repo github.Repo, r store.Run, pr *github.PR, twice, checks bool) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "CI failed on #%d (try %d of %d). These checks failed:\n", pr.Number, r.Tries+1, r.MaxTries)
+	if twice {
+		fmt.Fprintf(&b, "CI failed twice on #%d (try %d of %d): Loam ran the failed jobs again, and they failed again. These checks failed:\n", pr.Number, r.Tries+1, r.MaxTries)
+	} else {
+		fmt.Fprintf(&b, "CI failed on #%d (try %d of %d). These checks failed:\n", pr.Number, r.Tries+1, r.MaxTries)
+	}
 	logs := map[int64]string{}
 	for _, c := range pr.FailedChecks {
 		fmt.Fprintf(&b, "\n## %s\n", c.Name)
@@ -586,7 +719,7 @@ func ciPrompt(ctx context.Context, gh *github.Client, repo github.Repo, r store.
 		}
 		fmt.Fprintf(&b, "\n```\n%s```\n", log)
 	}
-	fmt.Fprintf(&b, "\nFix the cause, commit the fix, and end your turn. Loam runs the Done when checks again, then pushes the fix to #%d.\n%s\n%s", pr.Number, ciTests, checksLine(checks, leaveToGate))
+	fmt.Fprintf(&b, "\nFix the cause, commit the fix, and end your turn. Loam runs the Done when checks again, then pushes the fix to #%d.\n%s\n%s\n%s", pr.Number, ciTests, ciOutside, checksLine(checks, leaveToGate))
 	return b.String()
 }
 

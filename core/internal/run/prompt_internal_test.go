@@ -56,7 +56,7 @@ func TestThePromptsLeaveTheChecksToTheGate(t *testing.T) {
 	for _, checks := range []bool{true, false} {
 		review, _ := reviewPromptFor("Changes are requested on #7.", pr, reviewOf(store.Run{}, pr), testReplies, checks)
 		ci := ciPrompt(context.Background(), nil, github.Repo{}, store.Run{MaxTries: 3},
-			&github.PR{Number: 7, FailedChecks: []github.Check{{Name: "core"}}}, checks)
+			&github.PR{Number: 7, FailedChecks: []github.Check{{Name: "core"}}}, false, checks)
 		sendBacks := map[string]string{
 			"gate":        reason(store.Run{Tries: 1, MaxTries: 3}, gates[checks]),
 			"code review": codeReviewPrompt([]codeReviewFinding{{Severity: severityMajor, File: "a.go", Line: 1, Text: "Loses the file."}}, 0, 1, checks),
@@ -80,6 +80,9 @@ func TestThePromptsLeaveTheChecksToTheGate(t *testing.T) {
 		}
 		if !strings.Contains(ci, ciTests) || strings.Contains(ci, "fast tests") {
 			t.Errorf("the CI prompt does not let the session run the failed tests:\n%s", ci)
+		}
+		if !strings.Contains(ci, ciOutside) {
+			t.Errorf("the CI prompt lets the session change a test outside its goal:\n%s", ci)
 		}
 	}
 }
@@ -107,5 +110,21 @@ func TestHasChecksCountsTheRulesOfThePlot(t *testing.T) {
 	}
 	if !hasChecks(s, r) {
 		t.Fatal("a run whose plot has a rule has no checks")
+	}
+}
+
+// TAS-210: a CI failure goes back to the session after Loam ran the failed
+// jobs again, so the prompt says that the jobs failed twice.
+func TestTheCIPromptSaysThatTheJobsFailedTwice(t *testing.T) {
+	pr := &github.PR{Number: 7, FailedChecks: []github.Check{{Name: "core"}}}
+	r := store.Run{Tries: 1, MaxTries: 3}
+	once := ciPrompt(context.Background(), nil, github.Repo{}, r, pr, false, true)
+	twice := ciPrompt(context.Background(), nil, github.Repo{}, r, pr, true, true)
+	if !strings.HasPrefix(once, "CI failed on #7 (try 2 of 3).") || strings.Contains(once, "twice") {
+		t.Errorf("the first failure:\n%s", once)
+	}
+	if !strings.HasPrefix(twice, "CI failed twice on #7 (try 2 of 3): Loam ran the failed jobs again, and they failed again.") ||
+		!strings.Contains(twice, ciOutside) {
+		t.Errorf("the second failure:\n%s", twice)
 	}
 }
