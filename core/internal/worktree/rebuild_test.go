@@ -12,6 +12,9 @@ import (
 	"github.com/GregorMcC/loam/core/internal/worktree"
 )
 
+// noLock is the lock of a rebuild in a test, which runs one at a time.
+func noLock(context.Context) (func(), error) { return func() {}, nil }
+
 // adminOf returns the metadata folder that the .git file of the worktree in
 // dir names.
 func adminOf(t *testing.T, dir string) string {
@@ -27,7 +30,7 @@ func TestRebuildLeavesAWorktreeThatGitKnows(t *testing.T) {
 	e := setup(t)
 	w := e.create("feature", "").Worktree
 	before := testutil.Git(t, w.Path, "rev-parse", "HEAD")
-	rebuilt, err := worktree.Rebuild(context.Background(), w)
+	rebuilt, err := worktree.Rebuild(context.Background(), w, noLock)
 	if err != nil || rebuilt {
 		t.Fatalf("rebuilt %v, %v", rebuilt, err)
 	}
@@ -53,7 +56,7 @@ func TestRebuildRebuildsPrunedMetadataAndKeepsTheFiles(t *testing.T) {
 	if err := os.RemoveAll(filepath.Dir(admin)); err != nil {
 		t.Fatal(err)
 	}
-	rebuilt, err := worktree.Rebuild(context.Background(), w)
+	rebuilt, err := worktree.Rebuild(context.Background(), w, noLock)
 	if err != nil || !rebuilt {
 		t.Fatalf("rebuilt %v, %v", rebuilt, err)
 	}
@@ -91,7 +94,7 @@ func TestRebuildRefusesAGoneBranch(t *testing.T) {
 		t.Fatal(err)
 	}
 	testutil.Git(t, e.repo, "update-ref", "-d", "refs/heads/"+w.Branch)
-	_, err := worktree.Rebuild(context.Background(), w)
+	_, err := worktree.Rebuild(context.Background(), w, noLock)
 	var re *worktree.RebuildError
 	if !errors.As(err, &re) || !strings.Contains(err.Error(), w.Path) || !strings.Contains(err.Error(), "the branch "+w.Branch+" is gone") {
 		t.Fatalf("err %v", err)
@@ -108,7 +111,7 @@ func TestRebuildRefusesAGitFileThatNamesAFolderOutsideTheRepo(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(w.Path, ".git"), []byte("gitdir: "+other+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err := worktree.Rebuild(context.Background(), w)
+	_, err := worktree.Rebuild(context.Background(), w, noLock)
 	var re *worktree.RebuildError
 	if !errors.As(err, &re) || !strings.Contains(err.Error(), w.Path) || !strings.Contains(err.Error(), "outside the git folder") {
 		t.Fatalf("err %v", err)
@@ -124,7 +127,52 @@ func TestRebuildLeavesAGoneFolder(t *testing.T) {
 	if err := os.RemoveAll(w.Path); err != nil {
 		t.Fatal(err)
 	}
-	if rebuilt, err := worktree.Rebuild(context.Background(), w); err != nil || rebuilt {
+	if rebuilt, err := worktree.Rebuild(context.Background(), w, noLock); err != nil || rebuilt {
 		t.Fatalf("rebuilt %v, %v", rebuilt, err)
+	}
+}
+
+// A process that finds the metadata gone waits for the lock, and then finds
+// the metadata that another process rebuilt meanwhile: it writes nothing.
+func TestRebuildChecksAgainAfterTheLock(t *testing.T) {
+	e := setup(t)
+	w := e.create("feature", "").Worktree
+	admin := adminOf(t, w.Path)
+	if err := os.RemoveAll(admin); err != nil {
+		t.Fatal(err)
+	}
+	locked := false
+	other := func(context.Context) (func(), error) {
+		locked = true
+		if err := os.Mkdir(admin, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return func() {}, nil
+	}
+	rebuilt, err := worktree.Rebuild(context.Background(), w, other)
+	if err != nil || rebuilt || !locked {
+		t.Fatalf("rebuilt %v, locked %v, %v", rebuilt, locked, err)
+	}
+	if entries, _ := os.ReadDir(admin); len(entries) != 0 {
+		t.Fatalf("Loam wrote in the metadata of the other process: %v", entries)
+	}
+	// A worktree that git knows takes no lock.
+	locked = false
+	if _, err := worktree.Rebuild(context.Background(), w, other); err != nil || locked {
+		t.Fatalf("locked %v, %v", locked, err)
+	}
+}
+
+// Only a .git file that is gone means a gone worktree. Another error reaches
+// the caller.
+func TestRebuildReturnsAnErrorThatIsNotAGoneFile(t *testing.T) {
+	e := setup(t)
+	w := e.create("feature", "").Worktree
+	if err := os.Chmod(w.Path, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(w.Path, 0o755) })
+	if _, err := worktree.Rebuild(context.Background(), w, noLock); err == nil {
+		t.Fatal("no error for a .git file that Loam cannot read")
 	}
 }

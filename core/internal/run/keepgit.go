@@ -4,9 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
+	"time"
 
 	"github.com/GregorMcC/loam/core/internal/store"
 	"github.com/GregorMcC/loam/core/internal/worktree"
+)
+
+// rebuildWait is how long [keepGit] waits for a rebuild in another Loam
+// process, and rebuildPoll is how often it tries the lock.
+const (
+	rebuildWait = 30 * time.Second
+	rebuildPoll = 50 * time.Millisecond
 )
 
 // gitEvent is the kind of the event that says that Loam rebuilt the git
@@ -33,12 +42,33 @@ func keepGit(ctx context.Context, s *store.Store, r store.Run) error {
 	if err != nil {
 		return err
 	}
-	rebuilt, err := worktree.Rebuild(ctx, w)
+	rebuilt, err := worktree.Rebuild(ctx, w, func(ctx context.Context) (func(), error) {
+		return waitRebuildLock(ctx, s.Home())
+	})
 	if err != nil || !rebuilt {
 		return err
 	}
 	return s.AddRunEvent(r.ID, gitEvent, fmt.Sprintf(
 		"The git metadata of %s was gone. Loam rebuilt it on %s and kept the files", w.Path, w.Branch))
+}
+
+// waitRebuildLock takes the lock of a rebuild in home, which no run can
+// write, so a session cannot hold the lock. It waits for another Loam
+// process that holds it, at most [rebuildWait].
+func waitRebuildLock(ctx context.Context, home string) (func(), error) {
+	ctx, cancel := context.WithTimeout(ctx, rebuildWait)
+	defer cancel()
+	for {
+		unlock, ok, err := lockFile(filepath.Join(home, "run-git.lock"))
+		if err != nil || ok {
+			return unlock, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, errors.New("another Loam process rebuilds the git metadata of a worktree, and it did not end in time")
+		case <-time.After(rebuildPoll):
+		}
+	}
 }
 
 // gitRefused reports whether err is a *[worktree.RebuildError] from

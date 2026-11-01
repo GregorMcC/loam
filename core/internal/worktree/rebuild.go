@@ -35,10 +35,19 @@ func (e *RebuildError) Error() string { return e.msg }
 // Rebuild does not ask git for the git folder: git follows a commondir file
 // in it, which the run can write to name another repo. It takes the .git
 // folder of w.Repo, as the sandbox of a run does.
-func Rebuild(ctx context.Context, w store.Worktree) (bool, error) {
+//
+// When the metadata is gone, Rebuild takes lock before it checks again and
+// writes, and holds it until the index is whole. So a second process that
+// finds the metadata gone waits, and then finds it there.
+func Rebuild(ctx context.Context, w store.Worktree, lock func(context.Context) (unlock func(), err error)) (bool, error) {
 	dotgit := filepath.Join(w.Path, ".git")
 	fi, err := os.Lstat(dotgit)
-	if err != nil || !fi.Mode().IsRegular() {
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return false, nil
+	case err != nil:
+		return false, err
+	case !fi.Mode().IsRegular():
 		return false, nil
 	}
 	b, err := os.ReadFile(dotgit)
@@ -53,11 +62,16 @@ func Rebuild(ctx context.Context, w store.Worktree) (bool, error) {
 		admin = filepath.Join(w.Path, admin)
 	}
 	admin = filepath.Clean(admin)
-	switch _, err := os.Lstat(admin); {
-	case err == nil:
-		return false, nil
-	case !errors.Is(err, fs.ErrNotExist):
+	if there, err := exists(admin); there || err != nil {
 		return false, err
+	}
+	unlock, err := lock(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer unlock()
+	if there, err := exists(admin); there || err != nil {
+		return false, err // another process rebuilt it
 	}
 	common := filepath.Join(w.Repo, ".git")
 	parent := filepath.Dir(admin)
@@ -127,6 +141,15 @@ func gitdirOf(dir string) string {
 		dir = r
 	}
 	return filepath.Join(dir, ".git")
+}
+
+// exists reports whether path is there, as a file, a folder, or a link.
+func exists(path string) (bool, error) {
+	_, err := os.Lstat(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // realDir reports whether path is a folder, and not a link to one.
