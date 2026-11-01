@@ -21,7 +21,12 @@ const (
 	ItemWhat  = "what"
 	ItemWhy   = "why"
 	ItemWhere = "where"
+	// ItemLinkOrder is the order of the links. Its one field is FieldLinkOrder.
+	ItemLinkOrder = "links"
 )
+
+// FieldLinkOrder is the field of [ItemLinkOrder]: the link IDs in order, joined with commas.
+const FieldLinkOrder = "order"
 
 // LinkItem returns the item name of a link, for example "link:k3v9q2mxa7".
 func LinkItem(id string) string { return "link:" + id }
@@ -154,6 +159,7 @@ const (
 	OpRemoveRepo  Op = "remove_repo"   // Item: repo:<id>.
 	OpSetMainRepo Op = "set_main_repo" // Item: repo:<id>.
 	OpSetGoal     Op = "set_goal"      // Item: worktree:<id>. Value: the goal.
+	OpMoveLink    Op = "move_link"     // Item: link:<id>. Value: the new position, from 1.
 )
 
 // Edit is one edit inside a change. Only the fields that the Op names are used.
@@ -253,7 +259,7 @@ type StaleItem struct {
 	Current  int64  `json:"current"`
 	// Exists is false when the item is gone now.
 	Exists bool `json:"exists"`
-	// Value is the current text of name, what, why, or where.
+	// Value is the current text of name, what, why, or where, or the link IDs of links.
 	Value    string    `json:"value,omitempty"`
 	Link     *Link     `json:"link,omitempty"`
 	Repo     *Repo     `json:"repo,omitempty"`

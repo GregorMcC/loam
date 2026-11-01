@@ -74,7 +74,7 @@ FROM repos r LEFT JOIN repo_settings s ON s.path = r.path WHERE r.plot_id = ? OR
 	}, `SELECT item, MAX(change_id) FROM change_entries WHERE plot_id = ? GROUP BY item`, id); err != nil {
 		return Plot{}, err
 	}
-	for _, item := range []string{ItemName, ItemWhat, ItemWhy, ItemWhere} {
+	for _, item := range []string{ItemName, ItemWhat, ItemWhy, ItemWhere, ItemLinkOrder} {
 		p.Versions[item] = all[item]
 	}
 	for i := range p.Links {

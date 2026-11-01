@@ -35,7 +35,7 @@ loam tick install                             # let launchd move runs on every 5
 | `loam new <name>` / `loam edit <plot>` | Make a plot, or edit its name and brief, in `$EDITOR` |
 | `loam set <plot> where-it-stands "..."` | Move the brief on. Also `name`, `what`, and `why`. |
 | `loam repo add <plot> <path>` | Add a repo. `loam repo main` makes a repo the main repo. `loam repo edit` and `loam repo rm` change it. |
-| `loam link add <plot> <label> <target>` | Add a link. `loam link edit` and `loam link rm` change it. `loam open <plot> <link>` opens it: browser, Obsidian, Finder, or the default app. |
+| `loam link add <plot> <label> <target>` | Add a link. `loam link edit` and `loam link rm` change it. `loam open <plot> <link>` opens it: browser, Obsidian, Finder, or the default app. `loam link move <plot> <link> <position>` moves it to a position, counting from 1. The seed lists links in this order. |
 | `loam changes` / `loam undo <change-id>` | Review the change log, and undo one change |
 | `loam move <plot> <n>` | Move a plot in the plot order |
 | `loam archive <plot>` / `loam unarchive <plot>` | Put a finished plot away, or bring it back. `loam delete` removes an archived plot. |

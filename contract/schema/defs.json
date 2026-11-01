@@ -93,9 +93,10 @@
         "links": { "type": "array", "items": { "$ref": "#/$defs/plotLink" } },
         "repos": { "type": "array", "items": { "$ref": "#/$defs/repo" } },
         "versions": {
-          "description": "Item to version. Items are name, what, why, where, link:<id>, repo:<id>, and worktree:<id>. A worktree item is 0 until a change sets its goal.",
+          "description": "Item to version. Items are name, what, why, where, links, link:<id>, repo:<id>, and worktree:<id>. links is the version of the link order, and 0 until the first move. A worktree item is 0 until a change sets its goal.",
           "type": "object",
-          "propertyNames": { "pattern": "^(name|what|why|where|link:[a-z2-7]{10}|repo:[a-z2-7]{10}|worktree:[a-z2-7]{10})$" },
+          "propertyNames": { "pattern": "^(name|what|why|where|links|link:[a-z2-7]{10}|repo:[a-z2-7]{10}|worktree:[a-z2-7]{10})$" },
+          "properties": { "links": { "$ref": "#/$defs/linkOrderVersion" } },
           "patternProperties": { "^worktree:": { "$ref": "#/$defs/worktreeVersion" } },
           "additionalProperties": { "$ref": "#/$defs/changeId" },
           "required": ["name", "what", "why", "where"]
@@ -132,7 +133,7 @@
       "additionalProperties": false,
       "required": ["item", "field", "old", "new"],
       "properties": {
-        "item": { "type": "string", "pattern": "^(name|what|why|where|link:[a-z2-7]{10}|repo:[a-z2-7]{10}|worktree:[a-z2-7]{10})$" },
+        "item": { "type": "string", "pattern": "^(name|what|why|where|links|link:[a-z2-7]{10}|repo:[a-z2-7]{10}|worktree:[a-z2-7]{10})$" },
         "field": { "type": "string", "minLength": 1 },
         "old": { "$ref": "#/$defs/nullableString" },
         "new": { "$ref": "#/$defs/nullableString" }
@@ -196,6 +197,11 @@
           "items": { "type": "string", "minLength": 1 }
         }
       }
+    },
+    "linkOrderVersion": {
+      "description": "The ID of the change that last moved a link of the plot, or 0 when no change has moved one.",
+      "type": "integer",
+      "minimum": 0
     },
     "worktreeVersion": {
       "description": "The ID of the change that last set the goal of a worktree, or 0 when no change has set it.",

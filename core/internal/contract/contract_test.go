@@ -431,6 +431,7 @@ func scenario(t *testing.T) *harness {
 	parse(h.run("link_add_app", "link-add", 0, "link", "add", loam, "Board", "https://example.com/board", "--actor", "app"), &c)
 	linkB := c.Link.ID
 	h.run("link_edit", "link-edit", 0, "link", "edit", loam, linkA, "--label", "Spec v1")
+	h.run("link_move", "link-move", 0, "link", "move", loam, linkB, "1")
 	h.run("link_rm", "link-rm", 0, "link", "rm", loam, linkB)
 
 	parse(h.run("repo_add", "repo-add", 0, "repo", "add", loam, repo("core"), "--note", "Go core"), &c)

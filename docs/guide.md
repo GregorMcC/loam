@@ -230,7 +230,7 @@ A pane whose session waits on you, for example at a permission prompt, turns amb
 
 <img src="images/plot-panel.png" align="right" width="300" alt="The plot panel: a change by Claude to Where it stands under New since you looked, with the word diff and Undo, then the brief, repos, links, and the change log.">
 
-The plot panel (⌘I) holds the brief, the repos, and the links, and you can edit all of them. When a session changes the plot, the change shows under "New since you looked", with the diff. The change log keeps every change, and Undo reverses one.
+The plot panel (⌘I) holds the brief, the repos, and the links, and you can edit all of them. When a session changes the plot, the change shows under "New since you looked", with the diff. The change log keeps every change, and Undo reverses one. Drag a link to change the order.
 
 The diff shows the words that Claude removed and added. Read it, then keep the change or undo it.
 

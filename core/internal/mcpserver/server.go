@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -374,6 +375,12 @@ type removeLinkIn struct {
 	LinkID string `json:"link_id" jsonschema:"ID of the link, from get_plot"`
 }
 
+type moveLinkIn struct {
+	plotArg
+	LinkID   string `json:"link_id" jsonschema:"ID of the link, from get_plot"`
+	Position int    `json:"position" jsonschema:"new place in the link list, 1 is the first"`
+}
+
 type setWhatWhyIn struct {
 	plotArg
 	What *string `json:"what,omitempty" jsonschema:"new What text"`
@@ -501,6 +508,22 @@ func (s *Server) register(srv *mcp.Server) {
 		item := store.LinkItem(in.LinkID)
 		res, err := s.write(in.Plot, []string{item}, nil, []store.Edit{{Op: store.OpUpdateLink, Item: item,
 			Label: in.Label, Target: in.Target, Note: in.Note}})
+		if err != nil {
+			return fail(err)
+		}
+		return reply(writeOut{ChangeID: res.ChangeID, Warnings: res.Warnings})
+	})
+
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "move_link",
+		Description: "Move a link to a position in the plot's link list (1 is the first). Put the link a session should read first at 1. Call get_plot first." + plotNote,
+		Annotations: changes("Move a link"),
+	}, func(_ context.Context, _ *mcp.CallToolRequest, in moveLinkIn) (*mcp.CallToolResult, any, error) {
+		if in.LinkID == "" {
+			return fail(errors.New("link_id is required"))
+		}
+		res, err := s.write(in.Plot, []string{store.ItemLinkOrder}, nil, []store.Edit{{Op: store.OpMoveLink,
+			Item: store.LinkItem(in.LinkID), Value: strconv.Itoa(in.Position)}})
 		if err != nil {
 			return fail(err)
 		}
