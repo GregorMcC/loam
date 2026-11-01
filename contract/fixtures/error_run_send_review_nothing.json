@@ -2,6 +2,6 @@
   "error": {
     "exit_code": 2,
     "kind": "invalid",
-    "message": "#25 has no review to send back: no thread is open, and Loam sent each review that requests changes: invalid input"
+    "message": "#25 has no review to send back: no thread is open, and Loam sent each review that requests changes or has a Critical or Major finding: invalid input"
   }
 }

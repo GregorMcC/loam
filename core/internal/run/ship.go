@@ -269,7 +269,7 @@ func (sh *shipper) watch(ctx context.Context) (bool, error) {
 	case ciNotPassed(pr.Checks):
 		kind, note = "ship", fmt.Sprintf("The checks of #%d run or failed after it was ready. Loam reads CI again", pr.Number)
 	case !reviewOf(sh.r, pr).empty() && sh.r.ReviewTries < store.DefaultMaxReviewTries:
-		kind, note = "review", fmt.Sprintf("Changes are requested on #%d after it was ready. Loam sends the review back", pr.Number)
+		kind, note = "review", requestedOn(pr)+" after it was ready. Loam sends the review back"
 	default:
 		return false, nil
 	}
@@ -532,17 +532,28 @@ func (sh *shipper) since(kind string) time.Duration {
 // pr. When the review of pr requests changes that Loam can send back (see
 // [reviewOf]), the review goes back to the session first, as a review try.
 // With no review tries left, the run is Ready, and the note says that
-// changes are requested.
+// changes are requested. With nothing to send, a run whose head CodeRabbit
+// did not review waits for it first (see [shipper.waitForCodeRabbit]), and
+// the note of the Ready run says so. The Ready note also says when only a
+// review of an older commit requests changes (see [olderChangeRequest]).
 func (sh *shipper) passCI(ctx context.Context, pr *github.PR, note string) (bool, error) {
+	rv := reviewOf(sh.r, pr)
+	if rv.empty() {
+		if why := codeRabbitMissed(pr); why != "" {
+			if wait, moved, err := sh.waitForCodeRabbit(pr, why); wait || err != nil {
+				return moved, err
+			}
+			note = fmt.Sprintf("%s. CodeRabbit did not review the head of #%d: %s", note, pr.Number, why)
+		}
+	}
 	if err := sh.s.AddRunEvent(sh.r.ID, "ci", note); err != nil {
 		return false, err
 	}
-	rv := reviewOf(sh.r, pr)
 	switch {
 	case rv.empty():
-		return sh.move(store.RunReady, note)
+		return sh.move(store.RunReady, note+olderChangeRequest(pr))
 	case sh.r.ReviewTries >= store.DefaultMaxReviewTries:
-		return sh.move(store.RunReady, fmt.Sprintf("%s. The review tries are used up, and changes are requested on #%d", note, pr.Number))
+		return sh.move(store.RunReady, fmt.Sprintf("%s. The review tries are used up, and %s%s", note, reviewAsks(pr), olderChangeRequest(pr)))
 	}
 	return sh.sendReview(ctx, pr, rv, false)
 }

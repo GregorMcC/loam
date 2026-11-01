@@ -51,6 +51,7 @@
     "rebase"
   ],
   "pr": {
+    "app_comments": [],
     "approvals": 0,
     "base": "main",
     "behind_base": 0,
@@ -72,12 +73,14 @@
       "total": 1,
       "waiting": 0
     },
+    "comment_reviews": [],
     "comments": 3,
     "commits": 2,
     "draft": false,
     "failed_checks": [],
     "head": "rename-users",
     "head_oid": "5555555555555555555555555555555555555555",
+    "head_reviewers": [],
     "in_merge_queue": false,
     "merge_state": "BLOCKED",
     "mergeable": "MERGEABLE",

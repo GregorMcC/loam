@@ -52,6 +52,7 @@
       "rebase"
     ],
     "pr": {
+      "app_comments": [],
       "approvals": 0,
       "base": "main",
       "behind_base": 0,
@@ -66,12 +67,14 @@
         "total": 1,
         "waiting": 0
       },
+      "comment_reviews": [],
       "comments": 0,
       "commits": 0,
       "draft": false,
       "failed_checks": [],
       "head": "tidy-the-readme",
       "head_oid": "1234512345123451234512345123451234512345",
+      "head_reviewers": [],
       "in_merge_queue": false,
       "merge_state": "CLEAN",
       "mergeable": "MERGEABLE",

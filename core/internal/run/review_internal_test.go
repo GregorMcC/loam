@@ -231,3 +231,172 @@ func TestReviewPromptLeavesOpenAThreadWithMoreCommentsThanLoamReads(t *testing.T
 		t.Fatalf("cut %q:\n%s", held.cut, prompt)
 	}
 }
+
+func TestHasMajorFindingReadsTheSeverityOfAFindingHeader(t *testing.T) {
+	for body, want := range map[string]bool{
+		"`a.go`: _⚠️ Potential issue_ | _🟠 Major_\n\n**Drops the error.**":  true,
+		"`a.go`: _⚠️ Potential issue_ | _🔴 Critical_\n\n**Leaks a token.**": true,
+		"`a.go`: **Major**: drops the error.":                               true,
+		"`a.go`: _🛠️ Refactor suggestion_ | _🟡 Minor_":                      false,
+		"`a.go`: _🧹 Nitpick_ | _🔵 Trivial_":                                 false,
+		"A Major rewrite of the Critical path.":                             false,
+		"_Majority_ of the code.":                                           false,
+		// The icon form of CodeRabbit on this repo, from a review of #95.
+		pictureHeader("major", "Major"): true,
+		pictureHeader("amber", "Minor"): false,
+		// A bold title or emphasis that starts with the word is not a severity.
+		"`a.go`: _🧹 Nitpick_ | _🔵 Trivial_\n\n**Critical section is not locked.**":        false,
+		"`a.go`: _🛠️ Refactor suggestion_ | _🟡 Minor_\n\n**Major improvement verified.**": false,
+		"_Major_ rewrite is fine.":     true,
+		"*Critical path* of the gate.": false,
+	} {
+		if got := hasMajorFinding(body); got != want {
+			t.Errorf("hasMajorFinding(%q) = %v, want %v", body, got, want)
+		}
+	}
+}
+
+// A review body that the cut would end before a Major finding, such as after a long list of nitpicks, goes to the
+// session as its Critical and Major findings, each with its file. A body whose findings fit goes as it is.
+func TestReviewPromptSendsTheMajorFindingsOfALongReview(t *testing.T) {
+	nitpicks := "<details>\n<summary>🧹 Nitpick comments (40)</summary>\n\n" +
+		strings.Repeat("`a.go`: _🧹 Nitpick_ | _🔵 Trivial_\n\n**Rename x.**\n\n", 200) + "</details>\n"
+	major := "<details>\n<summary>⚠️ Outside diff range comments (1)</summary>\n<details>\n<summary>core/run.go (1)</summary>\n\n" +
+		"`12-20`: _⚠️ Potential issue_ | _🟠 Major_\n\n**The wait never ends.**\n\n" +
+		"<details>\n<summary>🤖 Prompt for AI Agents</summary>\nFix the wait.\n</details>\n\n" +
+		"`30-31`: _🛠️ Refactor suggestion_ | _🟡 Minor_\n\n**A small thing.**\n</details>\n</details>\n"
+	pr := &github.PR{Number: 1}
+	long := github.Review{ID: "R1", Author: "coderabbitai", Body: nitpicks + major}
+	prompt, _ := reviewPromptFor("Opening.", pr, review{requests: []github.Review{long}}, "/r.json", false)
+	for _, want := range []string{
+		"Loam sends only its Critical and Major findings. Read the rest on GitHub.",
+		"> core/run.go (1)\n> `12-20`: _⚠️ Potential issue_ | _🟠 Major_", "> **The wait never ends.**", "> Fix the wait.",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("the prompt misses %q:\n%s", want, prompt)
+		}
+	}
+	if strings.Contains(prompt, "Rename x.") || strings.Contains(prompt, "A small thing.") || strings.Contains(prompt, cutMark) {
+		t.Errorf("the prompt has a Minor or Trivial finding, or a cut:\n%s", prompt)
+	}
+	// The Major finding is in the first 4000 characters, so the body goes as it is, cut.
+	early := github.Review{ID: "R2", Author: "coderabbitai", Body: major + nitpicks}
+	prompt, _ = reviewPromptFor("Opening.", pr, review{requests: []github.Review{early}}, "/r.json", false)
+	if strings.Contains(prompt, "Loam sends only") || !strings.Contains(prompt, "> **Rename x.**") || !strings.Contains(prompt, cutMark) {
+		t.Errorf("the body did not go as it is:\n%s", prompt)
+	}
+}
+
+// Only the heading of a notice of CodeRabbit says that it did not review: its summary also describes the PR, which
+// can be about these words. A review of CodeRabbit on the head says that it reviewed the head.
+func TestCodeRabbitMissedReadsTheNoticeHeadingOnly(t *testing.T) {
+	comment := func(body string) *github.PR {
+		return &github.PR{HeadOID: "h1", AppComments: []github.AppComment{{Author: "coderabbitai", Body: body}}}
+	}
+	for body, want := range map[string]string{
+		"> [!NOTE]\n> ## Reviews paused\n>\n> Use `@coderabbitai resume`.":                    "its reviews are paused",
+		"> [!WARNING]\n> ## Rate limit exceeded\n>\n> Wait 12 minutes.":                       "it reached its review limit",
+		"## Walkthrough\nA run waits when reviews are paused or the review limit is reached.": "",
+		"## Walkthrough\n- Reviews paused, rate limit exceeded: the run waits.":               "",
+	} {
+		if got := codeRabbitMissed(comment(body)); got != want {
+			t.Errorf("codeRabbitMissed(%q) = %q, want %q", body, got, want)
+		}
+	}
+	skipped := []github.Check{{Name: "CodeRabbit", Skipped: true}}
+	if got := codeRabbitMissed(&github.PR{HeadOID: "h1", PassedChecks: skipped}); got != "its check was skipped" {
+		t.Errorf("skipped check: %q", got)
+	}
+	reviewed := &github.PR{HeadOID: "h1", PassedChecks: skipped, AppComments: comment("> ## Reviews paused").AppComments,
+		CommentReviews: []github.Review{{ID: "R1", Author: "coderabbitai", Commit: "h1"}}}
+	if got := codeRabbitMissed(reviewed); got != "" {
+		t.Errorf("a review that only comments on the head: %q", got)
+	}
+	reviewed.CommentReviews = nil
+	reviewed.ChangeRequests = []github.Review{{ID: "R2", Author: "coderabbitai", Commit: "h1"}}
+	if got := codeRabbitMissed(reviewed); got != "" {
+		t.Errorf("a change request on the head: %q", got)
+	}
+	reviewed.ChangeRequests[0].Commit = "h0"
+	if got := codeRabbitMissed(reviewed); got != "its check was skipped" {
+		t.Errorf("a change request on an older commit: %q", got)
+	}
+	// With request_changes_workflow on, CodeRabbit approves a head with no open finding.
+	reviewed.HeadReviewers = []string{"alice", "coderabbitai"}
+	if got := codeRabbitMissed(reviewed); got != "" {
+		t.Errorf("an approval of the head: %q", got)
+	}
+}
+
+// pictureHeader is a finding header in the icon form of CodeRabbit, with the icon and the severity.
+func pictureHeader(icon, severity string) string {
+	return "`213-214`: **<picture><img src=\"https://storage.googleapis.com/coderabbit_public_assets/review-comment-icons-v1/" + icon +
+		"-16.svg\" width=\"16\" height=\"16\" align=\"absmiddle\" alt=\"\"></picture> " + severity +
+		"** · **Data Integrity & Integration** · **Quick win**"
+}
+
+// A long review in the icon form goes to the session as its Major findings: the Minor header in the same form ends
+// the Major finding before it.
+func TestReviewPromptSendsTheMajorFindingsOfALongReviewInTheIconForm(t *testing.T) {
+	nitpicks := strings.Repeat(pictureHeader("amber", "Minor")+"\n\n**Rename x.**\n\n", 100)
+	body := nitpicks + "<summary>core/run.go (2)</summary>\n\n" + pictureHeader("major", "Major") + "\n\n**The wait never ends.**\n\n" +
+		pictureHeader("amber", "Minor") + "\n\n**A small thing.**\n"
+	if !hasMajorFinding(body) {
+		t.Fatal("no Major finding")
+	}
+	rv := review{requests: []github.Review{{ID: "R1", Author: "coderabbitai", Body: body}}}
+	prompt, _ := reviewPromptFor("Opening.", &github.PR{Number: 1}, rv, "/r.json", false)
+	for _, want := range []string{"Loam sends only its Critical and Major findings", "> core/run.go (2)",
+		"major-16.svg", "> **The wait never ends.**"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("the prompt misses %q:\n%s", want, prompt)
+		}
+	}
+	if strings.Contains(prompt, "Rename x.") || strings.Contains(prompt, "A small thing.") {
+		t.Errorf("the prompt has a Minor finding:\n%s", prompt)
+	}
+}
+
+// A Major header just before the cut keeps the count of headers in the cut, but the cut ends its text. The review
+// goes as its Critical and Major findings, so the session gets all of the finding.
+func TestReviewPromptSendsAMajorFindingThatTheCutEnds(t *testing.T) {
+	filler := strings.Repeat("A line of the walkthrough.\n", (reviewTextMax-200)/27)
+	finding := "`5-9`: _⚠️ Potential issue_ | _🟠 Major_\n\n**The cut ends this finding.**\n\n" +
+		strings.Repeat("More of the finding. ", 40) + "The end of the finding.\n"
+	body := filler + finding + "`30-31`: _🛠️ Refactor suggestion_ | _🟡 Minor_\n\n**A small thing.**\n"
+	if n := len([]rune(filler)); n >= reviewTextMax {
+		t.Fatalf("the filler is %d characters", n)
+	}
+	text, excerpt := reviewText(body)
+	if !excerpt || !strings.Contains(text, "The end of the finding.") || strings.Contains(text, "A small thing.") ||
+		strings.Contains(text, "walkthrough") {
+		t.Fatalf("excerpt %v:\n%s", excerpt, text)
+	}
+	// The whole finding is in the cut, up to the header after it: the body goes as it is.
+	if _, excerpt := reviewText(finding + "`30-31`: _🛠️ Refactor suggestion_ | _🟡 Minor_\n\n**A small thing.**\n" + filler); excerpt {
+		t.Fatal("a finding in the cut gave an excerpt")
+	}
+}
+
+// CodeRabbit names the file of a finding in two forms: with the count of its findings, and with the lines and the
+// count of a finding, as in its review of #95. Each can be in HTML tags.
+func TestMajorFindingsNameTheFileOfEachFinding(t *testing.T) {
+	nitpicks := strings.Repeat("`a.go`: _🧹 Nitpick_ | _🔵 Trivial_\n\n**Rename x.**\n\n", 200)
+	for _, c := range []struct{ line, want string }{
+		{"<summary>core/internal/run/codereview.go-213-214: 1</summary>", "core/internal/run/codereview.go-213-214: 1"},
+		{"<summary><code>core/internal/run/codereview.go</code>-213-214: 1</summary>", "core/internal/run/codereview.go-213-214: 1"},
+		{"<summary>core/run.go (2)</summary>", "core/run.go (2)"},
+		{"> core/run.go-7: 1", "core/run.go-7: 1"},
+	} {
+		body := nitpicks + "<details>\n" + c.line + "<blockquote>\n\n<details>\n<summary>🤖 Prompt for AI Agents</summary>\nOld.\n</details>\n\n" +
+			"`213-214`: " + pictureHeader("major", "Major")[len("`213-214`: "):] + "\n\n**The wait never ends.**\n"
+		text, excerpt := reviewText(body)
+		if !excerpt || !strings.HasPrefix(text, c.want+"\n`213-214`: **<picture>") || !strings.Contains(text, "**The wait never ends.**") {
+			t.Errorf("%s: excerpt %v:\n%s", c.line, excerpt, text)
+		}
+	}
+	// A line with a space in its path part, such as a section title, names no file.
+	if got := fileOf("<summary>🧹 Nitpick comments (3)</summary>\n<summary>⚠️ Outside diff range comments (1)</summary>"); got != "" {
+		t.Errorf("fileOf = %q", got)
+	}
+}

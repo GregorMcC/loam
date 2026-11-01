@@ -284,12 +284,12 @@
         "behind_base", "checks_running", "waiting_for_review", "blocked", "ready_to_merge", "pushed_no_pr", "not_pushed", ""]
     },
     "pullRequest": {
-      "description": "A pull request. The fields from behind_base to review_threads are 0 or empty for a merged or closed PR.",
+      "description": "A pull request. The fields from behind_base to app_comments are 0 or empty for a merged or closed PR.",
       "type": "object",
       "additionalProperties": false,
       "required": ["number", "title", "url", "state", "draft", "mergeable", "merge_state", "review_decision", "in_merge_queue",
         "queue_position", "base", "head", "head_oid", "commits", "behind_base", "approvals", "comments", "checks", "failed_checks", "passed_checks",
-        "change_requests", "review_threads"],
+        "change_requests", "review_threads", "comment_reviews", "head_reviewers", "app_comments"],
       "properties": {
         "number": { "type": "integer", "minimum": 1 },
         "title": { "type": "string" },
@@ -326,7 +326,33 @@
           "description": "The review threads that are not resolved, of the first 100, in the order of GitHub. comments counts them. MCP list_worktrees leaves it out.",
           "type": "array",
           "items": { "$ref": "#/$defs/reviewThread" }
+        },
+        "comment_reviews": {
+          "description": "The reviews of apps that only comment: for each app whose review can push to the repo, its last review with a body on the head commit, when it is COMMENTED. Of the last 100 reviews. MCP list_worktrees leaves it out.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/review" }
+        },
+        "head_reviewers": {
+          "description": "The logins of the authors of a review of the head commit that approves, requests changes, or has a body, in the order of their first such review, of the last 100 reviews. MCP list_worktrees leaves it out.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "app_comments": {
+          "description": "The comments of apps on the PR, not on a line: of each app, the comment that it edited or wrote last, of the last 100 comments, in the order of GitHub. MCP list_worktrees leaves it out.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/appComment" }
         }
+      }
+    },
+    "appComment": {
+      "description": "A comment of an app on a PR, not on a line.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["author", "body", "url"],
+      "properties": {
+        "author": { "description": "The login of the app, such as coderabbitai.", "type": "string", "minLength": 1 },
+        "body": { "description": "The text of the comment, in Markdown.", "type": "string" },
+        "url": { "type": "string" }
       }
     },
     "review": {
@@ -338,7 +364,8 @@
         "id": { "description": "The node ID of the review on GitHub.", "type": "string", "minLength": 1 },
         "author": { "description": "The login of the reviewer. ghost for a deleted account.", "type": "string", "minLength": 1 },
         "body": { "description": "The text of the review, in Markdown. Empty when the review has only comments on lines.", "type": "string" },
-        "url": { "type": "string" }
+        "url": { "type": "string" },
+        "commit": { "description": "The commit that the review is of. Left out when GitHub gives none.", "type": "string" }
       }
     },
     "reviewThread": {
@@ -399,7 +426,8 @@
           "description": "The GitHub Actions run of the check, which loam worktree rerun runs again. It is left out for a check that is not a job of GitHub Actions.",
           "type": "integer",
           "minimum": 1
-        }
+        },
+        "skipped": { "description": "True for a check run that GitHub skipped, which counts as passed. Left out for each other check.", "type": "boolean" }
       }
     },
     "runState": {
@@ -710,7 +738,7 @@
         "id": { "type": "integer", "minimum": 1 },
         "run_id": { "$ref": "#/$defs/id" },
         "at": { "$ref": "#/$defs/time" },
-        "kind": { "description": "state: the new state. try: a failed gate or CI, with its note. check: the result of one check. gate: a wait of the gate for the gate of another run. linear: what Loam did to the Linear issue of the run. ship: a push or a PR. ci: the result of CI on the PR. conflict: the PR conflicts with its base branch, so the run went back to merge it, or stopped. code_review: the result of the code review before a push, with the count of each severity and the round. review: your notes went back to the session, or the review of the PR requests changes. note: one of those notes, as <file> line <n>: <text> or as text alone. land: a merge of the PR, or where it waits. shape: a draft by Claude, or why it failed. draft: one step that Claude took while it drafted, such as Read window/frame.go. followup: a follow-up that approve filed as an issue, or why it could not. git: Loam rebuilt the git metadata of the worktree of the run.", "enum": ["state", "try", "check", "gate", "linear", "ship", "ci", "conflict", "code_review", "review", "note", "land", "shape", "draft", "followup", "git"] },
+        "kind": { "description": "state: the new state. try: a failed gate or CI, with its note. check: the result of one check. gate: a wait of the gate for the gate of another run. linear: what Loam did to the Linear issue of the run. ship: a push or a PR. ci: the result of CI on the PR. conflict: the PR conflicts with its base branch, so the run went back to merge it, or stopped. code_review: the result of the code review before a push, with the count of each severity and the round. review: your notes went back to the session, the review of the PR requests changes or has a Critical or Major finding, or the run waits because CodeRabbit did not review the head. note: one of those notes, as <file> line <n>: <text> or as text alone. land: a merge of the PR, or where it waits. shape: a draft by Claude, or why it failed. draft: one step that Claude took while it drafted, such as Read window/frame.go. followup: a follow-up that approve filed as an issue, or why it could not. git: Loam rebuilt the git metadata of the worktree of the run.", "enum": ["state", "try", "check", "gate", "linear", "ship", "ci", "conflict", "code_review", "review", "note", "land", "shape", "draft", "followup", "git"] },
         "detail": { "type": "string" },
         "check": { "description": "The result of the check of a check event. It is left out for another kind, and for an event from before Loam stored it.", "$ref": "#/$defs/runCheckResult" },
         "code_review": { "description": "What the code review of a code_review event found. It is left out for another kind, for a review that did not run or was off, and for an event from before Loam stored it.", "$ref": "#/$defs/runCodeReviewRound" }
