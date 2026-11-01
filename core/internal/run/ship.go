@@ -158,6 +158,9 @@ func (sh *shipper) ship(ctx context.Context) (bool, error) {
 	case err != nil:
 		return false, err
 	}
+	if stop, moved, err := sh.keepGit(ctx); stop || err != nil {
+		return moved, err
+	}
 	repo, ok := worktree.GitHubRepo(w.Repo)
 	if !ok {
 		return sh.move(store.RunReady, "The repo has no GitHub origin, so Loam opens no PR")
@@ -225,6 +228,9 @@ func (sh *shipper) watch(ctx context.Context) (bool, error) {
 		return sh.watchGone(ctx, false)
 	case err != nil:
 		return false, err
+	}
+	if stop, moved, err := sh.keepGit(ctx); stop || err != nil {
+		return moved, err
 	}
 	if sh.ghErr != nil {
 		return false, nil
@@ -721,7 +727,8 @@ func ciPrompt(ctx context.Context, gh *github.Client, repo github.Repo, r store.
 // turn, so Loam stops it first: a resume of a waiting session starts a copy
 // of it. The resume passes the settings of the run again (see
 // [session.PrepareRunResume]): with no flags, the session would have no
-// sandbox and no run hooks. When Loam cannot build them, the session gets no
+// sandbox and no run hooks. When Loam cannot build them, or does not rebuild
+// the git metadata of the worktree (see [keepGit]), the session gets no
 // prompt.
 func send(ctx context.Context, s *store.Store, r store.Run, prompt string) error {
 	if missing := sandbox.Available(); missing != nil {
@@ -733,6 +740,10 @@ func send(ctx context.Context, s *store.Store, r store.Run, prompt string) error
 	}
 	model, effort, err := withDefaults(s, r.PlotID, "", "")
 	if err != nil {
+		return err
+	}
+	// The sandbox of the session needs the git metadata of the worktree.
+	if err := keepGit(ctx, s, r); err != nil {
 		return err
 	}
 	plan, err := session.PrepareRunResume(s, r, prompt, loam, model, effort)
@@ -845,6 +856,19 @@ func closesRef(src *store.RunSource, repo github.Repo) string {
 		return issueRepo.Owner + "/" + issueRepo.Name + "#" + number
 	}
 	return "#" + number
+}
+
+// keepGit rebuilds the git metadata of the worktree of the run when it is
+// gone (see [keepGit]). When Loam does not rebuild it, the step stops (stop
+// is true), and the run is Stopped when it is still in the state that the
+// tick found (moved is true).
+func (sh *shipper) keepGit(ctx context.Context) (stop, moved bool, err error) {
+	err = keepGit(ctx, sh.s, sh.r)
+	if gitRefused(err) {
+		moved, err = sh.move(store.RunStopped, err.Error())
+		return true, moved, err
+	}
+	return false, false, err
 }
 
 // move puts the run in the state with the note.

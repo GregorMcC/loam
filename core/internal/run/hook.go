@@ -73,8 +73,15 @@ func Hook(s *store.Store, runID string, in io.Reader, out, errOut io.Writer) int
 // [maxBlockedStops] stops in a row, and stops the run at the next one. A run
 // that is not running lets the session stop: you may have typed in it after
 // it was Ready. A run that a tick stopped as idle just now gets the gate too
-// (see [endsATurn]). The hook holds the gate lock of the run (see
-// [holdGate]) from the first read of the run to the record of the gate.
+// (see [endsATurn]). Before the checks, the gate rebuilds the git metadata
+// of the worktree when a session pruned it (see [keepGit]). When Loam does
+// not rebuild it, the run is Stopped, and no check runs. When the metadata
+// is not ready for another reason, such as a rebuild in another Loam process
+// that did not end in time, no check runs and no try counts, as when the
+// gate waits out the gate lock: the stop is blocked, and the gate runs again
+// at the next stop. The hook holds the
+// gate lock of the run (see [holdGate]) from the first read of the run to the
+// record of the gate.
 func stopped(s *store.Store, runID string, errOut io.Writer, logf func(string, ...any)) int {
 	// While the gate runs, a tick does not take the run as idle.
 	defer holdGate(s, runID, logf)()
@@ -98,7 +105,20 @@ func stopped(s *store.Store, runID string, errOut io.Writer, logf func(string, .
 		limits.MaxTurns = 0 // a broken store does not stop the run
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), gateBudget)
-	g := gate(ctx, s, r, logf)
+	var g gateResult
+	switch err := keepGit(ctx, s, r); {
+	case gitRefused(err):
+		cancel()
+		logf("run %s: %v", runID, stopAfter(s, runID, err))
+		return 0
+	case err != nil:
+		// Git may not work in the worktree yet, so a check could fail for
+		// no fault of the session. The gate runs at the next stop.
+		logf("run %s: check the git metadata: %v", runID, err)
+		g = gateResult{noGit: err}
+	default:
+		g = gate(ctx, s, r, logf)
+	}
 	cancel()
 	_, outOfTime := g.outOfTime()
 	ships := !outOfTime && len(g.failed) == 0 && onGitHub(s, r)

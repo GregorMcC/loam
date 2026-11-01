@@ -4,8 +4,10 @@
 // and branch -d. It runs branch -D only for the branch of a merged PR whose
 // tip is the PR head or an earlier commit of the PR (see [Remove]). For a
 // repo add, it also runs switch and merge --ff-only on the normal checkout
-// (see [SwitchToDefault]). It never runs the setup command of a repo. `loam
-// start` runs the setup command.
+// (see [SwitchToDefault]). To rebuild the metadata of a worktree that git
+// worktree prune deleted, it runs reset -q in the worktree (see [Rebuild]).
+// It never runs the setup command of a repo. `loam start` runs the setup
+// command.
 //
 // It reads the pull request of each branch from GitHub through gh and keeps
 // it in the PR cache (see [RefreshPRs] and [StageOf]). It acts on GitHub only

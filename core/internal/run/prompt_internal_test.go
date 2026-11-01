@@ -9,6 +9,22 @@ import (
 	"github.com/GregorMcC/loam/core/internal/store"
 )
 
+// TAS-217: the session of a run can write the git folder of the repo, and
+// git worktree prune there deletes the metadata of the other worktrees. So
+// the first prompt names the git commands that the session must not run, and
+// how to compare with a base.
+func TestTheFirstPromptKeepsTheSessionOffTheSharedGitFolder(t *testing.T) {
+	first := Prompt(store.Run{Goal: "Say hi."}, nil)
+	for _, want := range []string{
+		"Do not run git worktree add, remove, or prune, or git gc, and do not change a ref other than the branch of this worktree.",
+		"git show <rev>:<path>, or git archive <rev> | tar -x -C <temp folder>",
+	} {
+		if !strings.Contains(first, want) {
+			t.Errorf("the first prompt misses %q:\n%s", want, first)
+		}
+	}
+}
+
 // TAS-205: a full check can take minutes, and the gate runs it anyway. So
 // the first prompt of a run with checks, and each prompt that sends work
 // back, tell the session to run only fast tests and to leave the checks to

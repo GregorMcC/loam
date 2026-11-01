@@ -287,6 +287,27 @@ func TestForDeniesWritesToTheGitFileOfAWorktree(t *testing.T) {
 	}
 }
 
+// TAS-217: the git folder of the repo holds the metadata of every worktree,
+// and git worktree prune in a run deletes the metadata of each worktree that
+// the sandbox does not show. The note of a run in a worktree says so. A run
+// in a checkout has the git folder of its own.
+func TestForTellsARunInAWorktreeNotToPrune(t *testing.T) {
+	work := realTemp(t)
+	mkfile(t, filepath.Join(work, ".git"))
+	got := mustFor(t, Input{Home: "/h", Folder: work, Getenv: noEnv})
+	if !slices.Contains(got.Notes, sharedGitNote) || !strings.Contains(got.Prompt(), "do not run git worktree add, remove, or prune, or git gc") {
+		t.Errorf("Notes = %q, want the note on the shared git folder", got.Notes)
+	}
+	repo := realTemp(t)
+	if err := os.Mkdir(filepath.Join(repo, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got = mustFor(t, Input{Home: "/h", Folder: repo, GitDir: filepath.Join(repo, ".git"), Getenv: noEnv})
+	if slices.Contains(got.Notes, sharedGitNote) {
+		t.Errorf("Notes = %q has the note on the shared git folder in a checkout", got.Notes)
+	}
+}
+
 // Writable is true in a write path and false in a path that the rules deny
 // inside it. It ignores case, as macOS folders do.
 func TestRulesWritable(t *testing.T) {
