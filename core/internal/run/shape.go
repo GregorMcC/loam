@@ -256,7 +256,9 @@ func Approve(ctx context.Context, s *store.Store, id string, o ApproveOptions) (
 		if o.DoneWhen != nil {
 			r.DoneWhen = o.DoneWhen
 		}
-		if len(r.DoneWhen) == 0 { // a run that names no check uses those of the plot
+		// A draft with no checks uses those of the plot. An empty o.DoneWhen is
+		// a person who asked for none (run approve --no-checks).
+		if o.DoneWhen == nil && len(r.DoneWhen) == 0 {
 			r.DoneWhen = defaults.Checks
 		}
 		for n, answer := range o.Answers {
