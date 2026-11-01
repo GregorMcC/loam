@@ -15,6 +15,8 @@ import Testing
         let dir = temporaryFolder("fake-core")
         var binary: URL { dir.appendingPathComponent("loam") }
         var argsLog: URL { dir.appendingPathComponent("args.log") }
+        /// While this file exists, `show` waits, so a test can change the page while the read runs.
+        var holdShow: URL { dir.appendingPathComponent("hold-show") }
 
         init(repoa: String, repob: String) throws {
             try set(repoa: repoa, repob: repob)
@@ -42,7 +44,7 @@ import Testing
             #!/bin/sh
             echo "$@" >> '\(argsLog.path)'
             case "$1 $2" in
-              "show "*) cat '\(dir.path)/show.json'; exit 0;;
+              "show "*) while [ -f '\(holdShow.path)' ]; do sleep 0.02; done; cat '\(dir.path)/show.json'; exit 0;;
               "run list") cat '\(fixtures)/run_list.json'; exit 0;;
               "run status") cat '\(fixtures)/run_status.json'; exit 0;;
               "intake list") cat '\(fixtures)/intake_list.json'; exit 0;;
@@ -174,6 +176,38 @@ import Testing
         #expect(model.runStartError == nil)
     }
 
+    /// A read of the command that ends after the page changed shows nothing, so the next start approves nothing.
+    @Test func aReadThatEndsAfterThePageChangedShowsNoCommand() async throws {
+        let core = try FakeCore(repoa: "make a", repob: "")
+        let model = model(core)
+        await model.showIntake(plot: Self.plot)
+        let drafts = [try draft("A1", repo: "repoa")]
+
+        /// A refused batch whose read of the plot ends after `change`.
+        func refusedBatch(thenChange change: () async -> Void) async throws {
+            let reads = core.args().filter { $0.hasPrefix("show") }.count
+            try "".write(to: core.holdShow, atomically: true, encoding: .utf8)
+            let batch = Task { await model.startIntakeBatch(plot: Self.plot, drafts: drafts, shape: false) }
+            await waitUntil("the read of the plot starts") { core.args().filter { $0.hasPrefix("show") }.count > reads }
+            await change()
+            try FileManager.default.removeItem(at: core.holdShow)
+            _ = await batch.value
+        }
+
+        // Opening the page again clears the error.
+        try await refusedBatch { await model.showIntake(plot: Self.plot) }
+        #expect(model.runStartError == nil && model.runStartSetup == nil)
+
+        // Leaving the page keeps the error, which no page shows.
+        try await refusedBatch { model.page = .today }
+        #expect(model.runStartError != nil && model.runStartSetup == nil)
+
+        // With the page and the error in place, the read shows the command.
+        await model.showIntake(plot: Self.plot)
+        #expect(await model.startIntakeBatch(plot: Self.plot, drafts: drafts, shape: false) == 0)
+        #expect(model.runStartSetup?.command == "make a")
+    }
+
     /// The start form approves in the same way, and only for the repo of the command that the page shows.
     @Test func theStartFormApprovesWhatThePageShows() async throws {
         let core = try FakeCore(repoa: "make a", repob: "make b")
@@ -195,7 +229,8 @@ import Testing
         #expect(core.starts(from: seen).map(\.hash) == [setupHash("make a")])
         #expect(model.runStartError == nil && model.runStartSetup == nil)
 
-        // Leaving the page drops the command that it showed.
+        // A started run opens its page. Opening the Intake page again drops the command that it showed.
+        await model.showIntake(plot: Self.plot)
         #expect(await !model.startRun(plot: Self.plot, draft: form))
         #expect(model.runStartSetup?.command == "make b")
         await model.showIntake(plot: Self.plot)

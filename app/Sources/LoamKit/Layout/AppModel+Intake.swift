@@ -209,10 +209,12 @@ extension AppModel {
 
     /// Records why the draft did not start. When the setup command of its repo needs an approval, it reads that
     /// command for the page to show, so the next start approves the text that you saw. A failed read shows none, and
-    /// the next start approves nothing.
+    /// the next start approves nothing. So does a read that ends after you left the page, or after the error went.
     private func noteRunStartFailure(_ error: Error, plot: String, draft: RunDraft) async {
-        runStartError = Self.message(for: error)
-        guard runStartNeedsSetupApproval, let read = try? await client.show(plot: plot) else { return }
+        let message = Self.message(for: error)
+        runStartError = message
+        guard runStartNeedsSetupApproval, let read = try? await client.show(plot: plot),
+              page == .intake(plot), runStartError == message else { return }
         let repo = draft.repo.map { id in read.repos.first { $0.id == id } } ?? read.repos.first(where: \.main)
         if let repo, let command = repo.setup, !command.isEmpty {
             runStartSetup = ShownSetup(repo: repo.id, isMain: repo.main, command: command)

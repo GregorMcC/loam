@@ -638,7 +638,8 @@ The settings file of a run names the Loam home of the store that holds the run. 
 
 - With a hash that is the hash of the command that the repo holds now, Loam approves the command and runs it.
 - With a hash of another text, Loam refuses with exit code 2 (`invalid`) and runs nothing, also when the command that the repo holds now is approved, or when the worktree has finished its setup. A session can change the command with `update_repo` after a person reads it, so this refusal stops a command that nobody read.
-- With no hash, a command that you have approved runs. A new or changed command gives exit code 2 (`invalid`) and runs nothing.
+- With no hash, `run start` and `run approve` run a command that you have approved. A new or changed command gives exit code 2 (`invalid`) and runs nothing.
+- With no hash, `recurring add` approves nothing, records the recurring run, and exits 0, also when the repo holds a new or changed command. The refusal comes when a tick starts a chore: the tick starts no run, and the note of the recurring run holds the refusal.
 - A refused command makes no worktree when `run start` or `run approve` makes a new one.
 
 Each refusal names the command and its hash in `message` and in `details` (see [The JSON error](#the-json-error)). A person reads the command, then passes the hash. When the repo has no setup command now, the error has no details: start the run again with no hash.
