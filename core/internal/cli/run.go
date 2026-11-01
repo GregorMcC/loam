@@ -364,6 +364,9 @@ func newRunStatusCmd() *cobra.Command {
 			}
 			out := cmd.OutOrStdout()
 			printRun(out, r)
+			if line := run.CodeReviewRounds(r); line != "" {
+				fmt.Fprintln(out, line)
+			}
 			for _, e := range events {
 				fmt.Fprintf(out, "  %s  %-5s %s\n", e.At.Format("15:04:05"), e.Kind, oneLine(e.Detail))
 			}
