@@ -567,9 +567,9 @@ private struct RunHeader: View {
                     .accessibilityIdentifier("run-page-pr")
             }
             if !run.state.ended {
-                Button("Stop run") { Task { await model.stopRun(run.id) } }
+                Button("Cancel run") { Task { await model.cancelRun(run.id) } }
                     .loamSecondaryButton()
-                    .accessibilityIdentifier("run-page-stop")
+                    .accessibilityIdentifier("run-page-cancel")
             }
             // TAS-176: a run that fixes a landed run counts it as a change failure on the Metrics page.
             if run.state == .landed {

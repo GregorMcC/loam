@@ -344,11 +344,11 @@ import Testing
 
     /// Not now cancels the run, and the desk shows the next item.
     @Test func notNowCancelsTheDraft() async throws {
-        let (model, fake) = try model([("run_status", 0), ("rule_list", 0), ("show", 0), ("run_limits_get", 0), ("run_stop", 0), ("run_list", 0)])
+        let (model, fake) = try model([("run_status", 0), ("rule_list", 0), ("show", 0), ("run_limits_get", 0), ("run_cancel", 0), ("run_list", 0)])
         model.runs.append(Self.shaping())
         await model.openDesk()
         await model.notNowDeskRun()
-        #expect(fake.args().dropFirst(4).first == "run stop --json -- s1")
+        #expect(fake.args().dropFirst(4).first == "run cancel --json -- s1")
     }
 
     /// Shape with Claude at Intake drafts the run, then shows the draft at the desk.

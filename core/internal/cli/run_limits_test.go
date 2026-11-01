@@ -96,7 +96,7 @@ func TestRunStartWaitsForASlotAndATickStartsIt(t *testing.T) {
 	}
 	// The first run leaves its slot, and the tick starts the second run with
 	// its model and effort.
-	if _, _, err := lrRun(t, "", "run", "stop", first.ID); err != nil {
+	if _, _, err := lrRun(t, "", "run", "cancel", first.ID); err != nil {
 		t.Fatal(err)
 	}
 	got := tick(t)
@@ -109,22 +109,72 @@ func TestRunStartWaitsForASlotAndATickStartsIt(t *testing.T) {
 	}
 }
 
-func TestRunStopCancelsAQueuedRunWithNoSession(t *testing.T) {
+func TestRunCancelCancelsAQueuedRunWithNoSession(t *testing.T) {
 	runCLI(t)
 	setLimits(t, "--at-a-time", "1")
 	startRun(t, "Say hi")
 	queued := startRun(t, "Say bye")
-	out, _, err := lrRun(t, "", "run", "stop", queued.ID, "--json")
+	out, _, err := lrRun(t, "", "run", "cancel", queued.ID, "--json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out, `"state": "cancelled"`) {
-		t.Fatalf("stop %s", out)
+		t.Fatalf("cancel %s", out)
 	}
 	for _, c := range testutil.FakeClaudeCalls(t) {
 		if len(c) > 0 && c[0] == "stop" {
 			t.Fatalf("claude stop for a run with no session: %q", c)
 		}
+	}
+}
+
+// TAS-220: loam run stop is the old name of loam run cancel. It cancels the
+// run, with the same JSON, and says to use run cancel.
+func TestRunStopIsTheOldNameOfRunCancel(t *testing.T) {
+	runCLI(t)
+	r := startRun(t, "Say hi")
+	out, errOut, err := lrRun(t, "", "run", "stop", r.ID, "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Run store.Run `json:"run"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	if got.Run.State != store.RunCancelled || got.Run.Note != "Cancelled by you" {
+		t.Fatalf("run %+v", got.Run)
+	}
+	if !strings.Contains(errOut, "loam run stop cancels the run. Use loam run cancel.") {
+		t.Fatalf("stderr %q", errOut)
+	}
+	if strings.Contains(out, "run cancel") {
+		t.Fatalf("the warning is in the JSON: %s", out)
+	}
+	help, _, err := lrRun(t, "", "run", "--help")
+	if err != nil || !strings.Contains(help, "cancel") || strings.Contains(help, "  stop ") {
+		t.Fatalf("run --help: %v\n%s", err, help)
+	}
+}
+
+func TestRunCancelCancelsARunningRun(t *testing.T) {
+	s, _ := runCLI(t)
+	r := startRun(t, "Say hi")
+	out, errOut, err := lrRun(t, "", "run", "cancel", r.ID, "--json")
+	if err != nil || strings.Contains(errOut, "run stop") {
+		t.Fatalf("%v %s", err, errOut)
+	}
+	got, _ := s.GetRun(r.ID)
+	if got.State != store.RunCancelled || got.Note != "Cancelled by you" || !strings.Contains(out, `"note": "Cancelled by you"`) {
+		t.Fatalf("run %+v", got)
+	}
+	stopped := false
+	for _, c := range testutil.FakeClaudeCalls(t) {
+		stopped = stopped || len(c) > 0 && c[0] == "stop"
+	}
+	if !stopped {
+		t.Fatalf("no claude stop for the session: %q", testutil.FakeClaudeCalls(t))
 	}
 }
 
@@ -252,7 +302,7 @@ func TestRunTickTriesOneUsageProbeIn30Minutes(t *testing.T) {
 	if queued.State != store.RunQueued {
 		t.Fatalf("%+v", queued)
 	}
-	if _, _, err := lrRun(t, "", "run", "stop", first.ID); err != nil {
+	if _, _, err := lrRun(t, "", "run", "cancel", first.ID); err != nil {
 		t.Fatal(err)
 	}
 	// An hour later, the usage is 82%, and older than 30 minutes.
@@ -376,7 +426,7 @@ func TestRunSendBackWaitsForASlotWithYourNotes(t *testing.T) {
 	if e := events(t, s, r.ID, "note"); !slices.Equal(e, []string{"Add a test."}) {
 		t.Fatalf("note events %q", e)
 	}
-	if _, _, err := lrRun(t, "", "run", "stop", other.ID); err != nil {
+	if _, _, err := lrRun(t, "", "run", "cancel", other.ID); err != nil {
 		t.Fatal(err)
 	}
 	tick(t)
@@ -401,7 +451,7 @@ func TestRunTickQueuesACIFailureWhenNoSlotIsFree(t *testing.T) {
 	if e := events(t, s, r.ID, "try"); !slices.Equal(e, []string{"CI failed twice on #1: ci / test"}) {
 		t.Fatalf("try events %q", e)
 	}
-	if _, _, err := lrRun(t, "", "run", "stop", other.ID); err != nil {
+	if _, _, err := lrRun(t, "", "run", "cancel", other.ID); err != nil {
 		t.Fatal(err)
 	}
 	tick(t)
@@ -474,7 +524,7 @@ func TestRunTickKeepsAQueuedResumeUntilTheSandboxIsBack(t *testing.T) {
 	if got, code, out := sendBack(t, r.ID, "--note", "Add a test."); code != 0 || got.State != store.RunQueued {
 		t.Fatalf("exit %d: %s", code, out)
 	}
-	if _, _, err := lrRun(t, "", "run", "stop", other.ID); err != nil {
+	if _, _, err := lrRun(t, "", "run", "cancel", other.ID); err != nil {
 		t.Fatal(err)
 	}
 	exec := os.Getenv("LOAM_SANDBOX_EXEC")

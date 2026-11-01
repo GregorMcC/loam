@@ -1069,15 +1069,15 @@
     "schema": "run-status"
   },
   {
-    "name": "run_stop",
+    "name": "run_cancel",
     "args": [
       "run",
-      "stop",
+      "cancel",
       "runraaaaab",
       "--json"
     ],
     "exit_code": 0,
-    "schema": "run-stop"
+    "schema": "run-cancel"
   },
   {
     "name": "run_tick",
@@ -1671,6 +1671,17 @@
     ],
     "exit_code": 0,
     "schema": "run-start"
+  },
+  {
+    "name": "run_stop",
+    "args": [
+      "run",
+      "stop",
+      "runraaaaah",
+      "--json"
+    ],
+    "exit_code": 0,
+    "schema": "run-cancel"
   },
   {
     "name": "usage_none",

@@ -57,13 +57,14 @@ type RuleOffer struct {
 }
 
 // SendBack resumes the session of a run that waits for you, Ready to land or
-// Stopped, with your notes. The run goes back to Running, and then round the
-// gate and Ship again. When no slot is free, the run waits in Queued with
-// the notes, and a tick sends them. A usage that is stale is probed first
-// (see [usageForHold]). A note is not a failure, so it uses no try. A run
-// that has used all its tries gets one more, up to the limit of tries. The
-// code review rounds count for the whole run, so a send-back gives no more of
-// them (see [codeReviewRounds]).
+// Stopped, or that is Shipping, with your notes. The run goes back to
+// Running, and then round the gate and Ship again. A tick that ships the run
+// at that moment leaves it as it is (see [shipper.update]). When no slot is
+// free, the run waits in Queued with the notes, and a tick sends them. A
+// usage that is stale is probed first (see [usageForHold]). A note is not a
+// failure, so it uses no try. A run that has used all its tries gets one
+// more, up to the limit of tries. The code review rounds count for the whole
+// run, so a send-back gives no more of them (see [codeReviewRounds]).
 // Each note is a note event of the run.
 // When a note is like one that you sent back on another run of the plot, and
 // no rule came from such a note, the offer says so.
@@ -83,8 +84,8 @@ func sendBack(ctx context.Context, s *store.Store, id string, notes []Note) (sto
 	if err != nil {
 		return r, err
 	}
-	if r.State != store.RunReady && r.State != store.RunStopped {
-		return r, fmt.Errorf("only a run that is Ready to land or Stopped can go back, and this run is %s: %w", r.State, store.ErrInvalid)
+	if r.State != store.RunReady && r.State != store.RunStopped && r.State != store.RunShipping {
+		return r, fmt.Errorf("only a run that is Ready to land, Shipping, or Stopped can go back, and this run is %s: %w", r.State, store.ErrInvalid)
 	}
 	if r.SessionID == "" {
 		return r, fmt.Errorf("the run has no session to send the notes to: %w", store.ErrInvalid)

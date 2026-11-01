@@ -112,10 +112,10 @@ extension AppModel {
         openTab(spec)
     }
 
-    /// `loam run stop`: stops the background session of the run. The run is Cancelled.
-    public func stopRun(_ id: String) async {
+    /// `loam run cancel`: stops the background session of the run. The run is Cancelled.
+    public func cancelRun(_ id: String) async {
         do {
-            _ = try await client.runStop(id)
+            _ = try await client.runCancel(id)
             await reloadRuns()
         } catch {
             report(error)

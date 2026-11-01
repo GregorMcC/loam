@@ -98,7 +98,7 @@ The gate runs each time the session ends a turn:
 3. If a check fails, Loam sends the output back to the session. That is the next try.
 4. When the run has used all its tries, it stops and waits for you at the desk.
 
-The run page shows the goal, the checks, the tries and turns, and the history. Watch opens a tab attached to the background session, so you can see it work. Stop run stops the session.
+The run page shows the goal, the checks, the tries and turns, and the history. Watch opens a tab attached to the background session, so you can see it work. Cancel run stops the session, and the run is Cancelled.
 
 Each plot has a default model and effort for its runs. Set them under "Model and effort" on the Recurring and rules page of the plot. The start form of a chore sets the model, the effort, and the tries of one run.
 

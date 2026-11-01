@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "loam run cancel --json (and its old name, loam run stop)",
+  "description": "The run after the cancel. A run that has not ended is cancelled, with the note \"Cancelled by you\". A run that has ended stays as it is.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run"
+  ],
+  "properties": {
+    "run": {
+      "$ref": "defs.json#/$defs/run"
+    }
+  }
+}

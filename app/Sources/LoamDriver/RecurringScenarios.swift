@@ -111,7 +111,7 @@ extension Scenarios {
         }
         let earlier = try stoppedRun("Tidy the README")
         try rig.loam(["run", "send-back", earlier, "--note", "README.md:3: Keep the README short."], extra: environment)
-        try rig.loam(["run", "stop", earlier], extra: environment)
+        try rig.loam(["run", "cancel", earlier], extra: environment)
         let id = try stoppedRun("Write the guide")
 
         let host = try await app.launchApp(

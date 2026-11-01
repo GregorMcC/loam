@@ -641,23 +641,33 @@ func runList(runs []int64) string {
 // sends it. A prompt that does not reach the session stops the run, and its
 // note names what (such as "CI failure").
 func (sh *shipper) resume(ctx context.Context, prompt, note, what string, addTry func(*store.Run)) (bool, error) {
-	from, moved := sh.r.State, false
+	from := sh.r.State
 	r, err := sh.s.TakeSlot(sh.r.ID, &store.RunQueue{Resume: prompt}, func(r *store.Run) error {
-		if r.State == from { // you may have changed the run during the tick
-			r.State, r.Note, moved = store.RunRunning, note, true
-			r.TurnBase = r.Turns // the turn limit counts from the resume
-			r.GateTimeouts = 0   // and the gates that ran out of time
-			r.BlockedStops = 0   // and the stops that the gate blocked
-			addTry(r)
+		// You may have changed the run during the tick. Then the write ends
+		// here, before TakeSlot checks a slot, so a run that you sent back
+		// stays Running with your notes, and gets no prompt.
+		if r.State != from {
+			return errMovedOn
 		}
+		r.State, r.Note = store.RunRunning, note
+		r.TurnBase = r.Turns // the turn limit counts from the resume
+		r.GateTimeouts = 0   // and the gates that ran out of time
+		r.BlockedStops = 0   // and the stops that the gate blocked
+		addTry(r)
 		return nil
 	})
+	if errors.Is(err, errMovedOn) {
+		if r, err := sh.s.GetRun(sh.r.ID); err == nil {
+			sh.r = r
+		}
+		return false, nil
+	}
 	if err != nil {
 		return false, err
 	}
 	sh.r = r
-	if !moved || r.State == store.RunQueued {
-		return moved, nil // a run that you changed gets no prompt, and a Queued run gets it from a later tick
+	if r.State == store.RunQueued {
+		return true, nil // a Queued run gets the prompt from a later tick
 	}
 	if err := send(ctx, sh.s, sh.r, prompt); err != nil {
 		note := "Could not send the " + what + " to the session: " + err.Error()
@@ -668,11 +678,11 @@ func (sh *shipper) resume(ctx context.Context, prompt, note, what string, addTry
 			return nil
 		})
 		if uerr != nil {
-			return moved, uerr
+			return true, uerr
 		}
 		sh.r = r
 	}
-	return moved, nil
+	return true, nil
 }
 
 // ciTests is in each prompt of a CI failure. The gate does not run the
@@ -881,23 +891,33 @@ func (sh *shipper) moveTry(state store.RunState, note string) (bool, error) {
 	return sh.update(func(r *store.Run) { r.State, r.Note, r.Tries = state, note, r.Tries+1 })
 }
 
+// errMovedOn ends the write of a tick to a run that left the state that the
+// tick found, so the write changes nothing.
+var errMovedOn = errors.New("the run left the state that the tick found")
+
 // update changes the run when it is still in the state that the tick found:
-// you may have stopped it while the tick ran.
+// you may have cancelled it or sent it back while the tick ran. A run that
+// left that state stays as it is, with no write.
 func (sh *shipper) update(fn func(*store.Run)) (bool, error) {
-	moved, from := false, sh.r.State
+	from := sh.r.State
 	r, err := sh.s.UpdateRun(sh.r.ID, func(r *store.Run) error {
 		if r.State != from {
-			return nil
+			return errMovedOn
 		}
 		fn(r)
-		moved = true
 		return nil
 	})
+	if errors.Is(err, errMovedOn) {
+		if r, err := sh.s.GetRun(sh.r.ID); err == nil {
+			sh.r = r
+		}
+		return false, nil
+	}
 	if err != nil {
 		return false, err
 	}
 	sh.r = r
-	return moved, nil
+	return true, nil
 }
 
 // gitPush pushes the commit head to the branch on origin, from the worktree

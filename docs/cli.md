@@ -59,10 +59,10 @@ loam tick install                             # let launchd move runs on every 5
 | `loam run list [<plot>]` / `loam run status <run>` | See the runs, and one run with its history |
 | `loam run events [--since <time>] [--plot <plot>]` | The run events of every plot, newest first |
 | `loam run diff <run>` | The work that a run committed on its branch |
-| `loam run send-back <run> --note <text>...` | Resume a Ready or Stopped run with your notes. A note can name a line: `<file>:<line>: <text>`. |
+| `loam run send-back <run> --note <text>...` | Resume a Ready, Shipping, or Stopped run with your notes. A note can name a line: `<file>:<line>: <text>`. |
 | `loam run send-review <run>` | Resume a Ready run with the review of its PR: the open threads and the reviews that request changes. The text of a reader stays out. `--dry-run` says what it would send. |
 | `loam run land <run>` | Merge the PR of a Ready run. `--keep-worktree`, `--no-linear-done`, and `--where-it-stands` change the steps after the merge. `--dry-run` lists each check. |
-| `loam run stop <run>` | Stop the session of a run. The run is Cancelled. The worktree and its work stay. |
+| `loam run cancel <run>` | Cancel a run: Loam stops its session, and the run is Cancelled. A Cancelled run cannot go back. The worktree and its work stay. `loam run stop` is the old name. |
 | `loam run limits` | Show or set the limits: `--at-a-time`, `--max-turns`, `--hold-at` |
 | `loam run defaults <plot>` | Show or set the model and the effort of the runs of a plot |
 | `loam run sandbox [<plot>]` | Show or set the paths and hosts that you add to the sandbox of a run: `--read`, `--write`, `--host`. With no plot, they hold for every plot |
