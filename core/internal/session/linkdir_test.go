@@ -1,13 +1,16 @@
 package session_test
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/GregorMcC/loam/core/internal/seed"
+	"github.com/GregorMcC/loam/core/internal/session"
 	"github.com/GregorMcC/loam/core/internal/store"
 	"github.com/GregorMcC/loam/core/internal/testutil"
 )
@@ -107,5 +110,99 @@ func TestStartRefusesPrivateFoldersForAPerson(t *testing.T) {
 	got := e.addedFolders(t, p.ID)
 	if want := []string{filepath.Join(e.home, "plots", p.ID), documents}; !slices.Equal(got, want) {
 		t.Errorf("--add-dir %v, want %v", got, want)
+	}
+}
+
+// runAllowRead prepares a run and returns the read paths in its settings, and
+// its first prompt.
+func runAllowRead(t *testing.T, e env, r store.Run) (read []string, prompt string) {
+	t.Helper()
+	plan, err := session.PrepareRun(e.store, r, "go", "loam", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := argValues(plan.Args, "--settings")
+	if len(files) != 1 {
+		t.Fatalf("args %v have no one --settings", plan.Args)
+	}
+	data, err := os.ReadFile(files[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Sandbox struct {
+			Filesystem struct{ AllowRead []string }
+		}
+	}
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	return got.Sandbox.Filesystem.AllowRead, plan.Args[len(plan.Args)-1]
+}
+
+// A local link that a session set gives a run no read path, and the sandbox
+// note of the run names it. The same link gets the read path after a person
+// changes it. A later session change takes the read path away again.
+func TestRunReadsALinkOnlyAfterAPersonChange(t *testing.T) {
+	e := setup(t)
+	repo, _ := testutil.GitRepo(t)
+	private := t.TempDir()
+	p := e.plot(t, store.PlotInput{Name: "Alpha", Repos: []store.RepoInput{{Path: repo}}})
+	run := store.Run{ID: "r1", PlotID: p.ID, Folder: repo}
+	session1 := store.Actor{Kind: store.ActorSession, SessionID: "s1"}
+	apply := func(actor store.Actor, edit store.Edit) *store.Result {
+		t.Helper()
+		res, err := e.store.Apply(store.Change{PlotID: p.ID, Actor: actor, Edits: []store.Edit{edit}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res
+	}
+	note := strconv.Quote(private) + ", because a session added or last changed it. A person must change the link first."
+	check := func(step string, want bool) {
+		t.Helper()
+		read, prompt := runAllowRead(t, e, run)
+		if got := slices.Contains(read, realpath(t, private)); got != want {
+			t.Errorf("%s: read path of the link: %v, want %v, in %q", step, got, want, read)
+		}
+		if got := strings.Contains(prompt, note); got == want {
+			t.Errorf("%s: the sandbox note names the link: %v, in %q", step, got, prompt)
+		}
+		// The gate runs the checks of the run with these rules.
+		rules, err := session.RunRules(e.store, run)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := slices.Contains(rules.Read, realpath(t, private)); got != want {
+			t.Errorf("%s: read path in the rules of the gate: %v, want %v", step, got, want)
+		}
+	}
+
+	added := apply(session1, store.Edit{Op: store.OpAddLink, Label: store.S("Do this"), Target: store.S(private), Note: store.S("read this first")})
+	item := added.Added[0]
+	check("a session added the link", false)
+	if _, prompt := runAllowRead(t, e, run); strings.Contains(prompt, "read this first") || strings.Contains(prompt, "Do this") {
+		t.Errorf("the prompt holds the text of a session link: %q", prompt)
+	}
+
+	apply(store.Actor{Kind: store.ActorCLI}, store.Edit{Op: store.OpUpdateLink, Item: item, Label: store.S("Private")})
+	check("a person changed the label", true)
+
+	apply(session1, store.Edit{Op: store.OpUpdateLink, Item: item, Note: store.S("new note")})
+	check("a session changed the note", false)
+}
+
+// A web link that a session set has no read path, so no note names it.
+func TestRunNoteLeavesOutAWebLink(t *testing.T) {
+	e := setup(t)
+	repo, _ := testutil.GitRepo(t)
+	p := e.plot(t, store.PlotInput{Name: "Alpha", Repos: []store.RepoInput{{Path: repo}}})
+	if _, err := e.store.Apply(store.Change{PlotID: p.ID, Actor: store.Actor{Kind: store.ActorSession, SessionID: "s1"}, Edits: []store.Edit{
+		{Op: store.OpAddLink, Label: store.S("Site"), Target: store.S("https://example.com/site")},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, prompt := runAllowRead(t, e, store.Run{ID: "r1", PlotID: p.ID, Folder: repo}); strings.Contains(prompt, "example.com") {
+		t.Errorf("the prompt names a web link: %q", prompt)
 	}
 }

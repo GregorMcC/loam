@@ -128,11 +128,45 @@ func TestLinkCommandOfAPersonConfirmsASessionLink(t *testing.T) {
 	}
 }
 
+// A repo add in a session adds the remote of the repo as a link. That link is
+// marked as a link that a session added.
+func TestRepoAddInASessionMarksTheRemoteLink(t *testing.T) {
+	s, p := linkRepoEnv(t, store.PlotInput{})
+	d := lrRepoDirs(t, 1)
+	lrGitRepo(t, d[0], "git@github.com:me/app.git")
+	t.Setenv("CLAUDECODE", "1")
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "s1")
+	if _, _, err := lrRun(t, "", "repo", "add", "alpha", d[0], "--actor", "app"); err != nil {
+		t.Fatal(err)
+	}
+	got := lrPlot(t, s, p.ID)
+	if len(got.Links) != 1 || !got.Links[0].Unchecked {
+		t.Fatalf("links %+v", got.Links)
+	}
+	if a := lastActor(t, s, p.ID); a.Kind != store.ActorSession || a.SessionID != "s1" {
+		t.Errorf("actor %+v", a)
+	}
+}
+
+// With no CLAUDECODE=1, a repo add is a person, and its remote link is checked.
+func TestRepoAddOfAPersonLeavesTheRemoteLinkChecked(t *testing.T) {
+	s, p := linkRepoEnv(t, store.PlotInput{})
+	d := lrRepoDirs(t, 1)
+	lrGitRepo(t, d[0], "git@github.com:me/app.git")
+	if _, _, err := lrRun(t, "", "repo", "add", "alpha", d[0]); err != nil {
+		t.Fatal(err)
+	}
+	got := lrPlot(t, s, p.ID)
+	if len(got.Links) != 1 || got.Links[0].Unchecked {
+		t.Fatalf("links %+v", got.Links)
+	}
+}
+
 // CLAUDECODE=1 changes only the writes that can set a link.
 func TestOtherWritesInASessionKeepTheCLIActor(t *testing.T) {
-	s, p := linkRepoEnv(t, store.PlotInput{Repos: []store.RepoInput{{Path: t.TempDir()}}})
+	s, p := linkRepoEnv(t, store.PlotInput{})
 	t.Setenv("CLAUDECODE", "1")
-	if _, _, err := lrRun(t, "", "repo", "edit", "alpha", p.Repos[0].ID, "--note", "new"); err != nil {
+	if _, _, err := lrRun(t, "", "set", "alpha", "where-it-stands", "new text"); err != nil {
 		t.Fatal(err)
 	}
 	if a := lastActor(t, s, p.ID); a.Kind != store.ActorCLI {

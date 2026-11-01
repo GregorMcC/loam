@@ -271,7 +271,12 @@ func writeRepo(cmd *cobra.Command, plotArg string, expectVals []string, settings
 		return err
 	}
 	defer s.Close()
-	res, edits, item, err := writeEdits(cmd, s, cliActor(cmd), plotArg, expect, build)
+	// A repo add also adds the remote of the repo as a link.
+	actor, err := linkActor(cmd, s)
+	if err != nil {
+		return err
+	}
+	res, edits, item, err := writeEdits(cmd, s, actor, plotArg, expect, build)
 	if err != nil {
 		return err
 	}
