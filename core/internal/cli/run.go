@@ -833,8 +833,10 @@ func (e exitCode) Error() string { return fmt.Sprintf("exit code %d", int(e)) }
 
 func newRunDefaultsCmd() *cobra.Command {
 	var model, effort, mcp, review, reviewEffort string
+	var checks []string
+	var noChecks bool
 	c := &cobra.Command{
-		Use:   "defaults <plot> [--model <model>] [--effort <level>] [--mcp <names>] [--review on|off] [--review-effort <level>]",
+		Use:   "defaults <plot> [--model <model>] [--effort <level>] [--mcp <names>] [--review on|off] [--review-effort <level>] [--check <name>=<command>]... [--no-checks]",
 		Short: "Show or set the model, the effort, the MCP servers, and the code review that runs of a plot use",
 		Long: "A run, a Shape run, and a recurring run of the plot use these defaults when they name no model or effort. Empty means your Claude Code setting.\n" +
 			"--mcp names the MCP servers, comma-separated, that claude -p loads when it drafts a run, writes the PR text, or reviews the code. Loam copies each one from the user scope of your Claude Code config " +
@@ -845,6 +847,7 @@ func newRunDefaultsCmd() *cobra.Command {
 			"Empty means no MCP server. A name that Loam cannot find stops the draft.\n" +
 			"--review turns on or off the code review that Loam runs before it pushes a run of the plot. It is on by default. " +
 			"--review-effort is the effort level of that review. Empty means your Claude Code setting.\n" +
+			"--check sets the Done when checks of a run of the plot that names none: a name, \"=\", and a shell command, as for loam run start. --no-checks clears them. A run that names a check uses only its own.\n" +
 			"With no flag, this shows the defaults. A flag sets that default. An empty --model, --effort, --mcp, or --review-effort clears it. Run defaults are not in the change log.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -862,7 +865,7 @@ func newRunDefaultsCmd() *cobra.Command {
 				return err
 			}
 			f := cmd.Flags()
-			if f.Changed("model") || f.Changed("effort") || f.Changed("mcp") || f.Changed("review") || f.Changed("review-effort") {
+			if f.Changed("model") || f.Changed("effort") || f.Changed("mcp") || f.Changed("review") || f.Changed("review-effort") || f.Changed("check") || f.Changed("no-checks") {
 				if f.Changed("model") {
 					d.Model = model
 				}
@@ -885,6 +888,17 @@ func newRunDefaultsCmd() *cobra.Command {
 				if f.Changed("review-effort") {
 					d.ReviewEffort = reviewEffort
 				}
+				if noChecks && f.Changed("check") {
+					return fmt.Errorf("--no-checks and --check cannot go together: %w", store.ErrInvalid)
+				}
+				if noChecks {
+					d.Checks = []store.Check{}
+				}
+				if f.Changed("check") {
+					if d.Checks, err = parseChecks(checks); err != nil {
+						return err
+					}
+				}
 				if d, err = s.SetRunDefaults(d); err != nil {
 					return err
 				}
@@ -898,6 +912,12 @@ func newRunDefaultsCmd() *cobra.Command {
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "model: %s\neffort: %s\nmcp servers: %s\nreview: %s\nreview effort: %s\n", cmp.Or(d.Model, "(Claude Code setting)"),
 				cmp.Or(d.Effort, "(Claude Code setting)"), cmp.Or(strings.Join(d.MCPServers, ", "), "(none)"), state, cmp.Or(d.ReviewEffort, "(Claude Code setting)"))
+			if len(d.Checks) == 0 {
+				fmt.Fprintln(cmd.OutOrStdout(), "checks: (none)")
+			}
+			for _, c := range d.Checks {
+				fmt.Fprintf(cmd.OutOrStdout(), "check: %s=%s\n", c.Name, c.Command)
+			}
 			return nil
 		},
 	}
@@ -906,6 +926,8 @@ func newRunDefaultsCmd() *cobra.Command {
 	f.StringVar(&effort, "effort", "", "set the default effort level ("+strings.Join(store.Efforts, ", ")+"); empty clears it")
 	f.StringVar(&mcp, "mcp", "", "set the MCP servers that drafts, PR texts, and code reviews load, comma-separated, by name in the user scope of the Claude Code config (not claude.ai connectors); empty clears it")
 	f.StringVar(&review, "review", "", "on or off: the code review before each push")
+	f.StringArrayVar(&checks, "check", nil, "a default Done when check, as <name>=<command> (repeatable): the flags replace the checks")
+	f.BoolVar(&noChecks, "no-checks", false, "clear the default checks")
 	f.StringVar(&reviewEffort, "review-effort", "", "set the effort level of the code review ("+strings.Join(store.Efforts, ", ")+"); empty clears it")
 	return c
 }

@@ -133,7 +133,7 @@ func TestMigrationTurnsTheCodeReviewOnForOldRunDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(d, RunDefaults{PlotID: "oldplotaab", Model: "opus", Effort: "high", MCPServers: []string{}, Review: true}) {
+	if !reflect.DeepEqual(d, RunDefaults{PlotID: "oldplotaab", Model: "opus", Effort: "high", MCPServers: []string{}, Review: true, Checks: []Check{}}) {
 		t.Fatalf("%+v", d)
 	}
 }

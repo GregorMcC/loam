@@ -235,6 +235,10 @@ func Approve(ctx context.Context, s *store.Store, id string, o ApproveOptions) (
 	if r.Source != nil && r.Source.Kind == intake.Map {
 		ticket = r.Source
 	}
+	defaults, err := s.GetRunDefaults(plot.ID) // before Loam makes the worktree
+	if err != nil {
+		return nil, err
+	}
 	res := &StartResult{}
 	wt, err := prepare(s, plot, so, r.Title, ticket, res)
 	if err != nil {
@@ -251,6 +255,11 @@ func Approve(ctx context.Context, s *store.Store, id string, o ApproveOptions) (
 		}
 		if o.DoneWhen != nil {
 			r.DoneWhen = o.DoneWhen
+		}
+		// A draft with no checks uses those of the plot. An empty o.DoneWhen is
+		// a person who asked for none (run approve --no-checks).
+		if o.DoneWhen == nil && len(r.DoneWhen) == 0 {
+			r.DoneWhen = defaults.Checks
 		}
 		for n, answer := range o.Answers {
 			r.Shape.Assumptions[n-1].Answer = strings.TrimSpace(answer)

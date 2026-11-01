@@ -354,6 +354,9 @@ ALTER TABLE runs ADD COLUMN ci_sent TEXT NOT NULL DEFAULT '';
 ALTER TABLE runs ADD COLUMN conflict_sends INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE runs ADD COLUMN conflict_head TEXT NOT NULL DEFAULT '';
 `,
+	// 30: checks holds the default Done when checks of a plot as a JSON
+	// array, for a run that names none (TAS-228).
+	`ALTER TABLE run_defaults ADD COLUMN checks TEXT NOT NULL DEFAULT '[]';`,
 }
 
 // SchemaVersion is the schema version of this binary.

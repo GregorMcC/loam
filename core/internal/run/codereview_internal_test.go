@@ -588,3 +588,18 @@ func firstAsk(r store.Run, w store.Worktree, head string, earlier []earlierRound
 	}
 	return prompts[0], ""
 }
+
+func TestChecksOrDefaultsUsesThePlotChecksOnlyWhenTheRunNamesNone(t *testing.T) {
+	s, sh := reviewedRun(t, 0)
+	own := []store.Check{{Name: "Own", Command: "true"}}
+	plot := []store.Check{{Name: "Plot", Command: "false"}}
+	if _, err := s.SetRunDefaults(store.RunDefaults{PlotID: sh.r.PlotID, Review: true, Checks: plot}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := checksOrDefaults(s, sh.r.PlotID, nil); err != nil || !slices.Equal(got, plot) {
+		t.Fatalf("no checks: %v %+v", err, got)
+	}
+	if got, err := checksOrDefaults(s, sh.r.PlotID, own); err != nil || !slices.Equal(got, own) {
+		t.Fatalf("own checks: %v %+v", err, got)
+	}
+}

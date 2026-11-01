@@ -280,6 +280,10 @@ func TestRunApproveWithNoChecksRemovesTheDraftedChecks(t *testing.T) {
 	if _, _, err := lrRun(t, "", "run", "approve", r.ID, "--no-checks", "--check", "All tests=go test ./..."); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("--no-checks with --check: %v", err)
 	}
+	// The default checks of the plot do not come back: a person asked for none.
+	if _, errOut, err := lrRun(t, "", "run", "defaults", "alpha", "--check", "Plot=go test ./..."); err != nil {
+		t.Fatalf("%v %s", err, errOut)
+	}
 	r = shapeRun(t, "approve", r.ID, "--no-checks")
 	if r.State != store.RunRunning || len(r.DoneWhen) != 0 {
 		t.Fatalf("run %+v", r)

@@ -11,10 +11,10 @@ import (
 func TestRunDefaultsOfAPlot(t *testing.T) {
 	s := openStore(t)
 	p := newPlot(t, s, "A")
-	if d, err := s.GetRunDefaults(p.ID); err != nil || !reflect.DeepEqual(d, store.RunDefaults{PlotID: p.ID, MCPServers: []string{}, Review: true}) {
+	if d, err := s.GetRunDefaults(p.ID); err != nil || !reflect.DeepEqual(d, store.RunDefaults{PlotID: p.ID, MCPServers: []string{}, Review: true, Checks: []store.Check{}}) {
 		t.Fatalf("new plot: %+v %v", d, err)
 	}
-	want := store.RunDefaults{PlotID: p.ID, Model: "opus", Effort: "xhigh", MCPServers: []string{"loam", "linear-server"}, Review: false, ReviewEffort: "low"}
+	want := store.RunDefaults{PlotID: p.ID, Model: "opus", Effort: "xhigh", MCPServers: []string{"loam", "linear-server"}, Review: false, ReviewEffort: "low", Checks: []store.Check{{Name: "Tests", Command: "go test"}}}
 	// Loam trims each server name and leaves out empty names and repeats.
 	set := want
 	set.MCPServers = []string{" loam", "", "linear-server ", "loam"}
