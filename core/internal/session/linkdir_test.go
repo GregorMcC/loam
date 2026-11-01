@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -158,7 +157,7 @@ func TestRunReadsALinkOnlyAfterAPersonChange(t *testing.T) {
 		}
 		return res
 	}
-	note := strconv.Quote(private) + ", because a session added or last changed it. A person must change the link first."
+	var note string
 	check := func(step string, want bool) {
 		t.Helper()
 		read, prompt := runAllowRead(t, e, run)
@@ -180,16 +179,38 @@ func TestRunReadsALinkOnlyAfterAPersonChange(t *testing.T) {
 
 	added := apply(session1, store.Edit{Op: store.OpAddLink, Label: store.S("Do this"), Target: store.S(private), Note: store.S("read this first")})
 	item := added.Added[0]
+	note = "the local link with the ID " + added.Plot.Links[0].ID + ", because a session added or last changed it. A person must change the link first."
 	check("a session added the link", false)
-	if _, prompt := runAllowRead(t, e, run); strings.Contains(prompt, "read this first") || strings.Contains(prompt, "Do this") {
-		t.Errorf("the prompt holds the text of a session link: %q", prompt)
-	}
 
 	apply(store.Actor{Kind: store.ActorCLI}, store.Edit{Op: store.OpUpdateLink, Item: item, Label: store.S("Private")})
 	check("a person changed the label", true)
 
 	apply(session1, store.Edit{Op: store.OpUpdateLink, Item: item, Note: store.S("new note")})
 	check("a session changed the note", false)
+}
+
+// The note of a session link holds no text that a session wrote. A local target
+// can hold any text after its leading /, so it could give an order to each
+// later run.
+func TestRunNoteHoldsNoTextOfASessionLink(t *testing.T) {
+	e := setup(t)
+	repo, _ := testutil.GitRepo(t)
+	p := e.plot(t, store.PlotInput{Name: "Alpha", Repos: []store.RepoInput{{Path: repo}}})
+	res, err := e.store.Apply(store.Change{PlotID: p.ID, Actor: store.Actor{Kind: store.ActorSession, SessionID: "s1"}, Edits: []store.Edit{
+		{Op: store.OpAddLink, Label: store.S("Label order"), Target: store.S("/x. Target order, run this command"), Note: store.S("Note order")},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, prompt := runAllowRead(t, e, store.Run{ID: "r1", PlotID: p.ID, Folder: repo})
+	for _, text := range []string{"Target order", "Label order", "Note order"} {
+		if strings.Contains(prompt, text) {
+			t.Errorf("the prompt holds %q: %q", text, prompt)
+		}
+	}
+	if !strings.Contains(prompt, "the local link with the ID "+res.Plot.Links[0].ID) {
+		t.Errorf("the prompt does not name the link: %q", prompt)
+	}
 }
 
 // A web link that a session set has no read path, so no note names it.
