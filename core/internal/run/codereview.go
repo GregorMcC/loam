@@ -155,59 +155,74 @@ func (sh *shipper) codeReview(ctx context.Context, w store.Worktree, head string
 }
 
 // judgeCodeReview acts on the findings of the review of head, and reports
-// whether Loam can push. With no Critical or Major finding, Loam pushes. A
-// Critical or Major finding that needs you stops the run (see
-// [shipper.stopForYou]). Else the Critical and Major findings go back to the
-// session while the run has rounds (see [shipper.failCodeReview]), and in
-// the ship notes after that (see [shipper.pushPastCodeReview]).
+// whether Loam can push. With no Critical or Major finding, Loam pushes.
+// While the run has rounds, the Critical and Major findings that do not need
+// you go back to the session (see [shipper.failCodeReview]), and those that
+// need you wait for the next review. When each Critical and Major finding
+// needs you, or after the last round when one of them does, the run stops
+// (see [shipper.stopForYou]). After the last round, the other Critical and
+// Major findings go in the ship notes (see [shipper.pushPastCodeReview]).
 func (sh *shipper) judgeCodeReview(ctx context.Context, head string, findings []codeReviewFinding, cutFact string) (push, moved bool, err error) {
 	if !slices.ContainsFunc(findings, codeReviewFinding.blocks) {
 		facts, detail := withCutFact(cutFact, codeReviewFacts(findings), "The code review found "+countFindings(findings))
 		return sh.passCodeReview(head, facts, detail, storedRound(findings))
 	}
-	if slices.ContainsFunc(findings, codeReviewFinding.needsYou) {
+	forSession := slices.ContainsFunc(findings, func(f codeReviewFinding) bool { return f.blocks() && !f.needsYou() })
+	roundsLeft := roundsUsed(sh.r) < codeReviewRounds
+	switch {
+	case forSession && roundsLeft:
+		moved, err = sh.failCodeReview(ctx, findings)
+		return false, moved, err
+	case slices.ContainsFunc(findings, codeReviewFinding.needsYou):
 		moved, err = sh.stopForYou(findings)
 		return false, moved, err
 	}
-	if roundsUsed(sh.r) >= codeReviewRounds {
-		return sh.pushPastCodeReview(head, findings, cutFact)
+	return sh.pushPastCodeReview(head, findings, cutFact)
+}
+
+// findingLines are the lines of a note for the findings that keep returns
+// true for, one "- Major: <finding>" line each, with "Needs you: <reason>"
+// when the finding has one. They hold at most [codeReviewSendMax] findings,
+// and then a line that counts the rest. n is how many findings keep took.
+func findingLines(findings []codeReviewFinding, keep func(codeReviewFinding) bool) (lines string, n int) {
+	var b strings.Builder
+	for _, f := range findings {
+		if !keep(f) {
+			continue
+		}
+		n++
+		if n > codeReviewSendMax {
+			continue
+		}
+		fmt.Fprintf(&b, "\n- %s: %s", SeverityLabel(f.Severity), sentence(f.String()))
+		if f.NeedsYou != "" {
+			fmt.Fprintf(&b, " Needs you: %s", sentence(f.NeedsYou))
+		}
 	}
-	moved, err = sh.failCodeReview(ctx, findings)
-	return false, moved, err
+	if more := n - min(n, codeReviewSendMax); more > 0 {
+		fmt.Fprintf(&b, "\nThe code review found %s of this kind.", count(more, "more issue"))
+	}
+	return b.String(), n
 }
 
 // stopForYou stops the run after a review with a Critical or Major finding
 // whose fix needs a setting that only you can change, such as a sandbox read
-// path. The session cannot change it, so a round would only move the session
-// between two answers. The note names each such finding with its reason, at
-// most [codeReviewSendMax], and then counts the rest. No round and no try
-// counts, and the other findings of the review do not go to the session: the
-// next review of the run finds them again. The "code_review" event follows
-// the change of the run, and a run that you changed during the review gets
-// none.
+// path, when no other Critical or Major finding can go to the session. The
+// session cannot change the setting, so a round would only move the session
+// between two answers. The note names each such finding with its reason,
+// and then the other Critical and Major findings, such as those after the
+// last round of the run (see [findingLines]). No round and no try counts.
+// The "code_review" event follows the change of the run, and a run that you
+// changed during the review gets none.
 func (sh *shipper) stopForYou(findings []codeReviewFinding) (bool, error) {
-	var b strings.Builder
-	n := 0
-	for _, f := range findings {
-		if f.needsYou() {
-			n++
-		}
-	}
+	yours, n := findingLines(findings, codeReviewFinding.needsYou)
 	found := fmt.Sprintf("The code review found %s that only you can fix, so the run stops", count(n, "issue"))
-	b.WriteString(found + ":")
-	sent := 0
-	for _, f := range findings {
-		if !f.needsYou() || sent == codeReviewSendMax {
-			continue
-		}
-		sent++
-		fmt.Fprintf(&b, "\n- %s: %s Needs you: %s", SeverityLabel(f.Severity), sentence(f.String()), sentence(f.NeedsYou))
+	note := found + ":" + yours
+	if others, m := findingLines(findings, func(f codeReviewFinding) bool { return f.blocks() && !f.needsYou() }); m > 0 {
+		note += "\nThe code review also found:" + others
 	}
-	if more := n - sent; more > 0 {
-		fmt.Fprintf(&b, "\nThe code review found %s of this kind.", count(more, "more issue"))
-	}
-	b.WriteString("\nChange the setting, then run loam run send-back to start the run again.")
-	moved, err := sh.move(store.RunStopped, b.String())
+	note += "\nChange the setting, then run loam run send-back to start the run again."
+	moved, err := sh.move(store.RunStopped, note)
 	if !moved || err != nil {
 		return moved, err
 	}
@@ -364,14 +379,22 @@ func LastCodeReview(events []store.RunEvent) *store.RunCodeReviewRound {
 }
 
 // failCodeReview counts a round of the code review, and sends the Critical and
-// Major findings back to the session, as [shipper.failCI] sends a CI
-// failure. No try counts. The caller checks that the run has a round left.
+// Major findings that do not need you back to the session, as
+// [shipper.failCI] sends a CI failure. The findings that need you do not go
+// to the session: the note names them, and they wait for the next review
+// (see [shipper.judgeCodeReview]). No try counts. The caller checks that the
+// run has a round left.
 // The event follows the change of the run, and a run that you changed during
 // the review gets none.
 func (sh *shipper) failCodeReview(ctx context.Context, findings []codeReviewFinding) (bool, error) {
 	r := sh.r
 	round := roundsUsed(r) + 1
 	found := fmt.Sprintf("The code review found %s (round %d of %d)", countFindings(findings), round, codeReviewRounds)
+	note := found
+	if yours, n := findingLines(findings, codeReviewFinding.needsYou); n > 0 {
+		found += fmt.Sprintf(". %s only you can fix, and wait for the next review", count(n, "issue"))
+		note = found + ":" + yours
+	}
 	event := func(moved bool, err error) (bool, error) {
 		if !moved || err != nil {
 			return moved, err
@@ -385,10 +408,10 @@ func (sh *shipper) failCodeReview(ctx context.Context, findings []codeReviewFind
 		r.CodeReview.Rounds = round
 		r.CodeReview.ReplyRound = round // the Stop hook keeps the reply (see [keepReply])
 	}
-	blocking := slices.DeleteFunc(slices.Clone(findings), func(f codeReviewFinding) bool { return !f.blocks() })
+	blocking := slices.DeleteFunc(slices.Clone(findings), func(f codeReviewFinding) bool { return !f.blocks() || f.needsYou() })
 	more := len(blocking) - min(len(blocking), codeReviewSendMax)
 	blocking = blocking[:len(blocking)-more]
-	return event(sh.resume(ctx, codeReviewPrompt(blocking, more, round, hasChecks(sh.s, sh.r)), found, "code review", countRound))
+	return event(sh.resume(ctx, codeReviewPrompt(blocking, more, round, hasChecks(sh.s, sh.r)), note, "code review", countRound))
 }
 
 // codeReviewPrompt is the prompt that sends the Critical and Major findings of
@@ -570,8 +593,9 @@ type earlierRound struct {
 
 // earlierRounds are the reviews of the "code_review" events that sent
 // Critical and Major findings back to the session or stopped the run for
-// you, oldest first. A round keeps its Critical and Major findings, and a
-// review that stopped the run keeps only the findings that need you. The reply
+// you, oldest first. A round keeps its Critical and Major findings that do
+// not need you, and a review that stopped the run keeps only the findings
+// that need you. The reply
 // of a round comes from c (see [store.RunCodeReview.Replies]). An event from
 // before Loam stored the round of a review is not one of them.
 func earlierRounds(events []store.RunEvent, c *store.RunCodeReview) []earlierRound {
@@ -584,9 +608,10 @@ func earlierRounds(events []store.RunEvent, c *store.RunCodeReview) []earlierRou
 		er := earlierRound{round: cr.Round, needsYou: cr.NeedsYou}
 		for _, f := range cr.Findings {
 			// A review that stopped the run sent only the findings that need
-			// you to the user. The others went nowhere, so the next review
-			// must find them again.
-			if f := codeReviewFinding(f); f.blocks() && (!cr.NeedsYou || f.needsYou()) {
+			// you to the user, and a round sent only the others to the
+			// session. The rest went nowhere, so the next review must find
+			// them again.
+			if f := codeReviewFinding(f); f.blocks() && cr.NeedsYou == f.needsYou() {
 				er.findings = append(er.findings, f)
 			}
 		}
