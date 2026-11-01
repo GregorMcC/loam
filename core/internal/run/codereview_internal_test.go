@@ -221,3 +221,60 @@ func TestTheLastRoundTellsTheSessionThatItIsTheLast(t *testing.T) {
 		t.Fatalf("prompt before the last round %q", p)
 	}
 }
+
+// A run whose PR has no ship notes, because Claude wrote none, still gets the
+// Critical and Major findings after the last round in notes.risk.reasons.
+func TestAReviewAfterTheLastRoundGivesARunWithNoNotesNotes(t *testing.T) {
+	s, sh := reviewedRun(t, codeReviewRounds)
+	r, err := s.UpdateRun(sh.r.ID, func(r *store.Run) error {
+		r.Notes, r.PR = nil, &store.RunPR{Number: 12, URL: "https://github.com/o/r/pull/12"}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sh.r = r
+	findings := []codeReviewFinding{{Severity: severityMajor, File: "b.go", Text: "Loses the file."}}
+	if push, _, err := sh.pushPastCodeReview("new", findings, ""); err != nil || !push {
+		t.Fatalf("push %v, err %v", push, err)
+	}
+	got, err := s.GetRun(r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{codeReviewSpentFact, "Major issue from the code review: b.go: Loses the file."}
+	if got.Notes == nil || got.Notes.Risk.Level != store.RiskHigh || !slices.Equal(got.Notes.Risk.Reasons, want) {
+		t.Fatalf("notes %+v", got.Notes)
+	}
+	// A review that lets Loam push with nothing to wait for gives no notes.
+	r, err = s.UpdateRun(r.ID, func(r *store.Run) error { r.Notes = nil; return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	sh.r = r
+	if _, _, err := sh.passCodeReview("newer", []string{"Minor issue from the code review: a.go:1: A typo."}, "The code review found 1 minor issue", nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.GetRun(r.ID); got.Notes != nil {
+		t.Fatalf("notes %+v", got.Notes)
+	}
+}
+
+// The PR that Loam opens with no notes of Claude gets the notes of the
+// findings after the last round, and no notes otherwise.
+func TestPRNotesFallBackToTheFindingsAfterTheLastRound(t *testing.T) {
+	spent := &store.RunCodeReview{Facts: []string{codeReviewSpentFact, "Major issue from the code review: b.go: Loses the file."}}
+	if n := prNotes(&store.RunPRDraft{}, spent); n == nil || n.Risk.Level != store.RiskHigh || !slices.Equal(n.Risk.Reasons, spent.Facts) {
+		t.Fatalf("notes %+v", n)
+	}
+	claude := &store.RunNotes{Walkthrough: "Says hi."}
+	if n := prNotes(&store.RunPRDraft{Notes: claude}, spent); n != claude {
+		t.Fatalf("notes %+v", n)
+	}
+	if n := prNotes(&store.RunPRDraft{}, &store.RunCodeReview{Facts: []string{"The code review did not run: no claude"}}); n != nil {
+		t.Fatalf("notes %+v", n)
+	}
+	if n := prNotes(&store.RunPRDraft{}, nil); n != nil {
+		t.Fatalf("notes %+v", n)
+	}
+}

@@ -203,14 +203,19 @@ func (sh *shipper) pushPastCodeReview(head string, findings []codeReviewFinding,
 // that the review adds to the ship notes, and then the event with detail and
 // the round of the review, or nil when it did not run.
 // The facts replace those of the review before, in notes that the run has.
+// A run with a PR and no notes gets the notes of [spentNotes], when the facts
+// hold Critical or Major findings after the last round.
 // It reports no push, and records no event, when the run left its state
 // during the review: you may have stopped it.
 func (sh *shipper) passCodeReview(head string, facts []string, detail string, round *store.RunCodeReviewRound) (push, moved bool, err error) {
 	updated, err := sh.update(func(r *store.Run) {
 		c := cmp.Or(r.CodeReview, &store.RunCodeReview{})
-		if r.Notes != nil {
+		switch {
+		case r.Notes != nil:
 			r.Notes.Risk.Reasons = slices.DeleteFunc(r.Notes.Risk.Reasons, func(s string) bool { return slices.Contains(c.Facts, s) })
 			r.Notes.Risk.Reasons = append(r.Notes.Risk.Reasons, facts...)
+		case r.PR != nil:
+			r.Notes = spentNotes(facts)
 		}
 		c.Head, c.Facts = head, facts // the rounds count for the whole run
 		r.CodeReview = c
@@ -219,6 +224,30 @@ func (sh *shipper) passCodeReview(head string, facts []string, detail string, ro
 		return false, false, err
 	}
 	return true, false, sh.s.AddRunEventData(sh.r.ID, "code_review", detail, store.RunEventData{CodeReview: round})
+}
+
+// spentNotes are the ship notes of a run that has none, such as when Claude
+// wrote no notes when Loam opened the PR, after a review past the last round
+// of the run (see [shipper.pushPastCodeReview]). They hold only the risk:
+// the level is high, and the reasons are the facts of that review, so its
+// Critical and Major findings still wait for you. They are nil when the
+// facts are not of such a review.
+func spentNotes(facts []string) *store.RunNotes {
+	if !slices.Contains(facts, codeReviewSpentFact) {
+		return nil
+	}
+	return &store.RunNotes{Files: []store.NoteFile{}, WrittenAt: time.Now(),
+		Risk: store.NoteRisk{Level: store.RiskHigh, Reasons: slices.Clone(facts)}}
+}
+
+// prNotes are the notes of the run when Loam opens its PR with the draft d:
+// the notes of Claude, else the notes of [spentNotes] for the facts of the
+// last code review c.
+func prNotes(d *store.RunPRDraft, c *store.RunCodeReview) *store.RunNotes {
+	if d.Notes != nil || c == nil {
+		return d.Notes
+	}
+	return spentNotes(c.Facts)
 }
 
 // storedRound is the round of a review that found findings, as a
