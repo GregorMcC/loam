@@ -74,7 +74,7 @@ extension Scenarios {
         for (n, run) in [running, cancelled].enumerated() {
             try hook(run, ["hook_event_name": "SessionStart", "session_id": session(n + 4), "source": "startup"])
         }
-        try rig.loam(["run", "stop", cancelled], extra: extra)
+        try rig.loam(["run", "cancel", cancelled], extra: extra)
         // One run at a time: the run that runs holds the slot, so a new run waits for it.
         try rig.loam(["run", "limits", "--at-a-time", "1"], extra: extra)
         let queued = try start(plot, "Show the branch in the tab", checks: ["Tests=true"])

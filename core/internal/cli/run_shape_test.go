@@ -286,11 +286,11 @@ func TestRunApproveWithNoChecksRemovesTheDraftedChecks(t *testing.T) {
 	}
 }
 
-func TestRunStopOfAShapingRunCancelsItWithoutClaude(t *testing.T) {
+func TestRunCancelOfAShapingRunCancelsItWithoutClaude(t *testing.T) {
 	shapeCLI(t)
 	r := shapeRun(t, "shape", "alpha", "--title", "Remember the window size per plot")
 	calls := len(testutil.FakeClaudeCalls(t))
-	r = shapeRun(t, "stop", r.ID)
+	r = shapeRun(t, "cancel", r.ID)
 	if r.State != store.RunCancelled || len(testutil.FakeClaudeCalls(t)) != calls {
 		t.Fatalf("run %+v, claude calls %q", r, testutil.FakeClaudeCalls(t))
 	}

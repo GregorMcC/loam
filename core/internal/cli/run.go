@@ -25,17 +25,17 @@ func init() {
 func newRunCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "run",
-		Short: "Start, list, and stop runs: goals that a background session works on until their checks pass",
+		Short: "Start, list, and cancel runs: goals that a background session works on until their checks pass",
 		Long: "A run is one goal that a background Claude Code session (claude --bg) works on in a worktree of a plot.\n" +
 			"Each time the session ends a turn, Loam runs the Done when checks of the run in the worktree. When a check fails, Loam sends the output back to the session as its next try.\n" +
 			"When every check passes in a repo on GitHub, the run ships: loam run tick pushes its branch, opens its PR, and reads CI. A CI failure goes back to the session as a try.\n" +
-			"A run stops when it is ready to land (Ready), when it uses all its tries (Stopped), or when you stop it. loam run land merges the PR of a Ready run, and the run is Landed.\n" +
+			"A run stops when it is ready to land (Ready), when it uses all its tries (Stopped), or when you cancel it (Cancelled). loam run land merges the PR of a Ready run, and the run is Landed.\n" +
 			"loam run limits sets how many runs work at a time. A run that finds no free slot waits in Queued, and loam run tick starts it when a slot is free.\n" +
 			"Runs are not in the change log.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
-	c.AddCommand(newRunStartCmd(), newRunShapeCmd(), newRunRedraftCmd(), newRunApproveCmd(), newRunListCmd(), newRunStatusCmd(), newRunEventsCmd(), newRunStopCmd(), newRunDiffCmd(), newRunSendBackCmd(), newRunSendReviewCmd(), newRunLandCmd(), newRunTickCmd(), newRunHookCmd(), newRunDefaultsCmd(), newRunMCPServersCmd(), newRunLimitsCmd(), newRunMetricsCmd(), newRunSandboxCmd())
+	c.AddCommand(newRunStartCmd(), newRunShapeCmd(), newRunRedraftCmd(), newRunApproveCmd(), newRunListCmd(), newRunStatusCmd(), newRunEventsCmd(), newRunCancelCmd(), newRunStopCmd(), newRunDiffCmd(), newRunSendBackCmd(), newRunSendReviewCmd(), newRunLandCmd(), newRunTickCmd(), newRunHookCmd(), newRunDefaultsCmd(), newRunMCPServersCmd(), newRunLimitsCmd(), newRunMetricsCmd(), newRunSandboxCmd())
 	return c
 }
 
@@ -480,32 +480,54 @@ func newRunEventsCmd() *cobra.Command {
 	return c
 }
 
+func newRunCancelCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "cancel <run>",
+		Short: "Cancel a run",
+		Long:  "Cancel a run: Loam stops its background session, and the run is Cancelled. A Cancelled run cannot go back to its session. The worktree and its work stay.",
+		Args:  cobra.ExactArgs(1),
+		RunE:  runCancel,
+	}
+}
+
+// stopWarning is what loam run stop prints: the verb stop is not the state
+// Stopped, which can go back to its session.
+const stopWarning = "loam run stop cancels the run. Use loam run cancel."
+
+// newRunStopCmd is the old name of loam run cancel, for older callers. It
+// prints [stopWarning] to stderr, and its JSON is the JSON of run cancel.
 func newRunStopCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "stop <run>",
-		Short: "Stop the background session of a run",
-		Long:  "Stop the background session of a run. The run is Cancelled. The worktree and its work stay.",
-		Args:  cobra.ExactArgs(1),
+		Use:    "stop <run>",
+		Short:  "Cancel a run (old name of loam run cancel)",
+		Long:   "The old name of loam run cancel. The run is Cancelled, not Stopped.",
+		Args:   cobra.ExactArgs(1),
+		Hidden: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
-			if err != nil {
-				return err
-			}
-			defer s.Close()
-			r, warnings, err := run.Stop(cmd.Context(), s, args[0])
-			if err != nil {
-				return err
-			}
-			printWarnings(cmd, warnings)
-			if JSON(cmd) {
-				return printJSON(cmd, struct {
-					Run store.Run `json:"run"`
-				}{r})
-			}
-			printRun(cmd.OutOrStdout(), r)
-			return nil
+			fmt.Fprintln(cmd.ErrOrStderr(), stopWarning)
+			return runCancel(cmd, args)
 		},
 	}
+}
+
+func runCancel(cmd *cobra.Command, args []string) error {
+	s, err := openStore()
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+	r, warnings, err := run.Cancel(cmd.Context(), s, args[0])
+	if err != nil {
+		return err
+	}
+	printWarnings(cmd, warnings)
+	if JSON(cmd) {
+		return printJSON(cmd, struct {
+			Run store.Run `json:"run"`
+		}{r})
+	}
+	printRun(cmd.OutOrStdout(), r)
+	return nil
 }
 
 func newRunDiffCmd() *cobra.Command {
@@ -546,7 +568,7 @@ func newRunSendBackCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "send-back <run> --note <text>...",
 		Short: "Send your notes on the work of a run back to its session",
-		Long: "Resume the session of a run that is Ready to land or Stopped, with your notes as its next prompt. A note is \"<file>:<line>: <text>\" for a line of a file, or text alone for the whole run.\n" +
+		Long: "Resume the session of a run that is Ready to land, Shipping, or Stopped, with your notes as its next prompt. A note is \"<file>:<line>: <text>\" for a line of a file, or text alone for the whole run.\n" +
 			"The run goes back to Running. When the session ends its turn, the Done when checks run again, and a run on GitHub ships the changes to its PR.\n" +
 			"A note is not a failure, so it uses no try. A run that has used all its tries gets one more.\n" +
 			"When a note is like a note that you sent back on another run of the plot, Loam offers to make it a rule: a check that every run of the plot must pass.",

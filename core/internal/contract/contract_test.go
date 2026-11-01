@@ -706,7 +706,7 @@ func scenario(t *testing.T) *harness {
 	h.run("intake_list", "intake-list", 0, "intake", "list", "Runs")
 	h.run("linear_key_rm", "linear-key", 0, "linear", "key", "rm")
 	h.run("run_status", "run-status", 0, "run", "status", started.Run.ID)
-	h.run("run_stop", "run-stop", 0, "run", "stop", started.Run.ID)
+	h.run("run_cancel", "run-cancel", 0, "run", "cancel", started.Run.ID)
 
 	// Ship (ticket 206). A run with no checks passes its gate at once, when
 	// its session ends a turn. The repo is on GitHub, so the run ships: the
@@ -902,9 +902,8 @@ func scenario(t *testing.T) *harness {
 	if queued.Run.State != "queued" {
 		t.Fatalf("run start with no free slot: state %q", queued.Run.State)
 	}
-	if _, errOut, code := h.raw("run", "stop", queued.Run.ID); code != 0 {
-		t.Fatalf("run stop: exit %d: %s", code, errOut)
-	}
+	// run stop is the old name of run cancel, with the same JSON.
+	h.run("run_stop", "run-cancel", 0, "run", "stop", queued.Run.ID)
 	h.run("usage_none", "usage", 0, "usage")
 	// The fake claude prints the stream of the probe, as Claude Code does.
 	testutil.FakeClaudePrint(t, `{"type":"system","subtype":"init"}

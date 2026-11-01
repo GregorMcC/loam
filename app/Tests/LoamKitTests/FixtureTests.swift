@@ -58,7 +58,7 @@ func decodeFixture(schema: String, data: Data) throws {
     case "run-list": _ = try d.decode([Run].self, from: data)
     case "run-events": _ = try d.decode(RunEventFeed.self, from: data)
     case "run-status": _ = try d.decode(RunStatus.self, from: data)
-    case "run-stop", "run-send-back", "run-shape": _ = try d.decode(RunResult.self, from: data)
+    case "run-cancel", "run-send-back", "run-shape": _ = try d.decode(RunResult.self, from: data)
     case "run-send-review": _ = try d.decode(RunReview.self, from: data)
     case "run-land": _ = try d.decode(RunLandResult.self, from: data)
     case "run-diff": _ = try d.decode(RunDiff.self, from: data)

@@ -135,9 +135,34 @@ func TestRunSendBackKeepsTheTriesUnderTheLimit(t *testing.T) {
 	}
 }
 
+// TAS-220: a run that is Shipping goes back too, for example when its PR
+// conflicts with main. The resume is as for a Ready run, and the next tick
+// leaves the run to its session.
+func TestRunSendBackResumesAShippingRun(t *testing.T) {
+	s, r, _ := shipRun(t, "3")
+	tick(t) // the PR is open, and CI has not passed yet
+	if got, _ := s.GetRun(r.ID); got.State != store.RunShipping {
+		t.Fatalf("not shipping: %+v", got)
+	}
+	got, code, out := sendBack(t, r.ID, "--note", "Merge main into the branch.")
+	if code != 0 || got.State != store.RunRunning || got.Tries != r.Tries || got.Note != "Sent back with 1 note" {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+	if prompt := lastPrompt(t); !strings.Contains(prompt, "- Merge main into the branch.") || !strings.Contains(prompt, "#1") {
+		t.Fatalf("prompt %s", prompt)
+	}
+	tick(t)
+	if after, _ := s.GetRun(r.ID); after.State != store.RunRunning || after.Note != got.Note {
+		t.Fatalf("the tick changed the run that went back: %+v", after)
+	}
+}
+
 func TestRunSendBackRefusesARunThatIsNotWaitingForYou(t *testing.T) {
-	_, r, _ := shipRun(t, "3")
-	if _, code, out := sendBack(t, r.ID, "--note", "Hi."); code != ExitInvalid || !strings.Contains(out, "Ready to land or Stopped") {
+	s, r, _ := shipRun(t, "3")
+	if _, err := s.UpdateRun(r.ID, func(r *store.Run) error { r.State = store.RunRunning; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, code, out := sendBack(t, r.ID, "--note", "Hi."); code != ExitInvalid || !strings.Contains(out, "Ready to land, Shipping, or Stopped") {
 		t.Fatalf("exit %d: %s", code, out)
 	}
 }

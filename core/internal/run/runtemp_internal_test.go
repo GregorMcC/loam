@@ -63,14 +63,14 @@ func TestSessionStartGivesBashThePrivateXcrunCache(t *testing.T) {
 }
 
 // TAS-216: the private folder of a run goes when the run ends: when you
-// stop it and when it lands.
+// cancel it and when it lands.
 func TestARunThatEndsRemovesItsPrivateFolder(t *testing.T) {
 	s, r := runWithTemp(t, store.RunShaping)
-	if _, _, err := Stop(context.Background(), s, r.ID); err != nil {
+	if _, _, err := Cancel(context.Background(), s, r.ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Lstat(session.RunTemp(s, r.ID)); !os.IsNotExist(err) {
-		t.Errorf("the private folder after Stop: %v, want none", err)
+		t.Errorf("the private folder after Cancel: %v, want none", err)
 	}
 	s, r = runWithTemp(t, store.RunReady)
 	if _, moved, _, err := landRun(context.Background(), s, r, "Merged", false); err != nil || !moved {
