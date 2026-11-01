@@ -218,7 +218,7 @@ func TestNoRepoEnvDropsTheRepoOfTheEnvironment(t *testing.T) {
 // repoVars are the variables that choose a repo or a part of it.
 var repoVars = []string{
 	"GIT_DIR", "GIT_WORK_TREE", "GIT_IMPLICIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE",
-	"GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_GRAFT_FILE", "GIT_SHALLOW_FILE", "GIT_PREFIX",
+	"GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_GRAFT_FILE", "GIT_SHALLOW_FILE", "GIT_PREFIX", "GIT_NAMESPACE",
 }
 
 // Each git of Loam goes through this package. session/run.go runs git config
