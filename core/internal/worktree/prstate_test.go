@@ -319,7 +319,7 @@ func TestListGivesACachedPRFromBeforePassedChecksAnEmptyList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, list := range []string{`"passed_checks":[]`, `"change_requests":[]`, `"review_threads":[]`} {
+	for _, list := range []string{`"passed_checks":[]`, `"change_requests":[]`, `"review_threads":[]`, `"comment_reviews":[]`, `"app_comments":[]`} {
 		if !strings.Contains(string(b), list) {
 			t.Fatalf("no %s: %s", list, b)
 		}

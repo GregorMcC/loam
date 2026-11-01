@@ -53,16 +53,18 @@ type listedWorktree struct {
 	PR *listedPR `json:"pr"`
 }
 
-// listedPR is a pull request without the list of its passed checks and without its reviews. A session
+// listedPR is a pull request without the list of its passed checks, its reviews, and the comments of apps. A session
 // reads them through gh (ADR 0007), and up to 100 rows for each worktree would fill its context. A review
 // thread can hold several long comments. The counts and the failed checks stay.
 type listedPR struct {
 	github.PR
-	// PassedChecks, ChangeRequests, and ReviewThreads hide the lists of the PR, which have the same JSON
-	// names one level deeper. They are always nil, and omitempty leaves them out.
+	// PassedChecks, ChangeRequests, ReviewThreads, CommentReviews, and AppComments hide the lists of the PR,
+	// which have the same JSON names one level deeper. They are always nil, and omitempty leaves them out.
 	PassedChecks   *[]github.Check        `json:"passed_checks,omitempty"`
 	ChangeRequests *[]github.Review       `json:"change_requests,omitempty"`
 	ReviewThreads  *[]github.ReviewThread `json:"review_threads,omitempty"`
+	CommentReviews *[]github.Review       `json:"comment_reviews,omitempty"`
+	AppComments    *[]github.AppComment   `json:"app_comments,omitempty"`
 }
 
 // listedWorktrees returns the worktrees as list_worktrees shows them.

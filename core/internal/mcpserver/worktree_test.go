@@ -347,7 +347,7 @@ func TestListWorktreesLeavesOutThePassedChecks(t *testing.T) {
 	]}}}}]}}}}`)
 
 	out := e.ok("list_worktrees", map[string]any{"refresh": true})
-	for _, list := range []string{"passed_checks", "change_requests", "review_threads"} {
+	for _, list := range []string{"passed_checks", "change_requests", "review_threads", "comment_reviews", "app_comments"} {
 		if strings.Contains(out, list) {
 			t.Fatalf("the list holds %s: %s", list, out)
 		}

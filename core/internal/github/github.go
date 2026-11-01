@@ -90,7 +90,7 @@ type Branch struct {
 }
 
 // PR is a pull request, with the counts that a status line needs. The
-// counts from BehindBase to ReviewThreads are for an open PR only. They are
+// counts from BehindBase to AppComments are for an open PR only. They are
 // zero or empty for a merged or closed PR.
 type PR struct {
 	Number int    `json:"number"`
@@ -141,6 +141,26 @@ type PR struct {
 	// first 100, in the order of GitHub. Comments counts them. The list is
 	// never null.
 	ReviewThreads []ReviewThread `json:"review_threads"`
+	// CommentReviews are the reviews of apps that only comment: for each app
+	// with write access, its last review with a body on the head commit, when
+	// that review is COMMENTED. A review bot can put a finding in the body,
+	// such as on a line outside the diff, which has no thread. The list is of
+	// the last 100 reviews, and it is never null.
+	CommentReviews []Review `json:"comment_reviews"`
+	// AppComments are the comments of apps on the PR, not on a line: the
+	// comment of each app that it edited or wrote last, of the last 100
+	// comments. A review bot says there when it did not review, such as when
+	// its reviews are paused. The list is never null.
+	AppComments []AppComment `json:"app_comments"`
+}
+
+// AppComment is a comment of an app on a PR, not on a line.
+type AppComment struct {
+	// Author is the login of the app, such as coderabbitai.
+	Author string `json:"author"`
+	// Body is the text of the comment, in Markdown.
+	Body string `json:"body"`
+	URL  string `json:"url"`
 }
 
 // Review is one review of a PR.
@@ -153,6 +173,9 @@ type Review struct {
 	// review has only comments on lines.
 	Body string `json:"body"`
 	URL  string `json:"url"`
+	// Commit is the commit that the review is of. It is empty when GitHub
+	// gives none.
+	Commit string `json:"commit,omitempty"`
 }
 
 // ReviewThread is one review thread of a PR: comments on a line of a file.
@@ -216,4 +239,7 @@ type Check struct {
 	// RunID is the GitHub Actions run of the check, which Loam can run
 	// again. It is 0 for a check that is not a job of GitHub Actions.
 	RunID int64 `json:"run_id,omitempty"`
+	// Skipped is true for a check run that GitHub skipped. It counts as
+	// passed.
+	Skipped bool `json:"skipped,omitempty"`
 }

@@ -10,6 +10,12 @@ reviews:
   profile: chill
   request_changes_workflow: true
   poem: false
+  auto_review:
+    # A Loam run pushes many commits on one PR: each fix of a CI failure or
+    # of a review is a commit. CodeRabbit pauses its reviews after some
+    # reviewed commits, and a run would then wait for a review that does not
+    # come. 0 turns the pause off.
+    auto_pause_after_reviewed_commits: 0
   path_filters:
     # scripts/gen-loam-theme.py writes these from docs/design/tokens.json, and
     # LoamThemeTests checks them. Review the tokens and the script instead.

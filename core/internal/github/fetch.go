@@ -56,7 +56,9 @@ const detailQuery = `query($owner: String!, $name: String!%s) {
 
 const detailFields = `    p%[1]d: pullRequest(number: $n%[1]d) {
       %[3]s
-      latestOpinionatedReviews(first: %[2]d, writersOnly: true) { nodes { id state body url author { login } } }
+      latestOpinionatedReviews(first: %[2]d, writersOnly: true) { nodes { id state body url commit { oid } author { login } } }
+      reviews(last: %[2]d) { nodes { id state body url authorCanPushToRepository commit { oid } author { __typename login } } }
+      comments(last: %[2]d) { nodes { body url updatedAt author { __typename login } } }
       reviewThreads(first: %[2]d) { nodes { id isResolved path line
         comments(first: %[4]d) { nodes { body url authorAssociation author { login } pullRequestReview { authorCanPushToRepository } } } } }
       commits(last: 1) { nodes { commit { statusCheckRollup { state contexts(first: %[2]d) { totalCount nodes {
@@ -101,14 +103,21 @@ type detailNode struct {
 		} `json:"compare"`
 	} `json:"baseRef"`
 	LatestOpinionatedReviews struct {
-		Nodes []struct {
-			ID     string  `json:"id"`
-			State  string  `json:"state"`
-			Body   string  `json:"body"`
-			URL    string  `json:"url"`
-			Author *author `json:"author"`
-		} `json:"nodes"`
+		Nodes []reviewNode `json:"nodes"`
 	} `json:"latestOpinionatedReviews"`
+	// Reviews are the last reviews of the PR, oldest first.
+	Reviews struct {
+		Nodes []reviewNode `json:"nodes"`
+	} `json:"reviews"`
+	// Comments are the last comments of the PR, not on a line, oldest first.
+	Comments struct {
+		Nodes []struct {
+			Body      string    `json:"body"`
+			URL       string    `json:"url"`
+			UpdatedAt time.Time `json:"updatedAt"`
+			Author    *author   `json:"author"`
+		} `json:"nodes"`
+	} `json:"comments"`
 	ReviewThreads struct {
 		Nodes []struct {
 			ID         string `json:"id"`
@@ -147,11 +156,42 @@ type detailNode struct {
 	} `json:"commits"`
 }
 
-// author is the author of a review or a comment. GitHub gives null for a
-// deleted account.
-type author struct {
-	Login string `json:"login"`
+// reviewNode is one review of a PR.
+type reviewNode struct {
+	ID    string `json:"id"`
+	State string `json:"state"`
+	Body  string `json:"body"`
+	URL   string `json:"url"`
+	// AuthorCanPushToRepository is only in the reviews of [detailNode.Reviews].
+	// latestOpinionatedReviews reads the reviews of writers only.
+	AuthorCanPushToRepository bool `json:"authorCanPushToRepository"`
+	// Commit is null when the commit is gone, such as after a force push.
+	Commit *struct {
+		OID string `json:"oid"`
+	} `json:"commit"`
+	Author *author `json:"author"`
 }
+
+// review is the [Review] of the node.
+func (n reviewNode) review() Review {
+	r := Review{ID: n.ID, Author: loginOf(n.Author), Body: n.Body, URL: n.URL}
+	if n.Commit != nil {
+		r.Commit = n.Commit.OID
+	}
+	return r
+}
+
+// author is the author of a review or a comment. GitHub gives null for a
+// deleted account. Typename is Bot for an app, and it is only in the
+// reviews and comments that ask for it.
+type author struct {
+	Typename string `json:"__typename"`
+	Login    string `json:"login"`
+}
+
+// isApp reports whether the author is an app, such as a review bot. Only
+// someone with admin access to a repo can install an app on it.
+func (a *author) isApp() bool { return a != nil && a.Typename == "Bot" }
 
 // writerAssociations are the author associations of a person who can push to
 // the repo. A COLLABORATOR can have read access only, so this list can count
@@ -327,6 +367,7 @@ func pick(nodes []prNode) *PR {
 		InMergeQueue: chosen.IsInMergeQueue, Base: chosen.BaseRefName, Head: chosen.HeadRefName, HeadOID: chosen.HeadRefOid,
 		MergedAt: chosen.MergedAt, ClosedAt: chosen.ClosedAt, Commits: chosen.Commits.TotalCount,
 		FailedChecks: []Check{}, PassedChecks: []Check{}, ChangeRequests: []Review{}, ReviewThreads: []ReviewThread{},
+		CommentReviews: []Review{}, AppComments: []AppComment{},
 	}
 	if chosen.MergeQueueEntry != nil {
 		pr.QueuePosition = chosen.MergeQueueEntry.Position
@@ -344,9 +385,11 @@ func addDetails(pr *PR, d detailNode) {
 		case "APPROVED":
 			pr.Approvals++
 		case "CHANGES_REQUESTED":
-			pr.ChangeRequests = append(pr.ChangeRequests, Review{ID: r.ID, Author: loginOf(r.Author), Body: r.Body, URL: r.URL})
+			pr.ChangeRequests = append(pr.ChangeRequests, r.review())
 		}
 	}
+	pr.CommentReviews = commentReviews(d.Reviews.Nodes, pr.HeadOID)
+	pr.AppComments = appComments(d)
 	for _, t := range d.ReviewThreads.Nodes {
 		if t.IsResolved {
 			continue
@@ -392,6 +435,59 @@ func addDetails(pr *PR, d detailNode) {
 			pr.Checks.Waiting++
 		}
 	}
+}
+
+// commentReviews are the [PR.CommentReviews] of the reviews, oldest first,
+// of a PR whose head is head. A review with no body, such as the review that
+// holds a reply on a thread, does not count, so a reply of a bot after its
+// review does not hide the review.
+func commentReviews(nodes []reviewNode, head string) []Review {
+	last := map[string]reviewNode{}
+	var order []string
+	for _, n := range nodes {
+		if !n.Author.isApp() || !n.AuthorCanPushToRepository || n.Commit == nil || n.Commit.OID != head ||
+			strings.TrimSpace(n.Body) == "" {
+			continue
+		}
+		login := loginOf(n.Author)
+		if _, ok := last[login]; !ok {
+			order = append(order, login)
+		}
+		last[login] = n
+	}
+	out := []Review{}
+	for _, login := range order {
+		if n := last[login]; n.State == "COMMENTED" {
+			out = append(out, n.review())
+		}
+	}
+	return out
+}
+
+// appComments are the [PR.AppComments] of the PR: of each app, the comment
+// that it edited or wrote last. The list is in the order of GitHub.
+func appComments(d detailNode) []AppComment {
+	type latest struct {
+		at    time.Time
+		index int
+	}
+	last := map[string]latest{}
+	for i, c := range d.Comments.Nodes {
+		if !c.Author.isApp() {
+			continue
+		}
+		login := loginOf(c.Author)
+		if l, ok := last[login]; !ok || !c.UpdatedAt.Before(l.at) {
+			last[login] = latest{at: c.UpdatedAt, index: i}
+		}
+	}
+	out := []AppComment{}
+	for i, c := range d.Comments.Nodes {
+		if l, ok := last[loginOf(c.Author)]; ok && c.Author.isApp() && l.index == i {
+			out = append(out, AppComment{Author: loginOf(c.Author), Body: c.Body, URL: c.URL})
+		}
+	}
+	return out
 }
 
 type checkOutcome int
@@ -443,7 +539,7 @@ func checkOf(n checkNode) Check {
 	if n.Typename == "StatusContext" {
 		return Check{Name: n.Context, URL: n.TargetURL, Required: n.IsRequired}
 	}
-	c := Check{Name: n.Name, URL: n.DetailsURL, Required: n.IsRequired}
+	c := Check{Name: n.Name, URL: n.DetailsURL, Required: n.IsRequired, Skipped: n.Status == "COMPLETED" && n.Conclusion == "SKIPPED"}
 	if s := n.CheckSuite; s != nil && s.WorkflowRun != nil {
 		c.RunID = s.WorkflowRun.DatabaseID
 		if s.WorkflowRun.Workflow.Name != "" {

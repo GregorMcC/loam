@@ -27,8 +27,9 @@ const reviewPromptMax = 60_000
 const changesRequested = "CHANGES_REQUESTED"
 
 // review is what Loam sends back of a PR whose review requests changes: the
-// threads that are not resolved, and the reviews that request changes and
-// that Loam has not sent yet.
+// threads that are not resolved, and the reviews that request changes or
+// that have a Critical or Major finding (see [majorReviews]) and that Loam
+// has not sent yet.
 type review struct {
 	threads  []github.ReviewThread
 	requests []github.Review
@@ -37,16 +38,18 @@ type review struct {
 	cut []string
 }
 
-// reviewOf is what Loam can send back of pr to the session of the run r. It
-// is empty when the review decision of pr is not CHANGES_REQUESTED: a thread
-// with no change request does not stop the run. It is also empty when Loam
-// sent each review and no thread is open, because a decision of GitHub stays
-// CHANGES_REQUESTED until the reviewer reviews again. A thread with no
-// comment by someone who can push to the repo has nothing to send, because
-// the prompt leaves out the text of the other comments.
+// reviewOf is what Loam can send back of pr to the session of the run r.
+// When the review decision of pr is not CHANGES_REQUESTED, it holds only the
+// reviews of apps on the head that only comment and have a Critical or Major
+// finding in their body (see [majorReviews]): a thread with no change
+// request does not stop the run. It is empty when Loam sent each review and
+// no thread is open, because a decision of GitHub stays CHANGES_REQUESTED
+// until the reviewer reviews again. A thread with no comment by someone who
+// can push to the repo has nothing to send, because the prompt leaves out
+// the text of the other comments.
 func reviewOf(r store.Run, pr *github.PR) review {
 	if pr.ReviewDecision != changesRequested {
-		return review{}
+		return review{requests: majorReviews(r, pr)}
 	}
 	return openReview(r, pr)
 }
@@ -66,7 +69,24 @@ func openReview(r store.Run, pr *github.PR) review {
 			rv.requests = append(rv.requests, c)
 		}
 	}
+	rv.requests = append(rv.requests, majorReviews(r, pr)...)
 	return rv
+}
+
+// reviewAsks says what the review of pr asks for, such as "changes are
+// requested on #12". With no change request, a review of an app that only
+// comments has a Critical or Major finding (see [reviewOf]).
+func reviewAsks(pr *github.PR) string {
+	if pr.ReviewDecision != changesRequested {
+		return fmt.Sprintf("a review of #%d has a Critical or Major finding", pr.Number)
+	}
+	return fmt.Sprintf("changes are requested on #%d", pr.Number)
+}
+
+// requestedOn is [reviewAsks] as the start of a sentence.
+func requestedOn(pr *github.PR) string {
+	asks := reviewAsks(pr)
+	return strings.ToUpper(asks[:1]) + asks[1:]
 }
 
 func (rv review) empty() bool { return len(rv.threads) == 0 && len(rv.requests) == 0 }
@@ -96,7 +116,7 @@ func (rv review) summary() string {
 // the run. A review that Loam sends counts a review try. A review that you
 // send (byYou) counts none, as a note does not count a try.
 func (sh *shipper) sendReview(ctx context.Context, pr *github.PR, rv review, byYou bool) (bool, error) {
-	requested := fmt.Sprintf("Changes are requested on #%d", pr.Number)
+	requested := requestedOn(pr)
 	tries := fmt.Sprintf("review try %d of %d", sh.r.ReviewTries+1, store.DefaultMaxReviewTries)
 	opening, suffix := fmt.Sprintf("%s (%s).", requested, tries), fmt.Sprintf(" (%s)", tries)
 	if byYou {
@@ -148,8 +168,8 @@ type ReviewResult struct {
 	PR *github.PR `json:"pr"`
 	// Threads and Reviews count what Loam sends: the threads that are not
 	// resolved and have a comment by a writer, and the reviews that request
-	// changes and that Loam has not sent. They are 0 when the review has
-	// nothing to send.
+	// changes or have a Critical or Major finding and that Loam has not
+	// sent. They are 0 when the review has nothing to send.
 	Threads int `json:"threads"`
 	Reviews int `json:"reviews"`
 }
@@ -157,7 +177,8 @@ type ReviewResult struct {
 // SendReview sends the review of the PR of a run that is Ready to land back
 // to its session (`loam run send-review`): each thread that is not resolved
 // and has a comment by someone who can push to the repo, and each review
-// that requests changes and that Loam has not sent. The review decision of
+// that requests changes or has a Critical or Major finding (see
+// [majorReviews]) and that Loam has not sent. The review decision of
 // the PR does not matter. The prompt is the one of a review that Loam sends,
 // with the same filter for the text of readers. Your send uses no review
 // try, because you chose it, and the tries only limit what Loam sends alone.
@@ -203,7 +224,7 @@ func SendReview(ctx context.Context, s *store.Store, id string, dryRun bool) (*R
 		return res, nil
 	}
 	if rv.empty() {
-		return nil, fmt.Errorf("#%d has no review to send back: no thread is open, and Loam sent each review that requests changes: %w", pr.Number, store.ErrInvalid)
+		return nil, fmt.Errorf("#%d has no review to send back: no thread is open, and Loam sent each review that requests changes or has a Critical or Major finding: %w", pr.Number, store.ErrInvalid)
 	}
 	usageForHold(ctx, s)
 	sh := shipper{s: s, gh: gh, r: r}

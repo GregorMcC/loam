@@ -99,7 +99,32 @@ const state = `{
       "latestOpinionatedReviews": {"nodes": [{"state": "APPROVED"}, {"state": "COMMENTED"},
         {"id": "PRR_1", "state": "CHANGES_REQUESTED", "body": "Two fixes, please.", "url": "https://github.com/example/widgets/pull/15#pullrequestreview-1",
          "author": {"login": "alice"}},
-        {"id": "PRR_2", "state": "CHANGES_REQUESTED", "body": "", "url": "https://github.com/example/widgets/pull/15#pullrequestreview-2", "author": null}]},
+        {"id": "PRR_2", "state": "CHANGES_REQUESTED", "body": "", "url": "https://github.com/example/widgets/pull/15#pullrequestreview-2", "author": null,
+         "commit": {"oid": "1111111111111111111111111111111111111111"}}]},
+      "reviews": {"nodes": [
+        {"id": "PRR_3", "state": "COMMENTED", "body": "Outside diff: Major.", "url": "https://github.com/example/widgets/pull/15#pullrequestreview-3",
+         "authorCanPushToRepository": true, "commit": {"oid": "2222222222222222222222222222222222222222"}, "author": {"__typename": "Bot", "login": "coderabbitai"}},
+        {"id": "PRR_4", "state": "COMMENTED", "body": "", "url": "https://github.com/example/widgets/pull/15#pullrequestreview-4",
+         "authorCanPushToRepository": true, "commit": {"oid": "2222222222222222222222222222222222222222"}, "author": {"__typename": "Bot", "login": "coderabbitai"}},
+        {"id": "PRR_5", "state": "COMMENTED", "body": "An old head.", "url": "https://github.com/example/widgets/pull/15#pullrequestreview-5",
+         "authorCanPushToRepository": true, "commit": {"oid": "1111111111111111111111111111111111111111"}, "author": {"__typename": "Bot", "login": "otherbot"}},
+        {"id": "PRR_6", "state": "COMMENTED", "body": "By a person.", "url": "https://github.com/example/widgets/pull/15#pullrequestreview-6",
+         "authorCanPushToRepository": true, "commit": {"oid": "2222222222222222222222222222222222222222"}, "author": {"__typename": "User", "login": "alice"}},
+        {"id": "PRR_7", "state": "COMMENTED", "body": "No push access.", "url": "https://github.com/example/widgets/pull/15#pullrequestreview-7",
+         "authorCanPushToRepository": false, "commit": {"oid": "2222222222222222222222222222222222222222"}, "author": {"__typename": "Bot", "login": "strangerbot"}},
+        {"id": "PRR_8", "state": "COMMENTED", "body": "Looks risky.", "url": "https://github.com/example/widgets/pull/15#pullrequestreview-8",
+         "authorCanPushToRepository": true, "commit": {"oid": "2222222222222222222222222222222222222222"}, "author": {"__typename": "Bot", "login": "lintbot"}},
+        {"id": "PRR_9", "state": "APPROVED", "body": "Fine now.", "url": "https://github.com/example/widgets/pull/15#pullrequestreview-9",
+         "authorCanPushToRepository": true, "commit": {"oid": "2222222222222222222222222222222222222222"}, "author": {"__typename": "Bot", "login": "lintbot"}}]},
+      "comments": {"nodes": [
+        {"body": "Summary. Reviews paused.", "url": "https://github.com/example/widgets/pull/15#issuecomment-1", "updatedAt": "2026-01-01T12:00:00Z",
+         "author": {"__typename": "Bot", "login": "coderabbitai"}},
+        {"body": "A person.", "url": "https://github.com/example/widgets/pull/15#issuecomment-2", "updatedAt": "2026-01-01T11:00:00Z",
+         "author": {"__typename": "User", "login": "alice"}},
+        {"body": "An old note.", "url": "https://github.com/example/widgets/pull/15#issuecomment-3", "updatedAt": "2026-01-01T11:30:00Z",
+         "author": {"__typename": "Bot", "login": "coderabbitai"}},
+        {"body": "Deployed.", "url": "https://github.com/example/widgets/pull/15#issuecomment-4", "updatedAt": "2026-01-01T10:00:00Z",
+         "author": {"__typename": "Bot", "login": "deploybot"}}]},
       "reviewThreads": {"nodes": [
         {"id": "PRRT_1", "isResolved": false, "path": "login/form.go", "line": 42, "comments": {"nodes": [
           {"body": "This drops the error.", "url": "https://github.com/example/widgets/pull/15#discussion_r1", "author": {"login": "alice"}, "pullRequestReview": {"authorCanPushToRepository": true}},
@@ -172,10 +197,27 @@ func TestFetchReadsEachBranch(t *testing.T) {
 	// collaborator, and the push access of a review wins over the association.
 	wantReviews := []github.Review{
 		{ID: "PRR_1", Author: "alice", Body: "Two fixes, please.", URL: "https://github.com/example/widgets/pull/15#pullrequestreview-1"},
-		{ID: "PRR_2", Author: "ghost", URL: "https://github.com/example/widgets/pull/15#pullrequestreview-2"},
+		{ID: "PRR_2", Author: "ghost", URL: "https://github.com/example/widgets/pull/15#pullrequestreview-2",
+			Commit: "1111111111111111111111111111111111111111"},
 	}
 	if !slices.Equal(pr.ChangeRequests, wantReviews) {
 		t.Fatalf("change requests %+v", pr.ChangeRequests)
+	}
+	// Of each app with push access, the last review with a body on the head, when it only comments. A review
+	// with no body, such as a reply on a thread, does not hide the review before it. A review of an older
+	// commit, of a person, or of an app with no push access does not count, and an approval is not a comment.
+	wantComments := []github.Review{{ID: "PRR_3", Author: "coderabbitai", Body: "Outside diff: Major.",
+		URL: "https://github.com/example/widgets/pull/15#pullrequestreview-3", Commit: "2222222222222222222222222222222222222222"}}
+	if !slices.Equal(pr.CommentReviews, wantComments) {
+		t.Fatalf("comment reviews %+v", pr.CommentReviews)
+	}
+	// Of each app, the comment that it edited or wrote last. A person's comment does not count.
+	wantApp := []github.AppComment{
+		{Author: "coderabbitai", Body: "Summary. Reviews paused.", URL: "https://github.com/example/widgets/pull/15#issuecomment-1"},
+		{Author: "deploybot", Body: "Deployed.", URL: "https://github.com/example/widgets/pull/15#issuecomment-4"},
+	}
+	if !slices.Equal(pr.AppComments, wantApp) {
+		t.Fatalf("app comments %+v", pr.AppComments)
 	}
 	wantThreads := []github.ReviewThread{
 		{ID: "PRRT_1", Path: "login/form.go", Line: 42, URL: "https://github.com/example/widgets/pull/15#discussion_r1",
@@ -211,7 +253,7 @@ func TestFetchReadsEachBranch(t *testing.T) {
 	// the order of GitHub, and a status context is a check too.
 	wantPassed := []github.Check{
 		{Name: "ci / test", URL: "https://github.com/example/widgets/actions/runs/2/job/2", Duration: 125, Required: true, RunID: 102},
-		{Name: "skip"},
+		{Name: "skip", Skipped: true},
 		{Name: "ci/build", URL: "https://ci.example.com/2"},
 	}
 	if !slices.Equal(pr.PassedChecks, wantPassed) || len(pr.PassedChecks) != pr.Checks.Passed {
@@ -225,7 +267,8 @@ func TestFetchReadsEachBranch(t *testing.T) {
 	// A merged PR still shows after GitHub deletes its branch.
 	if b := got["old-work"]; b.Pushed || b.PR == nil || b.PR.Number != 9 || b.PR.State != "MERGED" ||
 		b.PR.MergedAt == nil || !b.PR.MergedAt.Equal(time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC)) ||
-		b.PR.FailedChecks == nil || b.PR.PassedChecks == nil || b.PR.ChangeRequests == nil || b.PR.ReviewThreads == nil {
+		b.PR.FailedChecks == nil || b.PR.PassedChecks == nil || b.PR.ChangeRequests == nil || b.PR.ReviewThreads == nil ||
+		b.PR.CommentReviews == nil || b.PR.AppComments == nil {
 		t.Fatalf("old-work: %+v", b)
 	}
 	if b := got["local-only"]; b.PR != nil || b.Pushed {
@@ -281,7 +324,8 @@ func TestFetchGivesEmptyListsOfChecksNotNull(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(string(b), `"failed_checks":[]`) || !strings.Contains(string(b), `"passed_checks":[]`) {
+		if !strings.Contains(string(b), `"failed_checks":[]`) || !strings.Contains(string(b), `"passed_checks":[]`) ||
+			!strings.Contains(string(b), `"comment_reviews":[]`) || !strings.Contains(string(b), `"app_comments":[]`) {
 			t.Errorf("%s: %s", branch, b)
 		}
 	}

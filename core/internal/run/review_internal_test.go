@@ -231,3 +231,19 @@ func TestReviewPromptLeavesOpenAThreadWithMoreCommentsThanLoamReads(t *testing.T
 		t.Fatalf("cut %q:\n%s", held.cut, prompt)
 	}
 }
+
+func TestHasMajorFindingReadsTheSeverityOfAFindingHeader(t *testing.T) {
+	for body, want := range map[string]bool{
+		"`a.go`: _⚠️ Potential issue_ | _🟠 Major_\n\n**Drops the error.**":  true,
+		"`a.go`: _⚠️ Potential issue_ | _🔴 Critical_\n\n**Leaks a token.**": true,
+		"`a.go`: **Major**: drops the error.":                               true,
+		"`a.go`: _🛠️ Refactor suggestion_ | _🟡 Minor_":                      false,
+		"`a.go`: _🧹 Nitpick_ | _🔵 Trivial_":                                 false,
+		"A Major rewrite of the Critical path.":                             false,
+		"_Majority_ of the code.":                                           false,
+	} {
+		if got := hasMajorFinding(body); got != want {
+			t.Errorf("hasMajorFinding(%q) = %v, want %v", body, got, want)
+		}
+	}
+}
