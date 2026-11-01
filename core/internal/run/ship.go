@@ -439,9 +439,14 @@ func (sh *shipper) prDraft(ctx context.Context, repo github.Repo, w store.Worktr
 	return d, nil
 }
 
-// adopt makes an open PR of the branch the PR of the run.
+// adopt makes an open PR of the branch the PR of the run. The conflict
+// send-backs of the old PR do not count for the new one, also on the same
+// head.
 func (sh *shipper) adopt(pr *github.PR) (bool, error) {
-	moved, err := sh.update(func(r *store.Run) { r.PR, r.PRDraft = &store.RunPR{Number: pr.Number, URL: pr.URL}, nil })
+	moved, err := sh.update(func(r *store.Run) {
+		r.PR, r.PRDraft = &store.RunPR{Number: pr.Number, URL: pr.URL}, nil
+		r.ConflictSends, r.ConflictHead = 0, ""
+	})
 	if err != nil {
 		return moved, err
 	}

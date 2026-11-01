@@ -388,8 +388,8 @@ type Run struct {
 	BlockedStops int `json:"-"`
 	// ConflictSends counts the conflict send-backs in a row: the times that
 	// Loam sent the run back to merge its base branch because GitHub showed
-	// its PR as CONFLICTING. A PR that GitHub shows as MERGEABLE sets it to
-	// 0. ConflictHead is the head of the PR that the last one was for, so
+	// its PR as CONFLICTING. A PR that GitHub shows as MERGEABLE, and a new
+	// PR of the run, set it to 0. ConflictHead is the head of the PR that the last one was for, so
 	// Loam sends one for each head. Neither is in the JSON.
 	ConflictSends int    `json:"-"`
 	ConflictHead  string `json:"-"`

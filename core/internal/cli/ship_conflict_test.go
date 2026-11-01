@@ -192,6 +192,30 @@ func TestRunTickStopsARunWhoseSessionMadeNoMerge(t *testing.T) {
 	}
 }
 
+// The conflict send-backs of a PR do not count for a PR that the run adopts
+// later, also on the same head.
+func TestRunTickStartsTheConflictCountAgainForANewPR(t *testing.T) {
+	_, r, w := shipRun(t, "3")
+	tick(t)
+	landOnMain(t, w)
+	head := testutil.Git(t, r.Folder, "rev-parse", "HEAD")
+	setGitHub(t, conflicting(w.Branch, head))
+	tick(t)
+	endTurn(t, r)
+	// The branch now has another open PR, #2, at the same head.
+	second := strings.NewReplacer(`"number": 1`, `"number": 2`, "/pull/1", "/pull/2", `"details": {"1"`, `"details": {"2"`).
+		Replace(conflicting(w.Branch, head))
+	setGitHub(t, second)
+	if got := tick(t); len(got.Runs) != 1 || got.Runs[0].PR == nil || got.Runs[0].PR.Number != 2 {
+		t.Fatalf("adopt: %+v", got)
+	}
+	got := tick(t)
+	note := "#2 conflicts with main. Loam sends the run back to merge main (conflict send-back 1 of 2)"
+	if len(got.Runs) != 1 || got.Runs[0].State != store.RunRunning || got.Runs[0].Note != note {
+		t.Fatalf("%+v", got)
+	}
+}
+
 // gitIn runs git in dir and returns its output and error, for a command that
 // can fail.
 func gitIn(dir string, args ...string) (string, error) {
