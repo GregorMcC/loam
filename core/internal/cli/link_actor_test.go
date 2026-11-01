@@ -162,14 +162,28 @@ func TestRepoAddOfAPersonLeavesTheRemoteLinkChecked(t *testing.T) {
 	}
 }
 
-// CLAUDECODE=1 changes only the writes that can set a link.
-func TestOtherWritesInASessionKeepTheCLIActor(t *testing.T) {
-	s, p := linkRepoEnv(t, store.PlotInput{})
+// CLAUDECODE=1 changes only the writes that can set a link. A repo command
+// other than repo add adds no link, so it keeps its actor and --actor app.
+func TestOtherWritesInASessionKeepTheirActor(t *testing.T) {
+	d := lrRepoDirs(t, 2)
+	s, p := linkRepoEnv(t, store.PlotInput{Repos: []store.RepoInput{{Path: d[0]}, {Path: d[1]}}})
 	t.Setenv("CLAUDECODE", "1")
-	if _, _, err := lrRun(t, "", "set", "alpha", "where-it-stands", "new text"); err != nil {
-		t.Fatal(err)
-	}
-	if a := lastActor(t, s, p.ID); a.Kind != store.ActorCLI {
-		t.Errorf("actor %+v", a)
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "s1")
+	for _, tc := range []struct {
+		args []string
+		want store.ActorKind
+	}{
+		{[]string{"set", "alpha", "where-it-stands", "new text"}, store.ActorCLI},
+		{[]string{"repo", "edit", "alpha", d[1], "--note", "one"}, store.ActorCLI},
+		{[]string{"repo", "edit", "alpha", d[1], "--note", "two", "--actor", "app"}, store.ActorApp},
+		{[]string{"repo", "main", "alpha", d[1]}, store.ActorCLI},
+		{[]string{"repo", "rm", "alpha", d[0], "--actor", "app"}, store.ActorApp},
+	} {
+		if _, _, err := lrRun(t, "", tc.args...); err != nil {
+			t.Fatalf("%v: %v", tc.args, err)
+		}
+		if a := lastActor(t, s, p.ID); a.Kind != tc.want || a.SessionID != "" {
+			t.Errorf("%v: actor %+v, want %s", tc.args, a, tc.want)
+		}
 	}
 }

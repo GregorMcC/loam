@@ -123,7 +123,7 @@ func cliActor(cmd *cobra.Command) store.Actor {
 }
 
 // linkActor is the actor for a CLI write that can set a link: a link command,
-// a repo command, or an undo. When a Claude Code session started the CLI (CLAUDECODE=1), the
+// a repo add, or an undo. When a Claude Code session started the CLI (CLAUDECODE=1), the
 // actor is that session, also with --actor app. So a session that runs the CLI
 // through Bash does not count as a person, and its link gets no added folder.
 // This is not a hard limit: a session with Bash can unset the variable.
