@@ -10,7 +10,7 @@ This folder holds the output of the real `loam` binary for every command that ha
 | `fixtures/<name>.json` | The normalized stdout of one run |
 | `schema/<command>.json` | The JSON Schema (draft 2020-12) of one command |
 | `schema/defs.json` | Definitions that the schemas share: plot, link, repo, change, and more |
-| `schema/error.json` | The JSON error. It holds the `details` of `stale`, `undo_clash`, `link_path_missing`, and `not_ready`. |
+| `schema/error.json` | The JSON error. It holds the `details` of `stale`, `undo_clash`, `link_path_missing`, `not_ready`, and a refused setup command. |
 
 ## How the fixtures are made
 

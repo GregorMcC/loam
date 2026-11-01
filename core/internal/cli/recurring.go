@@ -33,14 +33,14 @@ func newRecurringAddCmd() *cobra.Command {
 	var r store.Recurring
 	var kind, days, ifAsleep string
 	var checks []string
-	var approve bool
+	var approve string
 	c := &cobra.Command{
-		Use:   "add <plot> --title <text> --prompt <text> --kind shape|chore --days <days> --at <HH:MM> [--precheck <command>] [--if-asleep once|skip] [--repo <repo>] [--check <name>=<command>]... [--max-tries <n>] [--model <model>] [--effort <level>] [--approve-setup]",
+		Use:   "add <plot> --title <text> --prompt <text> --kind shape|chore --days <days> --at <HH:MM> [--precheck <command>] [--if-asleep once|skip] [--repo <repo>] [--check <name>=<command>]... [--max-tries <n>] [--model <model>] [--effort <level>] [--approve-setup <sha256>]",
 		Short: "Add a run that starts on a timetable",
 		Long: "Add a recurring run to a plot. --days is daily, weekdays, weekends, or days such as mon,wed,fri. --at is the time on the clock of the Mac.\n" +
 			"--precheck is a shell command that runs in the repo: the run starts only when it exits 0, and Claude gets what it prints.\n" +
 			"--if-asleep says what happens to a time that the Mac slept through: once runs it once when the Mac wakes, and skip skips it.\n" +
-			"A chore cannot ask to approve the setup command of the repo when it starts: --approve-setup approves it now.",
+			"A chore cannot ask to approve the setup command of the repo when it starts: --approve-setup with the SHA-256 hash of the command approves it now.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := openStore()
@@ -59,8 +59,8 @@ func newRecurringAddCmd() *cobra.Command {
 			if r.DoneWhen, err = parseChecks(checks); err != nil {
 				return err
 			}
-			if approve {
-				if err := run.ApproveRepoSetup(s, p.ID, r.Repo); err != nil {
+			if approve != "" {
+				if err := run.ApproveRepoSetup(s, p.ID, r.Repo, approve); err != nil {
 					return err
 				}
 			}
@@ -88,7 +88,7 @@ func newRecurringAddCmd() *cobra.Command {
 	f.IntVar(&r.MaxTries, "max-tries", store.DefaultMaxTries, "how many times the checks can fail before a run stops")
 	f.StringVar(&r.Model, "model", "", "the Claude model of the runs (default: the run defaults of the plot, then your Claude Code setting)")
 	f.StringVar(&r.Effort, "effort", "", "the effort level of the runs: "+strings.Join(store.Efforts, ", ")+" (default: the run defaults of the plot, then your Claude Code setting)")
-	f.BoolVar(&approve, "approve-setup", false, "approve the setup command of the repo now, for a chore")
+	f.Var(setupHashFlag{&approve}, "approve-setup", "approve the setup command of the repo now, for a chore: the SHA-256 hash of the command that you read")
 	for _, name := range []string{"title", "prompt", "kind", "days", "at"} {
 		must(c.MarkFlagRequired(name))
 	}

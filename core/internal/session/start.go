@@ -15,6 +15,7 @@ import (
 
 	"github.com/GregorMcC/loam/core/internal/claudebin"
 	"github.com/GregorMcC/loam/core/internal/linkkind"
+	"github.com/GregorMcC/loam/core/internal/sandbox"
 	"github.com/GregorMcC/loam/core/internal/seed"
 	"github.com/GregorMcC/loam/core/internal/store"
 	"github.com/GregorMcC/loam/core/internal/worktree"
@@ -78,7 +79,8 @@ var inheritedClaudeVars = []string{"CLAUDE_PID", "CLAUDE_EFFORT", "CLAUDE_PROJEC
 
 // allowTools are the allow rules of a seeded session (spec section 6). The
 // other Loam tools have no rule (ticket 84): in auto mode the classifier
-// decides, and in the default mode Claude Code asks as for any tool.
+// decides, and in the default mode Claude Code asks as for any tool. A run has
+// other rules: see [runToolRules].
 var allowTools = []string{"list_plots", "get_plot", "get_changes", "add_link", "update_link", "list_worktrees", "set_worktree_goal"}
 
 func rules(tools []string) []string {
@@ -114,9 +116,9 @@ func paneSettings(loam string, _ []string) ([]byte, error) {
 }
 
 // localDir returns the folder to add for a local link, or "" when the link is
-// a web link, the path is missing, or the folder is too broad. A link to a
-// file adds its folder.
-func localDir(target string) string {
+// a web link, the path is missing, or the folder is refused. A link to a file
+// adds its folder. loamHome is the Loam home of the store.
+func localDir(target, loamHome string) string {
 	info := linkkind.Classify(target, nil)
 	if !info.Exists || !filepath.IsAbs(info.Path) {
 		return ""
@@ -125,27 +127,52 @@ func localDir(target string) string {
 	if !info.IsDir {
 		dir = filepath.Dir(info.Path)
 	}
-	if tooBroad(dir) {
+	if refusedDir(dir, loamHome) {
 		return ""
 	}
 	return dir
 }
 
-// tooBroad reports whether a folder is the root, the home folder, or a parent
-// of the home folder. A session must never get one of them as an added
-// folder: add_link needs no approval, so a link alone would give the next
-// session every file of the account without a prompt.
-func tooBroad(dir string) bool {
-	dir = filepath.Clean(dir)
-	if dir == string(filepath.Separator) {
-		return true
-	}
+// refusedDir reports whether a folder can never be an added folder, for any
+// actor. It checks the folder as written and with its symlinks resolved. The
+// compare ignores case, as macOS folders do by default. See [refusedName].
+func refusedDir(dir, loamHome string) bool {
 	home, err := os.UserHomeDir()
 	if err != nil {
+		return true
+	}
+	for _, d := range []string{filepath.Clean(dir), sandbox.Real(dir)} {
+		for _, h := range []string{filepath.Clean(home), sandbox.Real(home)} {
+			for _, l := range []string{filepath.Clean(loamHome), sandbox.Real(loamHome)} {
+				if refusedName(strings.ToLower(d), strings.ToLower(h), strings.ToLower(l)) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// refusedName holds the rule of [refusedDir] for clean, lower-case paths. These
+// are refused: the root, the home folder, and a folder above home; a dot folder
+// directly below home, such as ~/.ssh, ~/Library, and the Loam home; a folder
+// in one of those three; and a folder that holds the Loam home. A link must not
+// open the private files of the account or the store of Loam.
+func refusedName(dir, home, loamHome string) bool {
+	if dir == string(filepath.Separator) || isIn(home, dir) || isIn(dir, loamHome) || isIn(loamHome, dir) {
+		return true
+	}
+	rest, below := strings.CutPrefix(dir, home+string(filepath.Separator))
+	if !below {
 		return false
 	}
-	home = filepath.Clean(home)
-	return dir == home || strings.HasPrefix(home, dir+string(filepath.Separator))
+	first, _, _ := strings.Cut(rest, string(filepath.Separator))
+	return strings.HasPrefix(first, ".") || first == "library"
+}
+
+// isIn reports whether path is dir or a path inside it.
+func isIn(path, dir string) bool {
+	return path == dir || strings.HasPrefix(path, dir+string(filepath.Separator))
 }
 
 // Prepare checks the plot, writes the seed and the settings file, records the
@@ -423,7 +450,11 @@ func build(s *store.Store, plot store.Plot, dir, claude, id string, idArgs []str
 			add(r.Path)
 		}
 		for _, l := range plot.Links {
-			add(localDir(l.Target))
+			// add_link needs no prompt, so a link that a session set gives no
+			// folder until a person changes it.
+			if !l.Unchecked {
+				add(localDir(l.Target, s.Home()))
+			}
 		}
 	}
 

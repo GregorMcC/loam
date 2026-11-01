@@ -364,6 +364,7 @@ struct IntakeView: View {
                     Text(error).font(.system(size: 11)).foregroundStyle(LoamColor.rust).lineLimit(3).textSelection(.enabled)
                         .accessibilityIdentifier("intake-batch-error")
                 }
+                if let setup = model.runStartSetup { IntakeSetupCommand(setup: setup, identifier: "intake-batch-setup") }
             }
             // The caption gives way first in a narrow bar, so the labels and pickers keep their words.
             .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
@@ -802,6 +803,7 @@ private struct IntakeStartSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("intake-start-error")
             }
+            if let setup = model.runStartSetup { IntakeSetupCommand(setup: setup, identifier: "intake-start-setup") }
             if shaping {
                 Text("Claude is drafting the run. This takes a minute or two.")
                     .loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
@@ -860,7 +862,6 @@ private struct IntakeStartSheet: View {
             let name = row.name.trimmingCharacters(in: .whitespaces)
             return RunCheck(name: name.isEmpty ? command : name, command: command)
         }
-        draft.approveSetup = model.runStartNeedsSetupApproval
         Task { if await model.startRun(plot: plotID, draft: draft) { close() } }
     }
 
@@ -872,5 +873,21 @@ private struct IntakeStartSheet: View {
             shaping = false
             if shaped { close() }
         }
+    }
+}
+
+/// The setup command that the next start approves, in full, since the approval names this text.
+private struct IntakeSetupCommand: View {
+    let setup: ShownSetup
+    let identifier: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("You approve this setup command for its repo:").loamText(LoamTheme.captionStyle, LoamColor.inkMuted)
+            Text(setup.command).loamText(LoamTheme.codeStyle, LoamColor.inkMuted).textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(identifier)
     }
 }

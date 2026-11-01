@@ -194,8 +194,10 @@ type ApproveOptions struct {
 	// DropFollowUps are follow-ups to drop, by number from 1. Loam files
 	// each other follow-up as an issue.
 	DropFollowUps []int
-	ApproveSetup  bool
-	Loam          string
+	// ApproveSetup is the [SetupHash] of the setup command that you read. Empty
+	// approves nothing.
+	ApproveSetup string
+	Loam         string
 }
 
 // Approve starts a Shaping run with your edits to its draft: it makes the

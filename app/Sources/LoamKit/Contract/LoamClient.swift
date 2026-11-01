@@ -282,7 +282,7 @@ public struct LoamClient: Sendable {
         if let link = draft.link { args += ["--link", link] }
         if let ticket = draft.ticket { args += ["--ticket", ticket] }
         args += Self.modelArgs(model: draft.model, effort: draft.effort)
-        if draft.approveSetup { args.append("--approve-setup") }
+        if let hash = draft.approveSetup { args += ["--approve-setup", hash] }
         if let fixes = draft.fixes { args += ["--fixes", fixes] }
         return try await read(args, positionals: [plot])
     }
@@ -322,16 +322,17 @@ public struct LoamClient: Sendable {
 
     /// `loam run approve <run>`: starts a run in Shaping with its draft and your edits. A nil goal or nil checks
     /// keep the draft, and empty checks remove the draft's. `answers` maps the index of an assumption, from 0, to what you want instead.
-    /// `dropFollowUps` are the indexes, from 0, of the follow-ups that Loam files no issue for.
+    /// `dropFollowUps` are the indexes, from 0, of the follow-ups that Loam files no issue for. `approveSetup` is the
+    /// hash of the setup command that you saw (`setupHash`), or nil to approve nothing.
     public func runApprove(_ id: String, goal: String? = nil, checks: [RunCheck]? = nil, answers: [Int: String] = [:],
-                           dropFollowUps: Set<Int> = [], approveSetup: Bool = false) async throws -> RunStartResult {
+                           dropFollowUps: Set<Int> = [], approveSetup: String? = nil) async throws -> RunStartResult {
         var args = ["run", "approve"]
         if let goal { args += ["--goal", goal] }
         if checks?.isEmpty == true { args.append("--no-checks") }
         for check in checks ?? [] { args += ["--check", "\(check.name)=\(check.command)"] }
         for (index, answer) in answers.sorted(by: { $0.key < $1.key }) { args += ["--answer", "\(index + 1)=\(answer)"] }
         for index in dropFollowUps.sorted() { args += ["--drop-follow-up", String(index + 1)] }
-        if approveSetup { args.append("--approve-setup") }
+        if let approveSetup { args += ["--approve-setup", approveSetup] }
         return try await read(args, positionals: [id])
     }
 
@@ -348,7 +349,7 @@ public struct LoamClient: Sendable {
         let precheck = draft.precheck.trimmingCharacters(in: .whitespacesAndNewlines)
         if !precheck.isEmpty { args += ["--precheck", precheck] }
         args += Self.modelArgs(model: draft.model, effort: draft.effort)
-        if draft.approveSetup { args.append("--approve-setup") }
+        if let hash = draft.approveSetup { args += ["--approve-setup", hash] }
         let one: RecurringOne = try await read(args, positionals: [plot])
         return one.recurring
     }

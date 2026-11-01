@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/GregorMcC/loam/core/internal/run"
 	"github.com/GregorMcC/loam/core/internal/store"
 	"github.com/GregorMcC/loam/core/internal/testutil"
 )
@@ -170,15 +171,16 @@ func TestRunStartRefusesASetupCommandThatYouHaveNotApproved(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, _, err := lrRun(t, "", "run", "start", "alpha", "--title", "Fix the thing")
-	if !errors.Is(err, store.ErrInvalid) || !strings.Contains(err.Error(), "--approve-setup") {
+	hash := run.SetupHash("touch set-up")
+	if !errors.Is(err, store.ErrInvalid) || !strings.Contains(err.Error(), "touch set-up") || !strings.Contains(err.Error(), "--approve-setup "+hash) {
 		t.Fatalf("err %v", err)
 	}
 	// The refusal makes no worktree, so the second start uses the same name.
 	if ws, _ := s.ListWorktrees(p.ID); len(ws) != 0 {
 		t.Fatalf("a refused start made %d worktrees", len(ws))
 	}
-	// --approve-setup approves the command, runs it, and starts the run.
-	out, _, err := lrRun(t, "", "run", "start", "alpha", "--title", "Fix the thing", "--approve-setup", "--json")
+	// The right hash approves the command, runs it, and starts the run.
+	out, _, err := lrRun(t, "", "run", "start", "alpha", "--title", "Fix the thing", "--approve-setup", hash, "--json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,6 +196,214 @@ func TestRunStartRefusesASetupCommandThatYouHaveNotApproved(t *testing.T) {
 	}
 	if set, _ := s.RepoSettings(repo); set.SetupApproved != "touch set-up" {
 		t.Fatalf("not approved: %+v", set)
+	}
+}
+
+// TAS-74: a session can change the setup command after a person read it. The
+// approval names the text that the person read, so the new command never runs.
+func TestRunStartRefusesAHashOfASetupCommandThatChanged(t *testing.T) {
+	s, p := runCLI(t)
+	repo := p.Repos[0].Path
+	if err := s.SetRepoSettings(repo, store.S("touch seen"), nil); err != nil {
+		t.Fatal(err)
+	}
+	seen := run.SetupHash("touch seen")
+	if err := s.SetRepoSettings(repo, store.S("touch unseen"), nil); err != nil {
+		t.Fatal(err)
+	}
+	now := run.SetupHash("touch unseen")
+
+	_, _, err := lrRun(t, "", "run", "start", "alpha", "--title", "Fix the thing", "--approve-setup", seen)
+	if !errors.Is(err, store.ErrInvalid) || !strings.Contains(err.Error(), "touch unseen") || !strings.Contains(err.Error(), "--approve-setup "+now) {
+		t.Fatalf("err %v", err)
+	}
+	if got, _ := json.Marshal(classify(err).Details); string(got) != `{"command":"touch unseen","hash":"`+now+`"}` {
+		t.Fatalf("details %s", got)
+	}
+	// Nothing ran: no worktree, no run, and no approval.
+	if ws, _ := s.ListWorktrees(p.ID); len(ws) != 0 {
+		t.Fatalf("a refused start made %d worktrees", len(ws))
+	}
+	if runs, _ := s.ListRuns(""); len(runs) != 0 {
+		t.Fatalf("a refused start recorded a run: %+v", runs)
+	}
+	if set, _ := s.RepoSettings(repo); set.SetupApproved != "" {
+		t.Fatalf("a refused start approved %q", set.SetupApproved)
+	}
+
+	// The hash that the error names approves the command that it names.
+	out, _, err := lrRun(t, "", "run", "start", "alpha", "--title", "Fix the thing", "--approve-setup", now, "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got runStartOut
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(got.Worktree.Path, "unseen")); err != nil {
+		t.Fatalf("setup did not run: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(got.Worktree.Path, "seen")); err == nil {
+		t.Fatal("the old command ran")
+	}
+}
+
+// A stale hash refuses when the command that the repo holds now is approved
+// or is gone, and when the setup of the worktree has succeeded.
+func TestRunStartRefusesAHashThatNamesNoCommandOfTheRepo(t *testing.T) {
+	s, p := runCLI(t)
+	repo := p.Repos[0].Path
+	stale := run.SetupHash("touch seen")
+	refused := func(want string) {
+		t.Helper()
+		_, _, err := lrRun(t, "", "run", "start", "alpha", "--title", "Fix the thing", "--worktree", "fix", "--approve-setup", stale)
+		if !errors.Is(err, store.ErrInvalid) || !strings.Contains(err.Error(), want) {
+			t.Fatalf("err %v", err)
+		}
+	}
+	refused("has no setup command now")
+
+	if err := s.SetRepoSettings(repo, store.S("touch set-up"), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ApproveSetup(repo, "touch set-up"); err != nil {
+		t.Fatal(err)
+	}
+	refused("touch set-up")
+
+	if _, _, err := lrRun(t, "", "run", "start", "alpha", "--title", "Fix the thing", "--worktree", "fix"); err != nil {
+		t.Fatal(err)
+	}
+	refused("touch set-up")
+}
+
+// A run of an approved command takes no hash.
+func TestRunStartRunsAnApprovedSetupCommandWithNoHash(t *testing.T) {
+	s, p := runCLI(t)
+	repo := p.Repos[0].Path
+	if err := s.SetRepoSettings(repo, store.S("touch set-up"), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ApproveSetup(repo, "touch set-up"); err != nil {
+		t.Fatal(err)
+	}
+	out, _, err := lrRun(t, "", "run", "start", "alpha", "--title", "Fix the thing", "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got runStartOut
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(got.Worktree.Path, "set-up")); err != nil {
+		t.Fatalf("setup did not run: %v", err)
+	}
+}
+
+// --approve-setup has no bare form, so a command line with no hash approves
+// nothing. Each command that takes the flag reads it in the same way.
+func TestApproveSetupWithNoHashIsAUsageError(t *testing.T) {
+	s, p := runCLI(t)
+	if err := s.SetRepoSettings(p.Repos[0].Path, store.S("touch set-up"), nil); err != nil {
+		t.Fatal(err)
+	}
+	commands := map[string][]string{
+		"run start":   {"run", "start", "alpha", "--title", "Fix the thing"},
+		"run approve": {"run", "approve", "someid"},
+		"recurring add": {"recurring", "add", "alpha", "--title", "T", "--prompt", "P", "--kind", "chore",
+			"--days", "daily", "--at", "02:00"},
+	}
+	values := map[string][]string{
+		"bare":       {"--approve-setup"},
+		"empty":      {"--approve-setup", ""},
+		"next flag":  {"--approve-setup", "--json"},
+		"short":      {"--approve-setup", "abc123"},
+		"uppercase":  {"--approve-setup", strings.ToUpper(run.SetupHash("touch set-up"))},
+		"not hex":    {"--approve-setup", strings.Repeat("g", 64)},
+		"equals":     {"--approve-setup="},
+		"as boolean": {"--approve-setup=true"},
+	}
+	for name, args := range commands {
+		for form, value := range values {
+			_, _, err := lrRun(t, "", append(slices.Clone(args), value...)...)
+			if !errors.Is(err, store.ErrInvalid) || classify(err).ExitCode != ExitInvalid {
+				t.Errorf("%s with the flag %s: %v", name, form, err)
+			}
+		}
+	}
+	if set, _ := s.RepoSettings(p.Repos[0].Path); set.SetupApproved != "" {
+		t.Fatalf("a usage error approved %q", set.SetupApproved)
+	}
+	if runs, _ := s.ListRuns(""); len(runs) != 0 {
+		t.Fatalf("a usage error recorded a run: %+v", runs)
+	}
+}
+
+func TestRunApproveNamesTheSetupCommandThatYouRead(t *testing.T) {
+	s, p, _ := shapeCLI(t)
+	testutil.FakeClaudePrint(t, shapeDraft)
+	repo := p.Repos[0].Path
+	if err := s.SetRepoSettings(repo, store.S("touch seen"), nil); err != nil {
+		t.Fatal(err)
+	}
+	r := shapeRun(t, "shape", "alpha", "--title", "Remember the window size per plot")
+	seen := run.SetupHash("touch seen")
+	// A session changes the command after you read the draft.
+	if err := s.SetRepoSettings(repo, store.S("touch unseen"), nil); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := lrRun(t, "", "run", "approve", r.ID, "--approve-setup", seen)
+	if !errors.Is(err, store.ErrInvalid) || !strings.Contains(err.Error(), "touch unseen") {
+		t.Fatalf("err %v", err)
+	}
+	if got, _ := s.GetRun(r.ID); got.State != store.RunShaping {
+		t.Fatalf("a refused approval moved the run to %s", got.State)
+	}
+	if ws, _ := s.ListWorktrees(p.ID); len(ws) != 0 {
+		t.Fatalf("a refused approval made %d worktrees", len(ws))
+	}
+	out, _, err := lrRun(t, "", "run", "approve", r.ID, "--approve-setup", run.SetupHash("touch unseen"), "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got runStartOut
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(got.Worktree.Path, "unseen")); err != nil {
+		t.Fatalf("setup did not run: %v", err)
+	}
+}
+
+func TestRecurringAddApprovesOnlyTheSetupCommandThatYouRead(t *testing.T) {
+	s, p := runCLI(t)
+	repo := p.Repos[0].Path
+	if err := s.SetRepoSettings(repo, store.S("touch set-up"), nil); err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"recurring", "add", "alpha", "--title", "T", "--prompt", "P", "--kind", "chore", "--days", "daily", "--at", "02:00", "--approve-setup"}
+	_, _, err := lrRun(t, "", append(slices.Clone(args), run.SetupHash("touch seen"))...)
+	if !errors.Is(err, store.ErrInvalid) || !strings.Contains(err.Error(), "touch set-up") {
+		t.Fatalf("err %v", err)
+	}
+	if set, _ := s.RepoSettings(repo); set.SetupApproved != "" {
+		t.Fatalf("a refused add approved %q", set.SetupApproved)
+	}
+	if rs, _ := s.ListRecurring(""); len(rs) != 0 {
+		t.Fatalf("a refused add recorded %+v", rs)
+	}
+	if _, _, err := lrRun(t, "", append(slices.Clone(args), run.SetupHash("touch set-up"))...); err != nil {
+		t.Fatal(err)
+	}
+	if set, _ := s.RepoSettings(repo); set.SetupApproved != "touch set-up" {
+		t.Fatalf("not approved: %+v", set)
+	}
+}
+
+// The app computes the same hash: LoamKitTests pins this value too.
+func TestSetupHashIsTheHexSHA256OfTheText(t *testing.T) {
+	if got := run.SetupHash("scripts/link-vendor.sh"); got != "e2b1989ccce2b7c34feda0fb2c082ce554f7ba04fa2bfcc2ddf4f3ba8dbaeba5" {
+		t.Fatal(got)
 	}
 }
 
@@ -425,6 +635,9 @@ func TestRunHookPrintsTheSandboxNoteAfterACompact(t *testing.T) {
 		}
 		if got := strings.Contains(out, "--disable-sandbox"); got != want {
 			t.Errorf("%s: sandbox note printed %v, want %v: %q", source, got, want, out)
+		}
+		if got := strings.Contains(out, "This session is a Loam run."); got != want {
+			t.Errorf("%s: note about the Loam tools printed %v, want %v: %q", source, got, want, out)
 		}
 	}
 }

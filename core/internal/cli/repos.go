@@ -108,7 +108,7 @@ func newRepoAddCmd() *cobra.Command {
 			if err := store.CheckRepoFolder(abs); err != nil {
 				return err
 			}
-			return writeRepo(cmd, args[0], expect, set, worktree.SwitchToDefault, func(p *store.Plot) ([]store.Edit, error) {
+			return writeRepo(cmd, args[0], expect, set, true, worktree.SwitchToDefault, func(p *store.Plot) ([]store.Edit, error) {
 				edits := []store.Edit{{Op: store.OpAddRepo, Path: store.S(abs), Note: store.S(note)}}
 				// The repo's remote comes as a link in the same change, so one undo removes both.
 				if link, ok := gitremote.LinkEdit(*p, abs); ok {
@@ -143,7 +143,7 @@ func newRepoEditCmd() *cobra.Command {
 			if !cmd.Flags().Changed("note") && !set.any() {
 				return fmt.Errorf("give --note, --setup, --copy, or --after-merge: %w", store.ErrInvalid)
 			}
-			return writeRepo(cmd, args[0], expect, set, nil, func(p *store.Plot) ([]store.Edit, error) {
+			return writeRepo(cmd, args[0], expect, set, false, nil, func(p *store.Plot) ([]store.Edit, error) {
 				r, err := worktree.FindRepo(*p, args[1])
 				if err != nil {
 					return nil, err
@@ -170,7 +170,7 @@ func newRepoMainCmd() *cobra.Command {
 		Long:  "Make a repo the main repo. <repo> is a repo ID or a path.",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return writeRepo(cmd, args[0], expect, settingsFlags{}, nil, func(p *store.Plot) ([]store.Edit, error) {
+			return writeRepo(cmd, args[0], expect, settingsFlags{}, false, nil, func(p *store.Plot) ([]store.Edit, error) {
 				r, err := worktree.FindRepo(*p, args[1])
 				if err != nil {
 					return nil, err
@@ -195,7 +195,7 @@ func newRepoRmCmd() *cobra.Command {
 			"On a terminal, the command asks. Otherwise, or with --json, give --main.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return writeRepo(cmd, args[0], expect, settingsFlags{}, nil, func(p *store.Plot) ([]store.Edit, error) {
+			return writeRepo(cmd, args[0], expect, settingsFlags{}, false, nil, func(p *store.Plot) ([]store.Edit, error) {
 				r, err := worktree.FindRepo(*p, args[1])
 				if err != nil {
 					return nil, err
@@ -261,7 +261,9 @@ func pickMain(cmd *cobra.Command, rest []store.Repo) (store.Repo, error) {
 // are not a change, so they do not move the change ID.
 // after, when it is not nil, runs on the path of the repo that the write
 // added, and returns warnings. A repo add uses it to switch the checkout.
-func writeRepo(cmd *cobra.Command, plotArg string, expectVals []string, settings settingsFlags, after func(path string) []string, build func(*store.Plot) ([]store.Edit, error)) error {
+// setsLink is true for a repo add, which also adds the remote of the repo as a
+// link, so it takes the actor of a write that can set a link.
+func writeRepo(cmd *cobra.Command, plotArg string, expectVals []string, settings settingsFlags, setsLink bool, after func(path string) []string, build func(*store.Plot) ([]store.Edit, error)) error {
 	expect, err := parseExpect(expectVals)
 	if err != nil {
 		return err
@@ -271,7 +273,13 @@ func writeRepo(cmd *cobra.Command, plotArg string, expectVals []string, settings
 		return err
 	}
 	defer s.Close()
-	res, edits, item, err := writeEdits(cmd, s, plotArg, expect, build)
+	actor := cliActor(cmd)
+	if setsLink {
+		if actor, err = linkActor(cmd, s); err != nil {
+			return err
+		}
+	}
+	res, edits, item, err := writeEdits(cmd, s, actor, plotArg, expect, build)
 	if err != nil {
 		return err
 	}

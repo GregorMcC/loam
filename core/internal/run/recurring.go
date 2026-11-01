@@ -239,9 +239,9 @@ func recurringSource(rec store.Recurring) *store.RunSource {
 }
 
 // ApproveRepoSetup approves the setup command of a repo of the plot now, for
-// a recurring chore: a tick has no one to ask. repoArg is an ID or a path, or
-// empty for the main repo.
-func ApproveRepoSetup(s *store.Store, plotID, repoArg string) error {
+// a recurring chore: a tick has no one to ask. hash is the [SetupHash] of the
+// command that you read. repoArg is an ID or a path, or empty for the main repo.
+func ApproveRepoSetup(s *store.Store, plotID, repoArg, hash string) error {
 	plot, err := s.GetPlot(plotID)
 	if err != nil {
 		return err
@@ -250,5 +250,6 @@ func ApproveRepoSetup(s *store.Store, plotID, repoArg string) error {
 	if err != nil {
 		return err
 	}
-	return approveSetup(s, repo.Path, true)
+	_, err = approveSetup(s, repo.Path, hash)
+	return err
 }

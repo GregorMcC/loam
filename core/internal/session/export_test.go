@@ -2,6 +2,9 @@ package session
 
 import "net"
 
+// RunToolRules is [runToolRules].
+var RunToolRules = runToolRules
+
 // SetPaneDial replaces the pane socket dialer. It returns the undo.
 func SetPaneDial(f func(string) (net.Conn, error)) func() {
 	old := paneDial
