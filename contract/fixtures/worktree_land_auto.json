@@ -73,6 +73,7 @@
     "failed_checks": [],
     "head": "sign-commits",
     "head_oid": "3333333333333333333333333333333333333333",
+    "head_reviewers": [],
     "in_merge_queue": false,
     "merge_state": "BLOCKED",
     "mergeable": "MERGEABLE",

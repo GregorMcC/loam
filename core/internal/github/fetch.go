@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 )
@@ -367,7 +368,7 @@ func pick(nodes []prNode) *PR {
 		InMergeQueue: chosen.IsInMergeQueue, Base: chosen.BaseRefName, Head: chosen.HeadRefName, HeadOID: chosen.HeadRefOid,
 		MergedAt: chosen.MergedAt, ClosedAt: chosen.ClosedAt, Commits: chosen.Commits.TotalCount,
 		FailedChecks: []Check{}, PassedChecks: []Check{}, ChangeRequests: []Review{}, ReviewThreads: []ReviewThread{},
-		CommentReviews: []Review{}, AppComments: []AppComment{},
+		CommentReviews: []Review{}, HeadReviewers: []string{}, AppComments: []AppComment{},
 	}
 	if chosen.MergeQueueEntry != nil {
 		pr.QueuePosition = chosen.MergeQueueEntry.Position
@@ -389,6 +390,7 @@ func addDetails(pr *PR, d detailNode) {
 		}
 	}
 	pr.CommentReviews = commentReviews(d.Reviews.Nodes, pr.HeadOID)
+	pr.HeadReviewers = headReviewers(d.Reviews.Nodes, pr.HeadOID)
 	pr.AppComments = appComments(d)
 	for _, t := range d.ReviewThreads.Nodes {
 		if t.IsResolved {
@@ -459,6 +461,19 @@ func commentReviews(nodes []reviewNode, head string) []Review {
 	for _, login := range order {
 		if n := last[login]; n.State == "COMMENTED" {
 			out = append(out, n.review())
+		}
+	}
+	return out
+}
+
+// headReviewers are the [PR.HeadReviewers] of the reviews of a PR whose head
+// is head.
+func headReviewers(nodes []reviewNode, head string) []string {
+	out := []string{}
+	for _, n := range nodes {
+		counts := n.State == "APPROVED" || n.State == "CHANGES_REQUESTED" || strings.TrimSpace(n.Body) != ""
+		if login := loginOf(n.Author); counts && n.Commit != nil && n.Commit.OID == head && !slices.Contains(out, login) {
+			out = append(out, login)
 		}
 	}
 	return out

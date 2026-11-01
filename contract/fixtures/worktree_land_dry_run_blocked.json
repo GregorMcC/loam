@@ -80,6 +80,7 @@
     "failed_checks": [],
     "head": "rename-users",
     "head_oid": "5555555555555555555555555555555555555555",
+    "head_reviewers": [],
     "in_merge_queue": false,
     "merge_state": "BLOCKED",
     "mergeable": "MERGEABLE",

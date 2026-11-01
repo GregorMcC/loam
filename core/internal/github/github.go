@@ -147,6 +147,12 @@ type PR struct {
 	// such as on a line outside the diff, which has no thread. The list is of
 	// the last 100 reviews, and it is never null.
 	CommentReviews []Review `json:"comment_reviews"`
+	// HeadReviewers are the logins of the authors of a review of the head
+	// commit, in the order of their first such review, of the last 100
+	// reviews. A review counts when it approves, requests changes, or has a
+	// body: a reply on a thread is a review with no body, and a bot can reply
+	// while its reviews are paused. The list is never null.
+	HeadReviewers []string `json:"head_reviewers"`
 	// AppComments are the comments of apps on the PR, not on a line: the
 	// comment of each app that it edited or wrote last, of the last 100
 	// comments. A review bot says there when it did not review, such as when

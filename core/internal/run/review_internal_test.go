@@ -321,6 +321,11 @@ func TestCodeRabbitMissedReadsTheNoticeHeadingOnly(t *testing.T) {
 	if got := codeRabbitMissed(reviewed); got != "its check was skipped" {
 		t.Errorf("a change request on an older commit: %q", got)
 	}
+	// With request_changes_workflow on, CodeRabbit approves a head with no open finding.
+	reviewed.HeadReviewers = []string{"alice", "coderabbitai"}
+	if got := codeRabbitMissed(reviewed); got != "" {
+		t.Errorf("an approval of the head: %q", got)
+	}
 }
 
 // pictureHeader is a finding header in the icon form of CodeRabbit, with the icon and the severity.

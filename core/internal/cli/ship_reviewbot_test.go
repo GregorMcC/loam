@@ -214,13 +214,23 @@ func TestRunTickDoesNotWaitForCodeRabbitThatSaysNothingOfAPause(t *testing.T) {
 }
 
 func TestRunTickDoesNotWaitForCodeRabbitThatReviewedTheHead(t *testing.T) {
-	_, r, w := shipRun(t, "3")
-	tick(t)
-	head := testutil.Git(t, r.Folder, "rev-parse", "HEAD")
-	state := botState(w.Branch, head, "REVIEW_REQUIRED", "[]", "["+botReview("PRR_minor", head, minorBody)+"]",
-		"["+botComment("> ## Reviews paused", "2026-01-01T10:00:00Z")+"]")
-	setGitHub(t, withSkippedCodeRabbit(state))
-	if got := tick(t); len(got.Runs) != 1 || got.Runs[0].State != store.RunReady || got.Runs[0].Note != "CI passed on #1: 2 of 2 checks" {
-		t.Fatalf("%+v", got)
+	for name, review := range map[string]func(head string) string{
+		"comment": func(head string) string { return botReview("PRR_minor", head, minorBody) },
+		// With request_changes_workflow on, CodeRabbit approves a head with no open finding.
+		"approval": func(head string) string {
+			return strings.Replace(botReview("PRR_ok", head, ""), `"state": "COMMENTED"`, `"state": "APPROVED"`, 1)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, r, w := shipRun(t, "3")
+			tick(t)
+			head := testutil.Git(t, r.Folder, "rev-parse", "HEAD")
+			state := botState(w.Branch, head, "REVIEW_REQUIRED", "[]", "["+review(head)+"]",
+				"["+botComment("> ## Reviews paused", "2026-01-01T10:00:00Z")+"]")
+			setGitHub(t, withSkippedCodeRabbit(state))
+			if got := tick(t); len(got.Runs) != 1 || got.Runs[0].State != store.RunReady || got.Runs[0].Note != "CI passed on #1: 2 of 2 checks" {
+				t.Fatalf("%+v", got)
+			}
+		})
 	}
 }

@@ -289,7 +289,7 @@
       "additionalProperties": false,
       "required": ["number", "title", "url", "state", "draft", "mergeable", "merge_state", "review_decision", "in_merge_queue",
         "queue_position", "base", "head", "head_oid", "commits", "behind_base", "approvals", "comments", "checks", "failed_checks", "passed_checks",
-        "change_requests", "review_threads", "comment_reviews", "app_comments"],
+        "change_requests", "review_threads", "comment_reviews", "head_reviewers", "app_comments"],
       "properties": {
         "number": { "type": "integer", "minimum": 1 },
         "title": { "type": "string" },
@@ -331,6 +331,11 @@
           "description": "The reviews of apps that only comment: for each app whose review can push to the repo, its last review with a body on the head commit, when it is COMMENTED. Of the last 100 reviews. MCP list_worktrees leaves it out.",
           "type": "array",
           "items": { "$ref": "#/$defs/review" }
+        },
+        "head_reviewers": {
+          "description": "The logins of the authors of a review of the head commit that approves, requests changes, or has a body, in the order of their first such review, of the last 100 reviews. MCP list_worktrees leaves it out.",
+          "type": "array",
+          "items": { "type": "string" }
         },
         "app_comments": {
           "description": "The comments of apps on the PR, not on a line: of each app, the comment that it edited or wrote last, of the last 100 comments, in the order of GitHub. MCP list_worktrees leaves it out.",

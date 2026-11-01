@@ -115,7 +115,11 @@ const state = `{
         {"id": "PRR_8", "state": "COMMENTED", "body": "Looks risky.", "url": "https://github.com/example/widgets/pull/15#pullrequestreview-8",
          "authorCanPushToRepository": true, "commit": {"oid": "2222222222222222222222222222222222222222"}, "author": {"__typename": "Bot", "login": "lintbot"}},
         {"id": "PRR_9", "state": "APPROVED", "body": "Fine now.", "url": "https://github.com/example/widgets/pull/15#pullrequestreview-9",
-         "authorCanPushToRepository": true, "commit": {"oid": "2222222222222222222222222222222222222222"}, "author": {"__typename": "Bot", "login": "lintbot"}}]},
+         "authorCanPushToRepository": true, "commit": {"oid": "2222222222222222222222222222222222222222"}, "author": {"__typename": "Bot", "login": "lintbot"}},
+        {"id": "PRR_10", "state": "APPROVED", "body": "", "url": "https://github.com/example/widgets/pull/15#pullrequestreview-10",
+         "authorCanPushToRepository": true, "commit": {"oid": "2222222222222222222222222222222222222222"}, "author": {"__typename": "User", "login": "bob"}},
+        {"id": "PRR_11", "state": "COMMENTED", "body": "", "url": "https://github.com/example/widgets/pull/15#pullrequestreview-11",
+         "authorCanPushToRepository": true, "commit": {"oid": "2222222222222222222222222222222222222222"}, "author": {"__typename": "Bot", "login": "replybot"}}]},
       "comments": {"nodes": [
         {"body": "Summary. Reviews paused.", "url": "https://github.com/example/widgets/pull/15#issuecomment-1", "updatedAt": "2026-01-01T12:00:00Z",
          "author": {"__typename": "Bot", "login": "coderabbitai"}},
@@ -211,6 +215,11 @@ func TestFetchReadsEachBranch(t *testing.T) {
 	if !slices.Equal(pr.CommentReviews, wantComments) {
 		t.Fatalf("comment reviews %+v", pr.CommentReviews)
 	}
+	// The authors of a review of the head that approves, requests changes, or has a body. An approval with no body
+	// counts, and a reply on a thread, a review with no body, does not.
+	if want := []string{"coderabbitai", "alice", "strangerbot", "lintbot", "bob"}; !slices.Equal(pr.HeadReviewers, want) {
+		t.Fatalf("head reviewers %q, want %q", pr.HeadReviewers, want)
+	}
 	// Of each app, the comment that it edited or wrote last. A person's comment does not count.
 	wantApp := []github.AppComment{
 		{Author: "coderabbitai", Body: "Summary. Reviews paused.", URL: "https://github.com/example/widgets/pull/15#issuecomment-1"},
@@ -268,7 +277,7 @@ func TestFetchReadsEachBranch(t *testing.T) {
 	if b := got["old-work"]; b.Pushed || b.PR == nil || b.PR.Number != 9 || b.PR.State != "MERGED" ||
 		b.PR.MergedAt == nil || !b.PR.MergedAt.Equal(time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC)) ||
 		b.PR.FailedChecks == nil || b.PR.PassedChecks == nil || b.PR.ChangeRequests == nil || b.PR.ReviewThreads == nil ||
-		b.PR.CommentReviews == nil || b.PR.AppComments == nil {
+		b.PR.CommentReviews == nil || b.PR.HeadReviewers == nil || b.PR.AppComments == nil {
 		t.Fatalf("old-work: %+v", b)
 	}
 	if b := got["local-only"]; b.PR != nil || b.Pushed {
@@ -325,7 +334,7 @@ func TestFetchGivesEmptyListsOfChecksNotNull(t *testing.T) {
 			t.Fatal(err)
 		}
 		if !strings.Contains(string(b), `"failed_checks":[]`) || !strings.Contains(string(b), `"passed_checks":[]`) ||
-			!strings.Contains(string(b), `"comment_reviews":[]`) || !strings.Contains(string(b), `"app_comments":[]`) {
+			!strings.Contains(string(b), `"comment_reviews":[]`) || !strings.Contains(string(b), `"head_reviewers":[]`) || !strings.Contains(string(b), `"app_comments":[]`) {
 			t.Errorf("%s: %s", branch, b)
 		}
 	}

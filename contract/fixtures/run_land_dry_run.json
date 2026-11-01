@@ -74,6 +74,7 @@
       "failed_checks": [],
       "head": "tidy-the-readme",
       "head_oid": "1234512345123451234512345123451234512345",
+      "head_reviewers": [],
       "in_merge_queue": false,
       "merge_state": "CLEAN",
       "mergeable": "MERGEABLE",

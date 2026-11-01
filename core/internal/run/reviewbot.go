@@ -195,19 +195,13 @@ func codeRabbitMissed(pr *github.PR) string {
 }
 
 // codeRabbitReviewed reports whether pr has a review of CodeRabbit on its
-// head: a review that only comments, or one that requests changes.
+// head that approves, requests changes, or has a body (see
+// [github.PR.HeadReviewers]). With request_changes_workflow on, CodeRabbit
+// approves a head that has no open finding.
 func codeRabbitReviewed(pr *github.PR) bool {
-	for _, c := range pr.CommentReviews {
-		if isCodeRabbit(c.Author) {
-			return true
-		}
-	}
-	for _, c := range pr.ChangeRequests {
-		if isCodeRabbit(c.Author) && c.Commit == pr.HeadOID {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(pr.HeadReviewers, isCodeRabbit) ||
+		slices.ContainsFunc(pr.CommentReviews, func(c github.Review) bool { return isCodeRabbit(c.Author) }) ||
+		slices.ContainsFunc(pr.ChangeRequests, func(c github.Review) bool { return isCodeRabbit(c.Author) && c.Commit == pr.HeadOID })
 }
 
 // waitForCodeRabbit keeps the run in Shipping while CodeRabbit did not review

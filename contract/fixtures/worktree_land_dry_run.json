@@ -73,6 +73,7 @@
     "failed_checks": [],
     "head": "link-labels",
     "head_oid": "2222222222222222222222222222222222222222",
+    "head_reviewers": [],
     "in_merge_queue": false,
     "merge_state": "CLEAN",
     "mergeable": "MERGEABLE",
