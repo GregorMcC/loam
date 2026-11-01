@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 )
@@ -59,7 +58,6 @@ const detailFields = `    p%[1]d: pullRequest(number: $n%[1]d) {
       %[3]s
       latestOpinionatedReviews(first: %[2]d, writersOnly: true) { nodes { id state body url commit { oid } author { login } } }
       reviews(last: %[2]d) { nodes { id state body url authorCanPushToRepository commit { oid } author { __typename login } } }
-      comments(last: %[2]d) { nodes { body url updatedAt author { __typename login } } }
       reviewThreads(first: %[2]d) { nodes { id isResolved path line
         comments(first: %[4]d) { nodes { body url authorAssociation author { login } pullRequestReview { authorCanPushToRepository } } } } }
       commits(last: 1) { nodes { commit { statusCheckRollup { state contexts(first: %[2]d) { totalCount nodes {
@@ -110,15 +108,6 @@ type detailNode struct {
 	Reviews struct {
 		Nodes []reviewNode `json:"nodes"`
 	} `json:"reviews"`
-	// Comments are the last comments of the PR, not on a line, oldest first.
-	Comments struct {
-		Nodes []struct {
-			Body      string    `json:"body"`
-			URL       string    `json:"url"`
-			UpdatedAt time.Time `json:"updatedAt"`
-			Author    *author   `json:"author"`
-		} `json:"nodes"`
-	} `json:"comments"`
 	ReviewThreads struct {
 		Nodes []struct {
 			ID         string `json:"id"`
@@ -368,7 +357,7 @@ func pick(nodes []prNode) *PR {
 		InMergeQueue: chosen.IsInMergeQueue, Base: chosen.BaseRefName, Head: chosen.HeadRefName, HeadOID: chosen.HeadRefOid,
 		MergedAt: chosen.MergedAt, ClosedAt: chosen.ClosedAt, Commits: chosen.Commits.TotalCount,
 		FailedChecks: []Check{}, PassedChecks: []Check{}, ChangeRequests: []Review{}, ReviewThreads: []ReviewThread{},
-		CommentReviews: []Review{}, HeadReviewers: []string{}, AppComments: []AppComment{},
+		CommentReviews: []Review{},
 	}
 	if chosen.MergeQueueEntry != nil {
 		pr.QueuePosition = chosen.MergeQueueEntry.Position
@@ -390,8 +379,6 @@ func addDetails(pr *PR, d detailNode) {
 		}
 	}
 	pr.CommentReviews = commentReviews(d.Reviews.Nodes, pr.HeadOID)
-	pr.HeadReviewers = headReviewers(d.Reviews.Nodes, pr.HeadOID)
-	pr.AppComments = appComments(d)
 	for _, t := range d.ReviewThreads.Nodes {
 		if t.IsResolved {
 			continue
@@ -461,45 +448,6 @@ func commentReviews(nodes []reviewNode, head string) []Review {
 	for _, login := range order {
 		if n := last[login]; n.State == "COMMENTED" {
 			out = append(out, n.review())
-		}
-	}
-	return out
-}
-
-// headReviewers are the [PR.HeadReviewers] of the reviews of a PR whose head
-// is head.
-func headReviewers(nodes []reviewNode, head string) []string {
-	out := []string{}
-	for _, n := range nodes {
-		counts := n.State == "APPROVED" || n.State == "CHANGES_REQUESTED" || strings.TrimSpace(n.Body) != ""
-		if login := loginOf(n.Author); counts && n.Commit != nil && n.Commit.OID == head && !slices.Contains(out, login) {
-			out = append(out, login)
-		}
-	}
-	return out
-}
-
-// appComments are the [PR.AppComments] of the PR: of each app, the comment
-// that it edited or wrote last. The list is in the order of GitHub.
-func appComments(d detailNode) []AppComment {
-	type latest struct {
-		at    time.Time
-		index int
-	}
-	last := map[string]latest{}
-	for i, c := range d.Comments.Nodes {
-		if !c.Author.isApp() {
-			continue
-		}
-		login := loginOf(c.Author)
-		if l, ok := last[login]; !ok || !c.UpdatedAt.Before(l.at) {
-			last[login] = latest{at: c.UpdatedAt, index: i}
-		}
-	}
-	out := []AppComment{}
-	for i, c := range d.Comments.Nodes {
-		if l, ok := last[loginOf(c.Author)]; ok && c.Author.isApp() && l.index == i {
-			out = append(out, AppComment{Author: loginOf(c.Author), Body: c.Body, URL: c.URL})
 		}
 	}
 	return out

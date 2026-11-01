@@ -532,20 +532,10 @@ func (sh *shipper) since(kind string) time.Duration {
 // pr. When the review of pr requests changes that Loam can send back (see
 // [reviewOf]), the review goes back to the session first, as a review try.
 // With no review tries left, the run is Ready, and the note says that
-// changes are requested. With nothing to send, a run whose head CodeRabbit
-// did not review waits for it first (see [shipper.waitForCodeRabbit]), and
-// the note of the Ready run says so. The Ready note also says when only a
-// review of an older commit requests changes (see [olderChangeRequest]).
+// changes are requested. The Ready note also says when only a review of an
+// older commit requests changes (see [olderChangeRequest]).
 func (sh *shipper) passCI(ctx context.Context, pr *github.PR, note string) (bool, error) {
 	rv := reviewOf(sh.r, pr)
-	if rv.empty() {
-		if why := codeRabbitMissed(pr); why != "" {
-			if wait, moved, err := sh.waitForCodeRabbit(pr, why); wait || err != nil {
-				return moved, err
-			}
-			note = fmt.Sprintf("%s. CodeRabbit did not review the head of #%d: %s", note, pr.Number, why)
-		}
-	}
 	if err := sh.s.AddRunEvent(sh.r.ID, "ci", note); err != nil {
 		return false, err
 	}

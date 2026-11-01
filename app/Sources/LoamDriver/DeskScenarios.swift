@@ -387,7 +387,7 @@ extension Scenarios {
                         "an approved PR makes Send review back the main action")
 
         // Changes requested with 2 open threads: a bot comment full of HTML, and a person's comment.
-        let bot = GitHubRun.ReviewComment(author: "coderabbitai", body: """
+        let bot = GitHubRun.ReviewComment(author: "reviewbot", body: """
             _\u{26A0}\u{FE0F} Potential issue_ | _\u{1F7E0} Major_
 
             **A label match can outrank a title match.**
@@ -425,7 +425,7 @@ extension Scenarios {
         }
         let comments = model.desk.review?.comments ?? []
         let first = comments.first
-        try confirmDesk(first?.reviewer == "coderabbitai" && first?.place == "search/match.go:8" && comments.count == 2,
+        try confirmDesk(first?.reviewer == "reviewbot" && first?.place == "search/match.go:8" && comments.count == 2,
                         "the comments are not the 2 threads: \(comments)")
         try confirmDesk(first?.excerpt == """
                         \u{26A0}\u{FE0F} Potential issue | \u{1F7E0} Major
