@@ -412,6 +412,32 @@ func TestRunTickAttachesThePRToTheLinearIssue(t *testing.T) {
 	}
 }
 
+// TAS-220: when you send a run back while gh opens its PR, the run does not
+// hold the PR, so the PR gets no attach then. A later tick finds the PR, and
+// attaches it to the Linear issue.
+func TestRunTickAttachesAPRThatItFindsToTheLinearIssue(t *testing.T) {
+	s, r, _ := shipRun(t, "3")
+	tick(t) // gh opens #1
+	f := testutil.FakeLinear(t)
+	if _, err := s.UpdateRun(r.ID, func(r *store.Run) error {
+		r.PR = nil // the run did not take the PR
+		r.Source = &store.RunSource{Kind: "linear", Key: "ENG-523", URL: "https://linear.app/acme/issue/ENG-523/x"}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	tick(t)
+	if got, _ := s.GetRun(r.ID); got.PR == nil || got.PR.Number != 1 {
+		t.Fatalf("the run did not find #1: %+v", got.PR)
+	}
+	if e := events(t, s, r.ID, "linear"); !slices.Contains(e, "Attached #1 to ENG-523") {
+		t.Fatalf("linear events %q", e)
+	}
+	if c := f.Calls(); len(c) != 1 || c[0].Variables["url"] != "https://github.com/example/widgets/pull/1" {
+		t.Fatalf("attach calls %+v", c)
+	}
+}
+
 func TestRunTickMakesARunReadyWhenItsPRHasNoCI(t *testing.T) {
 	defer func(wait time.Duration) { run.NoCIWait = wait }(run.NoCIWait)
 	_, r, w := shipRun(t, "3")

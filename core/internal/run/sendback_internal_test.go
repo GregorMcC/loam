@@ -80,7 +80,7 @@ func TestATickLeavesARunThatWentBackDuringTheTick(t *testing.T) {
 		"moveTry": func() (bool, error) { return sh.moveTry(store.RunStopped, "CI failed") },
 		"update":  func() (bool, error) { return sh.update(func(r *store.Run) { r.CIRerun = "abc" }) },
 		"adopt": func() (bool, error) {
-			return sh.adopt(&github.PR{Number: 7, URL: "https://github.com/acme/web/pull/7"})
+			return sh.adopt(context.Background(), &github.PR{Number: 7, URL: "https://github.com/acme/web/pull/7"})
 		},
 		"resume": func() (bool, error) {
 			return sh.resume(context.Background(), "CI failed", "Fixing the CI failure", "CI failure", func(r *store.Run) { r.Tries++ })

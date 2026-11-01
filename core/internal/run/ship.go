@@ -192,7 +192,7 @@ func (sh *shipper) ship(ctx context.Context) (bool, error) {
 	}
 	if pr != nil && (r.PR == nil || r.PR.Number != pr.Number) {
 		// You or the session opened the PR: it is the run's PR now.
-		return sh.adopt(pr)
+		return sh.adopt(ctx, pr)
 	}
 	if pr == nil || pr.HeadOID != head {
 		return sh.push(ctx, repo, w, head, pr)
@@ -422,7 +422,8 @@ func (sh *shipper) push(ctx context.Context, repo github.Repo, w store.Worktree,
 	if !moved || err != nil {
 		// The run left Shipping while gh opened the PR: you cancelled it or
 		// sent it back. It gets no event and no Linear attach for a PR that
-		// it does not hold. A later ship finds the PR (see [shipper.adopt]).
+		// it does not hold. A later ship finds the PR, and attaches it then
+		// (see [shipper.adopt]).
 		return moved, err
 	}
 	if err := sh.s.AddRunEvent(r.ID, "ship", fmt.Sprintf("Opened #%d", opened.Number)); err != nil {
@@ -460,10 +461,13 @@ func (sh *shipper) prDraft(ctx context.Context, repo github.Repo, w store.Worktr
 	return d, nil
 }
 
-// adopt makes an open PR of the branch the PR of the run. The conflict
-// send-backs of the old PR do not count for the new one, also on the same
-// head.
-func (sh *shipper) adopt(pr *github.PR) (bool, error) {
+// adopt makes an open PR of the branch the PR of the run, and attaches it to
+// the Linear issue of the run (see [shipper.attachToLinear]). That is how a PR
+// gets its attach when gh opened it after you sent the run back (see
+// [shipper.push]). A write that the run refuses, because it left Shipping,
+// gets no event and no attach. The conflict send-backs of the old PR do not
+// count for the new one, also on the same head.
+func (sh *shipper) adopt(ctx context.Context, pr *github.PR) (bool, error) {
 	moved, err := sh.update(func(r *store.Run) {
 		r.PR, r.PRDraft = &store.RunPR{Number: pr.Number, URL: pr.URL}, nil
 		r.ConflictSends, r.ConflictHead = 0, ""
@@ -471,7 +475,11 @@ func (sh *shipper) adopt(pr *github.PR) (bool, error) {
 	if !moved || err != nil {
 		return moved, err
 	}
-	return moved, sh.s.AddRunEvent(sh.r.ID, "ship", fmt.Sprintf("Found #%d, the open PR of the branch", pr.Number))
+	if err := sh.s.AddRunEvent(sh.r.ID, "ship", fmt.Sprintf("Found #%d, the open PR of the branch", pr.Number)); err != nil {
+		return moved, err
+	}
+	sh.attachToLinear(ctx, github.OpenedPR{Number: pr.Number, URL: pr.URL})
+	return moved, nil
 }
 
 // readCI reads the checks on the head of the PR.
