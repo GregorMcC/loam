@@ -277,7 +277,11 @@ func runRules(s *store.Store, plot store.Plot, folder, runID string) (sandbox.Ru
 	}
 	// The check and the includes come after the rules, so that Loam knows
 	// which paths the run can write.
-	if err := checkGitConfig(r, home, git, base); err != nil {
+	paths, err := gitConfigPaths(home)
+	if err != nil {
+		return sandbox.Rules{}, fmt.Errorf("the run does not start: Loam cannot find the path of the system git config: %w", err)
+	}
+	if err := checkGitConfig(r, home, git, joinPaths(base, paths)); err != nil {
 		return sandbox.Rules{}, err
 	}
 	inc := gitIncludes(home, base, func(f string) bool { return !r.Refuses(f) })
@@ -351,9 +355,10 @@ func gitConfigFiles(admin, common string) ([]string, error) {
 // checkGitFolder returns an error when:
 //   - extensions.worktreeConfig is on for the repo, because git then reads
 //     config.worktree, which the run can write.
-//   - the commondir file of the git folder names another folder. Git takes the
-//     config of that folder, so the file can turn the extension on and give
-//     git any config.
+//   - the commondir file of the git folder of the worktree, or of the git folder
+//     of the repo, names another folder. Git takes the config of that folder,
+//     so the file can turn the extension on and give git any config. A run in a
+//     worktree can write both files, and Loam runs git in the main checkout too.
 func checkGitFolder(admin, git string) error {
 	local := filepath.Join(git, "config")
 	on, err := worktreeConfigOn(local)
@@ -363,19 +368,23 @@ func checkGitFolder(admin, git string) error {
 	if on {
 		return fmt.Errorf("the run does not start: extensions.worktreeConfig is on in %s. With it, git reads config.worktree in the git folder, which the run can write, also outside the sandbox. Turn it off with: git config --file %s --unset-all extensions.worktreeConfig", local, shellQuote(local))
 	}
-	return checkCommonDir(admin, git)
+	if err := checkCommonDir(admin, git); err != nil {
+		return err
+	}
+	return checkCommonDir(git, git)
 }
 
 // checkGitConfig returns an error when:
-//   - a config file that base names is at or below a write path, other than
-//     the local config, which the rules deny. See [sandbox.Rules.WritePathOf].
+//   - a config file of files is at or below a write path, other than the local
+//     config, which the rules deny. See [sandbox.Rules.WritePathOf]. The file
+//     need not exist, because the run can make it.
 //   - the target of any include is at or below a write path, whether it exists
 //     or not, and whether its condition holds now or not. A file that the
 //     sandbox refuses counts too, because git outside the sandbox reads it.
-func checkGitConfig(r sandbox.Rules, home, git string, base []string) error {
+func checkGitConfig(r sandbox.Rules, home, git string, files []string) error {
 	local := filepath.Join(git, "config")
 	temps := runTemps()
-	for _, f := range base {
+	for _, f := range files {
 		if f == local && isRegular(f) {
 			continue
 		}
@@ -384,10 +393,10 @@ func checkGitConfig(r sandbox.Rules, home, git string, base []string) error {
 			return fmt.Errorf("the run does not start: Loam cannot tell where the git config %s is: %w", f, err)
 		}
 		if w != "" {
-			return fmt.Errorf("the run does not start: the git config %s is in the write path %s of the run. Git outside the sandbox reads that file. Move the file out of the write path", f, w)
+			return fmt.Errorf("the run does not start: the git config %s is in the write path %s of the run. Git outside the sandbox reads that file, whether it exists now or not. Move the config out of the write path, or remove the write path", f, w)
 		}
 	}
-	inc := gitIncludes(home, base, func(string) bool { return true })
+	inc := gitIncludes(home, files, func(string) bool { return true })
 	if inc.late {
 		return errors.New("the run does not start: Loam did not read every git config include in time")
 	}
@@ -426,36 +435,101 @@ func worktreeConfigOn(config string) (bool, error) {
 	return strings.TrimSpace(string(out)) == "true", nil
 }
 
-// checkCommonDir returns an error when the git folder admin of a run does not
-// lead git to the git folder of the repo. A worktree must have a commondir file
-// that names that folder: with none, git takes admin as the git folder and
-// reads the config in it. A main checkout must have none, or one that names its
-// own folder. Loam never asks git for this, because the run can write the file.
-func checkCommonDir(admin, git string) error {
-	file := filepath.Join(admin, "commondir")
-	checkout := sandbox.Real(admin) == git
+// checkCommonDir returns an error when the git folder dir does not lead git to
+// the git folder of the repo. The metadata folder of a worktree must have a
+// commondir file that names that folder: with none, git takes dir as the git
+// folder and reads the config in it. The git folder of the repo must have none,
+// or one that names itself. Loam never asks git for this, because the run can
+// write the file. Git follows each link before a "..", so Loam does not clean
+// the value by the text.
+func checkCommonDir(dir, git string) error {
+	file := filepath.Join(dir, "commondir")
+	own := sandbox.Real(dir) == git
 	fix := "Write ../.. in the file."
-	if checkout {
+	if own {
 		fix = "Remove the file."
 	}
 	b, err := os.ReadFile(file)
 	switch {
-	case errors.Is(err, fs.ErrNotExist) && checkout:
+	case errors.Is(err, fs.ErrNotExist) && own:
 		return nil
 	case errors.Is(err, fs.ErrNotExist):
-		return fmt.Errorf("the run does not start: the git metadata of the worktree has no %s, so git outside the sandbox would read the config in %s. %s", file, admin, fix)
+		return fmt.Errorf("the run does not start: the git metadata of the worktree has no %s, so git outside the sandbox would read the config in %s. %s", file, dir, fix)
 	case err != nil:
 		return fmt.Errorf("the run does not start: Loam cannot read %s: %w", file, err)
 	}
 	named := strings.TrimRight(string(b), "\r\n")
-	target := named
-	if !filepath.IsAbs(target) {
-		target = filepath.Join(admin, target)
+	raw := named
+	if !filepath.IsAbs(raw) {
+		raw = dir + string(filepath.Separator) + raw
 	}
-	if sandbox.Real(target) != git {
+	target, err := sandbox.Resolve(raw)
+	if err != nil {
+		return fmt.Errorf("the run does not start: Loam cannot tell where %s goes: %w. %s", file, err, fix)
+	}
+	if target != git {
 		return fmt.Errorf("the run does not start: %s names %s, not the git folder %s. Git outside the sandbox would read the config in that folder. %s", file, named, git, fix)
 	}
 	return nil
+}
+
+// gitConfigPaths returns each path that git can read for the system and global
+// scopes, whether it exists or not. [gitConfigFiles] names only a file that
+// holds an entry, and the run could fill a file that is missing or empty.
+func gitConfigPaths(home string) ([]string, error) {
+	var paths []string
+	switch p, set := os.LookupEnv("GIT_CONFIG_SYSTEM"); {
+	case set && p != "":
+		paths = append(paths, p)
+	case !set:
+		p, err := gitSystemConfig()
+		if err != nil {
+			return nil, err
+		}
+		paths = append(paths, p)
+	}
+	if p, set := os.LookupEnv("GIT_CONFIG_GLOBAL"); set {
+		if p != "" {
+			paths = append(paths, p)
+		}
+		return paths, nil
+	}
+	xdg := os.Getenv("XDG_CONFIG_HOME")
+	if xdg == "" {
+		xdg = filepath.Join(home, ".config")
+	}
+	return append(paths, filepath.Join(home, ".gitconfig"), filepath.Join(xdg, "git", "config")), nil
+}
+
+// gitSystemConfig returns the path of the system config, which git builds in
+// and which depends on how it was installed. Only git can name the path of a
+// file that does not exist. git config --edit gives the path to the editor, and
+// with --system it makes no file.
+func gitSystemConfig() (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "config", "--system", "--edit")
+	cmd.Dir = string(filepath.Separator)
+	cmd.Env = append(os.Environ(), "GIT_EDITOR=/bin/echo")
+	out, err := cmd.Output()
+	if err != nil {
+		if exit := (*exec.ExitError)(nil); errors.As(err, &exit) && len(exit.Stderr) > 0 {
+			return "", fmt.Errorf("%w: %s", err, strings.TrimSpace(string(exit.Stderr)))
+		}
+		return "", err
+	}
+	return strings.TrimRight(string(out), "\n"), nil
+}
+
+// joinPaths returns the paths of a and then those of b that a does not have.
+func joinPaths(a, b []string) []string {
+	out := slices.Clone(a)
+	for _, p := range b {
+		if !slices.Contains(out, p) {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // isRegular reports whether path is a regular file, and not a link to one.

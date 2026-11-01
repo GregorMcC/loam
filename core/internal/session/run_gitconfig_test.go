@@ -454,3 +454,153 @@ func TestARunStartsWithAnIncludeBesideAWritePath(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// fakeCommonDir makes a folder that git takes as a common git folder, and whose
+// config turns the extension on.
+func fakeCommonDir(t *testing.T, dir string) {
+	t.Helper()
+	writeFile(t, filepath.Join(dir, "config"), "[extensions]\n\tworktreeConfig = true\n")
+	writeFile(t, filepath.Join(dir, "HEAD"), "ref: refs/heads/main\n")
+	for _, d := range []string{"objects", "refs"} {
+		if err := os.MkdirAll(filepath.Join(dir, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// Git follows a link before a "..". By the text, x/../../.. in the metadata
+// folder names the git folder of the repo. With x a link, it names a folder of
+// the run.
+func TestARunDoesNotStartWithACommondirThatGoesThroughALink(t *testing.T) {
+	c := newGitConfigCase(t)
+	wt := filepath.Join(realpath(t, t.TempDir()), "wt")
+	testutil.Git(t, c.repo, "worktree", "add", "-q", wt)
+	admin := filepath.Join(realpath(t, c.repo), ".git", "worktrees", "wt")
+	fake := filepath.Join(wt, "fake")
+	fakeCommonDir(t, fake)
+	deep := filepath.Join(fake, "a", "b", "c")
+	if err := os.MkdirAll(deep, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(deep, filepath.Join(admin, "x")); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(admin, "commondir"), "x/../../..\n")
+	if got := testutil.Git(t, wt, "config", "extensions.worktreeConfig"); got != "true" {
+		t.Fatalf("git does not follow the link in the commondir file: %q", got)
+	}
+	_, err := session.PrepareRun(c.e.store, store.Run{ID: "r1", PlotID: c.plot.ID, Folder: wt}, "go", "loam", "", "")
+	if err == nil || !strings.Contains(err.Error(), "commondir") {
+		t.Fatalf("error %v, want the commondir file", err)
+	}
+}
+
+// A run in a worktree can write the commondir file of the shared git folder.
+// Git in the main checkout then takes the config of the folder that it names.
+func TestARunInAWorktreeRefusesACommondirFileInTheSharedGitFolder(t *testing.T) {
+	c := newGitConfigCase(t)
+	wt := filepath.Join(realpath(t, t.TempDir()), "wt")
+	testutil.Git(t, c.repo, "worktree", "add", "-q", wt)
+	fake := filepath.Join(wt, "fake")
+	fakeCommonDir(t, fake)
+	file := filepath.Join(realpath(t, c.repo), ".git", "commondir")
+	writeFile(t, file, fake+"\n")
+	if got := testutil.Git(t, c.repo, "config", "extensions.worktreeConfig"); got != "true" {
+		t.Fatalf("git in the main checkout does not follow the commondir file: %q", got)
+	}
+	_, err := session.PrepareRun(c.e.store, store.Run{ID: "r1", PlotID: c.plot.ID, Folder: wt}, "go", "loam", "", "")
+	if err == nil || !strings.Contains(err.Error(), file) || !strings.Contains(err.Error(), fake) {
+		t.Fatalf("error %v, want %s and %s", err, file, fake)
+	}
+}
+
+// Git names a config file only when it holds an entry. A config file that is
+// missing or empty and that the run can write is still one that git reads after
+// the run writes it. So each path that git can read for the system and global
+// scopes counts, whether it exists or not.
+func TestARunDoesNotStartWithAConfigPathOfGitInAWritePath(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// set returns the path of the config, and the write path that holds it.
+		set func(t *testing.T, c gitConfigCase) (string, string)
+	}{
+		{"GIT_CONFIG_GLOBAL, missing", func(t *testing.T, c gitConfigCase) (string, string) {
+			p := filepath.Join(c.repo, "global.gitconfig")
+			t.Setenv("GIT_CONFIG_GLOBAL", p)
+			return p, realpath(t, c.repo)
+		}},
+		{"GIT_CONFIG_GLOBAL, empty", func(t *testing.T, c gitConfigCase) (string, string) {
+			p := filepath.Join(c.repo, "global.gitconfig")
+			writeFile(t, p, "")
+			t.Setenv("GIT_CONFIG_GLOBAL", p)
+			return p, realpath(t, c.repo)
+		}},
+		{"GIT_CONFIG_GLOBAL, missing in a temporary folder", func(t *testing.T, c gitConfigCase) (string, string) {
+			temp := realpath(t, t.TempDir())
+			t.Cleanup(session.SetRunTemps(func() []string { return []string{temp} }))
+			p := filepath.Join(temp, "global.gitconfig")
+			t.Setenv("GIT_CONFIG_GLOBAL", p)
+			return p, temp
+		}},
+		{"XDG_CONFIG_HOME, missing", func(t *testing.T, c gitConfigCase) (string, string) {
+			unsetGlobal(t)
+			t.Setenv("XDG_CONFIG_HOME", filepath.Join(c.repo, "xdg"))
+			return filepath.Join(c.repo, "xdg", "git", "config"), realpath(t, c.repo)
+		}},
+		{"XDG_CONFIG_HOME, missing in a temporary folder", func(t *testing.T, c gitConfigCase) (string, string) {
+			temp := realpath(t, t.TempDir())
+			t.Cleanup(session.SetRunTemps(func() []string { return []string{temp} }))
+			unsetGlobal(t)
+			t.Setenv("XDG_CONFIG_HOME", filepath.Join(temp, "xdg"))
+			return filepath.Join(temp, "xdg", "git", "config"), temp
+		}},
+		{"a write path of ~/.gitconfig, missing", func(t *testing.T, c gitConfigCase) (string, string) {
+			unsetGlobal(t)
+			if _, err := c.e.store.SetSandboxSettings(store.SandboxSettings{Write: []string{"~/.gitconfig"}}); err != nil {
+				t.Fatal(err)
+			}
+			p := filepath.Join(c.home, ".gitconfig")
+			return p, p
+		}},
+		{"GIT_CONFIG_SYSTEM, missing", func(t *testing.T, c gitConfigCase) (string, string) {
+			p := filepath.Join(c.repo, "system.gitconfig")
+			t.Setenv("GIT_CONFIG_SYSTEM", p)
+			return p, realpath(t, c.repo)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newGitConfigCase(t)
+			path, write := tc.set(t, c)
+			err := c.prepare(t)
+			if err == nil {
+				t.Fatal("the run starts")
+			}
+			for _, want := range []string{path, write} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error %q does not have %q", err, want)
+				}
+			}
+		})
+	}
+}
+
+// The default paths of the global scope are outside each write path, so a run
+// starts with none of them there.
+func TestARunStartsWithNoConfigFileOfGit(t *testing.T) {
+	c := newGitConfigCase(t)
+	unsetGlobal(t)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(c.home, "xdg"))
+	if err := c.prepare(t); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// unsetGlobal removes GIT_CONFIG_GLOBAL for the test, so git takes the default
+// paths of the global scope.
+func unsetGlobal(t *testing.T) {
+	t.Helper()
+	t.Setenv("GIT_CONFIG_GLOBAL", "")
+	if err := os.Unsetenv("GIT_CONFIG_GLOBAL"); err != nil {
+		t.Fatal(err)
+	}
+}

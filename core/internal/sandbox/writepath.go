@@ -57,6 +57,17 @@ func (r Rules) WritePathOf(path string, also ...string) (string, error) {
 	return "", nil
 }
 
+// Resolve returns the real path that the system reaches for the absolute path,
+// as walkPath finds it. Unlike [Real], it follows a link before a "..", also in
+// a path that does not exist.
+func Resolve(path string) (string, error) {
+	names, err := walkPath(path)
+	if err != nil {
+		return "", err
+	}
+	return names[len(names)-1], nil
+}
+
 // walkPath returns each name that the system passes through to open the
 // absolute path, by its real path, and last the path that it ends at. It reads
 // a link where it finds one, also a link to a file that does not exist, which

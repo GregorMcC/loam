@@ -144,3 +144,27 @@ func TestWritePathOfGivesAnErrorOnACycleOfLinks(t *testing.T) {
 		t.Error("WritePathOf of a relative path gives no error")
 	}
 }
+
+// Resolve follows a link before a "..", where filepath.Join and Real take the
+// ".." by the text.
+func TestResolveFollowsALinkBeforeDotDot(t *testing.T) {
+	root := realTemp(t)
+	deep := filepath.Join(root, "other", "a", "b")
+	if err := os.MkdirAll(deep, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(root, "here"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "here", "x")
+	if err := os.Symlink(deep, link); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Resolve(link + "/../..")
+	if want := filepath.Join(root, "other"); err != nil || got != want {
+		t.Errorf("Resolve = %q, %v, want %s", got, err, want)
+	}
+	if _, err := Resolve("relative"); err == nil {
+		t.Error("Resolve of a relative path gives no error")
+	}
+}
