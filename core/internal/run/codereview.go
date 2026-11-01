@@ -14,11 +14,17 @@ import (
 	"github.com/GregorMcC/loam/core/internal/store"
 )
 
-// codeReviewRounds is how many code reviews of a run in a row can find a
-// Critical or Major issue. The run stops at the last one. A review that lets
-// Loam push starts the count again. The rounds are separate from the tries
-// of the gate and of CI.
+// codeReviewRounds is how many code reviews of a run can send a Critical or
+// Major issue back to the session. The count is for the whole run: a review
+// that lets Loam push does not start it again. After the last round, the
+// review of each new head still runs, and its Critical and Major findings go
+// in the ship notes (see [shipper.pushPastCodeReview]). The rounds are
+// separate from the tries of the gate and of CI.
 const codeReviewRounds = 5
+
+// codeReviewSpentFact is the ship note before the Critical and Major findings
+// of a review after the last round of the run.
+var codeReviewSpentFact = fmt.Sprintf("The code review used all %d rounds of the run, so these findings wait for you:", codeReviewRounds)
 
 // codeReviewTimeout limits one code review. Claude reads the repo before it
 // answers.
@@ -97,12 +103,13 @@ func (f codeReviewFinding) blocks() bool {
 // codeReview runs the code review of the diff of the run before Loam pushes
 // head, and reports whether Loam can push. It can when the review found no
 // Critical or Major issue, when the review did not run, when the review is
-// off for the plot, or when an earlier review let Loam push head. Each
-// result is a "code_review" event. Minor findings, and why a review did not
-// run, go in the ship notes (see [codeReviewFacts]). A Critical or Major issue
-// goes back to the session, or stops the run at the last round (see
-// [shipper.failCodeReview]). A store that cannot read the run defaults is an
-// error, for the next tick.
+// off for the plot, when the run has used all its rounds, or when an earlier
+// review let Loam push head. Each result is a "code_review" event. Minor
+// findings, and why a review did not run, go in the ship notes (see
+// [codeReviewFacts]). A Critical or Major issue goes back to the session
+// while the run has rounds (see [shipper.failCodeReview]), and in the ship
+// notes after that (see [shipper.pushPastCodeReview]). A store that cannot
+// read the run defaults is an error, for the next tick.
 func (sh *shipper) codeReview(ctx context.Context, w store.Worktree, head string) (push, moved bool, err error) {
 	if c := sh.r.CodeReview; c != nil && c.Head == head {
 		return true, false, nil
@@ -123,37 +130,136 @@ func (sh *shipper) codeReview(ctx context.Context, w store.Worktree, head string
 			"The code review did not run, so Loam pushes with no review: "+why, nil)
 	}
 	if !slices.ContainsFunc(findings, codeReviewFinding.blocks) {
-		facts, detail := codeReviewFacts(findings), "The code review found "+countFindings(findings)
-		if cutFact != "" {
-			facts = append([]string{cutFact}, facts...)
-			detail += ". " + cutFact
-		}
+		facts, detail := withCutFact(cutFact, codeReviewFacts(findings), "The code review found "+countFindings(findings))
 		return sh.passCodeReview(head, facts, detail, storedRound(findings))
+	}
+	if roundsUsed(sh.r) >= codeReviewRounds {
+		return sh.pushPastCodeReview(head, findings, cutFact)
 	}
 	moved, err = sh.failCodeReview(ctx, findings)
 	return false, moved, err
+}
+
+// withCutFact puts cutFact, when the diff was cut, first in the facts and at
+// the end of the event detail.
+func withCutFact(cutFact string, facts []string, detail string) ([]string, string) {
+	if cutFact == "" {
+		return facts, detail
+	}
+	return append([]string{cutFact}, facts...), detail + ". " + cutFact
+}
+
+// roundsUsed is how many code review rounds of r sent a Critical or Major
+// issue back to the session.
+func roundsUsed(r store.Run) int {
+	if r.CodeReview == nil {
+		return 0
+	}
+	return r.CodeReview.Rounds
+}
+
+// CodeReviewRounds is the line of run status with the code review rounds
+// that r used, such as "Code review: 3 of 5 rounds", or "" when Loam has not
+// reviewed the run.
+func CodeReviewRounds(r store.Run) string {
+	if r.CodeReview == nil {
+		return ""
+	}
+	return fmt.Sprintf("Code review: %d of %d rounds", r.CodeReview.Rounds, codeReviewRounds)
+}
+
+// pushPastCodeReview records the review of head with Critical or Major
+// findings after the run used all its rounds, and lets Loam push. The
+// findings do not go back to the session: they go in the ship notes after
+// [codeReviewSpentFact], at most [codeReviewSendMax] Critical and Major ones
+// and then a count of the rest, and then the Minor ones as
+// [codeReviewFacts] gives them.
+func (sh *shipper) pushPastCodeReview(head string, findings []codeReviewFinding, cutFact string) (push, moved bool, err error) {
+	facts := []string{codeReviewSpentFact}
+	var minor []codeReviewFinding
+	sent := 0
+	for _, f := range findings {
+		switch {
+		case !f.blocks():
+			minor = append(minor, f)
+		case sent < codeReviewSendMax:
+			facts = append(facts, SeverityLabel(f.Severity)+" issue from the code review: "+f.String())
+			sent++
+		}
+	}
+	if more := len(findings) - len(minor) - sent; more > 0 {
+		facts = append(facts, fmt.Sprintf("The code review found %s.", count(more, "more Critical or Major issue")))
+	}
+	if len(minor) > 0 {
+		facts = append(facts, codeReviewFacts(minor)...)
+	}
+	detail := fmt.Sprintf("The code review found %s after all %d rounds of the run, so Loam pushes with them in the ship notes",
+		countFindings(findings), codeReviewRounds)
+	facts, detail = withCutFact(cutFact, facts, detail)
+	return sh.passCodeReview(head, facts, detail, storedRound(findings))
 }
 
 // passCodeReview records the review of head that lets Loam push it: the facts
 // that the review adds to the ship notes, and then the event with detail and
 // the round of the review, or nil when it did not run.
 // The facts replace those of the review before, in notes that the run has.
+// Facts with Critical or Major findings after the last round raise the risk
+// level of the notes to high. A run with a PR and no notes gets the notes of [spentNotes], when the facts
+// hold Critical or Major findings after the last round.
 // It reports no push, and records no event, when the run left its state
 // during the review: you may have stopped it.
 func (sh *shipper) passCodeReview(head string, facts []string, detail string, round *store.RunCodeReviewRound) (push, moved bool, err error) {
 	updated, err := sh.update(func(r *store.Run) {
 		c := cmp.Or(r.CodeReview, &store.RunCodeReview{})
-		if r.Notes != nil {
+		switch {
+		case r.Notes != nil:
 			r.Notes.Risk.Reasons = slices.DeleteFunc(r.Notes.Risk.Reasons, func(s string) bool { return slices.Contains(c.Facts, s) })
 			r.Notes.Risk.Reasons = append(r.Notes.Risk.Reasons, facts...)
+			if slices.Contains(facts, codeReviewSpentFact) {
+				r.Notes.Risk.Level = store.RiskHigh
+			}
+		case r.PR != nil:
+			r.Notes = spentNotes(facts)
 		}
-		c.Head, c.Facts, c.Rounds = head, facts, 0 // the cap counts the rounds in a row that block
+		c.Head, c.Facts = head, facts // the rounds count for the whole run
 		r.CodeReview = c
 	})
 	if !updated || err != nil {
 		return false, false, err
 	}
 	return true, false, sh.s.AddRunEventData(sh.r.ID, "code_review", detail, store.RunEventData{CodeReview: round})
+}
+
+// spentNotes are the ship notes of a run that has none, such as when Claude
+// wrote no notes when Loam opened the PR, after a review past the last round
+// of the run (see [shipper.pushPastCodeReview]). They hold only the risk:
+// the level is high, and the reasons are the facts of that review, so its
+// Critical and Major findings still wait for you. They are nil when the
+// facts are not of such a review.
+func spentNotes(facts []string) *store.RunNotes {
+	if !slices.Contains(facts, codeReviewSpentFact) {
+		return nil
+	}
+	return &store.RunNotes{Files: []store.NoteFile{}, WrittenAt: time.Now(),
+		Risk: store.NoteRisk{Level: store.RiskHigh, Reasons: slices.Clone(facts)}}
+}
+
+// prNotes are the notes of the run when Loam opens its PR with the draft d:
+// the notes of Claude, else the notes of [spentNotes] for the facts of the
+// last code review c. When c has Critical or Major findings after the last
+// round, the risk level of the notes of Claude is high.
+func prNotes(d *store.RunPRDraft, c *store.RunCodeReview) *store.RunNotes {
+	switch {
+	case c == nil:
+		return d.Notes
+	case d.Notes == nil:
+		return spentNotes(c.Facts)
+	case !slices.Contains(c.Facts, codeReviewSpentFact):
+		return d.Notes
+	}
+	n := *d.Notes
+	n.Risk.Level = store.RiskHigh
+	return &n
 }
 
 // storedRound is the round of a review that found findings, as a
@@ -183,15 +289,12 @@ func LastCodeReview(events []store.RunEvent) *store.RunCodeReviewRound {
 
 // failCodeReview counts a round of the code review, and sends the Critical and
 // Major findings back to the session, as [shipper.failCI] sends a CI
-// failure. No try counts. At the last round, the run stops with the
-// findings in its note. The event follows the change of the run, and a run
-// that you changed during the review gets none.
+// failure. No try counts. The caller checks that the run has a round left.
+// The event follows the change of the run, and a run that you changed during
+// the review gets none.
 func (sh *shipper) failCodeReview(ctx context.Context, findings []codeReviewFinding) (bool, error) {
 	r := sh.r
-	round := 1
-	if r.CodeReview != nil {
-		round = r.CodeReview.Rounds + 1
-	}
+	round := roundsUsed(r) + 1
 	found := fmt.Sprintf("The code review found %s (round %d of %d)", countFindings(findings), round, codeReviewRounds)
 	event := func(moved bool, err error) (bool, error) {
 		if !moved || err != nil {
@@ -206,14 +309,6 @@ func (sh *shipper) failCodeReview(ctx context.Context, findings []codeReviewFind
 	blocking := slices.DeleteFunc(slices.Clone(findings), func(f codeReviewFinding) bool { return !f.blocks() })
 	more := len(blocking) - min(len(blocking), codeReviewSendMax)
 	blocking = blocking[:len(blocking)-more]
-	if round >= codeReviewRounds {
-		note := fmt.Sprintf("The code review still found Critical or Major issues after %s:\n%s",
-			count(round, "round"), findingLines(blocking, more))
-		return event(sh.update(func(r *store.Run) {
-			countRound(r)
-			r.State, r.Note = store.RunStopped, note
-		}))
-	}
 	return event(sh.resume(ctx, codeReviewPrompt(blocking, more, round, hasChecks(sh.s, sh.r)), found, "code review", countRound))
 }
 
@@ -231,7 +326,11 @@ func codeReviewPrompt(blocking []codeReviewFinding, more, round int, checks bool
 		fmt.Fprintf(&b, "\nThe review found %s. Look for them when you fix these.\n", count(more, "more Critical or Major issue"))
 	}
 	b.WriteString("\nFix each issue, commit the fix, and end your turn. " +
-		"Loam runs the Done when checks again, then reviews the new diff before it pushes.\n" + checksLine(checks, leaveChecks))
+		"Loam runs the Done when checks again, then reviews the new diff before it pushes.\n")
+	if round >= codeReviewRounds {
+		b.WriteString("This is the last code review round of the run. After it, Loam pushes and puts the Critical and Major issues of a later review in the ship notes for the user.\n")
+	}
+	b.WriteString(checksLine(checks, leaveChecks))
 	return b.String()
 }
 
@@ -248,19 +347,6 @@ func codeReviewFacts(findings []codeReviewFinding) []string {
 		facts = append(facts, "Minor issue from the code review: "+f.String())
 	}
 	return facts
-}
-
-// findingLines are the findings, one on each line with its severity, and then
-// a count of the more findings that the list leaves out.
-func findingLines(findings []codeReviewFinding, more int) string {
-	lines := make([]string, len(findings), len(findings)+1)
-	for i, f := range findings {
-		lines[i] = fmt.Sprintf("- %s: %s", SeverityLabel(f.Severity), f)
-	}
-	if more > 0 {
-		lines = append(lines, fmt.Sprintf("- and %s", count(more, "more Critical or Major issue")))
-	}
-	return strings.Join(lines, "\n")
 }
 
 // countFindings counts the findings by severity, such as "1 critical issue

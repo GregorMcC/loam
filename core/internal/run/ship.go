@@ -407,7 +407,7 @@ func (sh *shipper) push(ctx context.Context, repo github.Repo, w store.Worktree,
 		return false, err
 	}
 	moved, err := sh.update(func(r *store.Run) {
-		r.PR, r.Notes, r.PRDraft = &store.RunPR{Number: opened.Number, URL: opened.URL}, d.Notes, nil
+		r.PR, r.Notes, r.PRDraft = &store.RunPR{Number: opened.Number, URL: opened.URL}, prNotes(d, r.CodeReview), nil
 	})
 	if err != nil {
 		return moved, err

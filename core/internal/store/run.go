@@ -220,7 +220,9 @@ type RunCodeReview struct {
 	// Critical or Major issue, it did not run, or it was off. Loam does not
 	// review that commit again.
 	Head string `json:"head"`
-	// Rounds counts the reviews that found a Critical or Major issue.
+	// Rounds counts the reviews of the run that sent a Critical or Major
+	// issue back to the session, up to the limit of rounds. It is for the
+	// whole run: a review that lets Loam push does not reset it.
 	Rounds int `json:"rounds"`
 	// Facts are what the review of Head adds to the risk of the ship notes:
 	// its Minor findings, or why it did not run.

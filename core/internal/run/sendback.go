@@ -61,10 +61,9 @@ type RuleOffer struct {
 // gate and Ship again. When no slot is free, the run waits in Queued with
 // the notes, and a tick sends them. A usage that is stale is probed first
 // (see [usageForHold]). A note is not a failure, so it uses no try. A run
-// that has used all its tries gets one more, up to the limit of tries. In the
-// same way, the next code review round of the run sends its findings to the
-// session: a run whose next round is the last gets one more, and then the
-// last round stops the run again.
+// that has used all its tries gets one more, up to the limit of tries. The
+// code review rounds count for the whole run, so a send-back gives no more of
+// them (see [codeReviewRounds]).
 // Each note is a note event of the run.
 // When a note is like one that you sent back on another run of the plot, and
 // no rule came from such a note, the offer says so.
@@ -103,9 +102,6 @@ func sendBack(ctx context.Context, s *store.Store, id string, notes []Note) (sto
 		r.GateTimeouts = 0   // and the gates that ran out of time
 		r.BlockedStops = 0   // and the stops that the gate blocked
 		r.MaxTries = min(max(r.MaxTries, r.Tries+1), store.MaxTriesLimit)
-		if r.CodeReview != nil {
-			r.CodeReview.Rounds = min(r.CodeReview.Rounds, codeReviewRounds-2)
-		}
 		return nil
 	})
 	if err != nil || !sent {
