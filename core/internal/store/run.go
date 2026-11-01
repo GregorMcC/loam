@@ -237,6 +237,12 @@ type RunCodeReview struct {
 	// round, at most [CodeReviewReplyMax] characters each. A round has none
 	// when Claude Code gave the hook no message.
 	Replies map[int]string `json:"replies,omitempty"`
+	// Held are the Critical and Major findings that need you of a review
+	// that sent its other findings back to the session. They did not go to
+	// the session, so the next review of the run adds them to its own
+	// findings, and they stop the run when nothing else goes back. A stop
+	// for you empties the list.
+	Held []RunFinding `json:"held,omitempty"`
 }
 
 // CodeReviewReplyMax is how many characters of the last message of the
@@ -251,6 +257,7 @@ func (c *RunCodeReview) clone() *RunCodeReview {
 	out := *c
 	out.Facts = append([]string{}, c.Facts...)
 	out.Replies = maps.Clone(c.Replies)
+	out.Held = slices.Clone(c.Held)
 	return &out
 }
 

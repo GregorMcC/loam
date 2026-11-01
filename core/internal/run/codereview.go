@@ -126,8 +126,10 @@ func (f codeReviewFinding) needsYou() bool {
 // findings, and why a review did not run, go in the ship notes (see
 // [codeReviewFacts]). The prompt of the review holds the Critical and Major
 // findings of the earlier rounds of the run (see [earlierRounds]). The rest
-// is [shipper.judgeCodeReview]. A store that cannot read the run defaults or
-// the events of the run is an error, for the next tick.
+// is [shipper.judgeCodeReview]. When the review is off or did not run, the
+// findings that an earlier round held for you (see [withHeld]) still stop
+// the run. A store that cannot read the run defaults or the events of the
+// run is an error, for the next tick.
 func (sh *shipper) codeReview(ctx context.Context, w store.Worktree, head string) (push, moved bool, err error) {
 	if c := sh.r.CodeReview; c != nil && c.Head == head {
 		return true, false, nil
@@ -136,7 +138,12 @@ func (sh *shipper) codeReview(ctx context.Context, w store.Worktree, head string
 	if err != nil {
 		return false, false, err
 	}
+	held := sh.r.CodeReview != nil && len(sh.r.CodeReview.Held) > 0
 	if !d.Review {
+		if held { // the findings that an earlier round held still stop the run
+			moved, err = sh.stopForYou(withHeld(nil, sh.r.CodeReview))
+			return false, moved, err
+		}
 		return sh.passCodeReview(head, nil, "The code review is off for the plot, so Loam pushes with no review", nil)
 	}
 	events, err := sh.s.RunEvents(sh.r.ID)
@@ -148,6 +155,10 @@ func (sh *shipper) codeReview(ctx context.Context, w store.Worktree, head string
 		return false, false, ctx.Err() // the tick ended: a later tick reviews head
 	}
 	if why != "" {
+		if held {
+			moved, err = sh.stopForYou(withHeld(nil, sh.r.CodeReview))
+			return false, moved, err
+		}
 		return sh.passCodeReview(head, []string{"The code review did not run: " + why},
 			"The code review did not run, so Loam pushes with no review: "+why, nil)
 	}
@@ -158,11 +169,13 @@ func (sh *shipper) codeReview(ctx context.Context, w store.Worktree, head string
 // whether Loam can push. With no Critical or Major finding, Loam pushes.
 // While the run has rounds, the Critical and Major findings that do not need
 // you go back to the session (see [shipper.failCodeReview]), and those that
-// need you wait for the next review. When each Critical and Major finding
+// need you wait for the next review: the run holds them, and adds them to
+// the findings of the next review (see [withHeld]). When each Critical and Major finding
 // needs you, or after the last round when one of them does, the run stops
 // (see [shipper.stopForYou]). After the last round, the other Critical and
 // Major findings go in the ship notes (see [shipper.pushPastCodeReview]).
 func (sh *shipper) judgeCodeReview(ctx context.Context, head string, findings []codeReviewFinding, cutFact string) (push, moved bool, err error) {
+	findings = withHeld(findings, sh.r.CodeReview)
 	if !slices.ContainsFunc(findings, codeReviewFinding.blocks) {
 		facts, detail := withCutFact(cutFact, codeReviewFacts(findings), "The code review found "+countFindings(findings))
 		return sh.passCodeReview(head, facts, detail, storedRound(findings))
@@ -178,6 +191,40 @@ func (sh *shipper) judgeCodeReview(ctx context.Context, head string, findings []
 		return false, moved, err
 	}
 	return sh.pushPastCodeReview(head, findings, cutFact)
+}
+
+// withHeld adds the findings that an earlier round held for you (see
+// [store.RunCodeReview.Held]) to the findings of a review, when the review
+// did not find them again with the same file and text, and sorts them by
+// severity, most severe first. So a held finding reaches you even when the
+// next review does not raise it.
+func withHeld(findings []codeReviewFinding, c *store.RunCodeReview) []codeReviewFinding {
+	if c == nil || len(c.Held) == 0 {
+		return findings
+	}
+	out := slices.Clone(findings)
+	for _, h := range c.Held {
+		f := codeReviewFinding(h)
+		if !slices.ContainsFunc(out, func(g codeReviewFinding) bool { return g.File == f.File && g.Text == f.Text }) {
+			out = append(out, f)
+		}
+	}
+	slices.SortStableFunc(out, func(a, b codeReviewFinding) int {
+		return slices.Index(severities, a.Severity) - slices.Index(severities, b.Severity)
+	})
+	return out
+}
+
+// heldFindings are the findings of a review that need you, as
+// [store.RunCodeReview.Held] keeps them, or nil.
+func heldFindings(findings []codeReviewFinding) []store.RunFinding {
+	var held []store.RunFinding
+	for _, f := range findings {
+		if f.needsYou() {
+			held = append(held, store.RunFinding(f))
+		}
+	}
+	return held
 }
 
 // findingLines are the lines of a note for the findings that keep returns
@@ -222,7 +269,12 @@ func (sh *shipper) stopForYou(findings []codeReviewFinding) (bool, error) {
 		note += "\nThe code review also found:" + others
 	}
 	note += "\nChange the setting, then run loam run send-back to start the run again."
-	moved, err := sh.move(store.RunStopped, note)
+	moved, err := sh.update(func(r *store.Run) {
+		r.State, r.Note = store.RunStopped, note
+		if r.CodeReview != nil {
+			r.CodeReview.Held = nil // the held findings reached you
+		}
+	})
 	if !moved || err != nil {
 		return moved, err
 	}
@@ -381,8 +433,8 @@ func LastCodeReview(events []store.RunEvent) *store.RunCodeReviewRound {
 // failCodeReview counts a round of the code review, and sends the Critical and
 // Major findings that do not need you back to the session, as
 // [shipper.failCI] sends a CI failure. The findings that need you do not go
-// to the session: the note names them, and they wait for the next review
-// (see [shipper.judgeCodeReview]). No try counts. The caller checks that the
+// to the session: the note names them, and the run holds them for the next
+// review (see [withHeld]). No try counts. The caller checks that the
 // run has a round left.
 // The event follows the change of the run, and a run that you changed during
 // the review gets none.
@@ -407,6 +459,7 @@ func (sh *shipper) failCodeReview(ctx context.Context, findings []codeReviewFind
 		r.CodeReview = cmp.Or(r.CodeReview, &store.RunCodeReview{})
 		r.CodeReview.Rounds = round
 		r.CodeReview.ReplyRound = round // the Stop hook keeps the reply (see [keepReply])
+		r.CodeReview.Held = heldFindings(findings)
 	}
 	blocking := slices.DeleteFunc(slices.Clone(findings), func(f codeReviewFinding) bool { return !f.blocks() || f.needsYou() })
 	more := len(blocking) - min(len(blocking), codeReviewSendMax)

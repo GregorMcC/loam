@@ -526,6 +526,31 @@ func TestAFindingThatNeedsYouLetsTheOtherFindingsGoToTheSession(t *testing.T) {
 	if len(rounds) != 1 || rounds[0].round != 2 || len(rounds[0].findings) != 1 || rounds[0].findings[0].File != "b.go" {
 		t.Fatalf("earlier rounds %+v: the finding that needs you went nowhere", rounds)
 	}
+	if len(got.CodeReview.Held) != 1 || got.CodeReview.Held[0].File != "gate.go" {
+		t.Fatalf("held %+v, want the finding that needs you", got.CodeReview.Held)
+	}
+
+	// The session fixed b.go, and the next review finds nothing. The held
+	// finding still reaches you: the run stops with it, and pushes nothing.
+	r, err := s.UpdateRun(sh.r.ID, func(r *store.Run) error { r.State, r.Queue = store.RunShipping, nil; return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	sh.r = r
+	push, moved, err = sh.judgeCodeReview(context.Background(), "newer", nil, "")
+	if err != nil || push || !moved {
+		t.Fatalf("next review: push %v, moved %v, err %v", push, moved, err)
+	}
+	got, err = s.GetRun(sh.r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State != store.RunStopped || !strings.Contains(got.Note, "- Major: gate.go:7: The gate fails when the sandbox cannot read the cache. Needs you:") {
+		t.Fatalf("run %s, note %q", got.State, got.Note)
+	}
+	if len(got.CodeReview.Held) != 0 || got.CodeReview.Rounds != 2 {
+		t.Fatalf("review %+v: the stop empties the held findings and counts no round", got.CodeReview)
+	}
 
 	// After the last round, a finding that needs you stops the run, and the
 	// note names the other findings too.
@@ -540,5 +565,20 @@ func TestAFindingThatNeedsYouLetsTheOtherFindingsGoToTheSession(t *testing.T) {
 	if got.State != store.RunStopped || !strings.Contains(got.Note, "Needs you: The sandbox needs a read path for the cache.") ||
 		!strings.Contains(got.Note, "The code review also found:\n- Major: b.go: Loses the file.") {
 		t.Fatalf("run %s, note %q", got.State, got.Note)
+	}
+}
+
+func TestWithHeldAddsTheHeldFindingsOnce(t *testing.T) {
+	held := codeReviewFinding{Severity: severityMajor, File: "gate.go", Text: "Fails.", NeedsYou: "A read path."}
+	c := &store.RunCodeReview{Held: []store.RunFinding{store.RunFinding(held)}}
+	minor := codeReviewFinding{Severity: severityMinor, File: "a.go", Text: "A typo."}
+	if got := withHeld([]codeReviewFinding{minor}, c); !slices.Equal(got, []codeReviewFinding{held, minor}) {
+		t.Fatalf("got %+v", got)
+	}
+	if got := withHeld([]codeReviewFinding{held}, c); len(got) != 1 {
+		t.Fatalf("a finding that the review found again is there twice: %+v", got)
+	}
+	if got := withHeld([]codeReviewFinding{minor}, nil); len(got) != 1 {
+		t.Fatalf("no review state: %+v", got)
 	}
 }
