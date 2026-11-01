@@ -347,6 +347,13 @@ ALTER TABLE runs ADD COLUMN blocked_stops INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE runs ADD COLUMN ci_rerun TEXT NOT NULL DEFAULT '';
 ALTER TABLE runs ADD COLUMN ci_sent TEXT NOT NULL DEFAULT '';
 `,
+	// 29: conflict_sends counts the conflict send-backs of a run in a row,
+	// and conflict_head is the head of the PR that the last one was for, so
+	// Loam sends one for each head (TAS-218).
+	`
+ALTER TABLE runs ADD COLUMN conflict_sends INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE runs ADD COLUMN conflict_head TEXT NOT NULL DEFAULT '';
+`,
 }
 
 // SchemaVersion is the schema version of this binary.

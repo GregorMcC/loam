@@ -396,6 +396,14 @@ type Run struct {
 	// made no commit for the failure, and Loam stops the run. It is not in
 	// the JSON.
 	CISent string `json:"-"`
+	// ConflictSends counts the conflict send-backs in a row: the times that
+	// Loam sent the run back to merge its base branch because GitHub showed
+	// its PR as CONFLICTING. A PR that GitHub shows as MERGEABLE, and a new
+	// PR of the run, set it to 0. ConflictHead is the head of the PR that the
+	// last one was for, so Loam sends one for each head. Neither is in the
+	// JSON.
+	ConflictSends int    `json:"-"`
+	ConflictHead  string `json:"-"`
 	// Queue says how a Queued run starts its session, or nil. It is not in
 	// the JSON.
 	Queue *RunQueue `json:"-"`
@@ -610,11 +618,12 @@ func (s *Store) AddRun(r Run) (Run, error) {
 	}
 	now := time.Now().UnixMilli()
 	r.Tries, r.Turns, r.TurnBase, r.GateTimeouts, r.BlockedStops, r.ReviewTries, r.ReviewsSent, r.CIRerun, r.CISent = 0, 0, 0, 0, 0, 0, nil, "", ""
+	r.ConflictSends, r.ConflictHead = 0, ""
 	r.CodeReview = nil    // a new run has no review of its head
 	r.ReviewReplies = nil // nor a review that waits for replies
 	r.CreatedAt, r.UpdatedAt = tm(now), tm(now)
 	checks, src, pr, shape, queue, notes, draft, sent, review, replies := encodeRun(r)
-	if err := tx.exec(`INSERT INTO runs(`+runCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, ?, ?, ?, 0, ?, ?, ?, ?, '', '', ?, ?)`,
+	if err := tx.exec(`INSERT INTO runs(`+runCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, ?, ?, ?, 0, ?, ?, ?, ?, '', '', ?, ?, 0, '')`,
 		r.ID, r.PlotID, r.WorktreeID, r.Folder, r.Title, r.Goal, checks, r.State, r.MaxTries, r.SessionID, r.Note,
 		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, r.GroupID, queue, notes, draft, sent, review, replies, r.Fixes, now, now); err != nil {
 		return Run{}, err
@@ -735,10 +744,10 @@ func updateRun(tx *writeTx, id string, fn func(*Run) error, tryNote *string) (Ru
 	if err := tx.exec(`UPDATE runs SET worktree_id = ?, folder = ?, title = ?, goal = ?, done_when = ?, state = ?, tries = ?,
   max_tries = ?, session_id = ?, note = ?, source_kind = ?, source_key = ?, source_url = ?, pr_number = ?, pr_url = ?,
   shape = ?, group_id = ?, turns = ?, turn_base = ?, gate_timeouts = ?, blocked_stops = ?, queue = ?, notes = ?, pr_draft = ?, review_tries = ?, reviews_sent = ?,
-  code_review = ?, review_replies = ?, fixes = ?, ci_rerun = ?, ci_sent = ?, updated_at = ? WHERE id = ?`,
+  code_review = ?, review_replies = ?, fixes = ?, ci_rerun = ?, ci_sent = ?, updated_at = ?, conflict_sends = ?, conflict_head = ? WHERE id = ?`,
 		r.WorktreeID, r.Folder, r.Title, r.Goal, checks, r.State, r.Tries, r.MaxTries, r.SessionID, r.Note,
 		src.Kind, src.Key, src.URL, pr.Number, pr.URL, shape, r.GroupID, r.Turns, r.TurnBase, r.GateTimeouts, r.BlockedStops, queue, notes, draft,
-		r.ReviewTries, sent, review, replies, r.Fixes, r.CIRerun, r.CISent, now, r.ID); err != nil {
+		r.ReviewTries, sent, review, replies, r.Fixes, r.CIRerun, r.CISent, now, r.ConflictSends, r.ConflictHead, r.ID); err != nil {
 		return Run{}, err
 	}
 	if r.Tries != old.Tries {
@@ -899,7 +908,7 @@ func (s *Store) RunFeed(plotID string, since time.Time) ([]FeedEvent, error) {
 // runCols are the columns of a run record.
 const runCols = `id, plot_id, worktree_id, folder, title, goal, done_when, state, tries, max_tries, session_id, note,
   source_kind, source_key, source_url, pr_number, pr_url, shape, group_id, turns, turn_base, gate_timeouts, blocked_stops, queue, notes, pr_draft,
-  review_tries, reviews_sent, code_review, review_replies, fixes, ci_rerun, ci_sent, created_at, updated_at`
+  review_tries, reviews_sent, code_review, review_replies, fixes, ci_rerun, ci_sent, created_at, updated_at, conflict_sends, conflict_head`
 
 // encodeRun returns the columns of a run that are not plain values. notes is
 // NULL when the run has none, and draft, sent, review, and replies are ""
@@ -994,7 +1003,8 @@ func scanRun(sc interface{ Scan(...any) error }) (Run, error) {
 	var created, updated int64
 	err := sc.Scan(&r.ID, &r.PlotID, &r.WorktreeID, &r.Folder, &r.Title, &r.Goal, &checks, &r.State, &r.Tries,
 		&r.MaxTries, &r.SessionID, &r.Note, &src.Kind, &src.Key, &src.URL, &pr.Number, &pr.URL, &shape, &r.GroupID,
-		&r.Turns, &r.TurnBase, &r.GateTimeouts, &r.BlockedStops, &queue, &notes, &draft, &r.ReviewTries, &sent, &review, &replies, &r.Fixes, &r.CIRerun, &r.CISent, &created, &updated)
+		&r.Turns, &r.TurnBase, &r.GateTimeouts, &r.BlockedStops, &queue, &notes, &draft, &r.ReviewTries, &sent, &review, &replies, &r.Fixes, &r.CIRerun, &r.CISent, &created, &updated,
+		&r.ConflictSends, &r.ConflictHead)
 	if err != nil {
 		return Run{}, err
 	}
