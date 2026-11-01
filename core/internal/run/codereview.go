@@ -22,9 +22,9 @@ import (
 // separate from the tries of the gate and of CI.
 const codeReviewRounds = 5
 
-// codeReviewSpentFact is the ship note before the Critical and Major findings
-// of a review after the last round of the run.
-var codeReviewSpentFact = fmt.Sprintf("The code review used all %d rounds of the run, so these findings wait for you:", codeReviewRounds)
+// codeReviewStallReviews is how many reviews in a row can fail to lower the
+// count of Critical and Major findings before the run stops for a decision.
+const codeReviewStallReviews = 3
 
 // codeReviewTimeout limits one code review. Claude reads the repo before it
 // answers.
@@ -119,8 +119,8 @@ func (f codeReviewFinding) needsYou() bool {
 
 // codeReview runs the code review of the diff of the run before Loam pushes
 // head, and reports whether Loam can push. It can when the review found no
-// Critical or Major issue, when the review is off for the plot, when the run
-// has used all its rounds, or when an earlier review let Loam push head. A
+// Critical or Major issue, when the review is off for the plot, or when an
+// earlier review let Loam push head. A
 // review that did not run does not let Loam push (see
 // [shipper.reviewDidNotRun]). Each result is a "code_review" event. Minor
 // findings go in the ship notes (see [codeReviewFacts]). The prompt of the
@@ -212,10 +212,11 @@ func (sh *shipper) reviewDidNotRun(why string) (moved bool, err error) {
 // While the run has rounds, the Critical and Major findings that do not need
 // you go back to the session (see [shipper.failCodeReview]), and those that
 // need you wait for the next review: the run holds them, and adds them to
-// the findings of the next review (see [withHeld]). When each Critical and Major finding
-// needs you, or after the last round when one of them does, the run stops
-// (see [shipper.stopForYou]). After the last round, the other Critical and
-// Major findings go in the ship notes (see [shipper.pushPastCodeReview]).
+// the findings of the next review (see [withHeld]). When each Critical and
+// Major finding needs you, the run stops (see [shipper.stopForYou]). The run
+// also stops when the findings do not fall (see [shipper.stalled]) or after
+// the last round (see [shipper.stopForDecision]). Loam never pushes a head
+// with a Critical or Major finding.
 func (sh *shipper) judgeCodeReview(ctx context.Context, head string, findings []codeReviewFinding) (push, moved bool, err error) {
 	findings = withHeld(findings, sh.r.CodeReview)
 	if !slices.ContainsFunc(findings, codeReviewFinding.blocks) {
@@ -225,13 +226,80 @@ func (sh *shipper) judgeCodeReview(ctx context.Context, head string, findings []
 	roundsLeft := roundsUsed(sh.r) < codeReviewRounds
 	switch {
 	case forSession && roundsLeft:
+		stalled, err := sh.stalled(findings)
+		if err != nil {
+			return false, false, err
+		}
+		if stalled {
+			moved, err = sh.stopForDecision(findings, fmt.Sprintf("their count did not fall over %d reviews", codeReviewStallReviews))
+			return false, moved, err
+		}
 		moved, err = sh.failCodeReview(ctx, findings)
 		return false, moved, err
 	case slices.ContainsFunc(findings, codeReviewFinding.needsYou):
 		moved, err = sh.stopForYou(findings)
 		return false, moved, err
 	}
-	return sh.pushPastCodeReview(head, findings)
+	moved, err = sh.stopForDecision(findings, fmt.Sprintf("the run has used all %d rounds", codeReviewRounds))
+	return false, moved, err
+}
+
+// stalled reports whether findings, with the rounds of the run before them,
+// show no fall in the Critical and Major findings for the session over
+// [codeReviewStallReviews] reviews. A stop for you starts the count again,
+// because you can change the design then.
+func (sh *shipper) stalled(findings []codeReviewFinding) (bool, error) {
+	events, err := sh.s.RunEvents(sh.r.ID)
+	if err != nil {
+		return false, err
+	}
+	forSession := func(f codeReviewFinding) bool { return f.blocks() && !f.needsYou() }
+	var counts []int
+	for _, e := range events {
+		cr := e.CodeReview
+		switch {
+		case e.Kind != "code_review" || cr == nil:
+		case cr.NeedsYou:
+			counts = nil
+		case cr.Round > 0:
+			n := 0
+			for _, f := range cr.Findings {
+				if forSession(codeReviewFinding(f)) {
+					n++
+				}
+			}
+			counts = append(counts, n)
+		}
+	}
+	now := 0
+	for _, f := range findings {
+		if forSession(f) {
+			now++
+		}
+	}
+	before := len(counts) - (codeReviewStallReviews - 1)
+	return before >= 0 && now >= counts[before], nil
+}
+
+// stopForDecision stops the run with its Critical and Major findings when more
+// rounds with the session will not help: why says the reason. The note says
+// how a person goes on. No round and no try counts.
+func (sh *shipper) stopForDecision(findings []codeReviewFinding, why string) (bool, error) {
+	found := fmt.Sprintf("The code review found %s, and %s, so the run stops for a decision", countFindings(findings), why)
+	lines, _ := findingLines(findings, codeReviewFinding.blocks)
+	note := found + ":" + lines + "\nRun loam run send-back with a note that changes the design. To ship it as it is, turn the review off with loam run defaults, then send the run back."
+	moved, err := sh.update(func(r *store.Run) {
+		r.State, r.Note = store.RunStopped, note
+		if r.CodeReview != nil {
+			r.CodeReview.Held = nil // the held findings reached you
+		}
+	})
+	if !moved || err != nil {
+		return moved, err
+	}
+	round := storedRound(findings)
+	round.NeedsYou = true
+	return moved, sh.s.AddRunEventData(sh.r.ID, "code_review", found, store.RunEventData{CodeReview: round})
 }
 
 // withHeld adds the findings that an earlier round held for you (see
@@ -343,57 +411,18 @@ func CodeReviewRounds(r store.Run) string {
 	return fmt.Sprintf("Code review: %d of %d rounds", r.CodeReview.Rounds, codeReviewRounds)
 }
 
-// pushPastCodeReview records the review of head with Critical or Major
-// findings after the run used all its rounds, and lets Loam push. The
-// findings do not go back to the session: they go in the ship notes after
-// [codeReviewSpentFact], at most [codeReviewSendMax] Critical and Major ones
-// and then a count of the rest, and then the Minor ones as
-// [codeReviewFacts] gives them.
-func (sh *shipper) pushPastCodeReview(head string, findings []codeReviewFinding) (push, moved bool, err error) {
-	facts := []string{codeReviewSpentFact}
-	var minor []codeReviewFinding
-	sent := 0
-	for _, f := range findings {
-		switch {
-		case !f.blocks():
-			minor = append(minor, f)
-		case sent < codeReviewSendMax:
-			facts = append(facts, SeverityLabel(f.Severity)+" issue from the code review: "+f.String())
-			sent++
-		}
-	}
-	if more := len(findings) - len(minor) - sent; more > 0 {
-		facts = append(facts, fmt.Sprintf("The code review found %s.", count(more, "more Critical or Major issue")))
-	}
-	if len(minor) > 0 {
-		facts = append(facts, codeReviewFacts(minor)...)
-	}
-	detail := fmt.Sprintf("The code review found %s after all %d rounds of the run, so Loam pushes with them in the ship notes",
-		countFindings(findings), codeReviewRounds)
-	return sh.passCodeReview(head, facts, detail, storedRound(findings))
-}
-
 // passCodeReview records the review of head that lets Loam push it: the facts
 // that the review adds to the ship notes, and then the event with detail and
 // the round of the review, or nil when the review is off.
 // The facts replace those of the review before, in notes that the run has.
-// Facts with Critical or Major findings after the last round raise the risk
-// level of the notes to high. A run with a PR and no notes gets the notes of [spentNotes], when the facts
-// hold Critical or Major findings after the last round.
 // It reports no push, and records no event, when the run left its state
 // during the review: you may have stopped it.
 func (sh *shipper) passCodeReview(head string, facts []string, detail string, round *store.RunCodeReviewRound) (push, moved bool, err error) {
 	updated, err := sh.update(func(r *store.Run) {
 		c := cmp.Or(r.CodeReview, &store.RunCodeReview{})
-		switch {
-		case r.Notes != nil:
+		if r.Notes != nil {
 			r.Notes.Risk.Reasons = slices.DeleteFunc(r.Notes.Risk.Reasons, func(s string) bool { return slices.Contains(c.Facts, s) })
 			r.Notes.Risk.Reasons = append(r.Notes.Risk.Reasons, facts...)
-			if slices.Contains(facts, codeReviewSpentFact) {
-				r.Notes.Risk.Level = store.RiskHigh
-			}
-		case r.PR != nil:
-			r.Notes = spentNotes(facts)
 		}
 		c.Head, c.Facts = head, facts // the rounds count for the whole run
 		r.CodeReview = c
@@ -402,38 +431,6 @@ func (sh *shipper) passCodeReview(head string, facts []string, detail string, ro
 		return false, false, err
 	}
 	return true, false, sh.s.AddRunEventData(sh.r.ID, "code_review", detail, store.RunEventData{CodeReview: round})
-}
-
-// spentNotes are the ship notes of a run that has none, such as when Claude
-// wrote no notes when Loam opened the PR, after a review past the last round
-// of the run (see [shipper.pushPastCodeReview]). They hold only the risk:
-// the level is high, and the reasons are the facts of that review, so its
-// Critical and Major findings still wait for you. They are nil when the
-// facts are not of such a review.
-func spentNotes(facts []string) *store.RunNotes {
-	if !slices.Contains(facts, codeReviewSpentFact) {
-		return nil
-	}
-	return &store.RunNotes{Files: []store.NoteFile{}, WrittenAt: time.Now(),
-		Risk: store.NoteRisk{Level: store.RiskHigh, Reasons: slices.Clone(facts)}}
-}
-
-// prNotes are the notes of the run when Loam opens its PR with the draft d:
-// the notes of Claude, else the notes of [spentNotes] for the facts of the
-// last code review c. When c has Critical or Major findings after the last
-// round, the risk level of the notes of Claude is high.
-func prNotes(d *store.RunPRDraft, c *store.RunCodeReview) *store.RunNotes {
-	switch {
-	case c == nil:
-		return d.Notes
-	case d.Notes == nil:
-		return spentNotes(c.Facts)
-	case !slices.Contains(c.Facts, codeReviewSpentFact):
-		return d.Notes
-	}
-	n := *d.Notes
-	n.Risk.Level = store.RiskHigh
-	return &n
 }
 
 // storedRound is the round of a review that found findings, as a

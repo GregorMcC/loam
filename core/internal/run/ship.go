@@ -418,7 +418,7 @@ func (sh *shipper) push(ctx context.Context, repo github.Repo, w store.Worktree,
 		return false, err
 	}
 	moved, err := sh.update(func(r *store.Run) {
-		r.PR, r.Notes, r.PRDraft = &store.RunPR{Number: opened.Number, URL: opened.URL}, prNotes(d, r.CodeReview), nil
+		r.PR, r.Notes, r.PRDraft = &store.RunPR{Number: opened.Number, URL: opened.URL}, d.Notes, nil
 	})
 	if !moved || err != nil {
 		// The run left Shipping while gh opened the PR: you cancelled it or
@@ -475,7 +475,7 @@ func (sh *shipper) adopt(ctx context.Context, pr *github.PR) (bool, error) {
 			// gh opened the PR with the saved draft, and the run went back
 			// before it took the PR (see [shipper.push]): the PR keeps the
 			// notes of its text.
-			r.Notes = prNotes(r.PRDraft, r.CodeReview)
+			r.Notes = r.PRDraft.Notes
 		}
 		r.PR, r.PRDraft = &store.RunPR{Number: pr.Number, URL: pr.URL}, nil
 		r.ConflictSends, r.ConflictHead = 0, ""
