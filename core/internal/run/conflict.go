@@ -114,7 +114,7 @@ func (sh *shipper) fetchBase(ctx context.Context, base string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, fetchTimeout)
 	defer cancel()
 	refspec := "+refs/heads/" + base + ":refs/remotes/origin/" + base
-	out, err := gitcmd.Command(ctx, sh.r.Folder, "fetch", "--no-tags", "origin", refspec).CombinedOutput()
+	out, err := gitcmd.Command(ctx, sh.r.Folder, "fetch", "--no-tags", "--no-recurse-submodules", "origin", refspec).CombinedOutput()
 	return string(out), err
 }
 

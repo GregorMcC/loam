@@ -4,6 +4,7 @@ import (
 	"context"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -206,5 +207,80 @@ func TestLoamRunsGitOnlyThroughThisPackage(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+// With [gitcmd.NoRepoEnv], git finds no repo, so it reads no config of the run
+// and starts nothing in a nested repo. A .gitmodules entry cannot change this,
+// though it can undo -c diff.ignoreSubmodules=all.
+func TestNoRepoEnvStartsNoGitInANestedRepo(t *testing.T) {
+	testutil.GitEnv(t)
+	repo, _ := testutil.GitRepo(t)
+	sub := filepath.Join(repo, "sub")
+	testutil.Git(t, repo, "init", "-q", "sub")
+	testutil.Git(t, sub, "commit", "-q", "--allow-empty", "-m", "nested")
+	marker := filepath.Join(t.TempDir(), "fsmonitor-ran")
+	command := filepath.Join(t.TempDir(), "fsmonitor.sh")
+	write(t, command, "#!/bin/sh\ntouch '"+marker+"'\n")
+	if err := os.Chmod(command, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	testutil.Git(t, sub, "config", "core.fsmonitor", command)
+	testutil.Git(t, repo, "add", "sub")
+	write(t, filepath.Join(repo, ".gitmodules"), "[submodule \"sub\"]\n\tpath = sub\n\turl = ./sub\n\tignore = none\n")
+	testutil.Git(t, repo, "add", ".gitmodules")
+
+	testutil.Git(t, repo, "status", "--porcelain")
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("this test does not show the fault: git without the setting did not start the command: %v", err)
+	}
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command("git", "status", "--porcelain")
+	cmd.Dir, cmd.Env = repo, gitcmd.NoRepoEnv()
+	if err := cmd.Run(); err == nil {
+		t.Error("git found a repo")
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Error("the command in the config of the nested repo ran")
+	}
+}
+
+// Outside the sandbox, these commands of Loam start git in a nested repo unless
+// they say not to, and that git reads the config of the nested repo.
+func TestLoamGitStartsNoGitInANestedRepo(t *testing.T) {
+	call := regexp.MustCompile(`(?:\bgit|gitContext|gitOut|gitcmd\.Command)\([^\n]*"(fetch|status|switch)"[^\n]*`)
+	want := map[string]string{"fetch": `"--no-recurse-submodules"`, "status": `"--ignore-submodules=all"`, "switch": `"-q"`}
+	seen := map[string]int{}
+	root := filepath.Join("..")
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for _, m := range call.FindAllSubmatch(b, -1) {
+			name := string(m[1])
+			seen[name]++
+			if !strings.Contains(string(m[0]), want[name]) {
+				t.Errorf("%s: git %s has no %s: %s", path, name, want[name], m[0])
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name := range want {
+		if seen[name] == 0 {
+			t.Errorf("the scan found no git %s, so it no longer reads the code", name)
+		}
 	}
 }

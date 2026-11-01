@@ -616,3 +616,34 @@ func TestRemoveWhenTheFolderIsGone(t *testing.T) {
 	// Git forgot the worktree, so the name can be used again.
 	e.create("work", "")
 }
+
+// nestedRepo makes a repo in dir/sub with a core.fsmonitor command, and adds it
+// to the index of dir as a gitlink, as a run can. Git starts git in such a repo
+// and clears GIT_COMMON_DIR for it, so that git reads the config of the nested
+// repo. It returns the file that the command makes.
+func nestedRepo(t *testing.T, dir string) string {
+	t.Helper()
+	sub := filepath.Join(dir, "sub")
+	testutil.Git(t, dir, "init", "-q", "sub")
+	testutil.Git(t, sub, "commit", "-q", "--allow-empty", "-m", "nested")
+	marker := filepath.Join(t.TempDir(), "fsmonitor-ran")
+	command := filepath.Join(t.TempDir(), "fsmonitor.sh")
+	if err := os.WriteFile(command, []byte("#!/bin/sh\ntouch '"+marker+"'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	testutil.Git(t, sub, "config", "core.fsmonitor", command)
+	testutil.Git(t, dir, "add", "sub")
+	return marker
+}
+
+func TestInspectStartsNoGitInANestedRepo(t *testing.T) {
+	e := setup(t)
+	w := e.create("work", "").Worktree
+	marker := nestedRepo(t, w.Path)
+	if st := worktree.Inspect(w); st.Error != "" {
+		t.Fatalf("%+v", st)
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Error("the command in the config of the nested repo ran outside the sandbox")
+	}
+}

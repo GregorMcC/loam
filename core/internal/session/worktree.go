@@ -94,6 +94,10 @@ func BeforeExec(p *Plan, in io.Reader, interactive bool, out, errOut io.Writer) 
 			return err
 		}
 	}
+	if err := CheckGitFolder(p.Worktree.Path, p.Worktree.Repo); err != nil {
+		fmt.Fprintf(errOut, "The setup command did not run: %v. Claude starts anyway. The next pane runs setup again.\n", err)
+		return nil
+	}
 	fmt.Fprintf(out, "Running the setup command: %s\n", p.Setup)
 	cmd := exec.Command("sh", "-c", p.Setup)
 	cmd.Dir = p.Worktree.Path

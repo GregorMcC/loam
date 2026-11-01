@@ -494,6 +494,9 @@ func setUp(s *store.Store, w store.Worktree, approve bool) error {
 	if err != nil || set.Setup == "" {
 		return err
 	}
+	if err := session.CheckGitFolder(w.Path, w.Repo); err != nil {
+		return err
+	}
 	cmd := exec.Command("sh", "-c", set.Setup)
 	cmd.Dir = w.Path
 	out, err := cmd.CombinedOutput()

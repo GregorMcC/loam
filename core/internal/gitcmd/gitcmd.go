@@ -30,10 +30,34 @@ func Command(ctx context.Context, dir string, args ...string) *exec.Cmd {
 	return cmd
 }
 
+// NoRepoDir is a GIT_DIR that can name no repo, because /dev/null is not a
+// folder.
+const NoRepoDir = "/dev/null/loam-no-repo"
+
+// NoRepoEnv returns the environment of this process with GIT_DIR set to
+// [NoRepoDir]. Each git command in that environment fails, as outside a repo. It
+// reads only the system and global config, and it starts no git in a nested
+// repo.
+//
+// Use it for a program that Loam starts outside the sandbox in a folder that a
+// run can write, that does not need git, and whose git commands Loam does not
+// choose, such as claude -p with tools that only read. [Env] is not enough there.
+// Git clears GIT_COMMON_DIR for the git that it starts in a nested repo, and only
+// a flag on the git command stops that start: config in .gitmodules, which the
+// run can write, undoes -c diff.ignoreSubmodules=all.
+func NoRepoEnv() []string {
+	return append(os.Environ(), "GIT_DIR="+NoRepoDir)
+}
+
 // Env returns the environment of this process with GIT_COMMON_DIR set to the
 // git folder of the repo that holds dir. It sets no value when dir is in no
 // repo, when the .git file of dir does not name a worktree, or when GIT_DIR
 // already names the repo, because git then does not look in dir.
+//
+// Git clears this setting for the git that it starts in a nested repo, which a
+// run can make. So a git command that can start one, such as status, diff with
+// the work tree, a switch that prints local changes, or fetch, must also say not
+// to: see [NoRepoEnv].
 func Env(dir string) []string {
 	env := os.Environ()
 	if os.Getenv("GIT_DIR") != "" {

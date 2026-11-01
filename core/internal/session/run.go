@@ -352,6 +352,17 @@ func gitConfigFiles(admin, common string) ([]string, error) {
 // a change to the config stops the run at its next stop too. When Loam cannot
 // tell, it refuses. checkGitFolder and checkGitConfig are this check.
 
+// CheckGitFolder runs [checkGitFolder] on folder, which is repo or a worktree of
+// repo. A command that Loam starts outside the sandbox in such a folder, and
+// whose environment Loam leaves as it is, runs only after this check passes.
+func CheckGitFolder(folder, repo string) error {
+	admin, git, err := gitDirs(folder, []string{repo})
+	if err != nil {
+		return err
+	}
+	return checkGitFolder(admin, git)
+}
+
 // checkGitFolder returns an error when:
 //   - extensions.worktreeConfig is on for the repo, because git then reads
 //     config.worktree, which the run can write.

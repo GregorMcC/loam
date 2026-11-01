@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/GregorMcC/loam/core/internal/session"
 	"github.com/GregorMcC/loam/core/internal/store"
 )
 
@@ -103,7 +104,13 @@ func fire(ctx context.Context, s *store.Store, rec store.Recurring, now time.Tim
 		}
 		output := ""
 		if skip == "" && strings.TrimSpace(rec.Precheck) != "" {
-			output, skip = precheck(ctx, rec.Precheck, repo.Path)
+			// A check of an earlier gate can write the commondir file of the git
+			// folder, and git in the precheck would follow it outside the sandbox.
+			if err := session.CheckGitFolder(repo.Path, repo.Path); err != nil {
+				skip = "Skipped, because the precheck did not run: " + err.Error()
+			} else {
+				output, skip = precheck(ctx, rec.Precheck, repo.Path)
+			}
 		}
 		if skip != "" {
 			res.Run, res.Note = skipRun(s, rec, repo.Path, skip)

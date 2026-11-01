@@ -32,12 +32,12 @@ func SwitchToDefault(repo string) []string {
 			return []string{fmt.Sprintf("%s is on a detached HEAD with commits that no branch holds, so Loam left it there.", name)}
 		}
 	}
-	if out, err := git(repo, "status", "--porcelain", "--untracked-files=no"); err != nil || out != "" {
+	if out, err := git(repo, "status", "--porcelain", "--untracked-files=no", "--ignore-submodules=all"); err != nil || out != "" {
 		return []string{fmt.Sprintf("%s has uncommitted changes, so Loam left it on %s.", name, current)}
 	}
 
 	var warnings []string
-	if _, err := git(repo, "fetch", remote); err != nil {
+	if _, err := git(repo, "fetch", "--no-recurse-submodules", remote); err != nil {
 		warnings = append(warnings, fmt.Sprintf("Could not fetch %s from %s (%v). Loam used the last fetched state.", name, remote, err))
 	}
 	def, err := defaultBranch(repo)
@@ -49,11 +49,11 @@ func SwitchToDefault(repo string) []string {
 	switch {
 	case current == def:
 	case gitOK(repo, "show-ref", "--verify", "--quiet", "refs/heads/"+def):
-		if _, err := git(repo, "switch", def); err != nil {
+		if _, err := git(repo, "switch", "-q", def); err != nil {
 			return append(warnings, fmt.Sprintf("Loam could not switch %s to %s: %v", name, def, err))
 		}
 	case hasUpstream:
-		if _, err := git(repo, "switch", "--track", "-c", def, upstream); err != nil {
+		if _, err := git(repo, "switch", "-q", "--track", "-c", def, upstream); err != nil {
 			return append(warnings, fmt.Sprintf("Loam could not switch %s to %s: %v", name, def, err))
 		}
 	default:

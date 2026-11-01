@@ -234,10 +234,11 @@ func (sh *shipper) askForShipText(ctx context.Context, w store.Worktree, ask shi
 // --output-format json and a --json-schema, and returns the structured
 // output, or why there is none. what names the answer in that reason, such
 // as "text" in "claude -p gave no text". Claude Code runs git in dir outside
-// the sandbox, so the command has the environment of [gitcmd.Env].
+// the sandbox, and Loam does not choose its git commands, so the command has
+// the environment of [gitcmd.NoRepoEnv].
 func runPrint(ctx context.Context, claude, dir string, args []string, what string) (json.RawMessage, string) {
 	cmd := exec.CommandContext(ctx, claude, args...)
-	cmd.Dir, cmd.Env = dir, gitcmd.Env(dir)
+	cmd.Dir, cmd.Env = dir, gitcmd.NoRepoEnv()
 	cmd.WaitDelay = time.Second
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
