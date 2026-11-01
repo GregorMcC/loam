@@ -41,6 +41,11 @@ func Home() (string, error) {
 	if h := os.Getenv("LOAM_HOME"); h != "" {
 		return filepath.Abs(h)
 	}
+	return defaultHome()
+}
+
+// defaultHome returns ~/.loam.
+func defaultHome() (string, error) {
 	u, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("find home folder: %w", err)
@@ -56,8 +61,11 @@ type Store struct {
 
 // Open opens the store in the home folder, and creates the folder, the
 // database, and the plots folder when they are missing. It migrates an older
-// database to the schema of this binary. It does not fail on a newer
-// database. Writes to a newer database fail with [ErrSchemaNewer].
+// database to the schema of this binary, after it writes a copy of the database
+// beside it. It fails when it cannot write the copy, and with [ErrDevMigrate]
+// when a dev build opens an older database in the default home. It does not
+// fail on a newer database. Writes to a newer database fail with
+// [ErrSchemaNewer].
 //
 // The home folder is private to the user (0700): it holds every brief, the
 // seeds, and the worktrees, which can hold copied secrets.

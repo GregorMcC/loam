@@ -382,6 +382,7 @@ open /Applications/Loam.app
 
 - The signing certificate lets macOS keep Loam's folder permissions across updates. `scripts/install.sh app --adhoc` skips it, but then macOS can ask for access again after each update.
 - To update, run `scripts/update.sh`. It fetches `origin`, fast-forwards `main`, and builds and installs the new Loam. The checkout must be on `main` with no uncommitted changes. If Loam runs, the script builds first, then quits Loam, installs, and opens it again. The log is `~/Library/Logs/loam-update.log`. To remove Loam, run `scripts/uninstall.sh`.
+- A source build away from a release tag is a dev build, and it does not migrate the store in `~/.loam`. When an update adds a schema step, a command fails and says so. To migrate your store, run `LOAM_ALLOW_DEV_MIGRATE=1 loam list` once. After that, a release older than your source build cannot write to the store. The [contract](contract.md#store-migrations) has the details.
 
 ## Make a release
 

@@ -1219,6 +1219,29 @@ A subagent stop (`SubagentStop`) raises nothing.
 - The event table is `paneEvents` in `core/internal/session/panesocket.go`.
 - On a `SessionStart` with a session ID, with or without the socket, `loam hook` also records the session ID for the `CLAUDE_PID` of the claude process. It does this only when `CLAUDE_PID` is a positive number and the store exists. On source `clear`, `resume`, or `fork`, it adds a session record for the new ID. The plot is `LOAM_PLOT`, or the plot of the earlier session when that is empty. It adds nothing when the earlier session of the process has no record. Source `fork` comes from the `/branch` command, which keeps the process and gives the session a new ID. A fork that starts a new process, such as `--fork-session`, has no earlier session for its PID, so it adds nothing.
 
+## Store migrations
+
+Each schema step of the store goes forward only. `store.SchemaVersion` is the schema of a program, and the table `schema_version` holds the schema of a store. A program migrates an older store when it opens it.
+
+**The copy.** Before a program migrates a store that has a schema, it writes a copy beside the store: `<LOAM_HOME>/loam.db.v<old>.bak`, where `<old>` is the schema of the store.
+
+- Loam writes the copy with `VACUUM INTO`, so the copy holds what the WAL holds. The copy is a complete database at the old schema, and it is private to the user.
+- A store with no schema yet gets no copy. A store at the schema of the program gets no copy.
+- When the copy fails, the migration does not run, the store does not change, and the command fails. The error names both schemas, the path of the copy, and the reason.
+- A new copy replaces an earlier copy of the same schema. Loam keeps the 3 newest copies by file time, and removes older ones. Loam does not read the copies. To go back, quit Loam and each session, then replace `loam.db` with a copy, and remove `loam.db-wal` and `loam.db-shm`.
+
+**The refusal.** A dev build refuses to migrate a store that has a schema, in the default home `~/.loam`. The installed release could not write to the store after the migration. The command fails with kind `error`, the store does not change, and Loam writes no copy. The error names both schemas and the two ways past it.
+
+- A release version is the form that `scripts/release.sh` accepts: `vMAJOR.MINOR.PATCH`, as `loam version` prints it. Any other version is a dev build: `dev`, a Go pseudo version, and the `git describe` form of `scripts/install.sh` or `scripts/update.sh` away from a tag, such as `v0.4.6-8-g46e28bbf` or `v0.4.6-dirty`.
+- A dev build migrates when `LOAM_HOME` moves the home to another folder. A `LOAM_HOME` that names `~/.loam`, or a link to it, does not move the home, because a run session has `LOAM_HOME` set to the home of its store.
+- A dev build migrates any home when `LOAM_ALLOW_DEV_MIGRATE=1`.
+- A dev build makes a new store in the default home, and it opens a store at its own schema, or at a newer schema.
+
+**A newer store.** A program opens and reads a store that is newer than the program, and each write fails. The error names both schemas and both fixes:
+
+- A session that outlived an update runs the old program: restart the session.
+- An installed release that a dev build overtook: update Loam with `scripts/install-release.sh`. When no release has the schema of the store yet, go back to a copy.
+
 ## Settings file
 
 `<LOAM_HOME>/settings.json` holds the settings that differ from one machine to the next (ADR 0006). The app reads and writes it, and the settings window edits it. The core does not read it yet. You can edit the file by hand. The app watches it and applies a change at once.

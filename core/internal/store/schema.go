@@ -360,42 +360,75 @@ ALTER TABLE runs ADD COLUMN conflict_head TEXT NOT NULL DEFAULT '';
 var SchemaVersion = len(migrations)
 
 // ErrSchemaNewer means a newer Loam made the database. This binary refuses to
-// write. The text is for a person: a running MCP server shows it as is.
-var ErrSchemaNewer = errors.New("the Loam store is newer than this program: restart this session")
+// write. [schemaNewer] adds the text for a person: a running MCP server shows
+// it as is.
+var ErrSchemaNewer = errors.New("the Loam store is newer than this program")
+
+// schemaNewer is [ErrSchemaNewer] for a store at schema v. It gives both fixes,
+// because this program cannot tell the two cases apart: a session that outlived
+// an update runs an old program and needs a restart, and an installed release
+// that a dev build overtook needs an update.
+func schemaNewer(v int) error {
+	return fmt.Errorf("%w: the store has schema %d and this program has schema %d. "+
+		"If you updated Loam while this session ran, restart this session. "+
+		"If not, update Loam with scripts/install-release.sh",
+		ErrSchemaNewer, v, SchemaVersion)
+}
 
 func (s *Store) migrate() error {
 	if v, err := s.readVersion(s.db); err == nil && v >= SchemaVersion {
 		return nil
 	}
+	prepared := 0
+	for {
+		older, err := s.migrateFrom(prepared)
+		if err != nil || older == 0 {
+			return err
+		}
+		if err := s.prepareMigration(older); err != nil {
+			return err
+		}
+		prepared = older
+	}
+}
+
+// migrateFrom runs the migrations when the store is new, or at the schema
+// prepared. At another schema below this program it changes nothing and returns
+// that schema, which needs [Store.prepareMigration] first. The loop in
+// [Store.migrate] ends because another program can only move the schema forward.
+func (s *Store) migrateFrom(prepared int) (older int, err error) {
 	w, err := s.beginRaw()
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer w.rollback()
 	if _, err := w.conn.ExecContext(context.Background(), `CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)`); err != nil {
-		return fmt.Errorf("create schema version table: %w", err)
+		return 0, fmt.Errorf("create schema version table: %w", err)
 	}
 	v, err := s.readVersion(w.conn)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	if v > SchemaVersion {
-		return nil // newer database: leave it, and refuse writes later
+	if v >= SchemaVersion {
+		return 0, nil // another program migrated it, or it is newer: leave it, and refuse writes later
+	}
+	if v > 0 && v != prepared {
+		return v, nil
 	}
 	if v == 0 {
 		if _, err := w.conn.ExecContext(context.Background(), `INSERT INTO schema_version(version) VALUES (0)`); err != nil {
-			return err
+			return 0, err
 		}
 	}
 	for n := v + 1; n <= SchemaVersion; n++ {
 		if _, err := w.conn.ExecContext(context.Background(), migrations[n-1]); err != nil {
-			return fmt.Errorf("migrate to schema %d: %w", n, err)
+			return 0, fmt.Errorf("migrate to schema %d: %w", n, err)
 		}
 		if _, err := w.conn.ExecContext(context.Background(), `UPDATE schema_version SET version = ?`, n); err != nil {
-			return err
+			return 0, err
 		}
 	}
-	return w.commit()
+	return 0, w.commit()
 }
 
 type queryRower interface {

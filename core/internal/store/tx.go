@@ -43,7 +43,7 @@ func (s *Store) beginWrite() (*writeTx, error) {
 	}
 	if v > SchemaVersion {
 		w.rollback()
-		return nil, ErrSchemaNewer
+		return nil, schemaNewer(v)
 	}
 	return w, nil
 }
