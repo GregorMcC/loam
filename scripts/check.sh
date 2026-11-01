@@ -157,19 +157,19 @@ temp_folders() {
   done | sort -u
 }
 
-# temp_items prints the path of each item with a name that the app tests give
-# their temp folders and files, sorted: in the shared temp folders, and in the
-# TMPDIR of swift (swift_tmp), where the TemporaryDirectory.* folders are those
-# of SwiftPM. temporaryFolder(_:) in
-# app/Tests/LoamKitTests/TemporaryFolders.swift names each item loam-test-*.
-# The other names are those of older tests, and of the Swift tools
-# (TemporaryDirectory.*).
+# temp_items prints the path of each temp item of the app tests, sorted.
+# temporaryFolder(_:) in app/Tests/LoamKitTests/TemporaryFolders.swift names
+# each folder loam-test-<run tag>-*, and swift_app passes run_tag to the tests
+# in LOAM_TEST_RUN. In the shared temp folders, only those names count: other
+# processes, such as a Loam app, a run that starts, or the tests of another
+# worktree, make other loam-* items there. In swift_tmp, which only swift and
+# the tests write, each name of a test item counts: loam-*, and the names of
+# older tests. The Swift tools make TemporaryDirectory.* folders there, and the
+# script removes swift_tmp at the end.
 temp_items() {
   {
     temp_folders | while IFS= read -r folder; do
-      find "$folder" -mindepth 1 -maxdepth 1 \( -name 'loam-*' -o -name 'fake-loam-*' -o -name 'land-*' \
-        -o -name 'merge-*' -o -name 'popover-*' -o -name 'send-*' -o -name 'newworktree-*' \
-        -o -name 'TemporaryDirectory.*' \) 2>/dev/null
+      find "$folder" -mindepth 1 -maxdepth 1 -name "loam-test-$run_tag-*" 2>/dev/null
     done
     find "$swift_tmp" -mindepth 1 -maxdepth 1 \( -name 'loam-*' -o -name 'fake-loam-*' -o -name 'land-*' \
       -o -name 'merge-*' -o -name 'popover-*' -o -name 'send-*' -o -name 'newworktree-*' \) 2>/dev/null
@@ -202,15 +202,16 @@ without_temp_leak() {
   return "$status"
 }
 
-# swift_app runs swift for the app job, with no manifest cache, and with
-# swift_tmp as its TMPDIR: SwiftPM and the compiler leave TemporaryDirectory.*
-# folders in TMPDIR, and the script removes swift_tmp at the end. In a sandbox,
-# it passes --disable-sandbox.
+# swift_app runs swift for the app job, with no manifest cache, with
+# swift_tmp as its TMPDIR, and with run_tag in LOAM_TEST_RUN (see
+# temp_items). SwiftPM and the compiler leave TemporaryDirectory.* folders in
+# TMPDIR, and the script removes swift_tmp at the end. In a sandbox, it passes
+# --disable-sandbox.
 swift_app() {
   if [ "$sandboxed" = 1 ]; then
-    TMPDIR="$swift_tmp" swift "$@" --manifest-cache none --disable-sandbox
+    TMPDIR="$swift_tmp" LOAM_TEST_RUN="$run_tag" swift "$@" --manifest-cache none --disable-sandbox
   else
-    TMPDIR="$swift_tmp" swift "$@" --manifest-cache none
+    TMPDIR="$swift_tmp" LOAM_TEST_RUN="$run_tag" swift "$@" --manifest-cache none
   fi
 }
 
@@ -274,6 +275,8 @@ if [ "$app" = 1 ]; then
   # folder sees only the tests.
   tmp_root=${TMPDIR:-/tmp}
   swift_tmp=$(mktemp -d "${tmp_root%/}/swift.XXXXXX")
+  # The random part of swift_tmp names the run.
+  run_tag=${swift_tmp##*.}
   trap 'rm -rf "$swift_tmp"' EXIT
   skip_driver=0 run_swift=1
   if [ "$sandboxed" = 0 ]; then

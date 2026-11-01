@@ -59,10 +59,14 @@ extension Trait where Self == TemporaryFoldersTrait {
     static var temporaryFolders: Self { Self() }
 }
 
-/// Makes a new empty folder `loam-test-<name>-<UUID>` in the temp folder. The folder and all that the test puts in it
+/// The tag of the test run in the names of its temp folders: `LOAM_TEST_RUN` and a hyphen, or nothing. scripts/check.sh
+/// sets it, so that its check of the shared temp folder sees the folders of this run only, not those of another process.
+private let runTag = ProcessInfo.processInfo.environment["LOAM_TEST_RUN"].map { "\($0)-" } ?? ""
+
+/// Makes a new empty folder `loam-test-<run tag><name>-<UUID>` in the temp folder. The folder and all that the test puts in it
 /// go when the test ends. The test or its suite needs the trait `.temporaryFolders`: without it, the test fails.
 func temporaryFolder(_ name: String, sourceLocation: SourceLocation = #_sourceLocation) -> URL {
-    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("loam-test-\(name)-\(UUID().uuidString)")
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("loam-test-\(runTag)\(name)-\(UUID().uuidString)")
     removeWhenTheTestEnds(folder, sourceLocation: sourceLocation)
     do {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -85,11 +89,11 @@ func removeWhenTheTestEnds(_ item: URL, sourceLocation: SourceLocation = #_sourc
     items.add(item)
 }
 
-/// A folder `loam-test-run-<UUID>` in the temp folder for the values that the tests share for the whole run, such as a
+/// A folder `loam-test-<run tag>run-<UUID>` in the temp folder for the values that the tests share for the whole run, such as a
 /// `static let`. A test must not put its own files here: it uses `temporaryFolder(_:)`. The process removes the folder
 /// when it exits.
 let runFolder: URL = {
-    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("loam-test-run-\(UUID().uuidString)")
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("loam-test-\(runTag)run-\(UUID().uuidString)")
     try! FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     removeWhenTheProcessExits(folder)
     return folder
