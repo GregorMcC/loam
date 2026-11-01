@@ -1,12 +1,17 @@
 package run
 
 import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 	"unicode/utf8"
 
 	"github.com/GregorMcC/loam/core/internal/store"
+	"github.com/GregorMcC/loam/core/internal/testutil"
 )
 
 func TestCleanFindingsSortsBySeverityAndPlacesAnUnknownOneAsMajor(t *testing.T) {
@@ -282,5 +287,298 @@ func TestPRNotesFallBackToTheFindingsAfterTheLastRound(t *testing.T) {
 	}
 	if n := prNotes(&store.RunPRDraft{}, nil); n != nil {
 		t.Fatalf("notes %+v", n)
+	}
+}
+
+// reviewRepo is a repo with a branch that changes a file after main, and a
+// run in Shipping in it.
+func reviewRepo(t *testing.T) (*store.Store, store.Run, store.Worktree, string) {
+	t.Helper()
+	testutil.GitEnv(t)
+	repo, _ := testutil.GitRepo(t)
+	testutil.Git(t, repo, "switch", "-c", "feature")
+	if err := os.WriteFile(filepath.Join(repo, "a.go"), []byte("package a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	testutil.Git(t, repo, "add", ".")
+	testutil.Git(t, repo, "commit", "-m", "add a")
+	s, sh := reviewedRun(t, 0)
+	r, err := s.UpdateRun(sh.r.ID, func(r *store.Run) error { r.Folder = repo; return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s, r, store.Worktree{Base: "main", Branch: "feature"}, testutil.Git(t, repo, "rev-parse", "HEAD")
+}
+
+// TAS-212: the review of round 2 sees the Critical and Major findings of
+// round 1 and the reply of the session, so it does not reverse a fix
+// without a new reason.
+func TestTheReviewAfterARoundSeesTheEarlierFindings(t *testing.T) {
+	s, r, w, head := reviewRepo(t)
+	prompt, _, why := codeReviewAsk(context.Background(), r, w, head, nil)
+	if why != "" || strings.Contains(prompt, "## Earlier rounds") {
+		t.Fatalf("first review: why %q, prompt %q", why, prompt)
+	}
+	round := storedRound([]codeReviewFinding{
+		{Severity: severityMajor, File: "gate.go", Line: 7, Text: "The gate fails when the sandbox cannot read the cache."},
+		{Severity: severityMinor, File: "a.go", Line: 1, Text: "A typo."},
+	})
+	round.Round = 1
+	if err := s.AddRunEventData(r.ID, "code_review", "The code review found 1 major issue and 1 minor issue (round 1 of 5)",
+		store.RunEventData{CodeReview: round}); err != nil {
+		t.Fatal(err)
+	}
+	// A review that let Loam push is not a round.
+	if err := s.AddRunEventData(r.ID, "code_review", "The code review found 1 minor issue",
+		store.RunEventData{CodeReview: storedRound([]codeReviewFinding{{Severity: severityMinor, File: "b.go", Text: "Old."}})}); err != nil {
+		t.Fatal(err)
+	}
+	r, err := s.UpdateRun(r.ID, func(r *store.Run) error {
+		r.CodeReview = &store.RunCodeReview{Rounds: 1, ReplyRound: 1}
+		keepReply(r, "  I changed the gate to warn and skip.  ")
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.CodeReview.ReplyRound != 0 || r.CodeReview.Replies[1] != "I changed the gate to warn and skip." {
+		t.Fatalf("review state %+v", r.CodeReview)
+	}
+	events, err := s.RunEvents(r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt, _, why = codeReviewAsk(context.Background(), r, w, head, earlierRounds(events, r.CodeReview))
+	if why != "" {
+		t.Fatal(why)
+	}
+	for _, want := range []string{
+		"## Earlier rounds",
+		"### Round 1\n\n- Major: gate.go:7: The gate fails when the sandbox cannot read the cache.\n",
+		"The last message of the session after round 1:\n\n```\nI changed the gate to warn and skip.\n```\n",
+		"Do not raise a finding that reverses an earlier one",
+		"say in its text which earlier finding it reverses",
+		"Set needs_you on a critical or major finding",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt has no %q:\n%s", want, prompt)
+		}
+	}
+	if strings.Contains(prompt, "A typo.") || strings.Contains(prompt, "Old.") {
+		t.Fatalf("the prompt holds a Minor finding:\n%s", prompt)
+	}
+	if i, j := strings.Index(prompt, "## Earlier rounds"), strings.Index(prompt, "## Diff"); i > j {
+		t.Fatalf("the earlier rounds come after the diff")
+	}
+}
+
+func TestTheEarlierFindingsKeepTheLast20(t *testing.T) {
+	var rounds []earlierRound
+	for round := 1; round <= 3; round++ {
+		er := earlierRound{round: round}
+		for i := range 10 {
+			er.findings = append(er.findings, codeReviewFinding{Severity: severityMajor, File: fmt.Sprintf("r%d.go", round), Line: i + 1, Text: "Wrong."})
+		}
+		rounds = append(rounds, er)
+	}
+	var b strings.Builder
+	writeEarlier(&b, rounds)
+	got := b.String()
+	if n := strings.Count(got, "- Major: "); n != codeReviewEarlierMax {
+		t.Fatalf("%d findings, want %d:\n%s", n, codeReviewEarlierMax, got)
+	}
+	if strings.Contains(got, "r1.go") || !strings.Contains(got, "### Round 2") || !strings.Contains(got, "r3.go:10") {
+		t.Fatalf("not the last rounds:\n%s", got)
+	}
+	if !strings.Contains(got, "The list holds the last 20 of 30 findings.") {
+		t.Fatalf("no count:\n%s", got)
+	}
+	// A cap inside a round keeps its first, most severe, findings.
+	b.Reset()
+	writeEarlier(&b, append(rounds[:1:1], earlierRound{round: 2, findings: rounds[1].findings[:5]}, rounds[2]))
+	if got := b.String(); !strings.Contains(got, "r1.go:5:") || strings.Contains(got, "r1.go:6:") {
+		t.Fatalf("cap inside a round:\n%s", got)
+	}
+	b.Reset()
+	writeEarlier(&b, []earlierRound{{round: 1}})
+	if b.Len() != 0 {
+		t.Fatalf("a round with no findings writes %q", b.String())
+	}
+}
+
+// TAS-212: a fix that needs a setting that only you can change does not go
+// back to the session. The run stops with the finding and its reason, and no
+// round counts.
+func TestAFindingThatNeedsYouStopsTheRun(t *testing.T) {
+	s, sh := reviewedRun(t, 1)
+	findings := cleanFindings([]codeReviewFinding{
+		{Severity: severityMajor, File: "gate.go", Line: 7, Text: "The gate fails when the sandbox cannot read the cache",
+			NeedsYou: " The sandbox needs a read path for the GhosttyKit cache. "},
+		{Severity: severityMinor, File: "c.go", Text: "A typo.", NeedsYou: "Not a blocker."},
+	})
+	if findings[1].NeedsYou != "" {
+		t.Fatalf("a Minor finding keeps needs_you: %+v", findings[1])
+	}
+	push, moved, err := sh.judgeCodeReview(context.Background(), "new", findings, "")
+	if err != nil || push || !moved {
+		t.Fatalf("push %v, moved %v, err %v", push, moved, err)
+	}
+	got, err := s.GetRun(sh.r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "The code review found 1 issue that only you can fix, so the run stops:\n" +
+		"- Major: gate.go:7: The gate fails when the sandbox cannot read the cache. Needs you: The sandbox needs a read path for the GhosttyKit cache.\n" +
+		"Change the setting, then run loam run send-back to start the run again."
+	if got.State != store.RunStopped || got.Note != want {
+		t.Fatalf("run %s, note %q", got.State, got.Note)
+	}
+	if got.CodeReview.Rounds != 1 || got.CodeReview.Head != "old" || got.CodeReview.ReplyRound != 0 || got.Tries != 0 {
+		t.Fatalf("review %+v, tries %d: the stop costs no round and no try", got.CodeReview, got.Tries)
+	}
+	if e := lastEvent(t, s, sh.r.ID, "code_review"); e != "The code review found 1 issue that only you can fix, so the run stops" {
+		t.Fatalf("event %q", e)
+	}
+	events, err := s.RunEvents(sh.r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := LastCodeReview(events)
+	if last == nil || !last.NeedsYou || last.Round != 0 || len(last.Findings) != 2 || last.Findings[0].NeedsYou == "" {
+		t.Fatalf("stored review %+v", last)
+	}
+	// The next review sees the finding that stopped the run, and not the
+	// Minor one.
+	var b strings.Builder
+	writeEarlier(&b, earlierRounds(events, got.CodeReview))
+	if p := b.String(); !strings.Contains(p, "### Stopped the run for the user\n\n- Major: gate.go:7:") ||
+		!strings.Contains(p, "(needs the user: The sandbox needs a read path for the GhosttyKit cache.)") {
+		t.Fatalf("earlier rounds:\n%s", p)
+	} else if strings.Contains(p, "c.go") {
+		t.Fatalf("the earlier rounds hold a finding that went nowhere:\n%s", p)
+	}
+}
+
+// A review whose blocking findings do not need you sends them back as a
+// round, and the round waits for the reply of the session.
+func TestARoundWaitsForTheReplyOfTheSession(t *testing.T) {
+	r := store.Run{CodeReview: &store.RunCodeReview{Rounds: 2, ReplyRound: 2, Replies: map[int]string{1: "Fixed."}}}
+	keepReply(&r, "")
+	if r.CodeReview.ReplyRound != 0 || len(r.CodeReview.Replies) != 1 {
+		t.Fatalf("a stop with no message: %+v", r.CodeReview)
+	}
+	keepReply(&r, "Late.") // no round waits
+	if _, ok := r.CodeReview.Replies[2]; ok {
+		t.Fatalf("a stop with no round that waits keeps a reply: %+v", r.CodeReview)
+	}
+	r.CodeReview.ReplyRound = 3
+	keepReply(&r, strings.Repeat("a", store.CodeReviewReplyMax+1))
+	if got := r.CodeReview.Replies[3]; !strings.HasSuffix(got, " (cut)") || utf8.RuneCountInString(got) != store.CodeReviewReplyMax+len(" (cut)") {
+		t.Fatalf("long reply %d runes", utf8.RuneCountInString(got))
+	}
+	keepReply(&store.Run{}, "No review.")
+}
+
+// TAS-212: in a review with a finding that needs you and one that does not,
+// the one that does not goes back to the session as a round. The one that
+// needs you does not: the note names it, and the next review finds it again.
+func TestAFindingThatNeedsYouLetsTheOtherFindingsGoToTheSession(t *testing.T) {
+	s, sh := reviewedRun(t, 1)
+	// The only slot is taken, so the round waits in Queued with its prompt
+	// and Loam starts no session.
+	if _, err := s.SetRunLimits(store.RunLimits{AtATime: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddRun(store.Run{PlotID: sh.r.PlotID, Folder: t.TempDir(), Title: "Other", State: store.RunRunning}); err != nil {
+		t.Fatal(err)
+	}
+	findings := []codeReviewFinding{
+		{Severity: severityMajor, File: "gate.go", Line: 7, Text: "The gate fails when the sandbox cannot read the cache.",
+			NeedsYou: "The sandbox needs a read path for the cache."},
+		{Severity: severityMajor, File: "b.go", Text: "Loses the file."},
+	}
+	push, moved, err := sh.judgeCodeReview(context.Background(), "new", findings, "")
+	if err != nil || push || !moved {
+		t.Fatalf("push %v, moved %v, err %v", push, moved, err)
+	}
+	got, err := s.GetRun(sh.r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State != store.RunQueued || got.Queue == nil {
+		t.Fatalf("run %s, queue %+v", got.State, got.Queue)
+	}
+	if p := got.Queue.Resume; !strings.Contains(p, "b.go: Loses the file.") || strings.Contains(p, "gate.go") {
+		t.Fatalf("prompt %q", p)
+	}
+	if got.CodeReview.Rounds != 2 || got.CodeReview.ReplyRound != 2 {
+		t.Fatalf("review %+v, want round 2", got.CodeReview)
+	}
+	wantEvent := "The code review found 2 major issues (round 2 of 5). 1 issue only you can fix, and wait for the next review"
+	if e := lastEvent(t, s, sh.r.ID, "code_review"); e != wantEvent {
+		t.Fatalf("event %q", e)
+	}
+	events, err := s.RunEvents(sh.r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rounds := earlierRounds(events, got.CodeReview)
+	if len(rounds) != 1 || rounds[0].round != 2 || len(rounds[0].findings) != 1 || rounds[0].findings[0].File != "b.go" {
+		t.Fatalf("earlier rounds %+v: the finding that needs you went nowhere", rounds)
+	}
+	if len(got.CodeReview.Held) != 1 || got.CodeReview.Held[0].File != "gate.go" {
+		t.Fatalf("held %+v, want the finding that needs you", got.CodeReview.Held)
+	}
+
+	// The session fixed b.go, and the next review finds nothing. The held
+	// finding still reaches you: the run stops with it, and pushes nothing.
+	r, err := s.UpdateRun(sh.r.ID, func(r *store.Run) error { r.State, r.Queue = store.RunShipping, nil; return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	sh.r = r
+	push, moved, err = sh.judgeCodeReview(context.Background(), "newer", nil, "")
+	if err != nil || push || !moved {
+		t.Fatalf("next review: push %v, moved %v, err %v", push, moved, err)
+	}
+	got, err = s.GetRun(sh.r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State != store.RunStopped || !strings.Contains(got.Note, "- Major: gate.go:7: The gate fails when the sandbox cannot read the cache. Needs you:") {
+		t.Fatalf("run %s, note %q", got.State, got.Note)
+	}
+	if len(got.CodeReview.Held) != 0 || got.CodeReview.Rounds != 2 {
+		t.Fatalf("review %+v: the stop empties the held findings and counts no round", got.CodeReview)
+	}
+
+	// After the last round, a finding that needs you stops the run, and the
+	// note names the other findings too.
+	s, sh = reviewedRun(t, codeReviewRounds)
+	if _, _, err := sh.judgeCodeReview(context.Background(), "new", findings, ""); err != nil {
+		t.Fatal(err)
+	}
+	got, err = s.GetRun(sh.r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State != store.RunStopped || !strings.Contains(got.Note, "Needs you: The sandbox needs a read path for the cache.") ||
+		!strings.Contains(got.Note, "The code review also found:\n- Major: b.go: Loses the file.") {
+		t.Fatalf("run %s, note %q", got.State, got.Note)
+	}
+}
+
+func TestWithHeldAddsTheHeldFindingsOnce(t *testing.T) {
+	held := codeReviewFinding{Severity: severityMajor, File: "gate.go", Text: "Fails.", NeedsYou: "A read path."}
+	c := &store.RunCodeReview{Held: []store.RunFinding{store.RunFinding(held)}}
+	minor := codeReviewFinding{Severity: severityMinor, File: "a.go", Text: "A typo."}
+	if got := withHeld([]codeReviewFinding{minor}, c); !slices.Equal(got, []codeReviewFinding{held, minor}) {
+		t.Fatalf("got %+v", got)
+	}
+	if got := withHeld([]codeReviewFinding{held}, c); len(got) != 1 {
+		t.Fatalf("a finding that the review found again is there twice: %+v", got)
+	}
+	if got := withHeld([]codeReviewFinding{minor}, nil); len(got) != 1 {
+		t.Fatalf("no review state: %+v", got)
 	}
 }

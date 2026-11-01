@@ -416,7 +416,11 @@ func printFindings(out io.Writer, review *store.RunCodeReviewRound) {
 		if place != "" {
 			place += ": "
 		}
-		fmt.Fprintf(out, "  %s: %s%s\n", run.SeverityLabel(f.Severity), place, oneLine(f.Text))
+		needs := ""
+		if f.NeedsYou != "" {
+			needs = " (needs you: " + oneLine(f.NeedsYou) + ")"
+		}
+		fmt.Fprintf(out, "  %s: %s%s%s\n", run.SeverityLabel(f.Severity), place, oneLine(f.Text), needs)
 	}
 	if review.More > 0 {
 		fmt.Fprintf(out, "  and %d more\n", review.More)
