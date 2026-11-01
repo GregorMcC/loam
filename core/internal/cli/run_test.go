@@ -426,5 +426,8 @@ func TestRunHookPrintsTheSandboxNoteAfterACompact(t *testing.T) {
 		if got := strings.Contains(out, "--disable-sandbox"); got != want {
 			t.Errorf("%s: sandbox note printed %v, want %v: %q", source, got, want, out)
 		}
+		if got := strings.Contains(out, "This session is a Loam run."); got != want {
+			t.Errorf("%s: note about the Loam tools printed %v, want %v: %q", source, got, want, out)
+		}
 	}
 }

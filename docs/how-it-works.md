@@ -82,8 +82,8 @@ The seed is a `CLAUDE.md` that Loam writes for the plot. It loads when a session
 
 - This session belongs to the plot "Checkout". The plot has a brief, repos, and links.
 - The plot can change while you work. Before you rely on a plot detail, call `get_plot`.
-- To change the plot, use the Loam MCP tools (`mcp__loam__*`), not the `loam` CLI. Loam records each change in the change log.
-- When the work moves on, call `set_where_it_stands` with your proposed text.
+- If this session is not a Loam run: to change the plot, use the Loam MCP tools (`mcp__loam__*`), not the `loam` CLI. Loam records each change in the change log. When the work moves on, call `set_where_it_stands` with your proposed text.
+- If this session is a Loam run: it has only the read tools of the Loam MCP server, so do not try to change the plot. Report in your last message: Loam keeps that.
 - A link is a pointer, not content. Fetch a link only when the task needs it, through your own connectors.
 - If your folder is one of these worktrees, its goal is your task.
 - When you open a PR from a worktree with a link, put Fixes and the link key in the body, such as Fixes SHOP-142 or Fixes #57.
