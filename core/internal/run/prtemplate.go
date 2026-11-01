@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/GregorMcC/loam/core/internal/claudebin"
+	"github.com/GregorMcC/loam/core/internal/gitcmd"
 	"github.com/GregorMcC/loam/core/internal/github"
 	"github.com/GregorMcC/loam/core/internal/store"
 )
@@ -232,10 +233,11 @@ func (sh *shipper) askForShipText(ctx context.Context, w store.Worktree, ask shi
 // runPrint runs claude -p with args in dir, where args ask for
 // --output-format json and a --json-schema, and returns the structured
 // output, or why there is none. what names the answer in that reason, such
-// as "text" in "claude -p gave no text".
+// as "text" in "claude -p gave no text". Claude Code runs git in dir outside
+// the sandbox, so the command has the environment of [gitcmd.Env].
 func runPrint(ctx context.Context, claude, dir string, args []string, what string) (json.RawMessage, string) {
 	cmd := exec.CommandContext(ctx, claude, args...)
-	cmd.Dir = dir
+	cmd.Dir, cmd.Env = dir, gitcmd.Env(dir)
 	cmd.WaitDelay = time.Second
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut

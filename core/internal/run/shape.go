@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/GregorMcC/loam/core/internal/claudebin"
+	"github.com/GregorMcC/loam/core/internal/gitcmd"
 	"github.com/GregorMcC/loam/core/internal/github"
 	"github.com/GregorMcC/loam/core/internal/intake"
 	"github.com/GregorMcC/loam/core/internal/linear"
@@ -536,7 +537,8 @@ func askClaude(ctx context.Context, r store.Run, dirs, mcp []string, prompt func
 		args = append(args, "--effort", r.Shape.Effort)
 	}
 	cmd := exec.CommandContext(ctx, claude, args...)
-	cmd.Dir = r.Folder
+	// Claude Code runs git in the folder outside the sandbox.
+	cmd.Dir, cmd.Env = r.Folder, gitcmd.Env(r.Folder)
 	cmd.WaitDelay = time.Second
 	var errOut bytes.Buffer
 	cmd.Stderr = &errOut
