@@ -78,7 +78,8 @@ var inheritedClaudeVars = []string{"CLAUDE_PID", "CLAUDE_EFFORT", "CLAUDE_PROJEC
 
 // allowTools are the allow rules of a seeded session (spec section 6). The
 // other Loam tools have no rule (ticket 84): in auto mode the classifier
-// decides, and in the default mode Claude Code asks as for any tool.
+// decides, and in the default mode Claude Code asks as for any tool. A run has
+// other rules: see [runToolRules].
 var allowTools = []string{"list_plots", "get_plot", "get_changes", "add_link", "update_link", "list_worktrees", "set_worktree_goal"}
 
 func rules(tools []string) []string {

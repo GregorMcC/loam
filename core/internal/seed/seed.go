@@ -153,8 +153,8 @@ func Render(p store.Plot, worktrees []store.Worktree) string {
 	b.WriteString("## How to use this plot\n\n")
 	fmt.Fprintf(&b, "- This session belongs to the plot \"%s\". The plot has a brief, repos, and links.\n", oneLine(p.Name))
 	b.WriteString("- The plot can change while you work. Before you rely on a plot detail, call `get_plot`.\n")
-	b.WriteString("- To change the plot, use the Loam MCP tools (`mcp__loam__*`), not the `loam` CLI. Loam records each change in the change log.\n")
-	b.WriteString("- When the work moves on, call `set_where_it_stands` with your proposed text.\n")
+	b.WriteString("- If this session is not a Loam run: to change the plot, use the Loam MCP tools (`mcp__loam__*`), not the `loam` CLI. Loam records each change in the change log. When the work moves on, call `set_where_it_stands` with your proposed text.\n")
+	b.WriteString("- If this session is a Loam run: it has only the read tools of the Loam MCP server, so do not try to change the plot. Report in your last message: Loam keeps that.\n")
 	b.WriteString("- A link is a pointer, not content. Fetch a link only when the task needs it, through your own connectors. If you have no connector for a link, tell me.\n")
 	b.WriteString("- You can read repos and local links directly.\n")
 	if len(worktrees) > 0 {

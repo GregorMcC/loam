@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/GregorMcC/loam/core/internal/linkkind"
+	"github.com/GregorMcC/loam/core/internal/mcpserver"
 	"github.com/GregorMcC/loam/core/internal/sandbox"
 	"github.com/GregorMcC/loam/core/internal/store"
 )
@@ -40,7 +41,7 @@ func PrepareRun(s *store.Store, r store.Run, prompt, loam, model, effort string)
 	if err != nil {
 		return nil, err
 	}
-	plan.Args = append(plan.Args, prompt+box.Prompt())
+	plan.Args = append(plan.Args, prompt+runNote(box))
 	return plan, nil
 }
 
@@ -49,7 +50,7 @@ func PrepareRun(s *store.Store, r store.Run, prompt, loam, model, effort string)
 // claude --resume does not keep the options of the session: with no flags,
 // the session has no sandbox, no run hooks, and no deny rules. The settings
 // file is written again, with the rules of the run as they are now, and the
-// prompt ends with their sandbox note, as the first prompt does.
+// prompt ends with the same notes as the first prompt.
 func PrepareRunResume(s *store.Store, r store.Run, prompt, loam, model, effort string) (*Plan, error) {
 	if r.SessionID == "" {
 		return nil, errors.New("the run has no session")
@@ -58,7 +59,7 @@ func PrepareRunResume(s *store.Store, r store.Run, prompt, loam, model, effort s
 	if err != nil {
 		return nil, err
 	}
-	plan.Args = append(plan.Args, prompt+box.Prompt())
+	plan.Args = append(plan.Args, prompt+runNote(box))
 	return plan, nil
 }
 
@@ -101,15 +102,40 @@ func prepareRun(s *store.Store, r store.Run, idArgs []string, loam, model, effor
 	return plan, box, nil
 }
 
-// runSettings returns the settings of a run session: the allow rules of a
-// seeded session, the deny rules of the credential paths, the run hooks, env,
-// and the sandbox of the rules. The background session may start from the
-// Claude Code supervisor, which does not pass the environment of the loam
-// process, so the settings carry it. The supervisor keeps the environment of
-// the first claude --bg call, which can name another LOAM_HOME and the socket
-// of a pane. So each hook command names home, the home of the store that holds
-// the run, and env sets LOAM_HOME to it and LOAM_PANE_SOCKET to empty, which
-// means no pane.
+// runToolsNote tells a run what it can do with the Loam tools. The plot seed
+// tells other sessions to change the plot, so a run must know that it is a run.
+const runToolsNote = "This session is a Loam run. It has only the read tools of the Loam MCP server, so do not try to change the plot. " +
+	"Report in your last message: Loam keeps that."
+
+// runNote returns what each prompt of a run ends with.
+func runNote(box sandbox.Rules) string { return box.Prompt() + "\n\n" + runToolsNote }
+
+// runToolRules returns the rules of a run session for the tools of the Loam
+// MCP server: allow each read tool, and deny each other tool by name. A deny
+// rule wins over an allow rule that the user has, and over the auto mode
+// classifier, so a run has no write tool on any plot. The list comes from what
+// the server registers, so a new write tool is denied with no change here.
+func runToolRules(tools []mcpserver.Tool) (allow, deny []string) {
+	var read, write []string
+	for _, t := range tools {
+		if t.ReadOnly {
+			read = append(read, t.Name)
+		} else {
+			write = append(write, t.Name)
+		}
+	}
+	return rules(read), rules(write)
+}
+
+// runSettings returns the settings of a run session: the rules of the Loam
+// tools (see [runToolRules]), the deny rules of the credential paths, the run
+// hooks, env, and the sandbox of the rules. The background session may start
+// from the Claude Code supervisor, which does not pass the environment of the
+// loam process, so the settings carry it. The supervisor keeps the environment
+// of the first claude --bg call, which can name another LOAM_HOME and the
+// socket of a pane. So each hook command names home, the home of the store that
+// holds the run, and env sets LOAM_HOME to it and LOAM_PANE_SOCKET to empty,
+// which means no pane.
 func runSettings(home, runID string, box sandbox.Rules) settingsFunc {
 	return func(loam string, env []string) ([]byte, error) {
 		type hook struct {
@@ -131,8 +157,13 @@ func runSettings(home, runID string, box sandbox.Rules) settingsFunc {
 		}
 		vars["LOAM_HOME"] = home
 		vars["LOAM_PANE_SOCKET"] = ""
+		tools, err := mcpserver.Tools(context.Background())
+		if err != nil {
+			return nil, fmt.Errorf("list the tools of the Loam MCP server: %w", err)
+		}
+		allow, deny := runToolRules(tools)
 		s := map[string]any{
-			"permissions": map[string]any{"allow": rules(allowTools), "deny": box.ToolDenies()},
+			"permissions": map[string]any{"allow": allow, "deny": append(box.ToolDenies(), deny...)},
 			"hooks":       hooks,
 			"env":         vars,
 			"sandbox":     box.Settings(),
@@ -193,15 +224,15 @@ func RunBashEnv(s *store.Store, runID string) string {
 	return "export xcrun_db=" + shellQuote(filepath.Join(RunTemp(s, runID), sandbox.PrivateXcrunCache)) + "\n"
 }
 
-// RunSandboxNote returns what the stacks of the run need in the sandbox, or ""
-// when they need nothing. The first prompt of the run says it, and the run
-// hook says it again after a compact, which can drop that prompt.
+// RunSandboxNote returns what the run must know about its sandbox and its Loam
+// tools. The first prompt of the run says it, and the run hook says it again
+// after a compact, which can drop that prompt.
 func RunSandboxNote(s *store.Store, r store.Run) (string, error) {
 	box, err := RunRules(s, r)
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(box.Prompt()), nil
+	return strings.TrimSpace(runNote(box)), nil
 }
 
 // RunRules returns the sandbox rules of a run, which its session works in.
