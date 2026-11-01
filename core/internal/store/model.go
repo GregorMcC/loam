@@ -90,9 +90,10 @@ type Link struct {
 	Note     string `json:"note"`
 	Position int    `json:"position"`
 	Version  int64  `json:"version"`
-	// Unchecked is true when no person made the last change to the link: a
-	// session added it or last changed it. Loam reads it from the change log,
-	// so it is not in the JSON of a link, and it cannot be set.
+	// Unchecked is true when no person chose the values of the link: a session
+	// added it or last changed it, and an undo by a person brought back no
+	// values that a person had checked. Loam reads it from the change log, so
+	// it is not in the JSON of a link, and it cannot be set.
 	Unchecked bool `json:"-"`
 }
 

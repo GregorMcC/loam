@@ -96,28 +96,65 @@ FROM repos r LEFT JOIN repo_settings s ON s.path = r.path WHERE r.plot_id = ? OR
 	return p, nil
 }
 
-// markUnchecked sets Link.Unchecked from the actor of the last change to each
-// link. A link with no entry in the change log also counts as unchecked,
+// linkTrust is the state of one link while [markUnchecked] replays its changes.
+type linkTrust struct {
+	checked bool
+	last    int64 // the last change to the link
+	// before holds the state of the link before each change to it.
+	before map[int64]bool
+}
+
+// step applies one change to the link. A change by a session makes the link
+// unchecked, and a change by a person checks it. An undo by a person restores
+// values and does not choose them, so it brings back the state before the
+// undone change. When a later change to the link stays, as after an undo with
+// overwrite, the values of that change stay too, so both states must be checked.
+func (t *linkTrust) step(id int64, kind ActorKind, undoOf *int64) {
+	if t.before == nil {
+		t.before = map[int64]bool{}
+	}
+	prior := t.checked
+	switch {
+	case !kind.IsPerson():
+		t.checked = false
+	case undoOf == nil:
+		t.checked = true
+	case t.last == *undoOf:
+		t.checked = t.before[*undoOf]
+	default:
+		t.checked = t.before[*undoOf] && prior
+	}
+	t.before[id], t.last = prior, id
+}
+
+// markUnchecked sets Link.Unchecked by a replay of the changes to each link in
+// the change log. A link with no entry in the log also counts as unchecked,
 // because no entry says that a person made it.
 func markUnchecked(q queryer, p *Plot) error {
 	if len(p.Links) == 0 {
 		return nil
 	}
-	byPerson := map[string]bool{}
+	trust := map[string]*linkTrust{}
 	if err := scanRows(q, func(rows *sql.Rows) error {
 		var item, kind string
-		if err := rows.Scan(&item, &kind); err != nil {
+		var id int64
+		var undoOf *int64
+		if err := rows.Scan(&item, &id, &kind, &undoOf); err != nil {
 			return err
 		}
-		byPerson[item] = ActorKind(kind).IsPerson()
+		if trust[item] == nil {
+			trust[item] = &linkTrust{}
+		}
+		trust[item].step(id, ActorKind(kind), undoOf)
 		return nil
-	}, `SELECT last.item, c.actor_kind
-FROM (SELECT item, MAX(change_id) AS change_id FROM change_entries WHERE plot_id = ? AND item LIKE 'link:%' GROUP BY item) last
-JOIN changes c ON c.id = last.change_id`, p.ID); err != nil {
+	}, `SELECT DISTINCT e.item, c.id, c.actor_kind, c.undo_of
+FROM change_entries e JOIN changes c ON c.id = e.change_id
+WHERE e.plot_id = ? AND e.item LIKE 'link:%' ORDER BY c.id`, p.ID); err != nil {
 		return err
 	}
 	for i := range p.Links {
-		p.Links[i].Unchecked = !byPerson[LinkItem(p.Links[i].ID)]
+		t := trust[LinkItem(p.Links[i].ID)]
+		p.Links[i].Unchecked = t == nil || !t.checked
 	}
 	return nil
 }

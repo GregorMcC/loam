@@ -103,6 +103,135 @@ func TestLinkUncheckedAfterAnUndo(t *testing.T) {
 	}
 }
 
+// undoRig holds one link on one plot for the undo tests.
+type undoRig struct {
+	t    *testing.T
+	s    *store.Store
+	plot store.Plot
+	item string
+}
+
+func newUndoRig(t *testing.T, actor store.Actor) *undoRig {
+	t.Helper()
+	s := openStore(t)
+	p := newPlot(t, s, "Alpha")
+	res, err := s.Apply(store.Change{PlotID: p.ID, Actor: actor, Edits: []store.Edit{{
+		Op: store.OpAddLink, Label: store.S("Docs"), Target: store.S("/first"), Note: store.S("first note"),
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &undoRig{t, s, p, res.Added[0]}
+}
+
+func (r *undoRig) edit(actor store.Actor, e store.Edit) int64 {
+	r.t.Helper()
+	e.Op, e.Item = store.OpUpdateLink, r.item
+	res, err := r.s.Apply(store.Change{PlotID: r.plot.ID, Actor: actor, Edits: []store.Edit{e}})
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	return res.ChangeID
+}
+
+func (r *undoRig) undo(id int64, actor store.Actor, overwrite bool) int64 {
+	r.t.Helper()
+	res, err := r.s.Undo(id, actor, overwrite)
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	return res.ChangeID
+}
+
+func (r *undoRig) link() store.Link {
+	r.t.Helper()
+	p, err := r.s.GetPlot(r.plot.ID)
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	if len(p.Links) != 1 {
+		r.t.Fatalf("links %+v", p.Links)
+	}
+	return p.Links[0]
+}
+
+// An undo by a person of a later session change does not confirm the first
+// values of the session, because no person chose them.
+func TestPersonUndoDoesNotConfirmTheFirstValuesOfASession(t *testing.T) {
+	for _, person := range []store.Actor{cliPerson, appPerson} {
+		r := newUndoRig(t, sessionActor)
+		note := r.edit(sessionActor, store.Edit{Note: store.S("second note")})
+		undo := r.undo(note, person, false)
+		if got := r.link(); got.Note != "first note" || !got.Unchecked {
+			t.Errorf("%s: after the undo: %+v", person.Kind, got)
+		}
+		// The undo of that undo brings the session note back.
+		r.undo(undo, person, false)
+		if got := r.link(); got.Note != "second note" || !got.Unchecked {
+			t.Errorf("%s: after the undo of the undo: %+v", person.Kind, got)
+		}
+		// A person still confirms the link with a change of their own.
+		r.edit(person, store.Edit{Label: store.S("Design docs")})
+		if r.link().Unchecked {
+			t.Errorf("%s: a person change did not confirm the link", person.Kind)
+		}
+	}
+}
+
+// When a person removes a session link and undoes the removal, the link comes
+// back as it was.
+func TestPersonUndoOfARemovalKeepsTheLinkUnchecked(t *testing.T) {
+	r := newUndoRig(t, sessionActor)
+	res, err := r.s.Apply(store.Change{PlotID: r.plot.ID, Actor: cliPerson, Edits: []store.Edit{{Op: store.OpRemoveLink, Item: r.item}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.undo(res.ChangeID, cliPerson, false)
+	if !r.link().Unchecked {
+		t.Error("the undo of a removal confirmed a session link")
+	}
+}
+
+// A person who confirmed a link can reject a later session change, and the link
+// stays confirmed.
+func TestPersonUndoKeepsAConfirmation(t *testing.T) {
+	r := newUndoRig(t, sessionActor)
+	confirm := r.edit(cliPerson, store.Edit{Label: store.S("Design docs")})
+	target := r.edit(sessionActor, store.Edit{Target: store.S("/second")})
+	r.undo(target, cliPerson, false)
+	if got := r.link(); got.Target != "/first" || got.Unchecked {
+		t.Errorf("after the undo of the session change: %+v", got)
+	}
+	// The undo of the confirmation takes the confirmation away.
+	r.undo(confirm, cliPerson, true)
+	if got := r.link(); got.Label != "Docs" || !got.Unchecked {
+		t.Errorf("after the undo of the confirmation: %+v", got)
+	}
+}
+
+// An undo with overwrite leaves the values of the later changes. So it does not
+// confirm a later session value.
+func TestPersonUndoWithOverwriteKeepsALaterSessionValueUnchecked(t *testing.T) {
+	r := newUndoRig(t, cliPerson)
+	note := r.edit(cliPerson, store.Edit{Note: store.S("second note")})
+	r.edit(sessionActor, store.Edit{Target: store.S("/session")})
+	r.undo(note, cliPerson, true)
+	if got := r.link(); got.Note != "first note" || got.Target != "/session" || !got.Unchecked {
+		t.Errorf("after the undo: %+v", got)
+	}
+}
+
+// A session that undoes a change leaves the link unchecked, also when a person
+// set the values that come back.
+func TestSessionUndoLeavesTheLinkUnchecked(t *testing.T) {
+	r := newUndoRig(t, cliPerson)
+	note := r.edit(cliPerson, store.Edit{Note: store.S("second note")})
+	r.undo(note, sessionActor, false)
+	if got := r.link(); got.Note != "first note" || !got.Unchecked {
+		t.Errorf("after the undo: %+v", got)
+	}
+}
+
 // A plot that a session creates holds unchecked links, and one that a person
 // creates does not.
 func TestLinkUncheckedOnANewPlot(t *testing.T) {

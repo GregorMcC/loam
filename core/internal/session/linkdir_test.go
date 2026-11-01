@@ -59,6 +59,33 @@ func TestStartAddsALinkFolderOnlyAfterAPersonChange(t *testing.T) {
 	check("a person changed the note in the app", true)
 }
 
+// An undo by a person of a later session change gives no added folder: no person
+// chose the target that the session added.
+func TestStartAddsNoLinkFolderAfterAPersonUndo(t *testing.T) {
+	e := setup(t)
+	docs := t.TempDir()
+	p := e.plot(t, store.PlotInput{Name: "Alpha"})
+	session := store.Actor{Kind: store.ActorSession, SessionID: "s1"}
+	added, err := e.store.Apply(store.Change{PlotID: p.ID, Actor: session, Edits: []store.Edit{
+		{Op: store.OpAddLink, Label: store.S("Docs"), Target: store.S(docs)},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	note, err := e.store.Apply(store.Change{PlotID: p.ID, Actor: session, Edits: []store.Edit{
+		{Op: store.OpUpdateLink, Item: added.Added[0], Note: store.S("read this first")},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.store.Undo(note.ChangeID, store.Actor{Kind: store.ActorCLI}, false); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.addedFolders(t, p.ID); slices.Contains(got, docs) {
+		t.Errorf("--add-dir %v holds the link folder", got)
+	}
+}
+
 // The seed that a start writes holds the mark of a link that a session added,
 // also when the seed on disk is older than the rule.
 func TestStartWritesTheMarkOfASessionLink(t *testing.T) {
