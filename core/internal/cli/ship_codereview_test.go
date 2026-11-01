@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"os/exec"
 	"path/filepath"
 	"slices"
@@ -260,23 +261,36 @@ func TestRunTickPushesWithNoReviewWhenTheReviewIsOff(t *testing.T) {
 	}
 }
 
-func TestRunTickPushesWithANoteWhenTheReviewFails(t *testing.T) {
+// A review that did not run never lets Loam push. Loam tries once more, and
+// then the run stops with the reason in its note.
+func TestRunTickDoesNotPushWhenTheReviewFails(t *testing.T) {
 	s, r, w := codeReviewRun(t, `[]`)
 	testutil.FakeClaudePrintFor(t, codeReviewSchemaText, `{"type": "result", "subtype": "error_during_execution", "is_error": true, "result": "API error"}`)
-	tick(t)
-	if !pushedBranch(t, r, w) || len(ghCreates(t)) != 1 {
-		t.Fatalf("no push after a failed review: %q", ghCreates(t))
-	}
 	why := "claude -p gave no review. error_during_execution API error"
-	if e := events(t, s, r.ID, "code_review"); !slices.Equal(e, []string{"The code review did not run, so Loam pushes with no review: " + why}) {
-		t.Fatalf("code_review events %q", e)
+	tick(t)
+	if pushedBranch(t, r, w) || len(ghCreates(t)) != 0 {
+		t.Fatalf("a push after a failed review: %q", ghCreates(t))
+	}
+	if got, err := s.GetRun(r.ID); err != nil || got.State != store.RunShipping {
+		t.Fatalf("after the first failure: %v %+v", err, got)
+	}
+	tick(t)
+	if pushedBranch(t, r, w) || len(ghCreates(t)) != 0 {
+		t.Fatalf("a push after a second failed review: %q", ghCreates(t))
 	}
 	got, err := s.GetRun(r.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Notes == nil || !slices.Contains(got.Notes.Risk.Reasons, "The code review did not run: "+why) {
-		t.Fatalf("notes %+v", got.Notes)
+	if got.State != store.RunStopped || !strings.Contains(got.Note, why) {
+		t.Fatalf("state %s note %q", got.State, got.Note)
+	}
+	want := []string{
+		"The code review did not run, so Loam does not push and tries again: " + why,
+		"The code review did not run, so Loam does not push and the run stops: " + why,
+	}
+	if e := events(t, s, r.ID, "code_review"); !slices.Equal(e, want) {
+		t.Fatalf("code_review events %q", e)
 	}
 }
 
@@ -307,7 +321,8 @@ func TestRunTickSendsAReviewOfACommitAfterReadyBackAndDoesNotPush(t *testing.T) 
 
 // A diff that is longer than the prompt keeps is cut. A review of it that
 // lets Loam push says so in the event and in the ship notes.
-func TestRunTickSaysWhenTheReviewSawACutDiff(t *testing.T) {
+// A long diff gets a review for each part, so the reviews read all of it.
+func TestRunTickReviewsAllOfALongDiff(t *testing.T) {
 	s, r, w := codeReviewRun(t, `[]`)
 	writeAndCommit(t, r.Folder, "big.txt", strings.Repeat("a long line of text\n", 4000))
 	tick(t)
@@ -315,39 +330,30 @@ func TestRunTickSaysWhenTheReviewSawACutDiff(t *testing.T) {
 		t.Fatal("no push")
 	}
 	calls := codeReviewCalls(t)
-	if len(calls) != 1 || !strings.Contains(calls[0][slices.Index(calls[0], "-p")+1], "so it is cut") {
+	if len(calls) != 2 {
 		t.Fatalf("review calls %d", len(calls))
 	}
-	cut := "The diff is longer than 60000 characters, so the code review saw only its start in the prompt"
-	if e := events(t, s, r.ID, "code_review"); !slices.Equal(e, []string{"The code review found no issues. " + cut}) {
-		t.Fatalf("code_review events %q", e)
+	for i, c := range calls {
+		if want := fmt.Sprintf("part %d of 2 of the diff", i+1); !strings.Contains(c[slices.Index(c, "-p")+1], want) {
+			t.Fatalf("call %d has no %q", i, want)
+		}
 	}
-	if got, _ := s.GetRun(r.ID); got.Notes == nil || !slices.Contains(got.Notes.Risk.Reasons, cut) {
-		t.Fatalf("notes %+v", got.Notes)
+	if e := events(t, s, r.ID, "code_review"); !slices.Equal(e, []string{"The code review found no issues"}) {
+		t.Fatalf("code_review events %q", e)
 	}
 }
 
-// When the diff is cut and the worktree is on another commit, the tools of
-// Claude cannot read the rest of the head. The review of the start of the
-// diff says that it did not see the rest.
-func TestRunTickSaysWhenTheReviewSawACutDiffAwayFromTheHead(t *testing.T) {
+// A diff over the limit of all the parts gets no review, and Loam does not
+// push it.
+func TestRunTickStopsForADiffTooLongToReview(t *testing.T) {
 	s, r, w := codeReviewRun(t, `[]`)
-	writeAndCommit(t, r.Folder, "big.txt", strings.Repeat("a long line of text\n", 4000))
-	head := testutil.Git(t, r.Folder, "rev-parse", "HEAD")
-	testutil.Git(t, r.Folder, "checkout", "-q", "--detach", "HEAD~1")
+	writeAndCommit(t, r.Folder, "big.txt", strings.Repeat("a long line of text\n", 20000))
 	tick(t)
-	remote := filepath.Join(filepath.Dir(filepath.Dir(w.Repo)), "remote.git")
-	if testutil.Git(t, remote, "rev-parse", w.Branch) != head {
-		t.Fatal("no push of the head")
+	tick(t)
+	if pushedBranch(t, r, w) || len(codeReviewCalls(t)) != 0 {
+		t.Fatalf("a push or a review of a diff that is too long: %d", len(codeReviewCalls(t)))
 	}
-	if calls := codeReviewCalls(t); len(calls) != 1 {
-		t.Fatalf("review calls %d", len(calls))
-	}
-	cut := "The diff is longer than 60000 characters, and the folder is not at its head, so the code review did not see the rest of the diff"
-	if e := events(t, s, r.ID, "code_review"); !slices.Equal(e, []string{"The code review found no issues. " + cut}) {
-		t.Fatalf("code_review events %q", e)
-	}
-	if got, _ := s.GetRun(r.ID); got.Notes == nil || !slices.Contains(got.Notes.Risk.Reasons, cut) {
-		t.Fatalf("notes %+v", got.Notes)
+	if got, err := s.GetRun(r.ID); err != nil || got.State != store.RunStopped || !strings.Contains(got.Note, "must split the change") {
+		t.Fatalf("%v %+v", err, got)
 	}
 }
