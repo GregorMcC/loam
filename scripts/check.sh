@@ -225,7 +225,8 @@ without_temp_leak() {
   if [ -s "$leak_dir/new" ]; then
     sleep 2
     while IFS= read -r item; do
-      if [ -e "$item" ] && ! foreign_item "$item"; then echo "$item"; fi
+      # -L: a link whose target is gone is still an item.
+      if { [ -e "$item" ] || [ -L "$item" ]; } && ! foreign_item "$item"; then echo "$item"; fi
     done <"$leak_dir/new" >"$leak_dir/left"
     if [ -s "$leak_dir/left" ]; then
       echo "The tests left $(wc -l <"$leak_dir/left" | tr -d ' ') new items in the temp folder:"
