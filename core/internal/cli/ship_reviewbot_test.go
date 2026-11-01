@@ -45,6 +45,12 @@ func withSkippedCodeRabbit(state string) string {
 const (
 	majorBody = "**Actionable comments posted: 0**\n\n<details>\n<summary>⚠️ Outside diff range comments (1)</summary>\n\n" +
 		"`hello.txt`: _⚠️ Potential issue_ | _🟠 Major_\n\n**The greeting drops the name.**\n</details>"
+	// majorIconBody is the form of CodeRabbit on this repo, as in its review of #95: an icon in a <picture>, then
+	// the severity.
+	majorIconBody = "**Actionable comments posted: 0**\n\n<details>\n<summary>⚠️ Outside diff range comments (1)</summary>\n\n" +
+		"`213-214`: **<picture><img src=\"https://storage.googleapis.com/coderabbit_public_assets/review-comment-icons-v1/major-16.svg\" " +
+		"width=\"16\" height=\"16\" align=\"absmiddle\" alt=\"\"></picture> Major** · **Data Integrity & Integration** · **Quick win**\n\n" +
+		"**The greeting drops the name.**\n</details>"
 	minorBody = "**Actionable comments posted: 0**\n\n<details>\n<summary>🧹 Nitpick comments (1)</summary>\n\n" +
 		"`hello.txt`: _🛠️ Refactor suggestion_ | _🟡 Minor_\n\n**Say hi with a capital letter.**\n</details>"
 )
@@ -106,7 +112,7 @@ func TestRunSendReviewSendsAMajorFindingInTheBodyOfACommentReview(t *testing.T) 
 	if _, err := s.UpdateRun(r.ID, func(r *store.Run) error { r.ReviewsSent = []string{"R1"}; return nil }); err != nil {
 		t.Fatal(err)
 	}
-	setGitHub(t, botState(w.Branch, head, "CHANGES_REQUESTED", "["+older+"]", "["+botReview("PRR_major", head, majorBody)+"]", "[]"))
+	setGitHub(t, botState(w.Branch, head, "CHANGES_REQUESTED", "["+older+"]", "["+botReview("PRR_major", head, majorIconBody)+"]", "[]"))
 	out, code := loam(t, "run", "send-review", r.ID, "--dry-run", "--json")
 	var plan run.ReviewResult
 	if err := json.Unmarshal([]byte(out), &plan); err != nil || code != 0 || plan.Threads != 0 || plan.Reviews != 1 ||

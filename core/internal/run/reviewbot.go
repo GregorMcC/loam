@@ -19,13 +19,16 @@ import (
 var CodeRabbitWait = 30 * time.Minute
 
 // majorMark finds the header of a Critical or Major finding in the body of a
-// review. CodeRabbit writes the severity in the header of each finding, such
-// as "_⚠️ Potential issue_ | _🟠 Major_", also for a finding on a line outside
-// the diff, which has no thread. A Minor or Trivial finding has another
-// word. The mark is an emoji or an emphasis before the word, so the word in
-// the text of a finding does not count. No letter follows the word: "_" is
-// a word character, so a word boundary does not end "_Major_".
-var majorMark = regexp.MustCompile(`(?:🔴|🟠|[_*])\s*(?:Critical|Major)(?:[^\pL]|$)`)
+// review. CodeRabbit writes the severity in the header of each finding, also
+// for a finding on a line outside the diff, which has no thread. It has two
+// forms: an emoji, such as "_⚠️ Potential issue_ | _🟠 Major_", and an icon,
+// an <img> in a <picture> before the word, such as
+// "**<picture><img src=\".../major-16.svg\" ...></picture> Major**". A Minor
+// or Trivial finding has another word. The mark is an emoji, an emphasis, or
+// the end of the <picture> before the word, so the word in the text of a
+// finding does not count. No letter follows the word: "_" is a word
+// character, so a word boundary does not end "_Major_".
+var majorMark = regexp.MustCompile(`(?:🔴|🟠|[_*]|</picture>)\s*(?:Critical|Major)(?:[^\pL]|$)`)
 
 // hasMajorFinding reports whether the body of a review has a Critical or
 // Major finding.
@@ -33,7 +36,7 @@ func hasMajorFinding(body string) bool { return majorMark.MatchString(body) }
 
 // severityMark finds the header of a finding of each severity, as
 // [majorMark] does for Critical and Major.
-var severityMark = regexp.MustCompile(`(?:🔴|🟠|🟡|🔵|[_*])\s*(?:Critical|Major|Minor|Trivial)(?:[^\pL]|$)`)
+var severityMark = regexp.MustCompile(`(?:🔴|🟠|🟡|🔵|[_*]|</picture>)\s*(?:Critical|Major|Minor|Trivial)(?:[^\pL]|$)`)
 
 // reviewText is the text of a review body that goes to the session. It is
 // the body, which [quote] cuts to [reviewTextMax] characters. When the cut

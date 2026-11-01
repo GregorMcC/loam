@@ -241,6 +241,9 @@ func TestHasMajorFindingReadsTheSeverityOfAFindingHeader(t *testing.T) {
 		"`a.go`: _🧹 Nitpick_ | _🔵 Trivial_":                                 false,
 		"A Major rewrite of the Critical path.":                             false,
 		"_Majority_ of the code.":                                           false,
+		// The icon form of CodeRabbit on this repo, from a review of #95.
+		pictureHeader("major", "Major"): true,
+		pictureHeader("amber", "Minor"): false,
 	} {
 		if got := hasMajorFinding(body); got != want {
 			t.Errorf("hasMajorFinding(%q) = %v, want %v", body, got, want)
@@ -312,5 +315,34 @@ func TestCodeRabbitMissedReadsTheNoticeHeadingOnly(t *testing.T) {
 	reviewed.ChangeRequests[0].Commit = "h0"
 	if got := codeRabbitMissed(reviewed); got != "its check was skipped" {
 		t.Errorf("a change request on an older commit: %q", got)
+	}
+}
+
+// pictureHeader is a finding header in the icon form of CodeRabbit, with the icon and the severity.
+func pictureHeader(icon, severity string) string {
+	return "`213-214`: **<picture><img src=\"https://storage.googleapis.com/coderabbit_public_assets/review-comment-icons-v1/" + icon +
+		"-16.svg\" width=\"16\" height=\"16\" align=\"absmiddle\" alt=\"\"></picture> " + severity +
+		"** · **Data Integrity & Integration** · **Quick win**"
+}
+
+// A long review in the icon form goes to the session as its Major findings: the Minor header in the same form ends
+// the Major finding before it.
+func TestReviewPromptSendsTheMajorFindingsOfALongReviewInTheIconForm(t *testing.T) {
+	nitpicks := strings.Repeat(pictureHeader("amber", "Minor")+"\n\n**Rename x.**\n\n", 100)
+	body := nitpicks + "<summary>core/run.go (2)</summary>\n\n" + pictureHeader("major", "Major") + "\n\n**The wait never ends.**\n\n" +
+		pictureHeader("amber", "Minor") + "\n\n**A small thing.**\n"
+	if !hasMajorFinding(body) {
+		t.Fatal("no Major finding")
+	}
+	rv := review{requests: []github.Review{{ID: "R1", Author: "coderabbitai", Body: body}}}
+	prompt, _ := reviewPromptFor("Opening.", &github.PR{Number: 1}, rv, "/r.json", false)
+	for _, want := range []string{"Loam sends only its Critical and Major findings", "> <summary>core/run.go (2)</summary>",
+		"major-16.svg", "> **The wait never ends.**"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("the prompt misses %q:\n%s", want, prompt)
+		}
+	}
+	if strings.Contains(prompt, "Rename x.") || strings.Contains(prompt, "A small thing.") {
+		t.Errorf("the prompt has a Minor finding:\n%s", prompt)
 	}
 }
