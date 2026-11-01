@@ -51,6 +51,7 @@ extension Scenarios {
 
         // The next start approves that text: the setup command runs, and the refusal is gone.
         try app.click("intake-start")
-        try await app.waitUntil("the core takes the approval") { !model.isStartingRun && !model.runStartNeedsSetupApproval }
+        // A start that fails keeps the sheet open, so only a run that started passes this wait.
+        try await app.waitUntil("the run starts after the approval") { !model.isStartingRun && !app.exists("intake-start-sheet") }
     }
 }
