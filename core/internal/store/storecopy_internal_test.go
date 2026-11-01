@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -299,6 +300,89 @@ func TestPruneGoesByTimeAndLeavesOtherFiles(t *testing.T) {
 	slices.Sort(got)
 	if !slices.Equal(got, want) {
 		t.Fatalf("files %q, want %q", got, want)
+	}
+}
+
+// Two programs open an older store at once. The first one migrates it after the
+// second one read the old schema, and before the second one copies. The copy of
+// the second one is at the new schema, so the good copy stays.
+func TestACopyOfAMigratedStoreDoesNotReplaceTheGoodCopy(t *testing.T) {
+	home := testutil.Home(t)
+	old := SchemaVersion - 2
+	second := olderStore(t, home, old)
+
+	all := migrations
+	migrations, SchemaVersion = all[:old+1], old+1
+	first, err := Open(home)
+	migrations, SchemaVersion = all, len(all)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first.Close()
+	file := copyFile(home, old)
+	good, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := second.prepareMigration(old); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(after, good) {
+		t.Fatal("a copy of the migrated store replaced the good copy")
+	}
+	if v := versionOf(t, file); v != old {
+		t.Fatalf("the copy has schema %d, want %d", v, old)
+	}
+	if got := copiesIn(t, home); !slices.Equal(got, []string{filepath.Base(file)}) {
+		t.Fatalf("files %q", got)
+	}
+
+	// The second program reads the schema again, copies that schema, and
+	// migrates.
+	if err := second.migrate(); err != nil {
+		t.Fatal(err)
+	}
+	if v, err := second.readVersion(second.db); err != nil || v != SchemaVersion {
+		t.Fatalf("version %d, err %v", v, err)
+	}
+	if v := versionOf(t, copyFile(home, old+1)); v != old+1 {
+		t.Fatalf("the next copy has schema %d, want %d", v, old+1)
+	}
+	if v := versionOf(t, file); v != old {
+		t.Fatalf("the first copy has schema %d, want %d", v, old)
+	}
+}
+
+// A copy that Loam cannot read back stops the migration.
+func TestCopySchemaFailsOnAFileWithNoSchema(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "copy with space?.bak")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := copySchema(file); err == nil {
+		t.Fatal("want an error")
+	}
+}
+
+// The check of the copy reads the file by a URL, so a home whose name needs
+// escaping must work.
+func TestCopyWorksInAHomeWithAnOddName(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "my loam?#%20")
+	t.Setenv("LOAM_HOME", home)
+	old := SchemaVersion - 1
+	closedOlderStore(t, home, old)
+	s, err := Open(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	if got := copiesIn(t, home); !slices.Equal(got, []string{filepath.Base(copyFile(home, old))}) {
+		t.Fatalf("files %q", got)
 	}
 }
 

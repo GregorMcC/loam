@@ -1227,6 +1227,7 @@ Each schema step of the store goes forward only. `store.SchemaVersion` is the sc
 
 - Loam writes the copy with `VACUUM INTO`, so the copy holds what the WAL holds. The copy is a complete database at the old schema, and it is private to the user.
 - A store with no schema yet gets no copy. A store at the schema of the program gets no copy.
+- Loam reads the schema of the copy before it puts the copy in place. Another program can migrate the store before the copy starts. Loam then discards the copy, keeps the earlier copy of that name, and reads the schema of the store again.
 - When the copy fails, the migration does not run, the store does not change, and the command fails. The error names both schemas, the path of the copy, and the reason.
 - A new copy replaces an earlier copy of the same schema. Loam keeps the 3 newest copies by file time, and removes older ones. Loam does not read the copies. To go back, quit Loam and each session, then replace `loam.db` with a copy, and remove `loam.db-wal` and `loam.db-shm`.
 

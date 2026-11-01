@@ -2,8 +2,10 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -90,6 +92,11 @@ func isDefaultHome(home string) bool {
 // path. VACUUM INTO reads through SQLite, so the copy holds what the WAL
 // holds. The copy appears only when it is complete, and it replaces an earlier
 // copy of the same schema.
+//
+// VACUUM INTO cannot run in the write transaction, so another program can
+// migrate the store before the copy starts. That copy is not of schema v, and
+// it must not replace the good copy under that name. So copyStore discards it
+// and returns no error: the caller reads the schema again in its transaction.
 func (s *Store) copyStore(v int) (string, error) {
 	file := filepath.Join(s.home, fmt.Sprintf("loam.db.v%d.bak", v))
 	// CreateTemp makes the file private to the user, and SQLite keeps the mode.
@@ -105,7 +112,29 @@ func (s *Store) copyStore(v int) (string, error) {
 	if _, err := s.db.ExecContext(context.Background(), `VACUUM INTO ?`, name); err != nil {
 		return file, err
 	}
+	got, err := copySchema(name)
+	if err != nil {
+		return file, err
+	}
+	if got != v {
+		return file, nil
+	}
 	return file, os.Rename(name, file)
+}
+
+// copySchema reads the schema version of a copy of the store.
+func copySchema(file string) (int, error) {
+	dsn := (&url.URL{Scheme: "file", Path: file, RawQuery: "mode=ro"}).String()
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
+	var v int
+	if err := db.QueryRowContext(context.Background(), `SELECT version FROM schema_version`).Scan(&v); err != nil {
+		return 0, fmt.Errorf("read the schema of the copy: %w", err)
+	}
+	return v, nil
 }
 
 // pruneCopies removes all but the newest copies, and unfinished copies that a
