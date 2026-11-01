@@ -71,6 +71,10 @@ func TestProfileOrder(t *testing.T) {
   (subpath "/dev"))
 (deny file-write*
   (subpath "/h/w/.git/hooks"))
+(deny file-write-unlink
+  (literal "/h/w/.git")
+  (literal "/h/w")
+  (literal "/h"))
 (deny file-write*
   (literal "/t/xcrun_db"))
 `
@@ -231,6 +235,35 @@ func TestProfileAllowsOnlyTheWritePaths(t *testing.T) {
 		if out, ok := sandboxed(t, r, temp, "echo hi > "+shellQuote(path)); ok {
 			t.Errorf("write of %s passed: %s", path, out)
 		}
+	}
+}
+
+// TAS-191: a deny of .git/config does not cover a move of .git. A check could
+// move .git out and put a folder of its own there, whose config git outside the
+// sandbox then reads. So a check cannot move a folder above a denied path. It
+// can still write in that folder.
+func TestProfileDeniesAMoveOfAFolderAboveADeniedPath(t *testing.T) {
+	r, run, _, outside := boxedHome(t)
+	git := filepath.Join(run, ".git")
+	mkfile(t, filepath.Join(git, "config"))
+	temp := filepath.Join(filepath.Dir(outside), "tmp")
+	if err := os.MkdirAll(temp, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{git, run} {
+		moved := filepath.Join(temp, "moved")
+		if out, ok := sandboxed(t, r, temp, "mv "+shellQuote(path)+" "+shellQuote(moved)); ok {
+			t.Errorf("a move of %s passed: %s", path, out)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(git, "config")); err != nil {
+		t.Errorf("the local config is gone: %v", err)
+	}
+	if out, ok := sandboxed(t, r, temp, "echo hi > "+shellQuote(filepath.Join(git, "index"))); !ok {
+		t.Errorf("a write in the git folder: %s", out)
+	}
+	if out, ok := sandboxed(t, r, temp, "mkdir "+shellQuote(filepath.Join(run, "sub"))+" && mv "+shellQuote(filepath.Join(run, "sub"))+" "+shellQuote(filepath.Join(run, "sub2"))); !ok {
+		t.Errorf("a move of a folder beside the denied paths: %s", out)
 	}
 }
 

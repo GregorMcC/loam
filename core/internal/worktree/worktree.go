@@ -206,7 +206,7 @@ func Create(s *store.Store, o CreateOptions) (*CreateResult, error) {
 
 	res := &CreateResult{}
 	if n.remoteOn {
-		if _, err := git(repo.Path, "fetch", remote); err != nil {
+		if _, err := git(repo.Path, "fetch", "--no-recurse-submodules", remote); err != nil {
 			res.Warnings = append(res.Warnings, fmt.Sprintf("Could not fetch from %s (%v). The worktree starts from the last fetched state.", remote, err))
 		}
 		n.refreshBranches(o.Name)
@@ -544,7 +544,7 @@ func Inspect(w store.Worktree) Status {
 	st := Status{Worktree: w}
 	if fi, err := os.Stat(w.Path); err != nil || !fi.IsDir() {
 		st.Missing = true
-	} else if out, err := git(w.Path, "status", "--porcelain"); err != nil {
+	} else if out, err := git(w.Path, "status", "--porcelain", "--ignore-submodules=all"); err != nil {
 		st.Error, st.localFailed = err.Error(), true
 	} else if out != "" {
 		st.Changed = len(strings.Split(out, "\n"))

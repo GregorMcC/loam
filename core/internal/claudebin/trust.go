@@ -1,11 +1,13 @@
 package claudebin
 
 import (
+	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/GregorMcC/loam/core/internal/gitcmd"
 )
 
 // Trusted reports whether Claude Code trusts a folder, from its config file
@@ -90,7 +92,7 @@ func trustedProjects() map[string]bool {
 // gitRoots returns the top of the git checkout that holds dir, and the
 // folder of the repo's main checkout. Both are empty outside git.
 func gitRoots(dir string) (top, main string) {
-	out, err := exec.Command("git", "-C", dir, "rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir").Output()
+	out, err := gitcmd.Command(context.Background(), dir, "rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir").Output()
 	if err != nil {
 		return "", ""
 	}

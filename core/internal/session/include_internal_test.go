@@ -26,20 +26,26 @@ func TestIncludeEntries(t *testing.T) {
 	if err := os.Mkdir(home, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	got, unread, err := includeEntries(context.Background(), home, f)
-	want := []string{filepath.Join(home, "a.gitconfig"), filepath.Join(dir, "rel", "b.gitconfig"), "/abs/e.gitconfig"}
-	if err != nil || !slices.Equal(got, want) || !slices.Equal(unread, []string{"~user/c", "%(prefix)/d"}) {
-		t.Errorf("includeEntries = %q, %q, %v, want %q and the two paths that Loam does not expand", got, unread, err, want)
+	got, err := includeEntries(context.Background(), home, f)
+	want := []string{
+		filepath.Join(home, "a.gitconfig"), filepath.Join(dir, "rel", "b.gitconfig"), "", "",
+		filepath.Join(dir, "folder"), "/abs/e.gitconfig",
+	}
+	if err != nil || !slices.Equal(entryPaths(got), want) {
+		t.Errorf("includeEntries = %+v, %v, want the paths %q", got, err, want)
+	}
+	if err == nil && (got[2].value != "~user/c" || got[3].value != "%(prefix)/d" || got[2].file != f) {
+		t.Errorf("includeEntries = %+v, want the values of the two paths that Loam does not expand", got)
 	}
 	// Git skips a missing include file, so it gives none.
-	if got, unread, err := includeEntries(context.Background(), "/home", filepath.Join(dir, "missing")); got != nil || unread != nil || err != nil {
-		t.Errorf("includeEntries of a missing file = %q, %q, %v, want none", got, unread, err)
+	if got, err := includeEntries(context.Background(), "/home", filepath.Join(dir, "missing")); got != nil || err != nil {
+		t.Errorf("includeEntries of a missing file = %+v, %v, want none", got, err)
 	}
 	bad := filepath.Join(dir, "bad")
 	if err := os.WriteFile(bad, []byte("[bad\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := includeEntries(context.Background(), "/home", bad); err == nil {
+	if _, err := includeEntries(context.Background(), "/home", bad); err == nil {
 		t.Error("includeEntries of a file that git cannot read gives no error")
 	}
 }
@@ -197,15 +203,40 @@ func TestIncludeEntriesFollowsALinkBeforeDotDot(t *testing.T) {
 		t.Fatal(err)
 	}
 	// f is read through the link, so its folder is the link.
-	got, _, err := includeEntries(context.Background(), filepath.Join(dir, "home"), filepath.Join(link, "x.gitconfig"))
+	got, err := includeEntries(context.Background(), filepath.Join(dir, "home"), filepath.Join(link, "x.gitconfig"))
 	elsewhere := filepath.Join(dir, "elsewhere")
 	want := []string{
 		filepath.Join(elsewhere, "a.gitconfig"), filepath.Join(dir, "other", "b.gitconfig"),
 		filepath.Join(elsewhere, "c.gitconfig"), filepath.Join(elsewhere, "d.gitconfig"), "/nowhere/e.gitconfig",
 	}
-	if err != nil || !slices.Equal(got, want) {
-		t.Errorf("includeEntries = %q, %v, want %q", got, err, want)
+	if err != nil || !slices.Equal(entryPaths(got), want) {
+		t.Errorf("includeEntries = %+v, %v, want %q", got, err, want)
 	}
+}
+
+// gitIncludes leaves a folder out of the files, because git cannot read one,
+// and keeps it in the entries, because the run can replace it with a file.
+func TestGitIncludesKeepsAFolderInTheEntriesOnly(t *testing.T) {
+	dir := realTempDir(t)
+	if err := os.Mkdir(filepath.Join(dir, "folder"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	a := filepath.Join(dir, "a.gitconfig")
+	if err := os.WriteFile(a, []byte("[include]\n\tpath = folder\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := gitIncludes("/home", []string{a}, func(string) bool { return true })
+	if got.files != nil || len(got.entries) != 1 || got.entries[0].built != filepath.Join(dir, "folder") {
+		t.Errorf("gitIncludes = %+v, want the folder in the entries only", got)
+	}
+}
+
+func entryPaths(entries []includeEntry) []string {
+	var out []string
+	for _, e := range entries {
+		out = append(out, e.path)
+	}
+	return out
 }
 
 // realTempDir is a temporary folder with its links resolved: on macOS, the

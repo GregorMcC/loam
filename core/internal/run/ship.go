@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/GregorMcC/loam/core/internal/gitcmd"
 	"github.com/GregorMcC/loam/core/internal/github"
 	"github.com/GregorMcC/loam/core/internal/intake"
 	"github.com/GregorMcC/loam/core/internal/linear"
@@ -968,11 +969,11 @@ func (sh *shipper) gitPush(ctx context.Context, branch, head string) (string, er
 	ctx, cancel := context.WithTimeout(ctx, pushTimeout)
 	defer cancel()
 	dir := sh.r.Folder
-	out, err := exec.CommandContext(ctx, "git", "-C", dir, "push", "origin", head+":refs/heads/"+branch).CombinedOutput()
+	out, err := gitcmd.Command(ctx, dir, "push", "origin", head+":refs/heads/"+branch).CombinedOutput()
 	if err != nil {
 		return string(out), err
 	}
-	if track, err := exec.CommandContext(ctx, "git", "-C", dir, "branch", "--set-upstream-to=origin/"+branch, branch).CombinedOutput(); err != nil {
+	if track, err := gitcmd.Command(ctx, dir, "branch", "--set-upstream-to=origin/"+branch, branch).CombinedOutput(); err != nil {
 		sh.warnings = append(sh.warnings, failureNote(fmt.Sprintf("%s: git could not make %s track origin/%s", sh.r.Title, branch, branch), err, string(track)))
 	}
 	return string(out), nil
@@ -991,6 +992,6 @@ func pushedHead(ctx context.Context, dir, branch string) (string, error) {
 
 // gitOut runs git in dir and returns its output with no space at the ends.
 func gitOut(ctx context.Context, dir string, args ...string) (string, error) {
-	out, err := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...).Output()
+	out, err := gitcmd.Command(ctx, dir, args...).Output()
 	return strings.TrimSpace(string(out)), err
 }

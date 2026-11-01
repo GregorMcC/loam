@@ -8,11 +8,23 @@ import (
 	"testing"
 )
 
+// packageDir is the folder of the package under test: the folder that go test
+// starts the test binary in, before any test changes it.
+var packageDir, _ = os.Getwd()
+
 // GitEnv points git at a clean global config for the test, with an author and
-// main as the default branch. Call it before you make a repo.
+// main as the default branch. Call it before you make a repo. The config is not
+// in the temporary folder: a run can write that folder, so a run does not start
+// with its global config there. Git names the file of the config for the rules
+// of a run, so a run in a test goes through the same check as a real one.
 func GitEnv(t *testing.T) {
 	t.Helper()
-	cfg := filepath.Join(t.TempDir(), "gitconfig")
+	dir, err := os.MkdirTemp(packageDir, ".gitenv-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	cfg := filepath.Join(dir, "gitconfig")
 	body := "[user]\n\tname = Loam Test\n\temail = test@example.com\n[init]\n\tdefaultBranch = main\n[commit]\n\tgpgsign = false\n"
 	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
 		t.Fatal(err)

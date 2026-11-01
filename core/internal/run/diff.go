@@ -3,11 +3,11 @@ package run
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
 
+	"github.com/GregorMcC/loam/core/internal/gitcmd"
 	"github.com/GregorMcC/loam/core/internal/store"
 )
 
@@ -82,7 +82,7 @@ func Diff(ctx context.Context, s *store.Store, id string) (DiffResult, error) {
 		return DiffResult{}, fmt.Errorf("could not find where the branch left its base %q: %w", w.Base, store.ErrInvalid)
 	}
 	// Fixed prefixes and no quotes, whatever the git config of the repo says.
-	out, err := exec.CommandContext(ctx, "git", "-C", r.Folder, "-c", "core.quotePath=off", "diff",
+	out, err := gitcmd.Command(ctx, r.Folder, "-c", "core.quotePath=off", "diff",
 		"--no-color", "--no-ext-diff", "--no-textconv", "-M", "--src-prefix=a/", "--dst-prefix=b/", base, head).Output()
 	if err != nil {
 		return DiffResult{}, fmt.Errorf("git diff failed in %s: %w", r.Folder, err)

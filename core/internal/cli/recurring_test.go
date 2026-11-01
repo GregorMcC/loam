@@ -237,3 +237,30 @@ func TestTickInstallLoadsALaunchdAgent(t *testing.T) {
 		t.Fatalf("%v %s", err, out)
 	}
 }
+
+// A check of an earlier gate can write the commondir file of the git folder.
+// Loam runs the precheck outside the sandbox, so it refuses before the command
+// can start git, which would follow the file.
+func TestTickDoesNotRunThePrecheckWhenACommondirFileNamesAnotherFolder(t *testing.T) {
+	s, _, repo := wtCLI(t)
+	marker := filepath.Join(t.TempDir(), "precheck-ran")
+	r := addRecurring(t, "--title", "Bump", "--prompt", "Bump.",
+		"--kind", "chore", "--days", "daily", "--at", "02:00", "--precheck", "touch '"+marker+"'")
+	if err := os.WriteFile(filepath.Join(repo, ".git", "commondir"), []byte(t.TempDir()+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := tickAt(t, r.NextAt.Add(time.Minute))
+	if _, err := os.Stat(marker); err == nil {
+		t.Error("the precheck ran with a commondir file that names another folder")
+	}
+	if len(got.Recurring) != 1 || !strings.Contains(got.Recurring[0].Note, "the precheck did not run") ||
+		!strings.Contains(got.Recurring[0].Note, "commondir") {
+		t.Fatalf("%+v", got.Recurring)
+	}
+	if strings.Contains(got.Recurring[0].Note, "the run does not start") {
+		t.Errorf("a precheck that did not run gives the note of a run: %q", got.Recurring[0].Note)
+	}
+	if runs := recurringRuns(t, s, r.ID); len(runs) != 1 || runs[0].State != store.RunSkipped {
+		t.Fatalf("%+v", runs)
+	}
+}

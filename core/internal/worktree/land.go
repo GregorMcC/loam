@@ -880,7 +880,7 @@ func Update(ctx context.Context, s *store.Store, plotID, repoArg, arg string) (*
 	}
 	res := &UpdateResult{Worktree: t.w, PR: t.pr}
 	b := t.w.Branch
-	if _, err := git(t.w.Repo, "fetch", remote, "+refs/heads/"+b+":refs/remotes/"+remote+"/"+b); err != nil {
+	if _, err := git(t.w.Repo, "fetch", "--no-recurse-submodules", remote, "+refs/heads/"+b+":refs/remotes/"+remote+"/"+b); err != nil {
 		res.FetchNote = fmt.Sprintf("GitHub updated PR #%d, but Loam could not fetch %s (%v). Run git fetch.", t.pr.Number, b, err)
 	} else {
 		res.Fetched = true

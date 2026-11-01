@@ -49,7 +49,8 @@ const others = `(deny lsopen)
 // that matches an operation wins. So the profile denies home and then allows
 // the Read paths and the temp folders, denies every write and then allows
 // the Write paths, the temp folders, and alwaysWrite, and denies each
-// DenyWrite path and the xcrun cache of each temp folder last.
+// DenyWrite path and the xcrun cache of each temp folder last. It also denies a
+// move of each folder above a DenyWrite path (see [Rules.foldersAboveDenied]).
 //
 // The profile denies the ways out through other processes (see others). It
 // denies the network, so a check uses the caches that the session filled,
@@ -79,11 +80,28 @@ func (r Rules) Profile(temps ...string) (string, error) {
 	b.WriteString("(deny file-write*)\n")
 	rule(&b, "allow", "file-write*", r.writes(temps), subpath)
 	rule(&b, "deny", "file-write*", r.DenyWrite, subpath)
+	rule(&b, "deny", "file-write-unlink", r.foldersAboveDenied(), "(literal %s)")
 	rule(&b, "deny", "file-write*", r.xcrunCaches(temps), "(literal %s)")
 	if b.Len() > MaxProfile {
 		return "", fmt.Errorf("the sandbox profile is %d bytes, more than the %d bytes that Loam passes to sandbox-exec: the rules name too many paths", b.Len(), MaxProfile)
 	}
 	return b.String(), nil
+}
+
+// foldersAboveDenied returns each folder above a DenyWrite path. A deny of a
+// path does not cover a move of a folder above it: a check could move .git out
+// and put a folder of its own there, whose config and hooks git outside the
+// sandbox then takes. A move of a folder is an unlink of its path, and an unlink
+// of a folder does not cover the files in it, so a check still writes them. The
+// sandbox of a session relies on Claude Code for this rule.
+func (r Rules) foldersAboveDenied() []string {
+	var out set
+	for _, p := range r.DenyWrite {
+		for d := filepath.Dir(p); d != filepath.Dir(d); d = filepath.Dir(d) {
+			out.add(d)
+		}
+	}
+	return out.list
 }
 
 // xcrunCache is the file in the temp folder of the user where the xcrun

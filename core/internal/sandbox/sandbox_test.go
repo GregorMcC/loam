@@ -308,36 +308,6 @@ func TestForTellsARunInAWorktreeNotToPrune(t *testing.T) {
 	}
 }
 
-// Writable is true in a write path and false in a path that the rules deny
-// inside it. It ignores case, as macOS folders do.
-func TestRulesWritable(t *testing.T) {
-	r := Rules{Write: []string{"/w/Repo"}, DenyWrite: []string{"/w/Repo/.git/config"}}
-	for path, want := range map[string]bool{
-		"/w/Repo/a.gitconfig":    true,
-		"/w/repo/a.gitconfig":    true,
-		"/w/Repo/.git/config":    false,
-		"/w/Repository/a":        false,
-		"/elsewhere/a.gitconfig": false,
-	} {
-		if got := r.Writable(path); got != want {
-			t.Errorf("Writable(%s) = %v, want %v", path, got, want)
-		}
-	}
-	// The run can point a link in a write path at another file.
-	dir, other := realTemp(t), realTemp(t)
-	link := filepath.Join(dir, "x.gitconfig")
-	if err := os.Symlink(filepath.Join(other, "x.gitconfig"), link); err != nil {
-		t.Fatal(err)
-	}
-	if !(Rules{Write: []string{dir}}).Writable(link) {
-		t.Errorf("Writable(%s) = false for a link in a write path", link)
-	}
-	// A folder of also is a write path too.
-	if !(Rules{}).Writable(filepath.Join(other, "y.gitconfig"), other) || (Rules{}).Writable(link) {
-		t.Errorf("Writable does not take the folders of also as write paths")
-	}
-}
-
 // AllowRead adds a path once, and leaves out and returns a path that opens
 // home, as For does.
 func TestRulesAllowRead(t *testing.T) {
@@ -371,7 +341,7 @@ func TestForAllowsThePrivateFolderOfTheRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := mustFor(t, Input{Home: "/h", Folder: work, Private: dir, Getenv: noEnv})
-	if !slices.Contains(got.Read, dir) || !slices.Contains(got.Write, dir) || !got.Writable(filepath.Join(dir, PrivateXcrunCache)) {
+	if !slices.Contains(got.Read, dir) || !slices.Contains(got.Write, dir) || !holdsWrite(t, got, filepath.Join(dir, PrivateXcrunCache)) {
 		t.Errorf("Read = %q, Write = %q, want the private folder %s", got.Read, got.Write, dir)
 	}
 	target := realTemp(t)
