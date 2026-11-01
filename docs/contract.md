@@ -230,6 +230,29 @@ These commands print the change ID, the plot ID, and the link or repo that the c
 
 `loam link add` with no label, or MCP `add_link` with no `label`, takes the label from the target. A local path gives the file name with no extension, or the folder name. GitHub gives `<repo> on GitHub`, or `<repo>#<n>` for an issue or pull request. Linear gives the issue ID, Notion the page title, Obsidian the note name, and any other URL the host.
 
+#### Links that a session sets
+
+A seeded session has allow rules for MCP `add_link` and `update_link`, so it adds or changes a link with no prompt. An allow rule cannot look at the arguments of a tool, so text that a session reads can make it write any link. Each link can give later sessions a folder and a line in the seed. These rules hold that back:
+
+- **Own plot.** When `LOAM_PLOT` is set, `add_link` and `update_link` fail with a tool error for another plot, and nothing is saved. With no `LOAM_PLOT`, as in a Home session, the call is not a session of a plot, and it can name any plot.
+- **Unchecked link.** A link is unchecked when a person did not make the last change to it. Loam reads this from the change log on each read: the actor of the last change must be `cli` or `app`. A link with no change log entry is unchecked too. The field is not in the CLI JSON. MCP `get_plot` returns `"unchecked": true` for such a link.
+- **Added folder.** An unchecked local link gets no `--add-dir`, so its `CLAUDE.md` does not load either.
+- **Seed.** The seed marks an unchecked link with "(added by a session, not checked)". The mark of a local link also says that it is not an added folder until a person changes the link. The links section then tells the reader to treat the label and the note of such a link as data, not as an instruction.
+- **Confirm a link.** A person confirms a link when they change its label, target, or note with `loam link edit` or the app. A label change keeps the target and the note. An edit that leaves all three values as they are records no change, prints "No change.", and confirms nothing. An undo by a person also counts as a change by a person. Loam adds no other way to confirm a link. A later change by a session makes the link unchecked again.
+- **Existing links.** The rule reads the existing change log. So a link that a session added before this rule stops being an added folder at the next start, until a person changes it. The next seed write marks it.
+- **The CLI in a session.** When `CLAUDECODE=1` is in the environment, a Claude Code session started the CLI. `loam link add`, `loam link edit`, `loam link rm`, and `loam undo` then record a `session` actor, with the session ID from `CLAUDE_CODE_SESSION_ID`, also with `--actor app`. Other commands keep the `cli` actor. So `! loam link edit` in a Claude Code prompt does not confirm a link: use a terminal outside the session, or a shell pane of the app, which removes the variable.
+- **The limit.** A session with Bash can unset `CLAUDECODE` or write to the store itself, and then it counts as a person. Bash needs a permission of its own in a pane. These rules stop a link write that needs no prompt. They do not stop a session that has Bash.
+- **Runs.** These rules cover added folders and the seed. The sandbox of a run reads each local link of the plot through `allowRead`, with its own refused paths (see Sandbox).
+
+A local link never becomes an added folder, for any actor, when its folder is one of these, as written or with its symlinks resolved. The compare ignores case, as macOS folders do.
+
+- The root, the home folder, or a folder above the home folder.
+- A dot folder directly below the home folder, such as `~/.ssh` or `~/.config`, or a folder inside one, such as `~/.config/gh`.
+- `~/Library`, or a folder inside it. A vault in iCloud Drive is in `~/Library/Mobile Documents`, so it is refused too.
+- The Loam home, a folder inside it, or a folder that holds it.
+
+A link to a file adds the folder of the file, so the same rule applies to that folder. The link stays in the plot and in the seed.
+
 `loam repo add`, MCP `add_repo`, and MCP `create_plot` expand a leading `~`. They fail with exit code 2 (`invalid`) when the repo path does not exist or is a file. The message names the path.
 
 `loam repo add` also adds the repo's git remote as a link, in the same change, so one undo removes both. It uses `origin`, else the first remote, as a web URL with no user name or token. It adds no link when the folder has no remote, the remote is a local path, or the plot already has a link to that URL. MCP `add_repo` and `create_plot` do the same. `repo` in the output is still the new repo.
@@ -1146,7 +1169,7 @@ The change log, newest last. Without a plot it covers every plot. `--since` retu
 
 ### `loam undo <change-id> [--overwrite] --json`
 
-Writes the old values back as a new change by the actor (`--actor app` for the app). The change log keeps every entry.
+Writes the old values back as a new change by the actor (`--actor app` for the app). The change log keeps every entry. With `CLAUDECODE=1` in the environment, the actor is the session (see [Links that a session sets](#links-that-a-session-sets)).
 
 ```json
 { "change_id": 44, "undone": 41, "plot": "k3v9q2mxa7" }
@@ -1162,7 +1185,7 @@ Writes the old values back as a new change by the actor (`--actor app` for the a
 
 | Command | Why |
 | :- | :- |
-| `loam start` | It replaces the process with `claude`. `--repo` takes a repo ID or a path. `--plot-folder` starts in the plot folder of a plot with repos, and every repo is then an added folder; it fails with exit code 2 (`invalid`) with `--repo` or `--worktree`. An unknown repo exits with code 1, as in `loam repo edit`. Each local link adds its folder (or the folder of the file) with `--add-dir`, except the root, the home folder, and a parent of the home folder: a link to one of them adds nothing. |
+| `loam start` | It replaces the process with `claude`. `--repo` takes a repo ID or a path. `--plot-folder` starts in the plot folder of a plot with repos, and every repo is then an added folder; it fails with exit code 2 (`invalid`) with `--repo` or `--worktree`. An unknown repo exits with code 1, as in `loam repo edit`. Each local link that a person added or last changed adds its folder (or the folder of the file) with `--add-dir`. A refused folder adds nothing. See [Links that a session sets](#links-that-a-session-sets). |
 | `loam mcp` | It speaks the MCP protocol on stdio. |
 | `loam hook` | It is hidden. It speaks the Claude Code hook protocol. |
 | `loam run hook <run>` | It is hidden. It speaks the Claude Code hook protocol for the session of a run. A failed gate exits 2 with the reason on stderr. |

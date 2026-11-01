@@ -122,6 +122,22 @@ func cliActor(cmd *cobra.Command) store.Actor {
 	return store.Actor{Kind: store.ActorCLI}
 }
 
+// linkActor is the actor for a CLI write that can set a link: a link command
+// or an undo. When a Claude Code session started the CLI (CLAUDECODE=1), the
+// actor is that session, also with --actor app. So a session that runs the CLI
+// through Bash does not count as a person, and its link gets no added folder.
+// This is not a hard limit: a session with Bash can unset the variable.
+func linkActor(cmd *cobra.Command, s *store.Store) (store.Actor, error) {
+	if os.Getenv("CLAUDECODE") != "1" {
+		return cliActor(cmd), nil
+	}
+	id := os.Getenv("CLAUDE_CODE_SESSION_ID")
+	if id == "" {
+		return store.Actor{Kind: store.ActorSession}, nil
+	}
+	return s.SessionActor(id)
+}
+
 // commit applies a change and rewrites the seed. A seed that fails to write
 // is a warning (see [seed.AfterChange]).
 func commit(s *store.Store, c store.Change) (*store.Result, error) {
@@ -136,7 +152,7 @@ func commit(s *store.Store, c store.Change) (*store.Result, error) {
 // writeEdits resolves the plot, builds the edits from it, commits them, and
 // prints the warnings. It returns the result, the edits, and the item that the
 // write is about: the item it added, else the item of the first edit.
-func writeEdits(cmd *cobra.Command, s *store.Store, plotArg string, expect map[string]int64, build func(*store.Plot) ([]store.Edit, error)) (*store.Result, []store.Edit, string, error) {
+func writeEdits(cmd *cobra.Command, s *store.Store, actor store.Actor, plotArg string, expect map[string]int64, build func(*store.Plot) ([]store.Edit, error)) (*store.Result, []store.Edit, string, error) {
 	sum, err := resolvePlot(s, plotArg)
 	if err != nil {
 		return nil, nil, "", err
@@ -149,7 +165,7 @@ func writeEdits(cmd *cobra.Command, s *store.Store, plotArg string, expect map[s
 	if err != nil {
 		return nil, nil, "", err
 	}
-	res, err := commit(s, store.Change{PlotID: p.ID, Actor: cliActor(cmd), Expect: expect, Edits: edits})
+	res, err := commit(s, store.Change{PlotID: p.ID, Actor: actor, Expect: expect, Edits: edits})
 	if err != nil {
 		return nil, nil, "", err
 	}

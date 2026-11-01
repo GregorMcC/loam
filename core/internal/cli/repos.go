@@ -271,7 +271,7 @@ func writeRepo(cmd *cobra.Command, plotArg string, expectVals []string, settings
 		return err
 	}
 	defer s.Close()
-	res, edits, item, err := writeEdits(cmd, s, plotArg, expect, build)
+	res, edits, item, err := writeEdits(cmd, s, cliActor(cmd), plotArg, expect, build)
 	if err != nil {
 		return err
 	}

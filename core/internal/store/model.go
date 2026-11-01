@@ -90,6 +90,10 @@ type Link struct {
 	Note     string `json:"note"`
 	Position int    `json:"position"`
 	Version  int64  `json:"version"`
+	// Unchecked is true when no person made the last change to the link: a
+	// session added it or last changed it. Loam reads it from the change log,
+	// so it is not in the JSON of a link, and it cannot be set.
+	Unchecked bool `json:"-"`
 }
 
 // Repo is a local git checkout that a plot holds. Path is absolute.
@@ -130,6 +134,9 @@ const (
 	ActorApp     ActorKind = "app"
 	ActorSession ActorKind = "session"
 )
+
+// IsPerson reports whether the kind is a person: you in the CLI or in the app.
+func (k ActorKind) IsPerson() bool { return k == ActorCLI || k == ActorApp }
 
 // Actor is who made a change. A session actor has a session ID and says
 // whether Loam started the session. Use [Store.SessionActor] to fill

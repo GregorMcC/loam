@@ -82,6 +82,9 @@ FROM repos r LEFT JOIN repo_settings s ON s.path = r.path WHERE r.plot_id = ? OR
 		p.Links[i].Version = all[it]
 		p.Versions[it] = all[it]
 	}
+	if err := markUnchecked(q, &p); err != nil {
+		return Plot{}, err
+	}
 	for i := range p.Repos {
 		it := RepoItem(p.Repos[i].ID)
 		p.Repos[i].Version = all[it]
@@ -91,6 +94,32 @@ FROM repos r LEFT JOIN repo_settings s ON s.path = r.path WHERE r.plot_id = ? OR
 		p.Versions[WorktreeItem(w.ID)] = w.Version
 	}
 	return p, nil
+}
+
+// markUnchecked sets Link.Unchecked from the actor of the last change to each
+// link. A link with no entry in the change log also counts as unchecked,
+// because no entry says that a person made it.
+func markUnchecked(q queryer, p *Plot) error {
+	if len(p.Links) == 0 {
+		return nil
+	}
+	byPerson := map[string]bool{}
+	if err := scanRows(q, func(rows *sql.Rows) error {
+		var item, kind string
+		if err := rows.Scan(&item, &kind); err != nil {
+			return err
+		}
+		byPerson[item] = ActorKind(kind).IsPerson()
+		return nil
+	}, `SELECT last.item, c.actor_kind
+FROM (SELECT item, MAX(change_id) AS change_id FROM change_entries WHERE plot_id = ? AND item LIKE 'link:%' GROUP BY item) last
+JOIN changes c ON c.id = last.change_id`, p.ID); err != nil {
+		return err
+	}
+	for i := range p.Links {
+		p.Links[i].Unchecked = !byPerson[LinkItem(p.Links[i].ID)]
+	}
+	return nil
 }
 
 // GetPlot returns a plot with the version of each item. It returns an error
