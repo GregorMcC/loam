@@ -235,12 +235,12 @@ func Approve(ctx context.Context, s *store.Store, id string, o ApproveOptions) (
 	if r.Source != nil && r.Source.Kind == intake.Map {
 		ticket = r.Source
 	}
-	res := &StartResult{}
-	wt, err := prepare(s, plot, so, r.Title, ticket, res)
+	defaults, err := s.GetRunDefaults(plot.ID) // before Loam makes the worktree
 	if err != nil {
 		return nil, err
 	}
-	defaults, err := s.GetRunDefaults(plot.ID)
+	res := &StartResult{}
+	wt, err := prepare(s, plot, so, r.Title, ticket, res)
 	if err != nil {
 		return nil, err
 	}

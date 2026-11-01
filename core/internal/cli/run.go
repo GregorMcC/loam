@@ -888,6 +888,9 @@ func newRunDefaultsCmd() *cobra.Command {
 				if f.Changed("review-effort") {
 					d.ReviewEffort = reviewEffort
 				}
+				if noChecks && f.Changed("check") {
+					return fmt.Errorf("--no-checks and --check cannot go together: %w", store.ErrInvalid)
+				}
 				if noChecks {
 					d.Checks = []store.Check{}
 				}
