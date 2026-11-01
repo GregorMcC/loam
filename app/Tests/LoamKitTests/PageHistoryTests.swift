@@ -95,7 +95,7 @@ import Testing
 
 /// TAS-46: the model records a step for each move to a page, a plot or Home, and Back and Forward show each place again.
 @MainActor
-@Suite(.waitLimit) struct PageHistoryModelTests {
+@Suite(.waitLimit, .temporaryFolders) struct PageHistoryModelTests {
     /// Two plots and three runs: r1 and r2 wait at the desk, r1 first, and r3 runs. Every call to the core fails, so
     /// the pages keep what the test gives them.
     func model() throws -> AppModel {

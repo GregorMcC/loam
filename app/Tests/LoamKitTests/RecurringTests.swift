@@ -6,7 +6,7 @@ import Testing
 /// Ticket 208: the Recurring page of a plot lists its recurring runs and adds them, and launchd runs `loam tick`
 /// while the app is closed.
 @MainActor
-@Suite(.waitLimit) struct RecurringTests {
+@Suite(.waitLimit, .temporaryFolders) struct RecurringTests {
     func model(_ fixtures: [(String, Int32)]) throws -> (AppModel, FakeLoam) {
         let fake = try FakeLoam(fixtures)
         let model = AppModel(client: fake.client())
@@ -93,7 +93,7 @@ import Testing
 
 /// Ticket 209: the Recurring page also lists the rules of the plot, and adds and removes them.
 @MainActor
-@Suite(.waitLimit) struct RuleTests {
+@Suite(.waitLimit, .temporaryFolders) struct RuleTests {
     func model(_ fixtures: [(String, Int32)]) throws -> (AppModel, FakeLoam) {
         let fake = try FakeLoam([("recurring_list", 0), ("tick_status", 0), ("rule_list", 0)] + fixtures)
         let model = AppModel(client: fake.client())

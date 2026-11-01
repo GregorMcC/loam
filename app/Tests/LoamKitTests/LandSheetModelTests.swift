@@ -23,7 +23,7 @@ import Testing
 /// plans from the land fixtures. The fake `loam` logs its arguments, so a test can say which commands ran and in
 /// which order. The merge cannot be undone, so the tests that matter most say what must not run.
 @MainActor
-@Suite(.waitLimit) struct LandSheetModelTests {
+@Suite(.waitLimit, .temporaryFolders) struct LandSheetModelTests {
     let plotID = "plotaaaaab"
     /// link-labels, #22, Ready to merge. Its path is `web-link-labels`.
     let ready = "wtreaaaaao"
@@ -74,8 +74,7 @@ import Testing
     /// A model with the fixture rows and a fake `loam`. Reads of the plan print `dry.json`, the real land prints
     /// `land.json`, and the list loses the worktree once a real land has run (`landed`).
     func rig(whereText: String = "Native panel spacing fails lint.", whereVersion: Int = 4) async throws -> Rig {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("land-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let dir = temporaryFolder("land")
         let rows = try Fixtures.data("worktree_list_stages")
         try rows.write(to: dir.appendingPathComponent("list.json"))
         let left = try (JSONSerialization.jsonObject(with: rows) as? [[String: Any]] ?? []).filter {

@@ -6,7 +6,7 @@ import Testing
 /// Ticket 100: a Home tab moves to a plot with all its panes. A shell keeps its process, and a
 /// session continues its conversation in the plot.
 @MainActor
-@Suite struct MoveToPlotTests {
+@Suite(.temporaryFolders) struct MoveToPlotTests {
     func session(_ space: Space, _ id: String) -> PaneSpec {
         PaneSpec(kind: .session, space: space, command: "loam start --home", title: "claude", sessionID: id)
     }

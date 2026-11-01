@@ -5,7 +5,7 @@ import Testing
 
 /// Settings > Runs and the run defaults of a plot: the paths and hosts that you add to the sandbox.
 @MainActor
-@Suite(.waitLimit) struct SandboxSettingsModelTests {
+@Suite(.waitLimit, .temporaryFolders) struct SandboxSettingsModelTests {
     @Test func loadReadsTheScope() async throws {
         let fake = try FakeLoam([("run_sandbox_get", 0)])
         let model = SandboxSettingsModel(client: fake.client(), plot: "plotaaaaab")

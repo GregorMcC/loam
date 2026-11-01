@@ -5,7 +5,7 @@ import Testing
 
 /// Ticket 207: the desk takes the runs that wait for you one at a time: Land first, then Stopped.
 @MainActor
-@Suite(.waitLimit) struct DeskTests {
+@Suite(.waitLimit, .temporaryFolders) struct DeskTests {
     static func run(_ id: String, _ state: RunState, updated: String) -> Run {
         TodayContentTests.run(id, plot: "plotaaaaae", state, updated: updated)
     }

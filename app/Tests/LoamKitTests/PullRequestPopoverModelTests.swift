@@ -8,7 +8,7 @@ import Testing
 /// The worktrees come from the `worktree_list_stages` fixture (made-up example/widgets data), all in the
 /// plot `plotaaaaab`.
 @MainActor
-@Suite(.waitLimit) struct PullRequestPopoverModelTests {
+@Suite(.waitLimit, .temporaryFolders) struct PullRequestPopoverModelTests {
     let plotID = "plotaaaaab"
     let nativePanel = "wtreaaaaah"  // Checks failed, #16.
 
@@ -43,8 +43,7 @@ import Testing
     }
 
     func rig(loaded: Bool = true) async throws -> Rig {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("popover-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let dir = temporaryFolder("popover")
         for name in ["worktree_list_stages", "worktree_rerun", "worktree_update", "error_gh_unavailable", "error_not_ready"] {
             try Fixtures.data(name).write(to: dir.appendingPathComponent("\(name).json"))
         }

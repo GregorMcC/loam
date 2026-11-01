@@ -3,7 +3,7 @@ import Testing
 @testable import LoamKit
 
 @MainActor
-@Suite struct PlotPanelModelTests {
+@Suite(.temporaryFolders) struct PlotPanelModelTests {
     private func model(_ outputs: [(fixture: String, exit: Int32)]) throws -> (PlotPanelModel, FakeLoam) {
         let fake = try FakeLoam(outputs)
         return (PlotPanelModel(client: fake.client()), fake)
@@ -208,7 +208,7 @@ import Testing
     // Ticket 78: the add repo row offers the repos of other plots and the checkouts next to them, and
     // Return on a name adds the first suggestion.
     @Test func repoSuggestionsAndReturnOnAName() async throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("suggest-\(UUID().uuidString)")
+        let root = temporaryFolder("suggest")
         for name in ["alpha", "notes"] {
             try FileManager.default.createDirectory(at: root.appendingPathComponent(name), withIntermediateDirectories: true)
         }
@@ -229,7 +229,7 @@ import Testing
 
     // Ticket 78: a dropped checkout becomes a repo, and a dropped URL a link with no label.
     @Test func addDroppedRoutesEachItem() async throws {
-        let repo = FileManager.default.temporaryDirectory.appendingPathComponent("drop-\(UUID().uuidString)")
+        let repo = temporaryFolder("drop")
         try FileManager.default.createDirectory(at: repo.appendingPathComponent(".git"), withIntermediateDirectories: true)
         let (m, fake) = try model([("show_links", 0), ("repo_add", 0), ("show_links", 0), ("link_add_app", 0), ("show_links", 0)])
         await m.load(plotID: "plotaaaaab")

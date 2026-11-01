@@ -6,7 +6,7 @@ import Testing
 /// The Intake page: the sources it reads, the source switch, the filter chips and the sort, the Run column, the name
 /// of a run worktree, and the bar of the checked rows.
 @MainActor
-@Suite(.waitLimit) struct IntakeContentTests {
+@Suite(.waitLimit, .temporaryFolders) struct IntakeContentTests {
     static func item(_ source: String, key: String, priority: String = "", created: String = "2026-10-01T00:00:00Z",
                      run: String = "", inCycle: Bool = false, mine: Bool = false) -> IntakeItem {
         var item = IntakeItem(source: source, key: key, title: "Title of \(key)", status: "Open", priority: priority, labels: [],

@@ -10,9 +10,11 @@
 # the tool versions from ci.yml, so they stay the same as CI.
 #
 # core: gofmt, go vet, golangci-lint, go test and govulncheck in core/.
-# app: swift test in app/. With GhosttyKit linked in app/vendor, it also
-# builds the app with GhosttyKit and runs the driver tests, which CI does not
-# run (TAS-57). With no link, it builds and tests LoamKit only.
+# app: swift build --build-tests and swift test in app/. With GhosttyKit
+# linked in app/vendor, it also builds the app with GhosttyKit and runs the
+# driver tests, which CI does not run (TAS-57). With no link, it builds and
+# tests LoamKit only. swift test fails when the tests leave a new folder or
+# file in the temp folder (TAS-214).
 # lint: shellcheck on scripts/ and actionlint on the workflows.
 #
 # In a sandbox, such as the sandbox of a Loam run or of its gate, it passes
@@ -143,6 +145,75 @@ ghosttykit_unreadable() {
   return 1
 }
 
+# temp_folders prints the shared temp folders that the app tests write, one a
+# line: the temp folder of Foundation, which can differ from TMPDIR, and
+# TMPDIR.
+temp_folders() {
+  {
+    getconf DARWIN_USER_TEMP_DIR 2>/dev/null || true
+    echo "${TMPDIR:-}"
+  } | while IFS= read -r folder; do
+    if [ -n "$folder" ]; then (cd "$folder" 2>/dev/null && pwd -P); fi
+  done | sort -u
+}
+
+# temp_items prints the path of each item with a name that the app tests give
+# their temp folders and files, sorted: in the shared temp folders, and in the
+# TMPDIR of swift (swift_tmp), where the TemporaryDirectory.* folders are those
+# of SwiftPM. temporaryFolder(_:) in
+# app/Tests/LoamKitTests/TemporaryFolders.swift names each item loam-test-*.
+# The other names are those of older tests, and of the Swift tools
+# (TemporaryDirectory.*).
+temp_items() {
+  {
+    temp_folders | while IFS= read -r folder; do
+      find "$folder" -mindepth 1 -maxdepth 1 \( -name 'loam-*' -o -name 'fake-loam-*' -o -name 'land-*' \
+        -o -name 'merge-*' -o -name 'popover-*' -o -name 'send-*' -o -name 'newworktree-*' \
+        -o -name 'TemporaryDirectory.*' \) 2>/dev/null
+    done
+    find "$swift_tmp" -mindepth 1 -maxdepth 1 \( -name 'loam-*' -o -name 'fake-loam-*' -o -name 'land-*' \
+      -o -name 'merge-*' -o -name 'popover-*' -o -name 'send-*' -o -name 'newworktree-*' \) 2>/dev/null
+  } | sort
+}
+
+# without_temp_leak COMMAND...: run COMMAND, and fail when it leaves new items
+# of temp_items (TAS-214). An item that goes within 2 seconds was a passing
+# item, such as one of another process.
+without_temp_leak() {
+  leak_dir=$(mktemp -d)
+  temp_items >"$leak_dir/before"
+  status=0
+  "$@" || status=$?
+  temp_items >"$leak_dir/after"
+  comm -13 "$leak_dir/before" "$leak_dir/after" >"$leak_dir/new"
+  if [ -s "$leak_dir/new" ]; then
+    sleep 2
+    while IFS= read -r item; do
+      if [ -e "$item" ]; then echo "$item"; fi
+    done <"$leak_dir/new" >"$leak_dir/left"
+    if [ -s "$leak_dir/left" ]; then
+      echo "The tests left $(wc -l <"$leak_dir/left" | tr -d ' ') new items in the temp folder:"
+      cat "$leak_dir/left"
+      echo "Fix: make each temp folder of a test with temporaryFolder(_:) in app/Tests/LoamKitTests/TemporaryFolders.swift."
+      status=1
+    fi
+  fi
+  rm -rf "$leak_dir"
+  return "$status"
+}
+
+# swift_app runs swift for the app job, with no manifest cache, and with
+# swift_tmp as its TMPDIR: SwiftPM and the compiler leave TemporaryDirectory.*
+# folders in TMPDIR, and the script removes swift_tmp at the end. In a sandbox,
+# it passes --disable-sandbox.
+swift_app() {
+  if [ "$sandboxed" = 1 ]; then
+    TMPDIR="$swift_tmp" swift "$@" --manifest-cache none --disable-sandbox
+  else
+    TMPDIR="$swift_tmp" swift "$@" --manifest-cache none
+  fi
+}
+
 govulncheck_run() {
   if [ "$sandboxed" = 1 ] && ! /usr/bin/curl -fsS --max-time 10 -o /dev/null https://vuln.go.dev/index/db.json; then
     echo "The sandbox does not reach vuln.go.dev, so govulncheck does not run here. CI runs it."
@@ -197,15 +268,20 @@ if [ "$app" = 1 ]; then
   else
     echo "GhosttyKit is not linked, so swift test builds and tests LoamKit only, with no terminal and no driver."
   fi
+  # The TMPDIR of swift is in TMPDIR, so it stays short and the pane sockets
+  # of the tests can go in it (PaneSocketTests). mktemp with no template
+  # ignores TMPDIR. swift test runs with no build, so the check of the temp
+  # folder sees only the tests.
+  tmp_root=${TMPDIR:-/tmp}
+  swift_tmp=$(mktemp -d "${tmp_root%/}/swift.XXXXXX")
+  trap 'rm -rf "$swift_tmp"' EXIT
+  skip_driver=0 run_swift=1
   if [ "$sandboxed" = 0 ]; then
     if [ "$readable" = 0 ]; then
       echo "app/vendor links GhosttyKit in $built, and that folder cannot be read. Run scripts/build-ghosttykit.sh to link it again."
     elif [ "$ghosttykit" = 1 ]; then
-      echo "GhosttyKit is linked, so swift test builds the app and runs all tests, with the driver tests."
+      echo "GhosttyKit is linked, so swift build builds the app, and swift test runs all tests, with the driver tests."
     fi
-    check "swift test" swift test --manifest-cache none
-  elif [ "$ghosttykit" = 0 ]; then
-    check "swift test" swift test --manifest-cache none --disable-sandbox
   elif [ "$readable" = 0 ]; then
     # The setup command links app/vendor outside the sandbox. The ghostty.pin
     # preset of the run sandbox reads ~/Library/Caches/Loam/ghosttykit, so
@@ -213,12 +289,22 @@ if [ "$app" = 1 ]; then
     # older Loam made the sandbox. A pass here would not compile the terminal
     # and the driver.
     check GhosttyKit ghosttykit_unreadable "${built%/"$pin"/*}"
-  else
+    run_swift=0
+  elif [ "$ghosttykit" = 1 ]; then
     echo "The check runs in a sandbox and GhosttyKit is linked, so swift build builds the app and all tests, and swift test skips LoamDriverTests: the driver tests start the app and need focus, which a sandbox does not give."
-    check "swift build" swift build --build-tests --manifest-cache none --disable-sandbox
+    skip_driver=1
+  fi
+  if [ "$run_swift" = 1 ]; then
+    check "swift build" swift_app build --build-tests
     case " $failed " in
       *" swift build "*) echo "swift build failed, so swift test does not run." ;;
-      *) check "swift test" swift test --skip-build --skip LoamDriverTests --manifest-cache none --disable-sandbox ;;
+      *)
+        if [ "$skip_driver" = 1 ]; then
+          check "swift test" without_temp_leak swift_app test --skip-build --skip LoamDriverTests
+        else
+          check "swift test" without_temp_leak swift_app test --skip-build
+        fi
+        ;;
     esac
   fi
 fi

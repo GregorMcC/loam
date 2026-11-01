@@ -19,7 +19,7 @@ import Testing
 /// Merged stage with PR #11. The fake `loam` logs its arguments. Removing a worktree can lose work, so the tests that
 /// matter most say what must not run. A refresh ends before its merges act, so `refresh` waits for both.
 @MainActor
-@Suite(.waitLimit) struct AfterMergeTests {
+@Suite(.waitLimit, .temporaryFolders) struct AfterMergeTests {
     let plotID = "plotaaaaab"
     /// add-search, #11, Merged. Its repo is /tmp/loam-contract/repos/web.
     let merged = "wtreaaaaac"
@@ -153,8 +153,7 @@ import Testing
     /// A land with `--keep-worktree` removes nothing, and so does a dry run of `worktree rm`.
     func rig(_ setting: AfterMerge? = .ask, state: AppStateFile? = nil,
              rows edit: (inout [WorktreeStatus]) -> Void = { _ in }) async throws -> Rig {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("merge-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let dir = temporaryFolder("merge")
         try Fixtures.data("worktree_rm").write(to: dir.appendingPathComponent("rm.json"))
         let d = dir.path
         try FakeScript.install("""
@@ -531,7 +530,7 @@ import Testing
     /// A recorded land that keeps the worktree removes nothing, so a session in a turn stays and the land runs. Loam
     /// remembers the keep, so no callout asks later.
     @Test func aRecordedLandThatKeepsTheWorktreeTidiesUpAndAsksNothing() async throws {
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("merge-state-\(UUID().uuidString)")
+        let folder = temporaryFolder("merge-state")
         let state = AppStateFile(url: folder.appendingPathComponent("state.json"))
         let land = recorded(11, keepWorktree: true)
         let rig = try await rig(.ask, state: state) { rows in edit(merged, &rows) { $0.worktree.land = land } }
@@ -553,7 +552,7 @@ import Testing
     // MARK: Keep
 
     @Test func keepIsRememberedAfterARestart() async throws {
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("merge-state-\(UUID().uuidString)")
+        let folder = temporaryFolder("merge-state")
         let state = AppStateFile(url: folder.appendingPathComponent("state.json"))
         let rig = try await rig(.ask, state: state)
         await refresh(rig)
@@ -576,7 +575,7 @@ import Testing
     }
 
     @Test func aKeepOfAWorktreeThatIsGoneIsDropped() async throws {
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("merge-state-\(UUID().uuidString)")
+        let folder = temporaryFolder("merge-state")
         let state = AppStateFile(url: folder.appendingPathComponent("state.json"))
         let rig = try await rig(.ask, state: state)
         await refresh(rig)

@@ -16,7 +16,7 @@ private func status(changed: Int = 0, unpushed: Int = 0, merged: Bool = true, me
                    merged: merged, mergedInto: mergedInto, error: error)
 }
 
-@Suite struct WorktreeRulesTests {
+@Suite(.temporaryFolders) struct WorktreeRulesTests {
     @Test func aFolderInsideTheWorktreeCounts() {
         #expect(WorktreeRules.contains(worktreePath: worktreePath, folder: worktreePath))
         #expect(WorktreeRules.contains(worktreePath: worktreePath, folder: worktreePath + "/src/app"))
@@ -29,7 +29,7 @@ private func status(changed: Int = 0, unpushed: Int = 0, merged: Bool = true, me
     }
 
     @Test func aSymbolicLinkToTheWorktreeCounts() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("wt-\(UUID().uuidString)")
+        let root = temporaryFolder("wt")
         let real = root.appendingPathComponent("real")
         try FileManager.default.createDirectory(at: real, withIntermediateDirectories: true)
         let link = root.appendingPathComponent("link")
@@ -95,7 +95,7 @@ private func status(changed: Int = 0, unpushed: Int = 0, merged: Bool = true, me
 }
 
 @MainActor
-@Suite struct WorktreeModelTests {
+@Suite(.temporaryFolders) struct WorktreeModelTests {
     func plot(_ id: String) -> PlotSummary {
         PlotSummary(id: id, name: id, what: "", createdAt: "2026-01-01T00:00:00Z")
     }

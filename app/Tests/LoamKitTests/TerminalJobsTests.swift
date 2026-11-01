@@ -6,7 +6,7 @@ import Testing
 /// Ticket 113: a shell pane is idle only when the one shell is the only process on its terminal, apart from `login`,
 /// and the shell leads the foreground group. The app is pid 1 here. libghostty starts the shell of a pane under
 /// `/usr/bin/login` (pid 100), on the terminal 7.
-@Suite(.waitLimit) struct TerminalJobsTests {
+@Suite(.waitLimit, .temporaryFolders) struct TerminalJobsTests {
     typealias Process = TerminalJobs.Process
 
     static let login = Process(pid: 100, parent: 1, group: 100, terminal: 7, foreground: 200, name: "login")
@@ -83,7 +83,7 @@ import Testing
         init() throws {
             script.executableURL = URL(fileURLWithPath: "/usr/bin/script")
             script.arguments = ["-q", "/dev/null", "/bin/zsh", "-f", "-i"]
-            script.environment = ["PATH": "/usr/bin:/bin", "HOME": NSTemporaryDirectory(), "TERM": "dumb"]
+            script.environment = ["PATH": "/usr/bin:/bin", "HOME": temporaryFolder("terminal-home").path, "TERM": "dumb"]
             script.standardInput = input
             script.standardOutput = FileHandle.nullDevice
             script.standardError = FileHandle.nullDevice

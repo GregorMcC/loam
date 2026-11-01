@@ -69,7 +69,7 @@ import Testing
     }
 }
 
-@Suite struct TerminalThemeDefaultsTests {
+@Suite(.temporaryFolders) struct TerminalThemeDefaultsTests {
     @Test func theDefaultsFileHoldsOnlyAThemeLine() {
         let text = TerminalThemeDefaults.fileText(themesFolder: "/x/themes")
         #expect(text == "theme = dark:/x/themes/loam-night,light:/x/themes/loam-day\n")
@@ -83,8 +83,7 @@ import Testing
     }
 
     @Test func writesTheDefaultsFileAndRewritesOnAChange() throws {
-        let cache = FileManager.default.temporaryDirectory.appendingPathComponent("loam-theme-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: cache) }
+        let cache = temporaryFolder("theme").appendingPathComponent("cache")
         let path = try #require(TerminalThemeDefaults.writeDefaultsFile(themesFolder: "/a", cacheFolder: cache))
         #expect(try String(contentsOfFile: path, encoding: .utf8).contains("dark:/a/loam-night"))
         _ = TerminalThemeDefaults.writeDefaultsFile(themesFolder: "/b", cacheFolder: cache)

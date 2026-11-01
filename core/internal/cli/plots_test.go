@@ -18,20 +18,21 @@ type env struct {
 	t    *testing.T
 	bin  string
 	home string
+	tmp  string // the TMPDIR of loam, so a file that loam keeps goes with the test
 	edit string // fake editor folder
 }
 
 func newEnv(t *testing.T) *env {
 	t.Helper()
 	home := testutil.Home(t)
-	return &env{t: t, bin: testutil.BuildLoam(t), home: home}
+	return &env{t: t, bin: testutil.BuildLoam(t), home: home, tmp: t.TempDir()}
 }
 
 // run runs loam and returns stdout, stderr, and the error.
 func (e *env) run(stdin string, args ...string) (string, string, error) {
 	e.t.Helper()
 	cmd := exec.Command(e.bin, args...)
-	cmd.Env = append(os.Environ(), "LOAM_HOME="+e.home)
+	cmd.Env = append(os.Environ(), "LOAM_HOME="+e.home, "TMPDIR="+e.tmp)
 	if e.edit != "" {
 		cmd.Env = append(cmd.Env, "VISUAL="+filepath.Join(e.edit, "ed.sh"), "FAKE_EDIT_DIR="+e.edit)
 	}

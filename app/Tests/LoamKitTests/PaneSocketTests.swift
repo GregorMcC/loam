@@ -40,12 +40,17 @@ func sendToSocket(_ path: String, _ text: String, close: Bool = true) throws -> 
     return fd
 }
 
-@Suite(.waitLimit) struct PaneSocketTests {
+@Suite(.waitLimit, .temporaryFolders) struct PaneSocketTests {
     func folder() -> PaneSocketFolder {
         // The temp folder of a test run can be long, and a socket path must stay under 104 bytes. So the folder is in
-        // TMPDIR when it is short, as in the sandbox of a Loam run, which allows sockets only there, else in /tmp.
-        let tmp = ProcessInfo.processInfo.environment["TMPDIR"].flatMap { $0.count <= 32 ? $0 : nil } ?? "/tmp"
-        return PaneSocketFolder(base: URL(fileURLWithPath: tmp).appendingPathComponent("loam-test-\(UUID().uuidString.prefix(8))"))
+        // TMPDIR when it is short, as in the sandbox of a Loam run, which allows sockets only there, else in /tmp. A
+        // socket path adds at most 40 bytes to TMPDIR, as in `/loam-test-1A2B3C4D/loam-99999/p10.sock`. scripts/check.sh
+        // gives swift a TMPDIR in the TMPDIR of the gate, which is about 40 bytes.
+        let tmp = ProcessInfo.processInfo.environment["TMPDIR"].flatMap { $0.utf8.count <= 60 ? $0 : nil } ?? "/tmp"
+        let base = URL(fileURLWithPath: tmp).appendingPathComponent("loam-test-\(UUID().uuidString.prefix(8))")
+        // The folder of the sockets is in `base`, and `removeAll()` removes only the folder of the sockets.
+        removeWhenTheTestEnds(base)
+        return PaneSocketFolder(base: base)
     }
 
     @Test func linesSkipWhatIsNotAPaneEvent() {

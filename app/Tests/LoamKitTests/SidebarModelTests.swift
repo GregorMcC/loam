@@ -246,7 +246,7 @@ struct AttentionCycleTests {
 }
 
 /// Ticket 71: the sidebar tree. A plot holds its main checkout and its worktrees, and each holds its panes.
-@Suite struct SidebarTreeTests {
+@Suite(.temporaryFolders) struct SidebarTreeTests {
     func plot(_ id: String, _ name: String) -> PlotSummary {
         PlotSummary(id: id, name: name, what: "", createdAt: "2026-10-02T00:00:00Z")
     }

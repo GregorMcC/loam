@@ -40,6 +40,8 @@ The script also runs in a sandbox, such as the sandbox of a Loam run or of its c
 
 In a sandbox with GhosttyKit linked in `app/vendor`, the `app` job runs `swift build --build-tests`, so the terminal, the driver, and all tests compile. Then it runs `swift test --skip LoamDriverTests`, because the driver tests start the app and need focus, which a sandbox does not give. The run sandbox of a repo with `ghostty.pin` reads `~/Library/Caches/Loam/ghosttykit`, and it cannot write there. When the sandbox cannot read the GhosttyKit cache, for example because `LOAM_CACHE` moves it, the job fails and names the folder to add to the read paths of the run sandbox. With no link, the job builds and tests LoamKit only. The script says which path it takes.
 
+The `app` job of the script builds first, then runs `swift test --skip-build`, and it fails when the tests leave a new folder or file in the temp folder. It lists each one. The job gives `swift` a `TMPDIR` of its own and removes it at the end, because SwiftPM and the compiler leave `TemporaryDirectory.*` folders there.
+
 A new worktree has no `app/vendor`. `scripts/build-ghosttykit.sh --link-only` links it when the cache holds GhosttyKit for `ghostty.pin`, and it builds and downloads nothing. When GhosttyKit is not cached, it says so and exits 0, so it can be the setup command of a repo in Loam.
 
 The commands, in `core/`:
@@ -70,6 +72,8 @@ swift test
 For a change to the app, build GhosttyKit first. Run `scripts/build-ghosttykit.sh` before your first test run, and again when `ghostty.pin` changes. Then run `swift test --manifest-cache none` in `app/`. The option makes SwiftPM see the new GhosttyKit link. The [README](README.md#build-from-source) lists the tools that you need.
 
 Tests use a temporary `LOAM_HOME`, a fake `claude`, and a fake `gh`. Do not point a test at your real store, your real `claude`, or GitHub. The Go helpers are in `core/internal/testutil`. A test process builds each helper binary once, so a package that uses `BuildLoam`, `FakeClaude`, or `FakeGH` calls `testutil.Main` from its `TestMain`.
+
+A test removes each temp folder and file that it makes. A Go test uses `t.TempDir()`, and a test that runs `loam` gives it a `TMPDIR` from `t.TempDir()`, because `loam` keeps some files there on purpose. An app test makes a folder with `temporaryFolder(_:)`, and the test or its suite has the trait `.temporaryFolders`, which removes the folder when the test ends. A value that the tests share for the whole run uses `runFolder`. Both are in `app/Tests/LoamKitTests/TemporaryFolders.swift`.
 
 ## Docs
 
