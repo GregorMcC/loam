@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/GregorMcC/loam/core/internal/github"
 	"github.com/GregorMcC/loam/core/internal/store"
 )
 
@@ -78,6 +79,9 @@ func TestATickLeavesARunThatWentBackDuringTheTick(t *testing.T) {
 		"move":    func() (bool, error) { return sh.move(store.RunReady, "Ready to land") },
 		"moveTry": func() (bool, error) { return sh.moveTry(store.RunStopped, "CI failed") },
 		"update":  func() (bool, error) { return sh.update(func(r *store.Run) { r.CIRerun = "abc" }) },
+		"adopt": func() (bool, error) {
+			return sh.adopt(&github.PR{Number: 7, URL: "https://github.com/acme/web/pull/7"})
+		},
 		"resume": func() (bool, error) {
 			return sh.resume(context.Background(), "CI failed", "Fixing the CI failure", "CI failure", func(r *store.Run) { r.Tries++ })
 		},
@@ -108,6 +112,10 @@ func TestATickLeavesARunThatWentBackDuringTheTick(t *testing.T) {
 		if got, _ := s.GetRun(r.ID); got.State != store.RunRunning || !got.UpdatedAt.Equal(back.UpdatedAt) {
 			t.Errorf("%s: a later step wrote the run: %s (%q)", name, got.State, got.Note)
 		}
+	}
+	// A PR that the run does not hold gets no event.
+	if e := lastEvent(t, s, r.ID, "ship"); e != "" {
+		t.Errorf("ship event %q for a run that went back", e)
 	}
 }
 

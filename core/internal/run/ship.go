@@ -419,7 +419,10 @@ func (sh *shipper) push(ctx context.Context, repo github.Repo, w store.Worktree,
 	moved, err := sh.update(func(r *store.Run) {
 		r.PR, r.Notes, r.PRDraft = &store.RunPR{Number: opened.Number, URL: opened.URL}, prNotes(d, r.CodeReview), nil
 	})
-	if err != nil {
+	if !moved || err != nil {
+		// The run left Shipping while gh opened the PR: you cancelled it or
+		// sent it back. It gets no event and no Linear attach for a PR that
+		// it does not hold. A later ship finds the PR (see [shipper.adopt]).
 		return moved, err
 	}
 	if err := sh.s.AddRunEvent(r.ID, "ship", fmt.Sprintf("Opened #%d", opened.Number)); err != nil {
@@ -465,7 +468,7 @@ func (sh *shipper) adopt(pr *github.PR) (bool, error) {
 		r.PR, r.PRDraft = &store.RunPR{Number: pr.Number, URL: pr.URL}, nil
 		r.ConflictSends, r.ConflictHead = 0, ""
 	})
-	if err != nil {
+	if !moved || err != nil {
 		return moved, err
 	}
 	return moved, sh.s.AddRunEvent(sh.r.ID, "ship", fmt.Sprintf("Found #%d, the open PR of the branch", pr.Number))
