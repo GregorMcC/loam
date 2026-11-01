@@ -11,3 +11,5 @@
 /docs/superpowers/
 /docs/bench.md
 /docs/bench-multi.md
+# The global git config of a test. testutil.GitEnv removes the folder.
+.gitenv-*

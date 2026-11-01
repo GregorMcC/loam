@@ -159,9 +159,7 @@ func TestPrepareRunAllowsTheGitConfigFilesThatGitReads(t *testing.T) {
 // TAS-194: git opens the file of an includeIf whose condition does not hold
 // when the condition is hasconfig, and stops when the sandbox denies it. So
 // the sandbox allows the file of each include and includeIf, and the files
-// that it includes. It does not follow an include in a file that the run can
-// write, also when git takes that include, because the run could name any
-// file there. The prompt says so.
+// that it includes.
 func TestPrepareRunAllowsTheFilesOfEachIncludeIf(t *testing.T) {
 	e := setup(t)
 	testutil.GitEnv(t)
@@ -172,15 +170,11 @@ func TestPrepareRunAllowsTheFilesOfEachIncludeIf(t *testing.T) {
 	repo, _ := testutil.GitRepo(t)
 	work := filepath.Join(dir, "work.gitconfig")
 	nested := filepath.Join(dir, "nested", "more.gitconfig")
-	local := filepath.Join(repo, "local.gitconfig")
-	secret := filepath.Join(dir, "secret")
 	other := filepath.Join(dir, "other.gitconfig")
 	for f, text := range map[string]string{
 		other:  "[user]\n\tname = other\n",
 		work:   "[include]\n\tpath = nested/more.gitconfig\n",
 		nested: "[core]\n\tautocrlf = false\n",
-		local:  "[include]\n\tpath = " + secret + "\n",
-		secret: "[user]\n\tname = secret\n",
 	} {
 		if err := os.MkdirAll(filepath.Dir(f), 0o755); err != nil {
 			t.Fatal(err)
@@ -194,7 +188,6 @@ func TestPrepareRunAllowsTheFilesOfEachIncludeIf(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := f.WriteString("[includeIf \"hasconfig:remote.*.url:git@example.com:org/**\"]\n\tpath = work.gitconfig\n" +
-		"[include]\n\tpath = " + local + "\n" +
 		"[includeIf \"gitdir:/nowhere/\"]\n\tpath = other.gitconfig\n"); err != nil {
 		t.Fatal(err)
 	}
@@ -217,67 +210,15 @@ func TestPrepareRunAllowsTheFilesOfEachIncludeIf(t *testing.T) {
 		t.Fatal(err)
 	}
 	read := got.Sandbox.Filesystem.AllowRead
-	for _, want := range []string{realpath(t, work), realpath(t, nested), realpath(t, local)} {
+	for _, want := range []string{realpath(t, work), realpath(t, nested)} {
 		if !slices.Contains(read, want) {
 			t.Errorf("allowRead = %q, want %s", read, want)
 		}
-	}
-	if slices.Contains(read, realpath(t, secret)) {
-		t.Errorf("allowRead = %q has %s, which an include in a file of the run names", read, secret)
 	}
 	// The run can change its branch, so Loam takes the file of every
 	// includeIf, whatever its condition.
 	if !slices.Contains(read, realpath(t, other)) {
 		t.Errorf("allowRead = %q, want %s, whose includeIf does not hold", read, other)
-	}
-	if prompt := plan.Args[len(plan.Args)-1]; !strings.Contains(prompt, "the includes of the git config "+local) {
-		t.Errorf("prompt = %q, want a note on %s", prompt, local)
-	}
-}
-
-// The run can write a temporary folder, so Loam does not follow the includes
-// of a git config there, and the prompt says so.
-func TestPrepareRunDoesNotFollowTheIncludesOfAConfigInATempFolder(t *testing.T) {
-	e := setup(t)
-	testutil.GitEnv(t)
-	global := os.Getenv("GIT_CONFIG_GLOBAL")
-	dir := filepath.Dir(global)
-	defer session.SetRunTemps(func() []string { return []string{dir} })()
-	extra := filepath.Join(dir, "extra.gitconfig")
-	if err := os.WriteFile(extra, []byte("[core]\n\tautocrlf = false\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	f, err := os.OpenFile(global, os.O_APPEND|os.O_WRONLY, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.WriteString("[include]\n\tpath = extra.gitconfig\n"); err != nil {
-		t.Fatal(err)
-	}
-	f.Close()
-	repo, _ := testutil.GitRepo(t)
-	p := e.plot(t, store.PlotInput{Name: "Alpha", Repos: []store.RepoInput{{Path: repo}}})
-	plan, err := session.PrepareRun(e.store, store.Run{ID: "r1", PlotID: p.ID, Folder: repo}, "go", "loam", "", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(argValues(plan.Args, "--settings")[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	var got struct {
-		Sandbox struct {
-			Filesystem struct{ AllowRead []string }
-		}
-	}
-	if err := json.Unmarshal(data, &got); err != nil {
-		t.Fatal(err)
-	}
-	if read := got.Sandbox.Filesystem.AllowRead; slices.Contains(read, realpath(t, extra)) {
-		t.Errorf("allowRead = %q has %s, which a config in a temporary folder includes", read, extra)
-	}
-	if prompt := plan.Args[len(plan.Args)-1]; !strings.Contains(prompt, "the includes of the git config "+global) {
-		t.Errorf("prompt = %q, want a note on %s", prompt, global)
 	}
 }
 
@@ -331,49 +272,32 @@ func TestPrepareRunAddsTheSandboxSettings(t *testing.T) {
 }
 
 // TAS-175: the gate builds the rules again after the session ran, so the
-// rules follow no git file that the run can write. A commondir file in the
-// git folder does not move the git folder to another repo, and an include in
-// config.worktree does not open a file.
+// rules follow no git file that the run can write. With the extension off, git
+// does not read config.worktree, and the rules do not read it either.
 func TestRunRulesFollowNoGitFileOfTheRun(t *testing.T) {
 	e := setup(t)
 	testutil.GitEnv(t)
 	repo, _ := testutil.GitRepo(t)
-	other, _ := testutil.GitRepo(t)
 	wt := filepath.Join(t.TempDir(), "wt")
 	testutil.Git(t, repo, "worktree", "add", "-q", wt)
-	testutil.Git(t, repo, "config", "extensions.worktreeConfig", "true")
 	secret := filepath.Join(t.TempDir(), "secret.gitconfig")
 	if err := os.WriteFile(secret, []byte("[user]\n\tname = x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	git := realpath(t, filepath.Join(repo, ".git"))
-	admin := filepath.Join(git, "worktrees", "wt")
-	write := func(name, text string) {
-		t.Helper()
-		if err := os.WriteFile(name, []byte(text), 0o644); err != nil {
-			t.Fatal(err)
-		}
+	admin := filepath.Join(realpath(t, filepath.Join(repo, ".git")), "worktrees", "wt")
+	if err := os.WriteFile(filepath.Join(admin, "config.worktree"), []byte("[include]\n\tpath = "+secret+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := testutil.Git(t, wt, "config", "user.name"); got == "x" {
+		t.Fatal("git reads config.worktree with the extension off")
 	}
 	p := e.plot(t, store.PlotInput{Name: "Alpha", Repos: []store.RepoInput{{Path: repo}}})
-	run := store.Run{ID: "r1", PlotID: p.ID, Folder: wt}
-	write(filepath.Join(admin, "config.worktree"), "[include]\n\tpath = "+secret+"\n")
-	if got := testutil.Git(t, wt, "config", "user.name"); got != "x" {
-		t.Fatalf("git does not read config.worktree: user.name %q", got)
-	}
-	r, err := session.RunRules(e.store, run)
+	r, err := session.RunRules(e.store, store.Run{ID: "r1", PlotID: p.ID, Folder: wt})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if slices.Contains(r.Read, realpath(t, secret)) {
 		t.Errorf("read = %q has the file that config.worktree includes", r.Read)
-	}
-	write(filepath.Join(admin, "commondir"), filepath.Join(other, ".git")+"\n")
-	write(filepath.Join(git, "commondir"), filepath.Join(other, ".git")+"\n")
-	if r, err = session.RunRules(e.store, run); err != nil {
-		t.Fatal(err)
-	}
-	if !slices.Contains(r.Write, git) || slices.Contains(r.Write, realpath(t, filepath.Join(other, ".git"))) {
-		t.Errorf("write = %q, want %s and not the other repo", r.Write, git)
 	}
 }
 
