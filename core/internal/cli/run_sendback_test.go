@@ -114,8 +114,7 @@ func TestRunSendBackResumesTheSessionWithYourNotes(t *testing.T) {
 func TestRunSendBackGivesAStoppedRunOneMoreTry(t *testing.T) {
 	_, r, w := shipRun(t, "1")
 	tick(t)
-	setGitHub(t, ciState(w.Branch, testutil.Git(t, r.Folder, "rev-parse", "HEAD"), "FAILURE"))
-	tick(t)
+	failCI(t, r, w)
 	got, code, out := sendBack(t, r.ID, "--note", "The test needs a fixed clock.")
 	if code != 0 || got.State != store.RunRunning || got.Tries != 1 || got.MaxTries != 2 {
 		t.Fatalf("exit %d: %s", code, out)
