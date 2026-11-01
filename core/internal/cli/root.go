@@ -36,6 +36,9 @@ func version() string {
 	return "dev"
 }
 
+// The store needs the version to tell a release from a dev build.
+func init() { store.ProgramVersion = version() }
+
 var registry []func() *cobra.Command
 
 // Register adds a command to the root command. Call it from init in the file
