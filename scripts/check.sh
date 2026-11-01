@@ -158,26 +158,63 @@ temp_folders() {
   done | sort -u
 }
 
-# temp_items prints the path of each temp item of the app tests, sorted.
-# temporaryFolder(_:) in app/Tests/LoamKitTests/TemporaryFolders.swift names
-# each folder loam-test-<run tag>-*, and swift_app passes run_tag to the tests
-# in LOAM_TEST_RUN. In the shared temp folders, only those names count: other
-# processes, such as a Loam app, a run that starts, or the tests of another
-# worktree, make other loam-* items there. In swift_tmp, which only swift and
-# the tests write, each item counts but the TemporaryDirectory.* folders of the
-# Swift tools. The script removes swift_tmp at the end.
+# temp_items prints the path of each item with a name of the temp items of the
+# app tests, sorted (TAS-214). In the shared temp folders: loam-*, the names of
+# older tests, and TemporaryDirectory.*. In swift_tmp, which only swift and the
+# tests write, each item but the TemporaryDirectory.* folders of the Swift
+# tools. The script removes swift_tmp at the end.
 temp_items() {
   {
     temp_folders | while IFS= read -r folder; do
-      find "$folder" -mindepth 1 -maxdepth 1 -name "loam-test-$run_tag-*" 2>/dev/null
+      find "$folder" -mindepth 1 -maxdepth 1 \( -name 'loam-*' -o -name 'fake-loam-*' -o -name 'land-*' \
+        -o -name 'merge-*' -o -name 'popover-*' -o -name 'send-*' -o -name 'newworktree-*' \
+        -o -name 'TemporaryDirectory.*' \) 2>/dev/null
     done
     find "$swift_tmp" -mindepth 1 -maxdepth 1 ! -name 'TemporaryDirectory.*' 2>/dev/null
   } | sort
 }
 
+# foreign_item PATH: true when another process made PATH in a shared temp
+# folder, so a leak of the tests cannot be it. The tests and their child
+# processes get swift_tmp as TMPDIR, so the Swift tools and loam write there.
+# In the shared folders, Foundation ignores TMPDIR, so the folders of the tests
+# go there too.
+foreign_item() {
+  case "$1" in "$swift_tmp"/*) return 1 ;; esac
+  name=${1##*/}
+  case "$name" in
+    # The tests of this run tag the folders of temporaryFolder(_:).
+    loam-test-"$run_tag"-*) return 1 ;;
+    # The helper of another test run, which removes its own folders.
+    loam-test-*) return 0 ;;
+    # Files of the loam CLI, such as a run that starts or a failed edit. The
+    # loam of the tests writes them in swift_tmp.
+    loam-kept-* | loam-usage-* | loam-mcp-* | loam-gate-* | loam-*.md) return 0 ;;
+    # The pane socket folder of an app. It is foreign while its process runs:
+    # the tests have ended, so a live process is another Loam app. A killed
+    # driver run leaves the folder of a process that is gone.
+    loam-[0-9]*)
+      pid=${name#loam-}
+      case "$pid" in *[!0-9]*) return 1 ;; esac
+      # A process that the sandbox does not let the script signal is alive.
+      if signal=$(kill -0 "$pid" 2>&1); then return 0; fi
+      case "$signal" in *"not permitted"*) return 0 ;; esac
+      return 1
+      ;;
+    # The Swift tools of another process leave folders that hold only their
+    # own files, or nothing.
+    TemporaryDirectory.*)
+      find "$1" -mindepth 1 -maxdepth 1 ! -name .keep-directory ! -name 'supplementaryOutputs-*' \
+        ! -name 'inputs-*.LinkFileList' 2>/dev/null | grep -q . && return 1
+      return 0
+      ;;
+  esac
+  return 1
+}
+
 # without_temp_leak COMMAND...: run COMMAND, and fail when it leaves new items
 # of temp_items (TAS-214). An item that goes within 2 seconds was a passing
-# item, such as one of another process.
+# item, and foreign_item names the items of other processes.
 without_temp_leak() {
   leak_dir=$(mktemp -d)
   temp_items >"$leak_dir/before"
@@ -188,7 +225,7 @@ without_temp_leak() {
   if [ -s "$leak_dir/new" ]; then
     sleep 2
     while IFS= read -r item; do
-      if [ -e "$item" ]; then echo "$item"; fi
+      if [ -e "$item" ] && ! foreign_item "$item"; then echo "$item"; fi
     done <"$leak_dir/new" >"$leak_dir/left"
     if [ -s "$leak_dir/left" ]; then
       echo "The tests left $(wc -l <"$leak_dir/left" | tr -d ' ') new items in the temp folder:"
@@ -199,6 +236,18 @@ without_temp_leak() {
   fi
   rm -rf "$leak_dir"
   return "$status"
+}
+
+# temp_helper_only: fail when an app test names the temp folder itself, not
+# through temporaryFolder(_:), which removes each folder when its test ends.
+temp_helper_only() {
+  direct=$(grep -rnE 'temporaryDirectory|NSTemporaryDirectory' "$root/app/Tests" --include='*.swift' |
+    grep -v '/TemporaryFolders\.swift:' || true)
+  [ -z "$direct" ] && return
+  echo "These app tests use the temp folder directly, so nothing removes their temp items:"
+  echo "$direct"
+  echo "Fix: make each temp folder with temporaryFolder(_:) in app/Tests/LoamKitTests/TemporaryFolders.swift."
+  return 1
 }
 
 # swift_app runs swift for the app job, with no manifest cache, with
@@ -296,6 +345,7 @@ if [ "$app" = 1 ]; then
     echo "The check runs in a sandbox and GhosttyKit is linked, so swift build builds the app and all tests, and swift test skips LoamDriverTests: the driver tests start the app and need focus, which a sandbox does not give."
     skip_driver=1
   fi
+  check "temp helper" temp_helper_only
   if [ "$run_swift" = 1 ]; then
     check "swift build" swift_app build --build-tests
     case " $failed " in
