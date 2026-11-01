@@ -178,6 +178,9 @@ func TestAReviewAfterTheLastRoundPutsTheFindingsInTheShipNotes(t *testing.T) {
 	if got.Notes == nil || !slices.Equal(got.Notes.Risk.Reasons, want) {
 		t.Fatalf("reasons %q", got.Notes.Risk.Reasons)
 	}
+	if got.Notes.Risk.Level != store.RiskHigh {
+		t.Fatalf("risk level %q, want high: the notes hold a Major finding", got.Notes.Risk.Level)
+	}
 	if got.State != store.RunShipping || got.CodeReview.Rounds != codeReviewRounds || got.CodeReview.Head != "new" {
 		t.Fatalf("run %s, review %+v", got.State, got.CodeReview)
 	}
@@ -267,9 +270,12 @@ func TestPRNotesFallBackToTheFindingsAfterTheLastRound(t *testing.T) {
 	if n := prNotes(&store.RunPRDraft{}, spent); n == nil || n.Risk.Level != store.RiskHigh || !slices.Equal(n.Risk.Reasons, spent.Facts) {
 		t.Fatalf("notes %+v", n)
 	}
-	claude := &store.RunNotes{Walkthrough: "Says hi."}
-	if n := prNotes(&store.RunPRDraft{Notes: claude}, spent); n != claude {
+	claude := &store.RunNotes{Walkthrough: "Says hi.", Risk: store.NoteRisk{Level: store.RiskLow}}
+	if n := prNotes(&store.RunPRDraft{Notes: claude}, spent); n == nil || n.Walkthrough != "Says hi." || n.Risk.Level != store.RiskHigh {
 		t.Fatalf("notes %+v", n)
+	}
+	if n := prNotes(&store.RunPRDraft{Notes: claude}, &store.RunCodeReview{}); n != claude || n.Risk.Level != store.RiskLow {
+		t.Fatalf("notes with no findings past the last round %+v", n)
 	}
 	if n := prNotes(&store.RunPRDraft{}, &store.RunCodeReview{Facts: []string{"The code review did not run: no claude"}}); n != nil {
 		t.Fatalf("notes %+v", n)

@@ -203,7 +203,8 @@ func (sh *shipper) pushPastCodeReview(head string, findings []codeReviewFinding,
 // that the review adds to the ship notes, and then the event with detail and
 // the round of the review, or nil when it did not run.
 // The facts replace those of the review before, in notes that the run has.
-// A run with a PR and no notes gets the notes of [spentNotes], when the facts
+// Facts with Critical or Major findings after the last round raise the risk
+// level of the notes to high. A run with a PR and no notes gets the notes of [spentNotes], when the facts
 // hold Critical or Major findings after the last round.
 // It reports no push, and records no event, when the run left its state
 // during the review: you may have stopped it.
@@ -214,6 +215,9 @@ func (sh *shipper) passCodeReview(head string, facts []string, detail string, ro
 		case r.Notes != nil:
 			r.Notes.Risk.Reasons = slices.DeleteFunc(r.Notes.Risk.Reasons, func(s string) bool { return slices.Contains(c.Facts, s) })
 			r.Notes.Risk.Reasons = append(r.Notes.Risk.Reasons, facts...)
+			if slices.Contains(facts, codeReviewSpentFact) {
+				r.Notes.Risk.Level = store.RiskHigh
+			}
 		case r.PR != nil:
 			r.Notes = spentNotes(facts)
 		}
@@ -242,12 +246,20 @@ func spentNotes(facts []string) *store.RunNotes {
 
 // prNotes are the notes of the run when Loam opens its PR with the draft d:
 // the notes of Claude, else the notes of [spentNotes] for the facts of the
-// last code review c.
+// last code review c. When c has Critical or Major findings after the last
+// round, the risk level of the notes of Claude is high.
 func prNotes(d *store.RunPRDraft, c *store.RunCodeReview) *store.RunNotes {
-	if d.Notes != nil || c == nil {
+	switch {
+	case c == nil:
+		return d.Notes
+	case d.Notes == nil:
+		return spentNotes(c.Facts)
+	case !slices.Contains(c.Facts, codeReviewSpentFact):
 		return d.Notes
 	}
-	return spentNotes(c.Facts)
+	n := *d.Notes
+	n.Risk.Level = store.RiskHigh
+	return &n
 }
 
 // storedRound is the round of a review that found findings, as a
