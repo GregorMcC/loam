@@ -65,6 +65,10 @@ struct PanelRig {
         environment = [
             "LOAM_HOME": loamHome.path,
             "HOME": fakeHome.path,
+            // The fake home is in a temporary folder, which a run can write, and a run does not
+            // start with a git config that it can write. So git reads no config in the fake home.
+            "GIT_CONFIG_GLOBAL": "/dev/null",
+            "GIT_CONFIG_SYSTEM": "/dev/null",
             "LOAM_OPEN": fake.path,
             "LOAM_APP_STATE_DIR": root.appendingPathComponent("state").path,
             // The fake claude writes the conversation files here, and `loam resume` reads them, so

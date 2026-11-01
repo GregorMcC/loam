@@ -604,3 +604,26 @@ func unsetGlobal(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A rig with a home in a temporary folder sets a global config outside it, such
+// as the driver of the app does, and a run starts with its real temporary
+// folders. With no such config, git reads ~/.gitconfig, which the run can write.
+func TestARunWithAHomeInATemporaryFolderNeedsAGlobalConfigOutsideIt(t *testing.T) {
+	e := setup(t)
+	testutil.GitEnv(t)
+	home := realpath(t, t.TempDir())
+	t.Setenv("HOME", home)
+	repo, _ := testutil.GitRepo(t)
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_CONFIG_SYSTEM", os.DevNull)
+	p := e.plot(t, store.PlotInput{Name: "Alpha", Repos: []store.RepoInput{{Path: repo}}})
+	run := store.Run{ID: "r1", PlotID: p.ID, Folder: repo}
+	if _, err := session.PrepareRun(e.store, run, "go", "loam", "", ""); err != nil {
+		t.Fatalf("a global config of %s: %v", os.DevNull, err)
+	}
+	unsetGlobal(t)
+	_, err := session.PrepareRun(e.store, run, "go", "loam", "", "")
+	if want := filepath.Join(home, ".gitconfig"); err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("error %v, want %s", err, want)
+	}
+}

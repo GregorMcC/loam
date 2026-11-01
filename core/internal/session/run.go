@@ -376,8 +376,9 @@ func checkGitFolder(admin, git string) error {
 
 // checkGitConfig returns an error when:
 //   - a config file of files is at or below a write path, other than the local
-//     config, which the rules deny. See [sandbox.Rules.WritePathOf]. The file
-//     need not exist, because the run can make it.
+//     config. The rules deny a write to it and a move of each folder above it.
+//     See [sandbox.Rules.WritePathOf]. The file need not exist, because the run
+//     can make it.
 //   - the target of any include is at or below a write path, whether it exists
 //     or not, and whether its condition holds now or not. A file that the
 //     sandbox refuses counts too, because git outside the sandbox reads it.
