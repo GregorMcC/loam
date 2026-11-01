@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/GregorMcC/loam/core/internal/github"
 	"github.com/GregorMcC/loam/core/internal/store"
@@ -39,61 +40,91 @@ func hasMajorFinding(body string) bool { return majorMark.MatchString(body) }
 var severityMark = regexp.MustCompile(`(?:🔴|🟠|🟡|🔵|[_*]|</picture>)\s*(?:Critical|Major|Minor|Trivial)(?:[^\pL]|$)`)
 
 // reviewText is the text of a review body that goes to the session. It is
-// the body, which [quote] cuts to [reviewTextMax] characters. When the cut
-// would leave out a Critical or Major finding, such as after a long list of
-// nitpicks, it is only the Critical and Major findings (see
-// [majorFindings]), and excerpt is true. Loam records a review as sent, so a
-// finding in the cut part would never reach the session.
+// the body, which [quote] cuts to [reviewTextMax] characters, when the body
+// fits, or when the cut keeps all of the last Critical or Major finding.
+// Else, such as after a long list of nitpicks or with a finding that the cut
+// ends, it is only the Critical and Major findings (see [majorFindings]),
+// and excerpt is true. Loam records a review as sent, so a finding in the
+// cut part would never reach the session.
 func reviewText(body string) (text string, excerpt bool) {
-	cut := truncate(body, reviewTextMax)
-	if cut == body || len(majorMark.FindAllStringIndex(cut, -1)) == len(majorMark.FindAllStringIndex(body, -1)) {
+	spans := majorSpans(body)
+	// quote keeps reviewTextMax-1 characters of a body that it cuts.
+	if utf8.RuneCountInString(body) <= reviewTextMax || len(spans) == 0 ||
+		utf8.RuneCountInString(body[:spans[len(spans)-1].end]) < reviewTextMax {
 		return body, false
 	}
-	return majorFindings(body), true
+	return majorFindings(body, spans), true
 }
 
-// majorFindings are the Critical and Major findings of a review body. A
-// finding is the text from the line of its header to the line of the next
-// header of any severity. The file of a finding is in the <summary> line
-// before it, so that line goes first. Each finding gets an even part of
-// [reviewTextMax], so a long finding does not leave out the others.
-func majorFindings(body string) string {
+// span is the part of a review body from start to end, as byte indexes.
+type span struct{ start, end int }
+
+// majorSpans are the Critical and Major findings of a review body. A finding
+// is the text from the line of its header to the line of the next header of
+// any severity, or to the end of the body.
+func majorSpans(body string) []span {
 	marks := severityMark.FindAllStringIndex(body, -1)
-	var parts []string
+	var spans []span
 	for i, m := range marks {
 		if !majorMark.MatchString(body[m[0]:m[1]]) {
 			continue
 		}
-		start := lineStart(body, m[0])
-		end := len(body)
+		sp := span{start: lineStart(body, m[0]), end: len(body)}
 		for _, n := range marks[i+1:] {
-			if next := lineStart(body, n[0]); next > start {
-				end = next
+			if next := lineStart(body, n[0]); next > sp.start {
+				sp.end = next
 				break
 			}
 		}
-		part := strings.TrimSpace(body[start:end])
-		if files := fileSummary.FindAllString(body[:start], -1); len(files) > 0 {
-			part = files[len(files)-1] + "\n" + part
-		}
-		parts = append(parts, part)
+		spans = append(spans, sp)
 	}
-	if len(parts) == 0 {
+	return spans
+}
+
+// majorFindings is the text of the findings of body at spans (see
+// [majorSpans]). The file of a finding is in a line before it (see
+// [fileOf]), so that line goes first. Each finding gets an even part of
+// [reviewTextMax], so a long finding does not leave out the others.
+func majorFindings(body string, spans []span) string {
+	if len(spans) == 0 {
 		return ""
 	}
 	// The parts and the blank lines between them fit in reviewTextMax.
-	share := (reviewTextMax - 2*(len(parts)-1)) / len(parts)
-	for i, p := range parts {
-		parts[i] = truncate(p, share)
+	share := (reviewTextMax - 2*(len(spans)-1)) / len(spans)
+	parts := make([]string, len(spans))
+	for i, sp := range spans {
+		part := strings.TrimSpace(body[sp.start:sp.end])
+		if file := fileOf(body[:sp.start]); file != "" {
+			part = file + "\n" + part
+		}
+		parts[i] = truncate(part, share)
 	}
 	return strings.Join(parts, "\n\n")
 }
 
-// fileSummary finds the <summary> line of CodeRabbit that names the file of
-// the findings below it, with their count, such as
-// "<summary>core/run.go (2)</summary>". The other <summary> lines, such as
-// the prompt for AI agents of a finding, have no count.
-var fileSummary = regexp.MustCompile(`<summary>[^<\n]*\(\d+\)</summary>`)
+// fileLine is a line of CodeRabbit that names the file of the findings below
+// it, once its HTML tags are removed. It has two forms: the file with the
+// count of its findings, such as "core/run.go (2)", and the file with the
+// lines and the count of a finding, such as "core/run.go-213-214: 1". A path
+// has no space, so a line such as "Nitpick comments (3)" does not count, and
+// nor does the summary of the prompt for AI agents of a finding.
+var fileLine = regexp.MustCompile(`^[^\s:()<>]+(?: \(\d+\)|-\d+(?:-\d+)?: \d+)$`)
+
+// htmlTag is an HTML tag, such as <summary> or </code>.
+var htmlTag = regexp.MustCompile(`<[^>\n]*>`)
+
+// fileOf is the last line of text that names a file (see [fileLine]), with
+// its HTML tags and quote marks removed, or "" when text has none.
+func fileOf(text string) string {
+	lines := strings.Split(text, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimLeft(strings.TrimSpace(htmlTag.ReplaceAllString(lines[i], "")), "> ")
+		if fileLine.MatchString(line) {
+			return line
+		}
+	}
+	return ""
+}
 
 // lineStart is the index of the start of the line that holds index i.
 func lineStart(text string, i int) int { return strings.LastIndex(text[:i], "\n") + 1 }

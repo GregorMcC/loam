@@ -265,7 +265,7 @@ func TestReviewPromptSendsTheMajorFindingsOfALongReview(t *testing.T) {
 	prompt, _ := reviewPromptFor("Opening.", pr, review{requests: []github.Review{long}}, "/r.json", false)
 	for _, want := range []string{
 		"Loam sends only its Critical and Major findings. Read the rest on GitHub.",
-		"> <summary>core/run.go (1)</summary>\n> `12-20`: _⚠️ Potential issue_ | _🟠 Major_", "> **The wait never ends.**", "> Fix the wait.",
+		"> core/run.go (1)\n> `12-20`: _⚠️ Potential issue_ | _🟠 Major_", "> **The wait never ends.**", "> Fix the wait.",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("the prompt misses %q:\n%s", want, prompt)
@@ -336,7 +336,7 @@ func TestReviewPromptSendsTheMajorFindingsOfALongReviewInTheIconForm(t *testing.
 	}
 	rv := review{requests: []github.Review{{ID: "R1", Author: "coderabbitai", Body: body}}}
 	prompt, _ := reviewPromptFor("Opening.", &github.PR{Number: 1}, rv, "/r.json", false)
-	for _, want := range []string{"Loam sends only its Critical and Major findings", "> <summary>core/run.go (2)</summary>",
+	for _, want := range []string{"Loam sends only its Critical and Major findings", "> core/run.go (2)",
 		"major-16.svg", "> **The wait never ends.**"} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("the prompt misses %q:\n%s", want, prompt)
@@ -344,5 +344,49 @@ func TestReviewPromptSendsTheMajorFindingsOfALongReviewInTheIconForm(t *testing.
 	}
 	if strings.Contains(prompt, "Rename x.") || strings.Contains(prompt, "A small thing.") {
 		t.Errorf("the prompt has a Minor finding:\n%s", prompt)
+	}
+}
+
+// A Major header just before the cut keeps the count of headers in the cut, but the cut ends its text. The review
+// goes as its Critical and Major findings, so the session gets all of the finding.
+func TestReviewPromptSendsAMajorFindingThatTheCutEnds(t *testing.T) {
+	filler := strings.Repeat("A line of the walkthrough.\n", (reviewTextMax-200)/27)
+	finding := "`5-9`: _⚠️ Potential issue_ | _🟠 Major_\n\n**The cut ends this finding.**\n\n" +
+		strings.Repeat("More of the finding. ", 40) + "The end of the finding.\n"
+	body := filler + finding + "`30-31`: _🛠️ Refactor suggestion_ | _🟡 Minor_\n\n**A small thing.**\n"
+	if n := len([]rune(filler)); n >= reviewTextMax {
+		t.Fatalf("the filler is %d characters", n)
+	}
+	text, excerpt := reviewText(body)
+	if !excerpt || !strings.Contains(text, "The end of the finding.") || strings.Contains(text, "A small thing.") ||
+		strings.Contains(text, "walkthrough") {
+		t.Fatalf("excerpt %v:\n%s", excerpt, text)
+	}
+	// The whole finding is in the cut, up to the header after it: the body goes as it is.
+	if _, excerpt := reviewText(finding + "`30-31`: _🛠️ Refactor suggestion_ | _🟡 Minor_\n\n**A small thing.**\n" + filler); excerpt {
+		t.Fatal("a finding in the cut gave an excerpt")
+	}
+}
+
+// CodeRabbit names the file of a finding in two forms: with the count of its findings, and with the lines and the
+// count of a finding, as in its review of #95. Each can be in HTML tags.
+func TestMajorFindingsNameTheFileOfEachFinding(t *testing.T) {
+	nitpicks := strings.Repeat("`a.go`: _🧹 Nitpick_ | _🔵 Trivial_\n\n**Rename x.**\n\n", 200)
+	for _, c := range []struct{ line, want string }{
+		{"<summary>core/internal/run/codereview.go-213-214: 1</summary>", "core/internal/run/codereview.go-213-214: 1"},
+		{"<summary><code>core/internal/run/codereview.go</code>-213-214: 1</summary>", "core/internal/run/codereview.go-213-214: 1"},
+		{"<summary>core/run.go (2)</summary>", "core/run.go (2)"},
+		{"> core/run.go-7: 1", "core/run.go-7: 1"},
+	} {
+		body := nitpicks + "<details>\n" + c.line + "<blockquote>\n\n<details>\n<summary>🤖 Prompt for AI Agents</summary>\nOld.\n</details>\n\n" +
+			"`213-214`: " + pictureHeader("major", "Major")[len("`213-214`: "):] + "\n\n**The wait never ends.**\n"
+		text, excerpt := reviewText(body)
+		if !excerpt || !strings.HasPrefix(text, c.want+"\n`213-214`: **<picture>") || !strings.Contains(text, "**The wait never ends.**") {
+			t.Errorf("%s: excerpt %v:\n%s", c.line, excerpt, text)
+		}
+	}
+	// A line with a space in its path part, such as a section title, names no file.
+	if got := fileOf("<summary>🧹 Nitpick comments (3)</summary>\n<summary>⚠️ Outside diff range comments (1)</summary>"); got != "" {
+		t.Errorf("fileOf = %q", got)
 	}
 }
